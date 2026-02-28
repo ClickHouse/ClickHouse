@@ -171,13 +171,12 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     if (cluster_host_ids.empty())
         return nullptr;
 
-    auto res = make_intrusive<ASTFunction>();
-    res->name = "array";
-    res->setIsOperator(true);
-    auto res_replicas = make_intrusive<ASTExpressionList>();
-    res->arguments = res_replicas;
-    res->children.push_back(res_replicas);
-    res_replicas->children.resize(cluster_host_ids.size());
+    /// Build as ASTLiteral(Array{Array{String, ...}, ...}) so that FieldVisitorToString
+    /// always formats it with [...] syntax, which is compatible with all ClickHouse versions.
+    /// Using ASTFunction("array") with operator syntax would trigger the all-literals formatting
+    /// path and produce array(...) syntax that older versions cannot parse.
+    Array shards_array;
+    shards_array.resize(cluster_host_ids.size());
 
     for (size_t i = 0; i != cluster_host_ids.size(); ++i)
     {
@@ -188,10 +187,10 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = make_intrusive<ASTLiteral>(Field{std::move(res_shard)});
+        shards_array[i] = Field{std::move(res_shard)};
     }
 
-    return res;
+    return make_intrusive<ASTLiteral>(Field{std::move(shards_array)});
 }
 
 std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id)

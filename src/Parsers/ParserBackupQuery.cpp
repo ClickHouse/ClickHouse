@@ -233,7 +233,9 @@ namespace
 
     bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
     {
-        return ParserArray{}.parse(pos, cluster_host_ids, expected);
+        /// Accept both [...]  and array(...) syntax for formatting roundtrip consistency.
+        return ParserArray{}.parse(pos, cluster_host_ids, expected)
+            || ParserFunction{}.parse(pos, cluster_host_ids, expected);
     }
 
     bool parseClusterHostIDsSetting(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
