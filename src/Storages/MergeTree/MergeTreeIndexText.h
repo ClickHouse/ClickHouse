@@ -293,6 +293,7 @@ public:
         bool is_failed = false;
         bool has_large_postings = false;
 
+        void markFailed();
         void addMissingToken();
         void addLargePostings() { has_large_postings = true; }
         void addRowsRange(RowsRange token_rows_range);

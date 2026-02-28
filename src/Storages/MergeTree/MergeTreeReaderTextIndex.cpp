@@ -459,16 +459,6 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     if (!query_builder.has_large_postings)
         return result.value_or(PostingList{});
 
-    auto apply_postings = [&](PostingList && postings)
-    {
-        if (!result)
-            result = std::move(postings);
-        else if (query.search_mode == TextSearchMode::All)
-            *result &= postings;
-        else if (query.search_mode == TextSearchMode::Any)
-            *result |= postings;
-    };
-
     for (const auto & token : query.tokens)
     {
         if (query.search_mode == TextSearchMode::All && result && result->cardinality() == 0)
@@ -487,7 +477,6 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         }
 
         auto read_blocks = readPostingsBlocksForToken(token, *it->second, range);
-
         if (read_blocks.empty())
         {
             if (query.search_mode == TextSearchMode::All)
@@ -496,20 +485,16 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
                 continue;
         }
 
-        if (read_blocks.size() == 1)
-        {
-            PostingList large_postings = *read_blocks.front() & range_posting;
-            apply_postings(std::move(large_postings));
-        }
-        else
-        {
-            PostingList large_postings = (*read_blocks.front() & range_posting);
+        PostingList large_postings = (*read_blocks.front() & range_posting);
+        for (size_t i = 1; i < read_blocks.size(); ++i)
+            large_postings |= (*read_blocks[i] & range_posting);
 
-            for (size_t i = 1; i < read_blocks.size(); ++i)
-                large_postings |= (*read_blocks[i] & range_posting);
-
-            apply_postings(std::move(large_postings));
-        }
+        if (!result)
+            result = std::move(large_postings);
+        else if (query.search_mode == TextSearchMode::All)
+            *result &= large_postings;
+        else if (query.search_mode == TextSearchMode::Any)
+            *result |= large_postings;
     }
 
     return result.value_or(PostingList{});

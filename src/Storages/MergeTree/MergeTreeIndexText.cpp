@@ -333,10 +333,17 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 }
 
+void TextIndexAnalyzer::QueryBuilder::markFailed()
+{
+    is_failed = true;
+    rows_range.reset();
+    postings.reset();
+}
+
 void TextIndexAnalyzer::QueryBuilder::addMissingToken()
 {
     if (query->search_mode == TextSearchMode::All)
-        is_failed = true;
+        markFailed();
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -357,7 +364,7 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
         rows_range = rows_range->intersectWith(token_rows_range);
 
         if (!rows_range)
-            is_failed = true;
+            markFailed();
     }
 }
 
@@ -379,7 +386,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
         *postings &= *token_postings;
 
         if (postings->cardinality() == 0)
-            is_failed = true;
+            markFailed();
     }
 }
 
@@ -428,7 +435,7 @@ void TextIndexAnalyzer::addLargePostings(std::string_view token)
 
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
-    chassert(token_info->ranges.size() == 1);
+    chassert(!token_info->ranges.empty());
     RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
@@ -439,12 +446,8 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
     });
 
     token_infos[token] = token_info;
-
     if (token_info->embedded_postings)
-    {
         tokens_with_postings.emplace(token);
-        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-    }
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
@@ -791,7 +794,6 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return false;
 
     auto intersection = query_builder.rows_range->intersectWith(*current_range);
-
     if (!intersection.has_value())
         return false;
 
@@ -1118,6 +1120,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
             info.offsets.emplace_back(0);
             info.ranges.emplace_back(postings->minimum(), postings->maximum());
             info.embedded_postings = std::move(postings);
+            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
     }
     else
