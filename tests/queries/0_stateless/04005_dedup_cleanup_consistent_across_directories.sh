@@ -21,8 +21,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${CLICKHOUSE_DATABASE}"
 
-TABLE_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dedup_cleanup/{shard}"
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dedup_cleanup;"
 
 $CLICKHOUSE_CLIENT --query="
@@ -31,7 +29,7 @@ CREATE TABLE dedup_cleanup (
     id UInt32,
     value String
 )
-ENGINE = ReplicatedMergeTree('$TABLE_PATH', '{replica}')
+ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dedup_cleanup/{shard}', '{replica}')
 PARTITION BY date
 ORDER BY (id)
 SETTINGS replicated_deduplication_window = 2, cleanup_delay_period=4, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;"
