@@ -33,6 +33,11 @@ public:
 
     void assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// Reloads all previously tried-to-load dictionaries in topological order
+    /// based on their source dependencies (dictionaries sourcing from other dictionaries).
+    /// Dictionaries within the same dependency level are reloaded in parallel.
+    void reloadAllTriedToLoadInOrder() const;
+
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
