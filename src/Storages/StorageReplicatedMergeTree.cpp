@@ -99,6 +99,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -116,6 +117,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
 
@@ -708,6 +710,15 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         all_required_replicas = &extended_list_of_replicas;
     }
 
+    /// Get the process list element to check for query cancellation while waiting.
+    QueryStatusPtr process_list_element;
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context)
+            process_list_element = query_context->getProcessListElement();
+    }
+
     std::set<String> inactive_replicas;
     for (const String & replica : *all_required_replicas)
     {
@@ -771,6 +782,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             {
                 LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id);
             }
+
+            /// Check if the query was cancelled while we were waiting.
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
 
             /// If mutation status is empty, than local replica may just not loaded it into memory.
             if (mutation_status && !mutation_status->latest_fail_reason.empty())
