@@ -1353,6 +1353,18 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
                                       || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
+    /// Count successfully processed files in a failed batch.
+    /// If the batch had multiple files, don't reduce retry counts:
+    /// the failure may have been caused by just one bad file.
+    /// The batch will be halved on the next iteration until the bad file is alone.
+    size_t processed_count = 0;
+    if (!insert_succeeded && reduce_retry_count)
+    {
+        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
+            if (file_state == FileState::Processed)
+                ++processed_count;
+    }
+
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
@@ -1393,7 +1405,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        reduce_retry_count);
+                        reduce_retry_count && processed_count <= 1);
                 }
                 break;
             }
@@ -1417,7 +1429,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    reduce_retry_count);
+                    reduce_retry_count && processed_count <= 1);
                 break;
             }
             case FileState::ErrorOnRead:
