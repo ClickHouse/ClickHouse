@@ -24,6 +24,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
@@ -3124,6 +3125,9 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
+                /// safeExit calls _exit, which bypasses static destructors and atexit handlers.
+                /// Explicitly clean up OpenSSL to avoid LeakSanitizer false positives.
+                OpenSSLInitializer::cleanup();
                 safeExit(0);
             }
         });
