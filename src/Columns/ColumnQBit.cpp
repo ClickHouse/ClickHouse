@@ -10,10 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_)
     : tuple(std::move(tuple_))
