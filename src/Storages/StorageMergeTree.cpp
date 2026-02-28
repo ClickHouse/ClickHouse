@@ -2740,8 +2740,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto merges_blocker = stopMergesAndWait();
-    auto operation_data_parts_lock_src = lockOperationsWithParts();
-    auto operation_data_parts_lock_dest = dest_table_storage->lockOperationsWithParts();
+
+    /// Lock both mutexes in a deadlock-free order to prevent potential deadlock
+    /// when two concurrent MOVE PARTITION operations work with the same pair of tables
+    /// in opposite directions (A→B and B→A).
+    /// This is equivalent to calling `lockOperationsWithParts` on both tables; see also MergeTreeData.h.
+    std::lock(operation_with_data_parts_mutex, dest_table_storage->operation_with_data_parts_mutex);
+    OperationDataPartsLock operation_data_parts_lock_src(operation_with_data_parts_mutex, std::adopt_lock);
+    OperationDataPartsLock operation_data_parts_lock_dest(dest_table_storage->operation_with_data_parts_mutex, std::adopt_lock);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
