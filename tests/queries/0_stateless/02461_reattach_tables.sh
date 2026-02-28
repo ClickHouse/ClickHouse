@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach, no-replicated-database
+# Tags: no-random-detach, no-replicated-database, no-parallel
 # no-random-detach: test uses DETACH/ATTACH itself
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
