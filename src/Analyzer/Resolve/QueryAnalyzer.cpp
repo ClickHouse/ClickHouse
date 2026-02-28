@@ -2927,7 +2927,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
         case QueryTreeNodeType::FUNCTION:
         {
-            auto function_projection_names = resolveFunction(node, scope);
+            auto function_projection_names = resolveFunction(node, scope, allow_niladic_functions);
 
             if (result_projection_names.empty() || node->getNodeType() == QueryTreeNodeType::LIST)
                 result_projection_names = std::move(function_projection_names);
