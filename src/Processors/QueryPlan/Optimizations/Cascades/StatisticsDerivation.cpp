@@ -120,6 +120,13 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     statistics.column_statistics.insert(right_statistics.column_statistics.begin(), right_statistics.column_statistics.end());
 
     Float64 join_selectivity = 1.0;
+
+    /// Columns already used in a predicate on each join side. A predicate that
+    /// reuses a column is redundant (implied by transitivity from a child join)
+    /// and should not contribute to selectivity.
+    std::unordered_set<String> left_bound_columns;
+    std::unordered_set<String> right_bound_columns;
+
     for (const auto & predicate_expression : join_step.getJoinOperator().expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
@@ -137,6 +144,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
             std::swap(left_column_actions, right_column_actions);
         const auto & left_column = left_column_actions.getColumnName();
         const auto & right_column = right_column_actions.getColumnName();
+
+        bool left_already_bound = !left_bound_columns.insert(left_column).second;
+        bool right_already_bound = !right_bound_columns.insert(right_column).second;
 
         auto left_column_statistics = left_statistics.column_statistics.find(left_column);
         auto right_column_statistics = right_statistics.column_statistics.find(right_column);
@@ -162,6 +172,14 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         /// NDV for join predicate columns can decrease if the other column has smaller NDV
         statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
         statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+
+        /// Predicate reuses a column already seen on one side — redundant for selectivity.
+        if (left_already_bound || right_already_bound)
+        {
+            LOG_TEST(log, "Predicate '{} = {}' is redundant (column already bound), skipping for selectivity",
+                left_column, right_column);
+            continue;
+        }
 
         LOG_TEST(log, "Predicate '{} = {}' selectivity: 1 / {}",
             left_column, right_column, 1.0 / predicate_selectivity);
