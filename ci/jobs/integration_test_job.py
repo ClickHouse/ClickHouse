@@ -652,6 +652,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
+    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
+    Shell.check("dmesg --clear", verbose=True)
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
