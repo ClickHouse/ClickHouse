@@ -1667,10 +1667,56 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     size_t max_step_description_length)
 {
     const auto & left_header = left_plan.getCurrentHeader();
-    const auto & right_header = right_plan.getCurrentHeader();
+    auto right_header = right_plan.getCurrentHeader();
 
     auto columns_from_left_table = left_header->getNamesAndTypesList();
     auto columns_from_right_table = right_header->getNamesAndTypesList();
+
+    /// Remove non-key right columns that overlap with left column names.
+    /// Such columns cause a count mismatch in `HashJoin::getNonJoinedBlocks` because
+    /// `AddedColumns` skips right columns matching left column names (deduplication),
+    /// but the assertion expects the arithmetic sum.
+    {
+        NameSet left_column_names;
+        for (const auto & col : columns_from_left_table)
+            left_column_names.insert(col.name);
+
+        NameSet right_key_names;
+        for (const auto & clause : table_join->getClauses())
+            for (const auto & key_name : clause.key_names_right)
+                right_key_names.insert(key_name);
+
+        bool has_overlapping = false;
+        for (const auto & col : columns_from_right_table)
+        {
+            if (left_column_names.contains(col.name) && !right_key_names.contains(col.name))
+            {
+                has_overlapping = true;
+                break;
+            }
+        }
+
+        if (has_overlapping)
+        {
+            ActionsDAG dag(right_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+            ActionsDAG::NodeRawConstPtrs updated_outputs;
+            for (const auto * output : dag.getOutputs())
+            {
+                if (!left_column_names.contains(output->result_name)
+                    || right_key_names.contains(output->result_name))
+                    updated_outputs.push_back(output);
+            }
+            dag.getOutputs() = std::move(updated_outputs);
+
+            auto step = std::make_unique<ExpressionStep>(
+                right_plan.getCurrentHeader(), std::move(dag));
+            step->setStepDescription("Remove columns overlapping with left side of JOIN");
+            right_plan.addStep(std::move(step));
+
+            right_header = right_plan.getCurrentHeader();
+            columns_from_right_table = right_header->getNamesAndTypesList();
+        }
+    }
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
