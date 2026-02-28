@@ -7,8 +7,6 @@
       "Bash(gh issue list:*)",
       "Bash(gh pr checks:*)",
       "Bash(gh pr diff:*)",
-      "Bash(gh issue comment:*)",
-      "Bash(gh api:*)",
       "Bash(gh search:*)",
       "WebFetch(domain:github.com)"
     ]
