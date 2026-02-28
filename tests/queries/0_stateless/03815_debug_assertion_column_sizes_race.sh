@@ -67,8 +67,8 @@ function thread_query_parts()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "SELECT * FROM system.parts FORMAT Null" >& /dev/null
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "SELECT * FROM system.parts_columns FORMAT Null" >& /dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "SELECT * FROM system.parts WHERE database = currentDatabase() FORMAT Null" >& /dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "SELECT * FROM system.parts_columns WHERE database = currentDatabase() FORMAT Null" >& /dev/null
     done
 }
 
