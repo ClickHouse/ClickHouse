@@ -4930,6 +4930,13 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
+    def stop_clickhouse_client(self, signal="INT"):
+        client_pid = self.get_process_pid("clickhouse client")
+        self.exec_in_container(
+            ["bash", "-c", f"kill -{signal} {client_pid}"],
+            user="root",
+        )
+
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None

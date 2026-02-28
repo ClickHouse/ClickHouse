@@ -7646,6 +7646,9 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
+    if (name.empty())
+        throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Empty part name");
+
     if (name.contains('/') || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 

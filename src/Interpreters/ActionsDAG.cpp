@@ -1725,6 +1725,26 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
     return addAlias(func, node.result_name);
 }
 
+void ActionsDAG::removeTrivialWrappers()
+{
+    auto is_trivial_wrapper = [](const Node * node)
+    {
+        return node->type == ActionType::FUNCTION && node->children.size() == 1
+            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
+    };
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            while (is_trivial_wrapper(child))
+                child = child->children[0];
+
+    for (auto *& output : outputs)
+        while (is_trivial_wrapper(output))
+            output = output->children[0];
+
+    removeUnusedActions();
+}
+
 ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
