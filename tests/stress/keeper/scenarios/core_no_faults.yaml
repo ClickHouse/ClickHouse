@@ -3,9 +3,10 @@ defaults:
   duration: 120
   topology: 3
 scenarios:
-- id: baseline-prod-mix-no-faults
-  name: Baseline — prod mix, no fault injection
-  description: Same workload as baseline-prod-mix but no network/disk delay. Clean run for baseline throughput and latency.
+# ─── Baselines ─────────────────────────────────────────────────────────────
+- id: prod-mix
+  name: Prod mix (no faults)
+  description: Full request mix (get, create, set, multi, list). Baseline for prod-mix-light.
   topology: 3
   duration: 120
   workload:
@@ -30,39 +31,40 @@ scenarios:
     - /e2e/prod
     - /e2e/prod/create
     - /e2e/prod/set
-- id: baseline-replay-no-faults
-  name: Replay — no fault injection
-  description: Same as baseline-replay but no faults. Compare with baseline-replay for replay path performance under stress.
-  topology: 3
-  duration: 120
-  workload:
-    config: workloads/prod_mix.yaml
-    replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
-  pre:
-  - kind: ensure_paths
-    'on': leader
-    paths:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-  faults: []
-  gates:
-  - type: single_leader
-  - type: error_rate_le
-    max_ratio: 0.5
-  - type: p99_le
-    max_ms: 200000
-  - type: log_sanity_ok
-  - type: print_summary
-  - type: mntr_print
-  - type: count_paths
-    prefixes:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-- id: workload-read-no-faults
-  name: Workload — read-only, no faults
-  description: Read-only (get 90%, list 10%). No fault injection. Compare with workload-read.
+# - id: replay
+#   name: Replay (no faults)
+#   description: Replay workload from parquet. Baseline for replay-light.
+#   topology: 3
+#   duration: 120
+#   workload:
+#     config: workloads/prod_mix.yaml
+#     replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
+#   pre:
+#   - kind: ensure_paths
+#     'on': leader
+#     paths:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+#   faults: []
+#   gates:
+#   - type: single_leader
+#   - type: error_rate_le
+#     max_ratio: 0.5
+#   - type: p99_le
+#     max_ms: 200000
+#   - type: log_sanity_ok
+#   - type: print_summary
+#   - type: mntr_print
+#   - type: count_paths
+#     prefixes:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+# ─── Workload variants ─────────────────────────────────────────────────────
+- id: read
+  name: Read-only (no faults)
+  description: get 90%, list 10%. Baseline for read-light.
   topology: 3
   duration: 120
   workload:
@@ -81,9 +83,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-write-no-faults
-  name: Workload — write-only, no faults
-  description: Write-only (create 60%, set 40%). No fault injection. Compare with workload-write.
+- id: write
+  name: Write-only (no faults)
+  description: create 60%, set 40%. Baseline for write-light.
   topology: 3
   duration: 120
   workload:
@@ -102,9 +104,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-read-multi-no-faults
-  name: Workload — MultiRead batching, no faults
-  description: Reads using MultiRead (batched get/list). No fault injection. Compare with workload-read-multi.
+- id: read-multi
+  name: MultiRead batching (no faults)
+  description: Batched get/list. Baseline for read-multi-light.
   topology: 3
   duration: 120
   workload:
@@ -126,9 +128,9 @@ scenarios:
   opts:
     feature_flags:
       multi_read: 1
-- id: workload-write-multi-no-faults
-  name: Workload — multi-op batches, no faults
-  description: Writes including batch multi (create/set in one batch). No fault injection. Compare with workload-write-multi.
+- id: write-multi
+  name: Multi-op batches (no faults)
+  description: Batch multi create/set. Baseline for write-multi-light.
   topology: 3
   duration: 120
   workload:
@@ -147,9 +149,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-list-heavy-no-faults
-  name: Workload — list-heavy, no faults
-  description: List-heavy (list 75%, get 25%). No fault injection. Compare with workload-list-heavy.
+- id: list-heavy
+  name: List-heavy (no faults)
+  description: list 75%, get 25%. Baseline for list-heavy-light.
   topology: 3
   duration: 120
   workload:
@@ -168,9 +170,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-churn-no-faults
-  name: Workload — churn, no faults
-  description: Create/remove churn (create 80%, set 20%, remove_factor 0.7). No fault injection. Compare with workload-churn.
+- id: churn
+  name: Churn (no faults)
+  description: create 80%, set 20%, remove_factor 0.7. Baseline for churn-light.
   topology: 3
   duration: 120
   workload:
@@ -189,9 +191,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-large-payload-no-faults
-  name: Workload — large payload, no faults
-  description: Large payload (1–4 KB values, prod mix). No fault injection. Compare with workload-large-payload.
+- id: large-payload
+  name: Large payload (no faults)
+  description: 1–4 KB values, prod mix. Baseline for large-payload-light.
   topology: 3
   duration: 120
   workload:
@@ -210,9 +212,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-single-hot-get-no-faults
-  name: Workload — single hot path, no faults
-  description: All reads on a single path (100% get). No fault injection. Compare with workload-single-hot-get.
+- id: single-hot-get
+  name: Single hot path (no faults)
+  description: 100% get on one path. Baseline for single-hot-get-light.
   topology: 3
   duration: 120
   workload:
@@ -231,9 +233,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-multi-large-no-faults
-  name: Workload — multi-large batches, no faults
-  description: Multi-only large batches (10–30 ops). No fault injection. Compare with workload-multi-large.
+- id: multi-large
+  name: Multi-large batches (no faults)
+  description: 10–30 ops per batch. Baseline for multi-large-light.
   topology: 3
   duration: 120
   workload:
@@ -252,9 +254,10 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: latency-multi-region-no-faults
-  name: Latency — prod mix baseline for multi-region comparison
-  description: Prod mix, no faults. Compare with latency-multi-region to see impact of follower latency.
+# ─── Latency baselines (shared by latency-* fault scenarios) ────────────────
+- id: prod-mix-120s
+  name: Prod mix 120s (latency baseline)
+  description: Baseline for latency-multi-region, latency-wan (120s fault runs).
   topology: 3
   duration: 120
   workload:
@@ -273,51 +276,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: latency-wan-variance-no-faults
-  name: Latency — prod mix baseline for WAN comparison
-  description: Prod mix, no faults. Compare with latency-wan-variance to see impact of delay/jitter/loss.
-  topology: 3
-  duration: 120
-  workload:
-    config: workloads/prod_mix.yaml
-  pre:
-  - kind: ensure_paths
-    'on': leader
-    paths:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-  faults: []
-  gates:
-  - type: single_leader
-  - type: error_rate_le
-  - type: p99_le
-  - type: log_sanity_ok
-  - type: print_summary
-- id: latency-jitter-no-faults
-  name: Latency — prod mix baseline for jitter comparison (180s)
-  description: Prod mix, no faults, 180s. Compare with latency-jitter.
-  topology: 3
-  duration: 180
-  workload:
-    config: workloads/prod_mix.yaml
-  pre:
-  - kind: ensure_paths
-    'on': leader
-    paths:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-  faults: []
-  gates:
-  - type: single_leader
-  - type: error_rate_le
-  - type: p99_le
-  - type: log_sanity_ok
-  - type: print_summary
-- id: latency-net-disk-combined-no-faults
-  name: Latency — prod mix baseline for net+disk comparison (180s)
-  description: Prod mix, no faults, 180s. Compare with latency-net-disk-combined.
+- id: prod-mix-180s
+  name: Prod mix 180s (latency baseline)
+  description: Baseline for latency-jitter, latency-net-disk (180s fault runs).
   topology: 3
   duration: 180
   workload:

@@ -3,9 +3,10 @@ defaults:
   duration: 120
   topology: 3
 scenarios:
-- id: baseline-prod-mix
-  name: Baseline — prod mix with light latency (netem + dm_delay)
-  description: Main regression test. Full request mix (get, create, set, multi, list) with small network and disk delay. Run after baseline-prod-mix-no-faults to check behavior under faults.
+# ─── Light latency (netem + dm_delay) — pair with core_no_faults ───────────
+- id: prod-mix-light
+  name: Prod mix (light latency)
+  description: Full request mix with netem 10ms + dm_delay 3ms. Pair with prod-mix.
   topology: 3
   duration: 120
   workload:
@@ -42,51 +43,51 @@ scenarios:
     - /e2e/prod
     - /e2e/prod/create
     - /e2e/prod/set
-- id: baseline-replay
-  name: Replay — with light latency (netem + dm_delay)
-  description: Same conditions as default regression but workload is replayed from a parquet file (recorded earlier). Checks replay path under faults.
-  topology: 3
-  duration: 120
-  workload:
-    config: workloads/prod_mix.yaml
-    replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
-  pre:
-  - kind: ensure_paths
-    'on': leader
-    paths:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-  faults:
-  - kind: netem
-    'on': all
-    delay_ms: 10
-    jitter_ms: 5
-    loss_pct: 0
-    duration_s: 120
-    target_parallel: true
-  - kind: dm_delay
-    'on': all
-    ms: 3
-    duration_s: 120
-    target_parallel: true
-  gates:
-  - type: single_leader
-  - type: error_rate_le
-    max_ratio: 0.5
-  - type: p99_le
-    max_ms: 200000
-  - type: log_sanity_ok
-  - type: print_summary
-  - type: mntr_print
-  - type: count_paths
-    prefixes:
-    - /e2e/prod
-    - /e2e/prod/create
-    - /e2e/prod/set
-- id: workload-read
-  name: Workload — read-only with light latency
-  description: Only read operations (get 90%, list 10%). Light network and disk delay.
+# - id: replay-light
+#   name: Replay (light latency)
+#   description: Replay from parquet with netem + dm_delay. Pair with replay.
+#   topology: 3
+#   duration: 120
+#   workload:
+#     config: workloads/prod_mix.yaml
+#     replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
+#   pre:
+#   - kind: ensure_paths
+#     'on': leader
+#     paths:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+#   faults:
+#   - kind: netem
+#     'on': all
+#     delay_ms: 10
+#     jitter_ms: 5
+#     loss_pct: 0
+#     duration_s: 120
+#     target_parallel: true
+#   - kind: dm_delay
+#     'on': all
+#     ms: 3
+#     duration_s: 120
+#     target_parallel: true
+#   gates:
+#   - type: single_leader
+#   - type: error_rate_le
+#     max_ratio: 0.5
+#   - type: p99_le
+#     max_ms: 200000
+#   - type: log_sanity_ok
+#   - type: print_summary
+#   - type: mntr_print
+#   - type: count_paths
+#     prefixes:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+- id: read-light
+  name: Read-only (light latency)
+  description: get 90%, list 10% with netem + dm_delay. Pair with read.
   topology: 3
   duration: 120
   workload:
@@ -117,9 +118,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-write
-  name: Workload — write-only with light latency
-  description: Only write operations (create 60%, set 40%). Light network and disk delay.
+- id: write-light
+  name: Write-only (light latency)
+  description: create 60%, set 40% with netem + dm_delay. Pair with write.
   topology: 3
   duration: 120
   workload:
@@ -150,9 +151,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-read-multi
-  name: Workload — MultiRead batching with light latency
-  description: Reads using MultiRead (batched get/list). Light network and disk delay.
+- id: read-multi-light
+  name: MultiRead (light latency)
+  description: Batched get/list with netem + dm_delay. Pair with read-multi.
   topology: 3
   duration: 120
   workload:
@@ -186,9 +187,9 @@ scenarios:
   opts:
     feature_flags:
       multi_read: 1
-- id: workload-write-multi
-  name: Workload — multi-op batches with light latency
-  description: Writes including batch multi (create/set in one batch). Light network and disk delay.
+- id: write-multi-light
+  name: Multi-op batches (light latency)
+  description: Batch multi with netem + dm_delay. Pair with write-multi.
   topology: 3
   duration: 120
   workload:
@@ -219,9 +220,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-list-heavy
-  name: Workload — list-heavy with light latency
-  description: Read workload dominated by list operations. Light network and disk delay.
+- id: list-heavy-light
+  name: List-heavy (light latency)
+  description: list 75%, get 25% with netem + dm_delay. Pair with list-heavy.
   topology: 3
   duration: 120
   workload:
@@ -252,9 +253,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-churn
-  name: Workload — churn with light latency
-  description: High create/remove churn with some set. Light network and disk delay.
+- id: churn-light
+  name: Churn (light latency)
+  description: create/remove churn with netem + dm_delay. Pair with churn.
   topology: 3
   duration: 120
   workload:
@@ -285,9 +286,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-large-payload
-  name: Workload — large payload with light latency
-  description: Same request mix as baseline but values 1–4 KB. Light network and disk delay.
+- id: large-payload-light
+  name: Large payload (light latency)
+  description: 1–4 KB values with netem + dm_delay. Pair with large-payload.
   topology: 3
   duration: 120
   workload:
@@ -318,9 +319,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-single-hot-get
-  name: Workload — single hot path with light latency
-  description: All reads on a single path. Light network and disk delay.
+- id: single-hot-get-light
+  name: Single hot path (light latency)
+  description: 100% get on one path with netem + dm_delay. Pair with single-hot-get.
   topology: 3
   duration: 120
   workload:
@@ -351,9 +352,9 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: workload-multi-large
-  name: Workload — multi-large batches with light latency
-  description: Only multi requests with 10–30 ops per batch. Light network and disk delay.
+- id: multi-large-light
+  name: Multi-large batches (light latency)
+  description: 10–30 ops/batch with netem + dm_delay. Pair with multi-large.
   topology: 3
   duration: 120
   workload:
@@ -384,9 +385,10 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
+# ─── Latency stress (specialized fault profiles) — pair with prod-mix-120s/180s ─
 - id: latency-multi-region
-  name: Latency — multi-region (followers far away)
-  description: Leader has low latency; followers have high latency. Simulates one datacenter region far from the others.
+  name: Latency — multi-region
+  description: Leader 10ms, followers 80ms (geo-distributed). Pair with prod-mix-120s.
   topology: 3
   duration: 120
   workload:
@@ -426,9 +428,9 @@ scenarios:
     max_ms: 5000
   - type: log_sanity_ok
   - type: print_summary
-- id: latency-wan-variance
-  name: Latency — WAN variance (delay + jitter + loss)
-  description: Prod mix with higher delay, jitter, and 2% loss. Verifiable latency/error budget.
+- id: latency-wan
+  name: Latency — WAN
+  description: 25ms delay, 7ms jitter, 2% loss. Pair with prod-mix-120s.
   topology: 3
   duration: 120
   workload:
@@ -460,8 +462,8 @@ scenarios:
   - type: log_sanity_ok
   - type: print_summary
 - id: latency-jitter
-  name: Latency — jitter (delay + jitter, no loss)
-  description: Prod mix with delay + jitter (no loss). Verifiable P95/P99 under jitter.
+  name: Latency — jitter
+  description: 20ms delay, 15ms jitter (no loss), 180s. Pair with prod-mix-180s.
   topology: 3
   duration: 180
   workload:
@@ -495,9 +497,9 @@ scenarios:
     max_ms: 3000
   - type: log_sanity_ok
   - type: print_summary
-- id: latency-net-disk-combined
-  name: Latency — network and disk delay combined (parallel)
-  description: Netem (network delay) and dm_delay (disk delay) run in parallel. Longer run (180 s).
+- id: latency-net-disk
+  name: Latency — net+disk
+  description: Netem + dm_delay parallel, 180s. Pair with prod-mix-180s.
   topology: 3
   duration: 180
   workload:

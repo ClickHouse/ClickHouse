@@ -19,6 +19,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: []
     name: "Config Workflow"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -61,6 +62,7 @@ jobs:
     runs-on: [self-hosted, style-checker]
     needs: [config_workflow]
     name: "Dockers Build (amd)"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -103,6 +105,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
     name: "Dockers Build (arm)"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -145,6 +148,7 @@ jobs:
     runs-on: [self-hosted, arm-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Vector Search Stress"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -188,6 +192,7 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, vector_search_stress]
     if: ${{ always() }}
     name: "Finish Workflow"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}

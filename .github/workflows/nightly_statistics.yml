@@ -19,6 +19,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: []
     name: "Config Workflow"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -61,6 +62,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
     name: "Collect Statistics"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
