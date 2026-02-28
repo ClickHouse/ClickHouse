@@ -189,6 +189,19 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     }
 
     statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
+
+    /// Use the join order optimizer's cardinality as a lower bound — it handles
+    /// correlated predicates (e.g. composite FK joins) better than multiplicative independence.
+    if (auto hint = join_step.getResultRowsEstimation())
+    {
+        if (Float64(*hint) > statistics.estimated_row_count)
+        {
+            LOG_TEST(log, "Using join order optimizer hint: {} rows (multiplicative estimate was {})",
+                *hint, statistics.estimated_row_count);
+            statistics.estimated_row_count = Float64(*hint);
+        }
+    }
+
     statistics.estimated_bytes_per_row = left_statistics.estimated_bytes_per_row + right_statistics.estimated_bytes_per_row;
 
     for (auto & column_statistics : statistics.column_statistics)
