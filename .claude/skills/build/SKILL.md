@@ -113,7 +113,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
    **ALWAYS use Task tool to analyze results** (both success and failure):
    - Use Task tool with `subagent_type=general-purpose` to analyze the build output
    - **Pass the log file path from step 2a** to the Task agent - let it read the file directly
-   - Example Task prompt: "Read and analyze the build output from: build/build_output.log"
+   - Example Task prompt: "Read and analyze the build output from: [build_directory]/build_output.log"
    - The Task agent should read the file and provide:
 
      **If build succeeds:**
