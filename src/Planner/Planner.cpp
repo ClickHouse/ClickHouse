@@ -1594,6 +1594,19 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findTableForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options))))
 {
+    const auto & context = planner_context->getQueryContext();
+    const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Setting 'allow_experimental_parallel_reading_from_replicas' is enabled but 'automatic_parallel_replicas_mode' is enabled."
+            "To enforce use of parallel replicas please disable 'automatic_parallel_replicas_mode'.");
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    }
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -1829,18 +1842,6 @@ void Planner::buildPlanForQueryNode()
                 break;
             }
         }
-    }
-
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
-        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings[Setting::automatic_parallel_replicas_mode] != 0 && !select_query_options.is_part_of_insert_select)
-    {
-        LOG_DEBUG(
-            log,
-            "Setting 'allow_experimental_parallel_reading_from_replicas' is enabled but 'automatic_parallel_replicas_mode' is enabled."
-            "To enforce use of parallel replicas please disable 'automatic_parallel_replicas_mode'.");
-        auto & mutable_context = planner_context->getMutableQueryContext();
-        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 
     if (!settings[Setting::parallel_replicas_custom_key].value.empty())

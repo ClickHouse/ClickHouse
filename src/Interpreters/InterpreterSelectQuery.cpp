@@ -533,6 +533,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , metadata_snapshot(metadata_snapshot_)
     , prepared_sets(prepared_sets_)
 {
+    const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Setting 'allow_experimental_parallel_reading_from_replicas' is enabled but 'automatic_parallel_replicas_mode' is enabled."
+            "To enforce use of parallel replicas please disable 'automatic_parallel_replicas_mode'.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    }
+
     checkStackSize();
 
     if (!prepared_sets)
@@ -541,7 +553,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     query_info.is_internal = options.is_internal;
 
     initSettings();
-    const Settings & settings = context->getSettingsRef();
 
     if (settings[Setting::max_subquery_depth] && options.subquery_depth > settings[Setting::max_subquery_depth])
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", settings[Setting::max_subquery_depth].toString());
@@ -639,17 +650,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
         }
-    }
-
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
-        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings[Setting::automatic_parallel_replicas_mode] != 0 /* && !options.is_part_of_insert_select*/)
-    {
-        LOG_DEBUG(
-            log,
-            "Setting 'allow_experimental_parallel_reading_from_replicas' is enabled but 'automatic_parallel_replicas_mode' is enabled."
-            "To enforce use of parallel replicas please disable 'automatic_parallel_replicas_mode'.");
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 
     /// Check support for parallel replicas for non-replicated storage (plain MergeTree)

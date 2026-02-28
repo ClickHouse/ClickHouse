@@ -74,6 +74,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool async_query_sending_for_remote;
@@ -115,8 +116,6 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_destination(no_destination_)
     , async_insert(async_insert_)
 {
-    getContext()->setSetting("automatic_parallel_replicas_mode", Field{0});
-
     checkStackSize();
     if (auto quota = getContext()->getQuota())
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
@@ -142,12 +141,6 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         {
             SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-            // select_query_options.is_part_of_insert_select = true;
-            {
-                auto ctx = Context::createCopy(current_context);
-                ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
-                current_context = ctx;
-            }
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -353,11 +346,8 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
 static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
-    // select_query_options.is_part_of_insert_select = true;
-    auto ctx = Context::createCopy(context);
-    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
 
-    InterpreterSelectQueryAnalyzer interpreter(select, ctx, select_query_options);
+    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
     /// Find reading steps for remote replicas and remove them,
@@ -582,12 +572,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        {
-            auto ctx = Context::createCopy(select_context);
-            ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
-            select_context = ctx;
-        }
-        // select_query_options.is_part_of_insert_select = true;
 
         const Settings & settings = select_context->getSettingsRef();
         if (settings[Setting::allow_experimental_analyzer])
@@ -951,11 +935,25 @@ BlockIO InterpreterInsertQuery::execute()
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-            if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
+            if (!res.pipeline.initialized())
             {
-                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
-                if (pipeline)
-                    res.pipeline = std::move(*pipeline);
+                /// For INSERT SELECT, we want to use parallel replicas regardless of automatic_parallel_replicas_mode.
+                /// Temporarily suppress automatic_parallel_replicas_mode so that canUseParallelReplicasOnInitiator returns true.
+                auto saved_automatic_mode = settings[Setting::automatic_parallel_replicas_mode];
+                if (saved_automatic_mode != 0)
+                    context->setSetting("automatic_parallel_replicas_mode", Field{0});
+
+                if (context->canUseParallelReplicasOnInitiator())
+                {
+                    auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+                    if (pipeline)
+                        res.pipeline = std::move(*pipeline);
+                }
+
+                /// Restore automatic_parallel_replicas_mode for the fallback path (buildInsertSelectPipeline),
+                /// so the Planner can properly decide whether to use parallel replicas.
+                if (saved_automatic_mode != 0)
+                    context->setSetting("automatic_parallel_replicas_mode", Field{saved_automatic_mode});
             }
         }
         if (!res.pipeline.initialized())
