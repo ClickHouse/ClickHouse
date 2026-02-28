@@ -672,6 +672,18 @@ getColumnsForNewDataPart(
     {
         if (updated_header.has(it->name))
         {
+            /// If the column is in `updated_header` but not in the source part,
+            /// and the mutation doesn't affect all columns, then `MutateSomePartColumnsTask`
+            /// will be used - it only writes mutated columns and hardlinks the rest.
+            /// A column absent from the source part can be neither hardlinked nor written,
+            /// so it would end up declared in the part metadata with no data files on disk.
+            /// Erase it here; schema-on-read will fill in defaults at query time.
+            if (!source_columns_name_to_type.contains(it->name) && !affects_all_columns)
+            {
+                it = storage_columns.erase(it);
+                continue;
+            }
+
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
                 it->type = updated_type;
