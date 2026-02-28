@@ -36,11 +36,6 @@
 //  that compress dramatically better with a subsequent codec like LZ4
 //  or ZSTD.
 //
-//  This is the same transform used by Apache Parquet/Arrow's
-//  BYTE_STREAM_SPLIT encoding and is especially effective for:
-//    - Floating point: Float32, Float64
-//    - Fixed-width types: UUID, IPv6, Decimal128, FixedString
-//    - Any type where adjacent elements share byte-level structure
 // =============================================================================
 // =============================================================================
 //  Throughput reference (GB/s)
@@ -114,31 +109,23 @@ namespace ErrorCodes
 namespace
 {
 
-// Maximum element width in bytes. Enforced at codec registration.
-// Fits in UInt8, so 255 is the hard ceiling.
 static constexpr int MAX_ELEMENT_WIDTH = 255;
 
 // =============================================================================
-//  W=16 SIMD intrinsics — SSE2 butterfly transpose (encode + decode)
+//  W=16 SSE2 butterfly transpose
+//
+//  16×16 byte matrix transpose using 3 stages of unpack operations:
+//    stage 1: unpacklo/hi epi8  → interleave byte pairs
+//    stage 2: unpacklo/hi epi16 → interleave 16-bit groups
+//    stage 3: unpacklo/hi epi32 → interleave 32-bit groups
+//  Final epi64 unpack is deferred to storeRows/storeBands.
 // =============================================================================
 
 #ifdef __x86_64__
 
-/// Performs a 16×16 byte matrix transpose using the SSE2 unpack butterfly.
-///
-/// Each input register R[i] holds 16 bytes representing one element (row).
-/// After the butterfly, V[b] holds byte-position b from all 16 elements —
-/// i.e. the rows and columns are swapped.
-///
-/// The butterfly works in 3 stages of unpack operations:
-///   stage 1: unpacklo/hi epi8  → interleave byte pairs
-///   stage 2: unpacklo/hi epi16 → interleave 16-bit groups
-///   stage 3: unpacklo/hi epi32 → interleave 32-bit groups
-/// A final epi64 unpack in storeRows/storeBands completes the last stage.
 __attribute__((target("sse2")))
 static inline void butterfly16(const __m128i R[16], __m128i V[16])
 {
-    // Stage 1: interleave adjacent rows at byte granularity
     __m128i T[16];
     for (int k = 0; k < 8; ++k)
     {
@@ -146,7 +133,6 @@ static inline void butterfly16(const __m128i R[16], __m128i V[16])
         T[2 * k + 1] = _mm_unpackhi_epi8(R[2 * k], R[2 * k + 1]);
     }
 
-    // Stage 2: interleave at 16-bit granularity
     __m128i U[16];
     U[0]  = _mm_unpacklo_epi16(T[0],  T[2]);
     U[1]  = _mm_unpackhi_epi16(T[0],  T[2]);
@@ -165,7 +151,6 @@ static inline void butterfly16(const __m128i R[16], __m128i V[16])
     U[14] = _mm_unpacklo_epi16(T[13], T[15]);
     U[15] = _mm_unpackhi_epi16(T[13], T[15]);
 
-    // Stage 3: interleave at 32-bit granularity
     V[0]  = _mm_unpacklo_epi32(U[0],  U[2]);
     V[1]  = _mm_unpackhi_epi32(U[0],  U[2]);
     V[2]  = _mm_unpacklo_epi32(U[1],  U[3]);
@@ -182,11 +167,10 @@ static inline void butterfly16(const __m128i R[16], __m128i V[16])
     V[13] = _mm_unpackhi_epi32(U[12], U[14]);
     V[14] = _mm_unpacklo_epi32(U[13], U[15]);
     V[15] = _mm_unpackhi_epi32(U[13], U[15]);
-    // Final epi64 stage is deferred to the store helpers below
 }
 
-/// Write butterfly output as 16 contiguous rows of 16 bytes each (decode path).
-/// Completes the final epi64 butterfly stage inline during store.
+/// Write butterfly output as 16 contiguous rows (decode path).
+/// Completes the deferred epi64 stage inline.
 __attribute__((target("sse2")))
 static inline void storeRows(const __m128i V[16], uint8_t * base)
 {
@@ -198,8 +182,7 @@ static inline void storeRows(const __m128i V[16], uint8_t * base)
 }
 
 /// Write butterfly output into 16 separate byte-stream band pointers (encode path).
-/// Each band w[b] receives the bytes from position b across all elements.
-/// Completes the final epi64 butterfly stage inline during store.
+/// Completes the deferred epi64 stage inline.
 __attribute__((target("sse2")))
 static inline void storeBands(const __m128i V[16], uint8_t * w[16], int64_t col)
 {
@@ -211,13 +194,9 @@ static inline void storeBands(const __m128i V[16], uint8_t * w[16], int64_t col)
 }
 
 // =============================================================================
-//  AVX2 encode for W=16: 4-stage deinterleave, processes 32 rows at a time
+//  AVX2 encode for W=16: 4-stage even/odd byte deinterleave, 32 rows at a time
 // =============================================================================
 
-/// Split one 256-bit register pair into even-indexed and odd-indexed bytes.
-/// Used as one stage of the W=16 encode: separates byte positions 0,2,4,...
-/// from 1,3,5,... across two input vectors, then packs and lane-fixes them.
-/// Similar role to one level of the SSE2 butterfly, but operates on 32 rows.
 __attribute__((target("avx2")))
 static inline void splitEvenOddBytes(
     __m256i a, __m256i b,
@@ -228,14 +207,11 @@ static inline void splitEvenOddBytes(
     __m256i a_odd  = _mm256_srli_epi16(a, 8);
     __m256i b_even = _mm256_and_si256(b, mask);
     __m256i b_odd  = _mm256_srli_epi16(b, 8);
-    // pack pairs back to bytes, then fix AVX2 lane ordering
+    // permute4x64 fixes AVX2 cross-lane ordering after packus
     even_out = _mm256_permute4x64_epi64(_mm256_packus_epi16(a_even, b_even), 0xD8);
     odd_out  = _mm256_permute4x64_epi64(_mm256_packus_epi16(a_odd,  b_odd),  0xD8);
 }
 
-/// AVX2 encode for W=16. Processes 32 elements per iteration using 4 stages
-/// of splitEvenOddBytes to fully separate all 16 byte positions.
-/// Falls back to scalar loop for the remaining < 32 elements.
 __attribute__((target("avx2")))
 static void encode16_AVX2(
     const uint8_t * __restrict__ src,
@@ -249,24 +225,21 @@ static void encode16_AVX2(
     {
         const uint8_t * s = src + i * 16;
 
-        // Load 32 elements × 16 bytes = 16 AVX2 registers of 32 bytes each
         __m256i r[16];
         for (int k = 0; k < 16; ++k)
             r[k] = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s + k * 32));
 
-        // Stage 1: separate byte positions 0,2,4,... from 1,3,5,...
+        // 4 stages of splitEvenOddBytes fully separate all 16 byte positions
         __m256i s1[16];
         for (int k = 0; k < 8; ++k)
             splitEvenOddBytes(r[2 * k], r[2 * k + 1], s1[k], s1[k + 8], mask);
 
-        // Stage 2: further separate into groups of 4
         __m256i s2[16];
         for (int k = 0; k < 4; ++k)
             splitEvenOddBytes(s1[2 * k], s1[2 * k + 1], s2[k], s2[k + 4], mask);
         for (int k = 0; k < 4; ++k)
             splitEvenOddBytes(s1[8 + 2 * k], s1[8 + 2 * k + 1], s2[8 + k], s2[8 + k + 4], mask);
 
-        // Stage 3: further separate into groups of 2
         __m256i s3[16];
         for (int k = 0; k < 2; ++k)
             splitEvenOddBytes(s2[2 * k], s2[2 * k + 1], s3[k], s3[k + 2], mask);
@@ -277,31 +250,26 @@ static void encode16_AVX2(
         for (int k = 0; k < 2; ++k)
             splitEvenOddBytes(s2[12 + 2 * k], s2[12 + 2 * k + 1], s3[12 + k], s3[12 + k + 2], mask);
 
-        // Stage 4: final separation — each out[k] is one complete byte-stream
         __m256i out[16];
         for (int g = 0; g < 8; ++g)
             splitEvenOddBytes(s3[2 * g], s3[2 * g + 1], out[g], out[g + 8], mask);
 
-        // The 4-stage butterfly produces streams in a bit-reversal permuted order.
-        // band_of[k] maps output register k to its correct byte-stream index.
+        // The 4-stage butterfly produces streams in bit-reversal permuted order
         static const int band_of[16] = {0, 4, 2, 6, 1, 5, 3, 7, 8, 12, 10, 14, 9, 13, 11, 15};
         for (int k = 0; k < 16; ++k)
             _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + static_cast<int64_t>(band_of[k]) * N + i), out[k]);
     }
     _mm256_zeroupper();
 
-    // Scalar tail: same as encodeW<16> scalar path
     for (; i < N; ++i)
         for (int b = 0; b < 16; ++b)
             dst[static_cast<int64_t>(b) * N + i] = src[i * 16 + b];
 }
 
 // =============================================================================
-//  SSE2 encode for W=16: butterfly transpose, 16 rows at a time
+//  SSE2 encode/decode for W=16
 // =============================================================================
 
-/// SSE2 encode for W=16. Processes 16 elements per iteration via butterfly16.
-/// Falls back to scalar loop for the remaining < 16 elements.
 __attribute__((target("sse2")))
 static void encode16_SSE2(
     const uint8_t * __restrict__ src,
@@ -311,19 +279,16 @@ static void encode16_SSE2(
     int64_t i = 0;
     for (; i + 16 <= N; i += 16)
     {
-        // Load 16 elements, one per register
         __m128i R[16], V[16];
         for (int k = 0; k < 16; ++k)
             R[k] = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + (i + k) * 16));
         butterfly16(R, V);
 
-        // Write each transposed column into its byte-stream band
         uint8_t * w[16];
         for (int b = 0; b < 16; ++b)
             w[b] = dst + static_cast<int64_t>(b) * N;
         storeBands(V, w, i);
     }
-    // Scalar tail: same as encodeW<16> scalar path
     for (; i < N; ++i)
         for (int b = 0; b < 16; ++b)
             dst[static_cast<int64_t>(b) * N + i] = src[i * 16 + b];
@@ -333,16 +298,12 @@ static void encode16_SSE2(
 //  AVX2 decode for W=16: load 256-bit bands, split to 2×butterfly16
 // =============================================================================
 
-/// AVX2 decode for W=16. Loads 32 elements worth of band data per iteration,
-/// splits into two 16-element halves, and runs butterfly16 on each half.
-/// Falls back to scalar loop for the remaining < 32 elements.
 __attribute__((target("avx2")))
 static void decode16_AVX2(
     const uint8_t * __restrict__ src,
     uint8_t       * __restrict__ dst,
     int64_t N)
 {
-    // One pointer per byte-stream band
     const uint8_t * r[16];
     for (int b = 0; b < 16; ++b)
         r[b] = src + static_cast<int64_t>(b) * N;
@@ -350,7 +311,7 @@ static void decode16_AVX2(
     int64_t i = 0;
     for (; i + 32 <= N; i += 32)
     {
-        // Load 32 bytes from each band, split into low/high 16-byte halves
+        // Load 32 bytes from each band, split into low/high halves for butterfly16
         __m128i Lo[16], Hi[16], VL[16], VH[16];
         for (int b = 0; b < 16; ++b)
         {
@@ -358,7 +319,6 @@ static void decode16_AVX2(
             Lo[b] = _mm256_castsi256_si128(tmp);
             Hi[b] = _mm256_extracti128_si256(tmp, 1);
         }
-        // Butterfly each half independently, write 16 restored elements each
         butterfly16(Lo, VL);
         storeRows(VL, dst + i * 16);
         butterfly16(Hi, VH);
@@ -366,25 +326,17 @@ static void decode16_AVX2(
     }
     _mm256_zeroupper();
 
-    // Scalar tail: same as decodeW<16> scalar path
     for (; i < N; ++i)
         for (int b = 0; b < 16; ++b)
             dst[i * 16 + b] = r[b][i];
 }
 
-// =============================================================================
-//  SSE2 decode for W=16: butterfly transpose, 16 rows at a time
-// =============================================================================
-
-/// SSE2 decode for W=16. Processes 16 elements per iteration via butterfly16.
-/// Falls back to scalar loop for the remaining < 16 elements.
 __attribute__((target("sse2")))
 static void decode16_SSE2(
     const uint8_t * __restrict__ src,
     uint8_t       * __restrict__ dst,
     int64_t N)
 {
-    // One pointer per byte-stream band
     const uint8_t * r[16];
     for (int b = 0; b < 16; ++b)
         r[b] = src + static_cast<int64_t>(b) * N;
@@ -392,14 +344,12 @@ static void decode16_SSE2(
     int64_t i = 0;
     for (; i + 16 <= N; i += 16)
     {
-        // Load 16 bytes from each band (one element per band position)
         __m128i R[16], V[16];
         for (int b = 0; b < 16; ++b)
             R[b] = _mm_loadu_si128(reinterpret_cast<const __m128i *>(r[b] + i));
         butterfly16(R, V);
         storeRows(V, dst + i * 16);
     }
-    // Scalar tail: same as decodeW<16> scalar path
     for (; i < N; ++i)
         for (int b = 0; b < 16; ++b)
             dst[i * 16 + b] = r[b][i];
@@ -411,9 +361,8 @@ static void decode16_SSE2(
 //  Encode helpers
 // =============================================================================
 
-/// Scalar encode for compile-time-known element width W.
-/// Scatters byte b of element i into stream b at offset i.
-/// The compiler fully unrolls the inner loop since W is a compile-time constant.
+/// Encode for compile-time-known element width W.
+/// Performance depends heavily on the compiler's auto-vectorizer.
 template <int W>
 ALWAYS_INLINE void encodeW(
     const char * __restrict__ src,
@@ -426,8 +375,6 @@ ALWAYS_INLINE void encodeW(
 }
 
 /// W=16 specialisation: dispatches to AVX2 > SSE2 > scalar fallback.
-/// The scalar fallback packs 8 scattered bytes into a uint64_t per write,
-/// same idea as encodeRuntime but unrolled for W=16.
 template <>
 ALWAYS_INLINE void encodeW<16>(
     const char * __restrict__ src,
@@ -450,8 +397,8 @@ ALWAYS_INLINE void encodeW<16>(
     }
 #endif
 
-    // Scalar fallback: packs 8 elements at a time into uint64_t to reduce
-    // store count — same strategy as encodeRuntime, manually unrolled for W=16.
+    // Fallback: packs 8 scattered bytes into a uint64_t per write
+    // to reduce store count.
     if constexpr (std::endian::native == std::endian::little)
     {
         auto u8 = [](uint8_t v) -> uint64_t { return v; };
@@ -479,17 +426,15 @@ ALWAYS_INLINE void encodeW<16>(
     }
     else
     {
-        // Big-endian: uint64_t packing would reverse byte order, use plain scalar
+        // Big-endian: uint64_t packing would reverse byte order
         for (int64_t i = 0; i < num_elements; ++i)
             for (int64_t b = 0; b < 16; ++b)
                 d[b * num_elements + i] = s[i * 16 + b];
     }
 }
 
-/// Runtime-W encode for element widths not handled by encodeW<W> specialisations
-/// (i.e. W != 2, 4, 8, 16). Processes 16 elements per outer iteration, packing
-/// each byte stream into two uint64_t writes to reduce scatter store overhead.
-/// Falls back to plain scalar loop for the remaining < 8 elements.
+/// Runtime-W encode for widths not handled by encodeW<W> specialisations.
+/// Performance depends heavily on the compiler's auto-vectorizer.
 ALWAYS_INLINE void encodeRuntime(
     const char * __restrict__ src,
     char       * __restrict__ dst,
@@ -504,7 +449,6 @@ ALWAYS_INLINE void encodeRuntime(
         auto u8 = [](unsigned char v) -> uint64_t { return v; };
 
         int64_t i = 0;
-        // Main loop: 16 elements at a time, two 8-element uint64_t packs per stream
         for (; i + 16 <= num_elements; i += 16)
         {
             for (int64_t b = 0; b < W; ++b)
@@ -532,7 +476,6 @@ ALWAYS_INLINE void encodeRuntime(
                 memcpy(d + b * num_elements + i + 8, &hi, 8);
             }
         }
-        // Middle chunk: 8 elements at a time, one uint64_t pack per stream
         for (; i + 8 <= num_elements; i += 8)
         {
             for (int64_t b = 0; b < W; ++b)
@@ -550,14 +493,13 @@ ALWAYS_INLINE void encodeRuntime(
                 memcpy(d + b * num_elements + i, &r, 8);
             }
         }
-        // Scalar tail: plain scatter, same as encodeW<W> inner loop
         for (; i < num_elements; ++i)
             for (int64_t b = 0; b < W; ++b)
                 d[b * num_elements + i] = s[i * W + b];
     }
     else
     {
-        // Big-endian: uint64_t packing would reverse byte order, use plain scalar
+        // Big-endian: uint64_t packing would reverse byte order
         for (int64_t i = 0; i < num_elements; ++i)
             for (int64_t b = 0; b < W; ++b)
                 d[b * num_elements + i] = s[i * W + b];
@@ -568,9 +510,8 @@ ALWAYS_INLINE void encodeRuntime(
 //  Decode helpers
 // =============================================================================
 
-/// Scalar decode for compile-time-known element width W.
-/// Gathers byte b of element i from stream b at offset i.
-/// The compiler fully unrolls the inner loop since W is a compile-time constant.
+/// Decode for compile-time-known element width W.
+/// Performance depends heavily on the compiler's auto-vectorizer.
 template <int W>
 ALWAYS_INLINE void decodeW(
     const char * __restrict__ src,
@@ -583,9 +524,6 @@ ALWAYS_INLINE void decodeW(
 }
 
 /// W=16 specialisation: dispatches to AVX2 > SSE2 > scalar fallback.
-/// The scalar fallback uses a 16×16 tile buffer to improve cache behaviour,
-/// similar to a cache-oblivious transpose — reads 16 bytes per band
-/// contiguously, transposes into the tile, then writes 16 contiguous rows.
 template <>
 ALWAYS_INLINE void decodeW<16>(
     const char * __restrict__ src,
@@ -608,8 +546,8 @@ ALWAYS_INLINE void decodeW<16>(
     }
 #endif
 
-    // Scalar fallback: tiled 16×16 gather into a local buffer,
-    // then write 16 contiguous output rows per tile.
+    // Fallback: tiled 16×16 gather into a local buffer to improve
+    // cache locality vs the naive scattered-read loop.
     alignas(32) uint8_t tile[16 * 16];
     const int64_t T = num_elements / 16;
     for (int64_t t = 0; t < T; ++t)
@@ -621,16 +559,13 @@ ALWAYS_INLINE void decodeW<16>(
             memcpy(d + (t * 16 + i) * 16, &tile[i * 16], 16);
     }
 
-    // Scalar tail: plain gather for remaining elements (same as decodeW<W> loop)
     for (int64_t i = T * 16; i < num_elements; ++i)
         for (int b = 0; b < 16; ++b)
             d[i * 16 + b] = s[static_cast<int64_t>(b) * num_elements + i];
 }
 
-/// Runtime-W decode for element widths not handled by decodeW<W> specialisations.
-/// Processes 8 elements per outer iteration: loads 8 bytes from each of the W
-/// byte-stream bands into a local array, then unpacks all 8 elements from it.
-/// Falls back to plain scalar loop for the remaining < 8 elements.
+/// Runtime-W decode for widths not handled by decodeW<W> specialisations.
+/// Performance depends heavily on the compiler's auto-vectorizer.
 ALWAYS_INLINE void decodeRuntime(
     const char * __restrict__ src,
     char       * __restrict__ dst,
@@ -643,11 +578,8 @@ ALWAYS_INLINE void decodeRuntime(
     if constexpr (std::endian::native == std::endian::little)
     {
         int64_t i = 0;
-        // Main loop: gather 8 bytes from each of the W bands into a uint64_t,
-        // then unpack byte-by-byte into 8 consecutive output elements.
         for (; i + 8 <= num_elements; i += 8)
         {
-            // One uint64_t per byte stream holds 8 gathered bytes
             uint64_t streams[MAX_ELEMENT_WIDTH];
             for (int64_t b = 0; b < W; ++b)
                 memcpy(&streams[b], s + b * num_elements + i, 8);
@@ -658,14 +590,13 @@ ALWAYS_INLINE void decodeRuntime(
                     elem[b] = static_cast<unsigned char>(streams[b] >> (ei * 8));
             }
         }
-        // Scalar tail: plain gather, same as decodeW<W> inner loop
         for (; i < num_elements; ++i)
             for (int64_t b = 0; b < W; ++b)
                 d[i * W + b] = s[b * num_elements + i];
     }
     else
     {
-        // Big-endian: uint64_t shift extraction would reverse byte order, use plain scalar
+        // Big-endian: uint64_t shift extraction would reverse byte order
         for (int64_t i = 0; i < num_elements; ++i)
             for (int64_t b = 0; b < W; ++b)
                 d[i * W + b] = s[b * num_elements + i];
@@ -675,14 +606,12 @@ ALWAYS_INLINE void decodeRuntime(
 // =============================================================================
 //  Top-level encode / decode dispatchers
 //
-//  Dispatch strategy:
-//    W == 2, 4, 8  → encodeW<W>/decodeW<W>: compile-time unrolled scalar loop
-//    W == 16       → encodeW<16>/decodeW<16>: AVX2 > SSE2 > tiled scalar
+//  Dispatch Table:
+//    W == 2, 4, 8  → encodeW<W>/decodeW<W>: compile-time unrolled
+//    W == 16       → encodeW<16>/decodeW<16>: AVX2 > SSE2 > tiled fallback
 //    W == other    → encodeRuntime/decodeRuntime: runtime-W uint64_t batching
 // =============================================================================
 
-/// Selects the encode path for the given element width.
-/// Called once per compressed block; actual work is in the helpers above.
 MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
 MULTITARGET_FUNCTION_HEADER(
 void), encodeDispatch, MULTITARGET_FUNCTION_BODY((
@@ -702,8 +631,6 @@ void), encodeDispatch, MULTITARGET_FUNCTION_BODY((
 })
 )
 
-/// Top-level encode entry point. Picks the best ISA variant via
-/// USE_MULTITARGET_CODE dispatch, then falls through to encodeDispatch.
 ALWAYS_INLINE void encode(
     const char * src,
     char       * dst,
@@ -735,8 +662,6 @@ ALWAYS_INLINE void encode(
     encodeDispatch(src, dst, num_elements, element_bytes);
 }
 
-/// Selects the decode path for the given element width.
-/// Called once per decompressed block; actual work is in the helpers above.
 MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
 MULTITARGET_FUNCTION_HEADER(
 void), decodeDispatch, MULTITARGET_FUNCTION_BODY((
@@ -756,8 +681,6 @@ void), decodeDispatch, MULTITARGET_FUNCTION_BODY((
 })
 )
 
-/// Top-level decode entry point. Picks the best ISA variant via
-/// USE_MULTITARGET_CODE dispatch, then falls through to decodeDispatch.
 ALWAYS_INLINE void decode(
     const char * src,
     char       * dst,
@@ -874,18 +797,17 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
         return 0;
 
     UInt8 saved_element_bytes = static_cast<UInt8>(source[0]);
-    UInt8 bytes_to_skip       = static_cast<UInt8>(source[1]);
 
-    if (saved_element_bytes == 0)
+    UInt8 bytes_to_skip;
+
+    if (saved_element_bytes < 2)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: invalid element size 0 in header");
+            "Cannot decompress ByteStreamSplit-encoded data: invalid element size {} in header "
+            "(must be at least 2)",
+            static_cast<UInt32>(saved_element_bytes));
 
-    if (bytes_to_skip >= saved_element_bytes)
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: bytes_to_skip ({}) >= element_bytes ({})",
-            static_cast<UInt32>(bytes_to_skip), static_cast<UInt32>(saved_element_bytes));
+    bytes_to_skip = uncompressed_size % saved_element_bytes;
 
     if (source_size < static_cast<UInt32>(HEADER_SIZE + bytes_to_skip))
         throw Exception(
@@ -899,6 +821,14 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
 
     if (aligned_uncompressed == 0)
         return bytes_to_skip;
+
+    UInt32 body_size = source_size - HEADER_SIZE - bytes_to_skip;
+    if (body_size < aligned_uncompressed)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress ByteStreamSplit-encoded data: source body size ({}) "
+            "is smaller than expected aligned uncompressed size ({})",
+            body_size, aligned_uncompressed);
 
     if (aligned_uncompressed % saved_element_bytes != 0)
         throw Exception(
