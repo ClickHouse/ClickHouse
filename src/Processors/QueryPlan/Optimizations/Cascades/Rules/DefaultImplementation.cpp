@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -70,11 +71,18 @@ bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const Ex
         && typeid_cast<JoinStepLogical *>(step) == nullptr;
 }
 
-std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+/// Create a single implementation expression at the given distribution.
+/// Returns the expression, or nullptr if the step has construction-time sorting
+/// that conflicts with multi-node distribution.
+static GroupExpressionPtr createImplementationAtDistribution(
+    const GroupExpressionPtr & expression,
+    const ExpressionProperties & required_properties,
+    const DistributionDescription & distribution,
+    const IOptimizationRule & rule)
 {
     auto implementation_expression = std::make_shared<GroupExpression>(*expression);
     implementation_expression->plan_step->setStepDescription(*expression->plan_step);
-    implementation_expression->setApplied(*this, required_properties);
+    implementation_expression->setApplied(rule, required_properties);
 
     bool propagate_distribution = true;
 
@@ -83,19 +91,10 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
         auto & input_props = implementation_expression->inputs[0].required_properties;
         const bool has_construction_time_sorting = !input_props.sorting.empty();
 
-        /// Don't propagate the parent's sorting to the child - `SortingEnforcer`
-        /// handles it on this group's output. Propagating would cause double sorting.
-        /// Construction-time sorting (already on `input_props`) is kept as-is.
-
-        /// Don't propagate distribution when the input has construction-time sorting:
-        /// the combined {sorting + multi-node} requirement is unsatisfiable.
-        /// Both input and output stay at {1 node}; `DistributionEnforcer` adds
-        /// an exchange on this step's output if the parent needs multi-node.
         if (!has_construction_time_sorting)
         {
-            input_props.distribution = required_properties.distribution;
+            input_props.distribution = distribution;
 
-            /// Translate distribution column names through the Expression/Filter DAG.
             if (!input_props.distribution.columns.empty())
             {
                 const ActionsDAG * dag = nullptr;
@@ -109,24 +108,62 @@ std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpression
             }
         }
         else
+        {
+            /// Construction-time sorting conflicts with multi-node distribution.
+            if (distribution.node_count > 1)
+                return nullptr;
             propagate_distribution = false;
+        }
     }
     else if (implementation_expression->inputs.empty())
     {
-        /// Leaf steps (e.g., `ReadFromMergeTree`) produce what the storage provides,
-        /// not what the parent requires. `DistributionEnforcer` bridges any gap.
         propagate_distribution = false;
     }
 
-    /// Output distribution matches what was propagated to the input.
-    /// Without this, the output stays at the default {1 node}, which allows
-    /// a parent requiring {1 node} to match an implementation whose input
-    /// is actually on N nodes - getting IO reduction without exchange cost.
     if (propagate_distribution)
-        implementation_expression->properties.distribution = required_properties.distribution;
+        implementation_expression->properties.distribution = distribution;
 
-    memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
-    return {implementation_expression};
+    return implementation_expression;
+}
+
+std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    std::vector<GroupExpressionPtr> result;
+
+    /// Primary implementation at the parent's required distribution.
+    auto primary = createImplementationAtDistribution(expression, required_properties, required_properties.distribution, *this);
+    if (primary)
+    {
+        memo.getGroup(expression->group_id)->addPhysicalExpression(primary);
+        result.push_back(primary);
+    }
+
+    /// For single-input steps, also create implementations at each candidate node count.
+    /// This gives `DistributionEnforcer` multi-node expressions to work with, enabling
+    /// plans like: Agg(1 node) -> GatherExchange -> Expression(N nodes) -> Join(N nodes).
+    /// Without these, groups above joins would only have {1 node} implementations,
+    /// preventing parallel reads in the subtree.
+    if (expression->inputs.size() == 1)
+    {
+        const auto candidate_node_counts = getCandidateNodeCounts(memo.getClusterNodeCount());
+        for (size_t candidate : candidate_node_counts)
+        {
+            if (candidate == required_properties.distribution.node_count)
+                continue;
+
+            DistributionDescription dist;
+            dist.node_count = candidate;
+
+            auto implementation_expression = createImplementationAtDistribution(expression, required_properties, dist, *this);
+            if (implementation_expression)
+            {
+                memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+                result.push_back(implementation_expression);
+            }
+        }
+    }
+
+    return result;
 }
 
 OptimizationRulePtr createDefaultImplementation() { return std::make_shared<DefaultImplementation>(); }
