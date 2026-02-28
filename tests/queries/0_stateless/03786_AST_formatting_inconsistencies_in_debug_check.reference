@@ -39,8 +39,8 @@ format(original):  SELECT NOT ((1, 1, 1))
 format(formatted): SELECT NOT ((1, 1, 1))
 
 Original:          select (((1), (2)))
-format(original):  SELECT (1, 2)
-format(formatted): SELECT (1, 2)
+format(original):  SELECT tuple((1, 2))
+format(formatted): SELECT tuple((1, 2))
 
 Original:          select * from tuple('42', '3141592')
 format(original):  SELECT * FROM tuple('42', '3141592')

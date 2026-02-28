@@ -34,5 +34,5 @@ SELECT -tuple(1, 1, 1)
 SELECT -tuple(1, 1, 1)
 --
 ((-1,-1,-1))
-SELECT -(1, 1, 1)
+SELECT -tuple((1, 1, 1))
 SELECT -tuple((1, 1, 1))
