@@ -344,17 +344,17 @@ static void writeDataFiles(
 
 void writeConsolidatedManifestFile(
     IcebergHistory snapshots_info,
-	const PersistentTableComponents & persistent_table_components,
-	const DataLakeStorageSettings & data_lake_settings,
-	ObjectStoragePtr object_storage, ContextPtr context,
-	SharedHeader sample_block_,
-	String write_format,
-	CompressionMethod compression_method)
+    const PersistentTableComponents & persistent_table_components,
+    const DataLakeStorageSettings & data_lake_settings,
+    ObjectStoragePtr object_storage, ContextPtr context,
+    SharedHeader sample_block_,
+    String write_format,
+    CompressionMethod compression_method)
 {
     auto log = getLogger("IcebergManifestConsolidation");
     LOG_INFO(log, "Writing consolidated manifest file for all snapshots");
 
-	const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -363,7 +363,7 @@ void writeConsolidatedManifestFile(
         log.get(),
         persistent_table_components.table_uuid);
 
-	Poco::JSON::Object::Ptr initial_metadata_object
+    Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     // Create a deep copy of the metadata object to avoid modifying the original
