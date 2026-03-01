@@ -1263,17 +1263,23 @@ private:
     bool is_operator;
 };
 
-/// Check if all elements in the list are plain ASTLiteral nodes without aliases.
-/// Used by RoundBracketsLayer and ArrayLayer to collapse operator-form tuples/arrays
-/// into ASTLiteral for consistency with the fast-path ParserCollectionOfLiterals.
-bool allElementsArePlainLiterals(const ASTs & elements)
+/// Check if all elements are ASTLiteral nodes without aliases, and their field types
+/// are either scalar or match `allowed_compound_type`.  This mirrors the cases that
+/// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
+/// tuples inside tuples) with scalar leaf literals and no aliases.
+static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types::Which allowed_compound_type)
 {
     for (const auto & elem : elements)
     {
-        if (!elem->as<ASTLiteral>())
+        const auto * literal = elem->as<ASTLiteral>();
+        if (!literal)
             return false;
         if (!elem->tryGetAlias().empty())
             return false;
+        auto field_type = literal->value.getType();
+        if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
+            if (field_type != allowed_compound_type)
+                return false;
     }
     return true;
 }
@@ -1333,23 +1339,20 @@ protected:
         {
             node = std::move(elements[0]);
         }
+        else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
+        {
+            /// Produce ASTLiteral(Tuple) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which requires >= 2 elements
+            /// for tuples and accepts same-bracket nesting only).
+            Tuple tup;
+            tup.reserve(elements.size());
+            for (auto & elem : elements)
+                tup.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(tup));
+        }
         else
         {
-            /// If all elements are plain literals (no aliases) and we have >= 2 elements,
-            /// produce ASTLiteral(Tuple) to be consistent with the fast-path
-            /// ParserCollectionOfLiterals result (which requires >= 2 elements for tuples).
-            if (elements.size() >= 2 && allElementsArePlainLiterals(elements))
-            {
-                Tuple tup;
-                tup.reserve(elements.size());
-                for (auto & elem : elements)
-                    tup.push_back(elem->as<ASTLiteral &>().value);
-                node = make_intrusive<ASTLiteral>(std::move(tup));
-            }
-            else
-            {
-                node = makeASTOperator("tuple", std::move(elements));
-            }
+            node = makeASTOperator("tuple", std::move(elements));
         }
 
         return true;
@@ -1371,10 +1374,10 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        /// If all elements are plain literals (no aliases), produce ASTLiteral(Array)
-        /// to be consistent with the fast-path ParserCollectionOfLiterals result.
-        if (allElementsArePlainLiterals(elements))
+        if (allElementsAreCompatibleLiterals(elements, Field::Types::Array))
         {
+            /// Produce ASTLiteral(Array) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which accepts same-bracket nesting only).
             Array arr;
             arr.reserve(elements.size());
             for (auto & elem : elements)
