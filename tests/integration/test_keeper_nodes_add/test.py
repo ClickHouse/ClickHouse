@@ -122,3 +122,39 @@ def test_nodes_add(started_cluster):
             if zk:
                 zk.stop()
                 zk.close()
+
+
+def test_nodes_add_respect_priority(started_cluster):
+    """
+    Test that when adding multiple servers at once, they are added in priority order
+    """
+    node1.stop_clickhouse()
+    node1.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_keeper1.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+    )
+    node1.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
+
+    # Update config to add node2 (priority 90) and node3 (priority 80) at once
+    node1.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_keeper_three_nodes_with_priority_1.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+    )
+
+    # Wait for both servers to be added
+    node1.wait_for_log_line(
+        "Processing config update.*Add server", repetitions=2, timeout=30
+    )
+
+    # Verify that server 2 is pushed before server 3
+    log = node1.grep_in_log("Processing config update")
+    add_server_2_pos = log.find("(Add server 2)")
+    add_server_3_pos = log.find("(Add server 3)")
+
+    assert add_server_2_pos != -1, "Server 2 add not found in log"
+    assert add_server_3_pos != -1, "Server 3 add not found in log"
+    assert add_server_2_pos < add_server_3_pos, (
+        f"Server 2 (priority 90) should be added before server 3 (priority 80), "
+        f"but found server 2 at pos {add_server_2_pos} and server 3 at pos {add_server_3_pos}"
+    )
