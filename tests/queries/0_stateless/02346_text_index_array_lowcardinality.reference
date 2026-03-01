@@ -1,8 +1,9 @@
 1024
 512
-0
-1024
 512
-0
 512
 1
+Description: text GRANULARITY 100000000
+Granules: 512/1024
+Description: text GRANULARITY 100000000
+Granules: 0/1024

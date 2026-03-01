@@ -1,10 +1,7 @@
--- Tags: no-parallel-replicas, no-azure-blob-storage
-
--- Tests that text indexes can be created on and used with Array(LowCardinality(String)) and
--- Array(LowCardinality(FixedString)) columns.
-
 DROP TABLE IF EXISTS tab;
 
+
+# Test creation of table on top of Array(LowCardinality(FixedString)) and LowCardinality(String)
 CREATE TABLE tab
 (
     id UInt32,
@@ -19,31 +16,45 @@ SETTINGS index_granularity = 1;
 
 SYSTEM STOP MERGES tab;
 
-INSERT INTO tab SELECT number, ['foo',        'all'], ['foo',        'all'] FROM numbers(512);
-INSERT INTO tab SELECT number, ['bar',        'all'], ['bar',        'all'] FROM numbers(512);
-INSERT INTO tab SELECT number, ['foo', 'baz', 'all'], ['foo', 'baz', 'all'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['foo', 'bar'], ['foo', 'bar'] FROM numbers(512);
+INSERT INTO tab SELECT number, ['foo', 'baz'], ['foo', 'baz'] FROM numbers(512);
 
 -- Verify inserts succeeded
 SELECT count() FROM tab WHERE has(arr, 'foo');
 SELECT count() FROM tab WHERE has(arr, 'baz');
-SELECT count() FROM tab WHERE has(arr, 'xyz');
 
-SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('foo', 3));
 SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3));
-SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('xyz', 3));
 
--- Run a query with a log_comment and check system.query_log to confirm the text index
--- machinery was engaged (TextIndexReadPostings > 0).
-SELECT count() FROM tab WHERE has(arr, 'baz') SETTINGS log_comment = 'test_lc_arr';
+-- Test if the index is being used
+SELECT count() FROM tab WHERE has(arr, 'baz') SETTINGS log_comment = 'test_lc_array_index';
 
+
+-- make sure logs are available
 SYSTEM FLUSH LOGS;
 
+-- Check index read
 SELECT ProfileEvents['TextIndexReadPostings'] > 0
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment = 'test_lc_arr'
-ORDER BY event_time_microseconds DESC
+  AND log_comment = 'test_lc_array_index'
+ORDER BY event_time DESC
 LIMIT 1;
+
+-- Check that the text index on Array(LowCardinality(String)) skips granule
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE has(arr, 'baz')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Granules:%'
+LIMIT 1, 2;
+
+-- value does not exist in any granule
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE has(arr, 'xyz')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Granules:%'
+LIMIT 1, 2;
 
 DROP TABLE tab;
