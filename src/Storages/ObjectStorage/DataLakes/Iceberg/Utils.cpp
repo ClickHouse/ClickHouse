@@ -118,46 +118,73 @@ static bool isDigits(const String & value)
     return !value.empty() && std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isdigit(ch); });
 }
 
-static String extractVersionStringFromMetadataFileName(const String & file_name)
+enum class MetadataPathParsingMode
 {
+    StrictMetadataFilePath,
+    VersionHintValue,
+};
+
+static String extractVersionStringFromMetadataFileName(const String & file_name, MetadataPathParsingMode mode)
+{
+    if (mode == MetadataPathParsingMode::VersionHintValue && isDigits(file_name))
+        return file_name;
+
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
     {
         auto dot_pos = file_name.find('.');
-        return dot_pos == String::npos ? file_name.substr(1) : file_name.substr(1, dot_pos - 1);
+        if (dot_pos == String::npos || dot_pos <= 1)
+            return {};
+        return file_name.substr(1, dot_pos - 1);
     }
 
     /// <V>-<random-uuid>.metadata.json
     auto dash_pos = file_name.find('-');
-    return dash_pos == String::npos ? file_name : file_name.substr(0, dash_pos);
+    if (dash_pos == String::npos)
+        return mode == MetadataPathParsingMode::VersionHintValue ? file_name : String{};
+    if (dash_pos == 0)
+        return {};
+    return file_name.substr(0, dash_pos);
 }
 
-static bool isTemporaryMetadataFile(const String & file_name)
+static bool isTemporaryMetadataFile(const String & file_name, MetadataPathParsingMode mode)
 {
     auto dot_pos = file_name.find('.');
-    if (dot_pos == String::npos || dot_pos == 0)
+    if (dot_pos == String::npos)
+        return mode == MetadataPathParsingMode::StrictMetadataFilePath;
+    if (dot_pos == 0)
         return false;
 
     String substring = file_name.substr(0, dot_pos);
     return Poco::UUID{}.tryParse(substring);
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(
+    const std::string & path,
+    MetadataPathParsingMode mode = MetadataPathParsingMode::StrictMetadataFilePath)
 {
     String file_name = std::filesystem::path(path).filename();
-    if (isTemporaryMetadataFile(file_name))
+    if (isTemporaryMetadataFile(file_name, mode))
     {
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
             path);
     }
-    String version_str = extractVersionStringFromMetadataFileName(file_name);
+    String version_str = extractVersionStringFromMetadataFileName(file_name, mode);
     if (!isDigits(version_str))
+    {
+        if (mode == MetadataPathParsingMode::VersionHintValue)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad version hint value: '{}'. Expected N, vN.metadata.json, or N-<uuid>.metadata.json where N is a number",
+                file_name);
+
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Bad metadata file name: '{}'. Expected vN.metadata.json, N-<uuid>.metadata.json, or N where N is a number",
+            "Bad metadata file name: '{}'. Expected vN.metadata.json or N-<uuid>.metadata.json where N is a number",
             file_name);
+    }
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
@@ -237,8 +264,8 @@ bool writeMetadataFileAndVersionHint(
                 write_if_none_match.clear();
             }
 
-            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value);
-            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content);
+            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value, MetadataPathParsingMode::VersionHintValue);
+            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content, MetadataPathParsingMode::VersionHintValue);
             if (old_version < new_version)
             {
                 try
@@ -1178,7 +1205,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         readString(metadata_file, *buf);
         if (!metadata_file.ends_with(".metadata.json"))
         {
-            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
+            if (isDigits(metadata_file))
                 metadata_file = "v" + metadata_file + ".metadata.json";
             else
                 metadata_file = metadata_file + ".metadata.json";
