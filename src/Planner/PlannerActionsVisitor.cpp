@@ -808,8 +808,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    for (auto & action_scope_node : actions_stack)
-        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
+    /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
+    /// can properly capture the correlated column value from the outer scope.
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    for (size_t i = 1; i < actions_stack.size(); ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }
