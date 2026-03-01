@@ -1379,15 +1379,17 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    WhichDataType data_type(index.data_types[0]);
+    DataTypePtr effective_type = index.data_types[0];
+    WhichDataType data_type(*effective_type);
     if (data_type.isArray())
     {
-        const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
-        data_type = WhichDataType(array_type.getNestedType());
+        const auto & array_type = assert_cast<const DataTypeArray &>(*effective_type);
+        effective_type = array_type.getNestedType();
+        data_type = WhichDataType(*effective_type);
     }
-    else if (data_type.isLowCardinality())
+    if (data_type.isLowCardinality())
     {
-        const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
+        const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*effective_type);
         data_type = WhichDataType(low_cardinality.getDictionaryType());
     }
 
@@ -1395,7 +1397,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)`, `Array(FixedString)`, `Array(LowCardinality(String))` or `Array(LowCardinality(FixedString))`");
     }
 
     /// Create the preprocessor for validation.

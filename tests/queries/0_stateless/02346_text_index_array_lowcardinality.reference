@@ -1,0 +1,30 @@
+-- Correctness (String)
+1024
+512
+512
+0
+-- Correctness (FixedString)
+1024
+512
+512
+0
+-- Index usage (String)
+-- -- foo matches 1024/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 1024/1536
+-- -- baz matches 512/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 512/1536
+-- -- xyz matches 0/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 0/1536
+-- Index usage (FixedString)
+-- -- foo matches 1024/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 1024/1536
+-- -- baz matches 512/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 512/1536
+-- -- xyz matches 0/1536 granules
+Description: text GRANULARITY 100000000
+Granules: 0/1536
