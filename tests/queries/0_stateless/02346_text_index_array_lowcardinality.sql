@@ -28,7 +28,7 @@ SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3));
 SELECT count() FROM tab WHERE has(arr, 'baz') SETTINGS log_comment = 'test_lc_array_index';
 
 -- make sure logs are available
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- Check index read
 SELECT ProfileEvents['TextIndexReadPostings'] > 0
