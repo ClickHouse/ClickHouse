@@ -60,6 +60,35 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
+    /// Handle getSubcolumn function nodes
+    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
+    {
+        auto * function_node = resolved_identifier->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "getSubcolumn")
+        {
+            const auto & arguments = function_node->getArguments().getNodes();
+            if (arguments.size() == 2)
+            {
+                /// Recursively convert the first argument (the column)
+                auto converted_first_arg = convertJoinedColumnTypeToNullIfNeeded(
+                    arguments[0], arguments[0]->getResultType(), join_kind, resolved_side, scope);
+                
+                if (converted_first_arg && !converted_first_arg->isEqual(*arguments[0]))
+                {
+                    /// If the first argument was converted to nullable, rebuild the getSubcolumn function
+                    /// with the new argument type so its return type is recalculated
+                    const auto * second_arg_constant = arguments[1]->as<ConstantNode>();
+                    if (second_arg_constant)
+                    {
+                        auto subcolumn_name = second_arg_constant->getValue().safeGet<String>();
+                        return wrapExpressionNodeInSubcolumn(converted_first_arg, subcolumn_name, scope.context);
+                    }
+                }
+            }
+        }
+        return resolved_identifier;
+    }
+
     if (resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         return resolved_identifier;
 
