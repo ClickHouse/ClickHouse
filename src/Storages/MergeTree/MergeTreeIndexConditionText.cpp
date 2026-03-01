@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -520,7 +521,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
-    auto value_data_type = WhichDataType(value_type);
+    auto value_data_type = WhichDataType(removeLowCardinality(value_type));
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
