@@ -29,7 +29,7 @@ CREATE TABLE dedup_cleanup (
     id UInt32,
     value String
 )
-ENGINE = ReplicatedMergeTree('$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dedup_cleanup/{shard}', '{replica}')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dedup_cleanup/{shard}', '{replica}')
 PARTITION BY date
 ORDER BY (id)
 SETTINGS replicated_deduplication_window = 2, cleanup_delay_period=4, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;"
