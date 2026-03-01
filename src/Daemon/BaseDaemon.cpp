@@ -250,11 +250,11 @@ void BaseDaemon::initialize(Application & self)
 
 #if USE_JEMALLOC
     Jemalloc::setup(
-        config().getBool("jemalloc_enable_global_profiler", Jemalloc::default_enable_global_profiler),
-        config().getBool("jemalloc_enable_background_threads", Jemalloc::default_enable_background_threads),
-        config().getUInt64("jemalloc_max_background_threads_num", Jemalloc::default_max_background_threads_num),
-        config().getBool("jemalloc_collect_global_profile_samples_in_trace_log", Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64("jemalloc_profiler_sampling_rate", Jemalloc::default_profiler_sampling_rate));
+        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
 #endif
 
     /// This must be done before creation of any files (including logs).
@@ -576,6 +576,20 @@ void BaseDaemon::setupWatchdog()
         if (async_channel)
             async_channel->close();
         pid = fork();
+
+#if USE_JEMALLOC
+        if (0 == pid)
+        {
+            /// Re-apply jemalloc settings after fork because background threads
+            /// and other jemalloc state do not survive across fork.
+            Jemalloc::setup(
+                config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+                config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+                config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+                config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+                config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
+        }
+#endif
 
         if (async_channel)
             async_channel->open();

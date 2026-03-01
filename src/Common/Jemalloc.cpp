@@ -2,24 +2,23 @@
 
 #if USE_JEMALLOC
 
-#include <mutex>
-#include <Common/FramePointers.h>
-#include <Common/Exception.h>
-#include <Common/StackTrace.h>
-#include <Common/Stopwatch.h>
-#include <Common/TraceSender.h>
-#include <Common/MemoryTracker.h>
-#include <Common/logger_useful.h>
+#    include <Common/Exception.h>
+#    include <Common/FramePointers.h>
+#    include <Common/MemoryTracker.h>
+#    include <Common/StackTrace.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/TraceSender.h>
+#    include <Common/logger_useful.h>
 
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#    define STRINGIFY_HELPER(x) #x
+#    define STRINGIFY(x) STRINGIFY_HELPER(x)
 
 namespace ProfileEvents
 {
-    extern const Event MemoryAllocatorPurge;
-    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
-    extern const Event JemallocFailedAllocationSampleTracking;
-    extern const Event JemallocFailedDeallocationSampleTracking;
+extern const Event MemoryAllocatorPurge;
+extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+extern const Event JemallocFailedAllocationSampleTracking;
+extern const Event JemallocFailedDeallocationSampleTracking;
 }
 
 namespace DB
@@ -27,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Jemalloc
@@ -174,54 +173,52 @@ void setup(
     bool collect_global_profile_samples_in_trace_log,
     size_t profiler_sampling_rate)
 {
-    static std::once_flag once;
-    bool did_setup = false;
-
-    std::call_once(once, [&]
+    if (enable_global_profiler)
     {
-        if (enable_global_profiler)
-        {
-            getThreadProfileInitMib().setValue(true);
-            getThreadProfileActiveMib().setValue(true);
-        }
-
-        setBackgroundThreads(enable_background_threads);
-
-        if (max_background_threads_num)
-            setValue("max_background_threads", max_background_threads_num);
-
-        if (profiler_sampling_rate != default_profiler_sampling_rate)
-            setProfileSamplingRate(profiler_sampling_rate);
-
-        collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
-        setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
-        setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
-        setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
-
-        did_setup = true;
-    });
-
-    if (!did_setup)
-    {
-        /// Verify that the settings match what was configured on the first call.
-        /// Catch mismatches between server settings defaults and the manually defined config names in `BaseDaemon`.
-        auto log_warning = [](std::string_view setting)
-        {
-            chassert(false, fmt::format("Jemalloc::setup called with different `{}` value", setting));
-            LOG_WARNING(&Poco::Logger::get("Jemalloc"), "Jemalloc::setup called with different `{}` value", setting);
-        };
-
-        if (getThreadProfileInitMib().getValue() != enable_global_profiler)
-            log_warning("enable_global_profiler");
-        if (getValue<bool>("background_thread") != enable_background_threads)
-            log_warning("enable_background_threads");
-        if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
-            log_warning("max_background_threads_num");
-        if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
-            log_warning("profiler_sampling_rate");
-        if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
-            log_warning("collect_global_profile_samples_in_trace_log");
+        getThreadProfileInitMib().setValue(true);
+        getThreadProfileActiveMib().setValue(true);
     }
+
+    setBackgroundThreads(enable_background_threads);
+
+    if (max_background_threads_num)
+        setValue("max_background_threads", max_background_threads_num);
+
+    if (profiler_sampling_rate != default_profiler_sampling_rate)
+        setProfileSamplingRate(profiler_sampling_rate);
+
+    collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
+    setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
+    setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
+    setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
+}
+
+void verifySetup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
+{
+    /// Verify that the settings match what was configured by the earlier `setup` call.
+    /// Catch mismatches between server settings defaults and the manually defined config names in `BaseDaemon`.
+    auto log_warning = [](std::string_view setting)
+    {
+        chassert(false, fmt::format("Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting));
+        LOG_WARNING(
+            &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
+    };
+
+    if (getThreadProfileInitMib().getValue() != enable_global_profiler)
+        log_warning(config_enable_global_profiler);
+    if (getValue<bool>("background_thread") != enable_background_threads)
+        log_warning(config_enable_background_threads);
+    if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
+        log_warning(config_max_background_threads_num);
+    if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
+        log_warning(config_profiler_sampling_rate);
+    if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
+        log_warning(config_collect_global_profile_samples_in_trace_log);
 }
 
 
@@ -229,7 +226,6 @@ const MibCache<bool> & getThreadProfileActiveMib()
 {
     static MibCache<bool> thread_profile_active("thread.prof.active");
     return thread_profile_active;
-
 }
 
 const MibCache<bool> & getThreadProfileInitMib()
