@@ -93,28 +93,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         total_granules = ranges.getNumberOfMarks();
     }
 
-    for (const auto & indices_and_condition : skip_indexes.merged_indices)
-    {
-        if (is_cancelled)
-            return {};
-
-        if (ranges.empty())
-            break;
-
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-        ranges = MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
-            indices_and_condition.indices,
-            indices_and_condition.condition,
-            part.data_part,
-            ranges,
-            reader_settings,
-            mark_cache.get(),
-            uncompressed_cache.get(),
-            vector_similarity_index_cache.get(),
-            log);
-    }
-
     if (is_cancelled)
         return {};
 

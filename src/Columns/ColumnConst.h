@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        data->getValueNameImpl(name_buf, 0, options);
     }
 
     std::string_view getDataAt(size_t) const override
