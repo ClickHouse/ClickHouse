@@ -15,8 +15,9 @@ RUN apt-get update --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 RUN mkdir /sqlancer && \
-	wget -q -O- https://github.com/sqlancer/sqlancer/archive/main.tar.gz | \
+	wget -q -O- https://github.com/ClickHouse/sqlancer/archive/5caba27dacd843f4dd70a69f4febfc35e94d97e8.tar.gz | \
 	tar zx -C /sqlancer && \
+	mv /sqlancer/sqlancer-5caba27dacd843f4dd70a69f4febfc35e94d97e8 /sqlancer/sqlancer-main && \
     find /sqlancer -type d -exec chmod 777 {} \; && \
     find /sqlancer -type f -exec chmod 666 {} \; && \
 	cd /sqlancer/sqlancer-main && \
