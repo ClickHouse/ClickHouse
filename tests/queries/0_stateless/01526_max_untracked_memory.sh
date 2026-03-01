@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-llvm-coverage
+# Tags: long, no-flaky-check, no-tsan, no-asan, no-ubsan, no-msan, no-llvm-coverage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
