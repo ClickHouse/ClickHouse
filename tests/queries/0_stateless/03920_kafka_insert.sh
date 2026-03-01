@@ -10,6 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 KAFKA_TOPIC=$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr '_' '-')
 KAFKA_BROKER="127.0.0.1:9092"
 
+# Skip if Kafka broker is not available (e.g. in stress tests)
+if ! timeout 5 rpk cluster info --brokers $KAFKA_BROKER > /dev/null 2>&1; then
+    exit 0
+fi
+
 # Create topic
 rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
