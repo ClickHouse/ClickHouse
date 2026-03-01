@@ -2,6 +2,8 @@
 -- that are not in the scope map (e.g. inside INTERPOLATE expressions).
 -- Previously this caused "Cannot find the original scope of the column" exception.
 
+SET allow_experimental_analyzer = 1;
+
 SELECT 1 AS a, a AS b ORDER BY 1 WITH FILL STALENESS 1 INTERPOLATE (a AS b);
 
 SELECT * FROM (
