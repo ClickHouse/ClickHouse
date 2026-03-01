@@ -13,7 +13,7 @@ from praktika.utils import Shell, Utils
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 MIN_TOTAL_TESTS = 5_939_581
-MAX_FAILED_TESTS = 201_707
+MAX_FAILED_TESTS = 173_986
 
 
 # Reuse the same ClickHouseBinary helper from sqltest_job.py
@@ -105,10 +105,15 @@ def load_stage_reports(out_dir, mode_name):
     return reports
 
 
+MAX_EXAMPLES_PER_CATEGORY = 5
+
+
 def classify_failures(report):
     """Classify failed requests from a stage report by reason category.
-    Returns sorted list of (count, category) tuples, descending by count."""
+    Returns sorted list of (count, category, examples) tuples, descending by count.
+    Each example is a query string (up to MAX_EXAMPLES_PER_CATEGORY per category)."""
     categories = {}
+    examples = {}
     code_re = re.compile(r"Code: (\d+)")
 
     for test_data in report.get("tests", {}).values():
@@ -140,7 +145,17 @@ def classify_failures(report):
 
             categories[cat] = categories.get(cat, 0) + 1
 
-    return sorted(categories.items(), key=lambda x: -x[1])
+            if cat not in examples:
+                examples[cat] = []
+            if len(examples[cat]) < MAX_EXAMPLES_PER_CATEGORY:
+                query = req.get("request", "")
+                if query:
+                    examples[cat].append(query)
+
+    return sorted(
+        [(count, cat, examples.get(cat, [])) for cat, count in categories.items()],
+        key=lambda x: -x[0],
+    )
 
 
 def check_thresholds(complete_test_reports):
@@ -250,12 +265,22 @@ def generate_html_report(all_reports, report_path, threshold_passed, threshold_i
                 classified = classify_failures(report)
                 if classified:
                     f.write(f"    Failure categories:\n")
-                    for cat, count in classified:
+                    for count, cat, cat_examples in classified:
                         pct = 100.0 * count / fail if fail else 0
                         f.write(
                             f"      <b style='color: red;'>{count:>9,}</b>"
                             f"  {pct:5.1f}%  {html.escape(cat)}\n"
                         )
+                        for example in cat_examples:
+                            truncated = example[:200]
+                            if len(example) > 200:
+                                truncated += "..."
+                            # Collapse multi-line queries to single line
+                            truncated = truncated.replace("\n", " ")
+                            f.write(
+                                f"               <span style='color: gray;'>"
+                                f"{html.escape(truncated)}</span>\n"
+                            )
 
             f.write("\n")
 
