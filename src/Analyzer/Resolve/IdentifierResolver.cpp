@@ -366,7 +366,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
     {
-        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
+        /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+        /// because aliases don't have real subcolumns, they should be extracted
+        /// after alias expression evaluation.
+        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
             return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
 
         return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
@@ -507,7 +510,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
         {
-            if (table_expression_data.supports_subcolumns)
+            /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+            /// because aliases don't have real subcolumns, they should be extracted
+            /// after alias expression evaluation.
+            if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
             else
                 result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
