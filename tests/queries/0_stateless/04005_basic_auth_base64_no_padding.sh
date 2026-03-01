@@ -17,19 +17,23 @@ ${CLICKHOUSE_CURL} -sS -H "Authorization: Basic ZGVmYXVsdDo=" "${CLICKHOUSE_URL}
 # Unpadded — should also work (this is the bug fix)
 ${CLICKHOUSE_CURL} -sS -H "Authorization: Basic ZGVmYXVsdDo" "${CLICKHOUSE_URL}&query=SELECT+1"
 
-# Test with 2 padding chars: create a temporary user whose credentials
-# produce base64 with "==" padding.
-# "test_b64:pwd" → base64 = "dGVzdF9iNjQ6cHdk" (no padding needed, length divisible by 3)
-# "test_b64:pw"  → base64 = "dGVzdF9iNjQ6cHc=" (1 padding char)
-# "test_b64:p"   → base64 = "dGVzdF9iNjQ6cA==" (2 padding chars)
+# Test with 2 padding chars: use a unique user name per test run to avoid
+# collisions during parallel flaky checks.
+USER_NAME="test_b64_${CLICKHOUSE_DATABASE}"
+PASSWORD="p"
 
-${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS test_b64 IDENTIFIED BY 'p'"
-${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.one TO test_b64"
+${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS ${USER_NAME} IDENTIFIED BY '${PASSWORD}'"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.one TO ${USER_NAME}"
 
-# Padded (2x '=')
-${CLICKHOUSE_CURL} -sS -H "Authorization: Basic dGVzdF9iNjQ6cA==" "${CLICKHOUSE_URL}&query=SELECT+1"
+# Compute base64 at runtime (padded)
+B64_PADDED=$(echo -n "${USER_NAME}:${PASSWORD}" | base64)
+# Strip padding
+B64_UNPADDED=$(echo -n "${B64_PADDED}" | tr -d '=')
 
-# Unpadded
-${CLICKHOUSE_CURL} -sS -H "Authorization: Basic dGVzdF9iNjQ6cA" "${CLICKHOUSE_URL}&query=SELECT+1"
+# Padded
+${CLICKHOUSE_CURL} -sS -H "Authorization: Basic ${B64_PADDED}" "${CLICKHOUSE_URL}&query=SELECT+1"
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS test_b64"
+# Unpadded — this is the bug fix
+${CLICKHOUSE_CURL} -sS -H "Authorization: Basic ${B64_UNPADDED}" "${CLICKHOUSE_URL}&query=SELECT+1"
+
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_NAME}"
