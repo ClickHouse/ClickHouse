@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
 
 namespace
 {
@@ -42,7 +48,7 @@ IMergeTreeReader::IMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints_)
     : data_part_info_for_read(data_part_info_for_read_)
     , avg_value_size_hints(avg_value_size_hints_)
-    , part_columns(data_part_info_for_read->isWidePart()
+    , part_columns(data_part_info_for_read->isWidePart() && (*storage_settings_)[MergeTreeSetting::share_nested_offsets]
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
     , uncompressed_cache(uncompressed_cache_)
@@ -53,7 +59,9 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
-    , converted_requested_columns(Nested::convertToSubcolumns(columns_))
+    , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
+        ? Nested::convertToSubcolumns(columns_)
+        : columns_)
     , virtual_fields(virtual_fields_)
 {
     /// Check the memory consumption before doing all the heavy-lifting such as
@@ -161,7 +169,9 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 res_columns,
                 num_rows,
                 converted_requested_columns,
-                Nested::convertToSubcolumns(available_columns),
+                (*storage_settings)[MergeTreeSetting::share_nested_offsets]
+                ? Nested::convertToSubcolumns(available_columns)
+                : available_columns,
                 partially_read_columns,
                 storage_snapshot);
 
@@ -285,6 +295,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
 {
+    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
+        return false;
+
     /// We cannot read separate subcolumn with offsets from compact parts.
     if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
         return false;
@@ -414,6 +427,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 std::optional<IMergeTreeReader::ColumnForOffsets>
 IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
+    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
+        return std::nullopt;
+
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
         std::vector<std::pair<String, size_t>> offsets_streams;
