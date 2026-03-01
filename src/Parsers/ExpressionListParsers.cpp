@@ -1309,16 +1309,26 @@ public:
             if (!is_tuple && elements.size() == 1)
             {
                 /// Special case for (('a', 'b')) = tuple(('a', 'b'))
-                /// This is needed for IN semantics: (field, value) IN (('foo', 'bar'))
-                /// should be a 1-element set, not a flat 2-element tuple.
-                /// But skip promotion when the element has an alias, because the
-                /// extra tuple() wrapper changes how the alias is formatted and
-                /// breaks AST formatting roundtrip (e.g. ON ((1, 0.648) AS a7)
-                /// would reparse as ON tuple((1, 0.648) AS a7)).
+                /// When a single element is an ASTLiteral(Tuple), unwrap it into
+                /// individual elements so that getResultImpl re-converts them to
+                /// a single ASTLiteral(Tuple) — preserving the same AST shape as
+                /// the original inner parse, without an extra tuple() wrapper.
+                /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
-                    if (literal->value.getType() == Field::Types::Tuple)
-                        if (elements[0]->tryGetAlias().empty())
-                            is_tuple = true;
+                {
+                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    {
+                        /// Save the tuple value before clearing elements,
+                        /// because elements.clear() destroys the ASTLiteral
+                        /// that owns it.
+                        Tuple tup = literal->value.safeGet<Tuple>();
+                        elements.clear();
+                        elements.reserve(tup.size());
+                        for (auto & elem : tup)
+                            elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
+                        is_tuple = true;
+                    }
+                }
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
