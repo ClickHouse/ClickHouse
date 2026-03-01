@@ -1,6 +1,6 @@
-03711_join_with	all_1_1_0	Compact	1	1
-03711_join_with	all_2_2_0	Compact	1	1
-03711_mv_table_1	all_1_1_0	Compact	1	1
-03711_mv_table_2	all_1_1_0	Compact	1	1
-03711_table	all_1_1_0	Compact	1	1
-03711_table	all_2_2_0	Compact	1	1
+03711_join_with	all_1_1_0	Compact	2	1
+03711_join_with	all_2_2_0	Compact	2	1
+03711_mv_table_1	all_1_1_0	Compact	2	1
+03711_mv_table_2	all_1_1_0	Compact	2	1
+03711_table	all_1_1_0	Compact	2	1
+03711_table	all_2_2_0	Compact	2	1
