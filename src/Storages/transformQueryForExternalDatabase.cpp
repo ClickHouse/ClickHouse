@@ -194,24 +194,34 @@ bool isCompatible(ASTPtr & node)
                 return false;
 
         /// When the parser's fast-path literal conversion produces
-        /// ASTLiteral(Tuple) as the IN set (e.g. `(id, name) IN ((1, 'a'))`
+        /// `ASTLiteral(Tuple)` as the IN set (e.g. `(id, name) IN ((1, 'a'))`
         /// parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
         /// we must wrap it in a function with empty name so that it
         /// formats with an extra pair of parentheses: `((1, 'a'))`.
-        /// Without this, ASTLiteral(Tuple) formats as `(1, 'a')` and the
+        /// Without this, `ASTLiteral(Tuple)` formats as `(1, 'a')` and the
         /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
         /// as two separate scalar values instead of one tuple.
+        ///
+        /// We only do this when the LHS of IN is a multi-column tuple
+        /// (i.e. `ASTFunction("tuple")`). For scalar IN like `id IN (1, 2)`,
+        /// the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must
+        /// NOT be wrapped — otherwise MySQL would see `id IN ((1, 2))`
+        /// which is a single tuple, not a list of scalars.
         if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
         {
-            auto & rhs = function->arguments->children[1];
-            if (const auto * rhs_literal = rhs->as<ASTLiteral>())
+            const auto & lhs = function->arguments->children[0];
+            const auto * lhs_func = lhs->as<ASTFunction>();
+            bool lhs_is_tuple = lhs_func && lhs_func->name == "tuple";
+
+            if (lhs_is_tuple)
             {
-                if (rhs_literal->value.getType() == Field::Types::Tuple)
+                auto & rhs = function->arguments->children[1];
+                if (const auto * rhs_literal = rhs->as<ASTLiteral>())
                 {
-                    /// Use empty name — same "dirty trick" as for single-element
-                    /// tuples (line 183) — to produce just `(expr)` without a
-                    /// function name prefix.
-                    rhs = makeASTFunction("", rhs);
+                    if (rhs_literal->value.getType() == Field::Types::Tuple)
+                    {
+                        rhs = makeASTFunction("", rhs);
+                    }
                 }
             }
         }
