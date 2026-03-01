@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- https://github.com/ClickHouse/ClickHouse/issues/90902
 SET join_use_nulls = 1;
 
