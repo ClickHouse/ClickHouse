@@ -300,6 +300,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// The Analyzer's replaceNodesWithPositionalArguments skips replacement when query_kind != INITIAL_QUERY
+    /// (e.g. SECONDARY_QUERY in DatabaseReplicated). Force INITIAL_QUERY so that positional GROUP BY
+    /// references like `GROUP BY 1, 2` are properly resolved during our pre-analysis step.
+    mut_context->setQueryKindInitial();
 
     /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
     /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
