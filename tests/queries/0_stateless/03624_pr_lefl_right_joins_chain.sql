@@ -10,7 +10,6 @@ DROP TABLE IF EXISTS mem2;
 CREATE TABLE mem2 ( `k` UInt64, `v` String ) ENGINE = Join(ANY, RIGHT, k);
 INSERT INTO mem2 VALUES (1, 'A'), (2, 'B'), (3, 'B');
 
-SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 
 SELECT '-- no parallel replicas --';
@@ -21,6 +20,7 @@ ANY RIGHT JOIN mem2 ON k2 = mem2.k
 ORDER BY tab.v
 SETTINGS enable_parallel_replicas=0;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT '-- parallel replicas --';
 SELECT *
 FROM tab

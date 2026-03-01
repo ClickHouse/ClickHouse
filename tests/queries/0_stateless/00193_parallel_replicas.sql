@@ -3,7 +3,6 @@
 DROP TABLE IF EXISTS parallel_replicas;
 DROP TABLE IF EXISTS parallel_replicas_backup;
 
-SET automatic_parallel_replicas_mode = 0;
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE parallel_replicas (d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = MergeTree(d, cityHash64(u, s), (x, d, cityHash64(u, s)), 8192);
 INSERT INTO parallel_replicas (x, u, s) VALUES (1, 2, 'A'),(3, 4, 'B'),(5, 6, 'C'),(7, 8, 'D'),(9,10,'E');
@@ -21,6 +20,7 @@ INSERT INTO parallel_replicas (x, u, s) VALUES (51, 52, 'Z');
 
 /* Two replicas */
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, parallel_replicas_mode='sampling_key', max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree = 1;
 
 CREATE TABLE parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;

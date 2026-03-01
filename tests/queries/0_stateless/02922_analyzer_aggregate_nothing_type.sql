@@ -1,5 +1,4 @@
 
-SET automatic_parallel_replicas_mode = 0;
 select sum(NULL);
 select quantile(0.5)(NULL);
 select quantiles(0.1, 0.2)(NULL :: Nullable(UInt32));
@@ -88,6 +87,7 @@ DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (`n` UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 SELECT * FROM numbers(10);
 
+SET automatic_parallel_replicas_mode = 0;
 SET
 enable_parallel_replicas=1,
     max_parallel_replicas=2,

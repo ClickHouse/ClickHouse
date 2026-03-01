@@ -7,7 +7,6 @@ drop table if exists t_different_dbs;
 drop table if exists dist_t;
 drop table if exists t;
 
-SET automatic_parallel_replicas_mode = 0;
 set optimize_trivial_insert_select = 1;
 
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
@@ -64,6 +63,7 @@ drop table if exists pr_t;
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
+SET automatic_parallel_replicas_mode = 0;
 set enable_parallel_replicas = 1;
 set parallel_replicas_for_non_replicated_merge_tree = 1;
 set max_parallel_replicas = 3;

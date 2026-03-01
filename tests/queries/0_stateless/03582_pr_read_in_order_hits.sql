@@ -1,5 +1,4 @@
 -- Tags: stateful
-SET automatic_parallel_replicas_mode = 0;
 SET max_threads = 0; -- let's reset to automatic detection of the number of threads, otherwise test can be slow.
 
 SELECT '--- In order ---';
@@ -13,6 +12,7 @@ FROM
     SETTINGS enable_parallel_replicas = 0
 );
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT 'PR result hash: ', cityHash64(groupArray(CounterID))
 FROM
 (

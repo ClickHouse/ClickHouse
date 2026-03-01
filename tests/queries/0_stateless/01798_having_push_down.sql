@@ -4,7 +4,6 @@ CREATE TABLE t_having (c0 Int32, c1 UInt64) ENGINE = MergeTree ORDER BY c0;
 
 INSERT INTO t_having SELECT number, number FROM numbers(1000);
 
-SET automatic_parallel_replicas_mode = 0;
 SELECT sum(c0 = 0), min(c0 + 1), sum(c0 + 2) FROM t_having
 GROUP BY c0 HAVING c0 = 0
 SETTINGS enable_optimize_predicate_expression=0;
@@ -17,6 +16,7 @@ SELECT sum(c0 + 257) FROM t_having GROUP BY c0 = -9223372036854775808, NULL, -21
 
 SELECT c0 + -2, c0 + -9223372036854775807, c0 = NULL FROM t_having GROUP BY c0 = 0.9998999834060669, 1023, c0 HAVING c0 = 0.9998999834060669 SETTINGS enable_optimize_predicate_expression = 0;
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'parallel_replicas',
