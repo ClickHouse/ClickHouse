@@ -158,7 +158,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
     {
         ostr << s.nl_or_ws << indent_str <<
             "WINDOW";
-        window()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        s.one_line
+            ? window()->format(ostr, s, state, frame)
+            : window()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (qualify())
