@@ -291,48 +291,58 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
 
-    auto mut_context = Context::createCopy(query_context);
     bool positional_arguments_for_projections = query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
-    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
-    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
-    /// resolution that is neither guaranteed nor sensible here.
-    ///
-    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
-    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
-    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-    /// The Analyzer's replaceNodesWithPositionalArguments skips replacement when query_kind != INITIAL_QUERY
-    /// (e.g. SECONDARY_QUERY in DatabaseReplicated). Force INITIAL_QUERY so that positional GROUP BY
-    /// references like `GROUP BY 1, 2` are properly resolved during our pre-analysis step.
-    mut_context->setQueryKindInitial();
 
-    /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
-    /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
-    /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
-    /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
-    /// including table-level ALIAS columns by name.
-    StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
-
-    auto query_tree = buildQueryTree(result.query_ast, mut_context);
-    auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
-
-    QueryTreePassManager query_tree_pass_manager(mut_context);
-    addQueryTreePasses(query_tree_pass_manager);
-    query_tree_pass_manager.runOnlyResolve(query_tree);
-
-    bool is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
-
-    /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
-    /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
-    /// so the last resolved projection column has aliases fully expanded.
-    if (projection_order_by)
+    bool is_aggregate;
     {
-        auto & projection_nodes = query_node.getProjection().getNodes();
-        ConvertToASTOptions ast_options;
-        ast_options.fully_qualified_identifiers = false;
-        projection_order_by = projection_nodes.back()->toAST(ast_options);
-        projection_order_by->setAlias({});
+        /// Create a temporary context for the Analyzer pre-analysis step only.
+        /// We need two modifications:
+        /// 1. Override enable_positional_arguments for projection compatibility.
+        /// 2. Force INITIAL_QUERY so that the Analyzer's replaceNodesWithPositionalArguments
+        ///    works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
+        ///
+        /// This context must NOT be passed to InterpreterSelectQuery because setQueryKindInitial()
+        /// alters ClientInfo fields (initial_user, etc.) which breaks access control checks
+        /// in DatabaseReplicated mode (e.g. privilege checks for subqueries in projections).
+        auto analyzer_context = Context::createCopy(query_context);
+        analyzer_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+        analyzer_context->setQueryKindInitial();
+
+        /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
+        /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
+        /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
+        /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
+        /// including table-level ALIAS columns by name.
+        StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
+
+        auto query_tree = buildQueryTree(result.query_ast, analyzer_context);
+        auto & query_node = query_tree->as<QueryNode &>();
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, analyzer_context);
+
+        QueryTreePassManager query_tree_pass_manager(analyzer_context);
+        addQueryTreePasses(query_tree_pass_manager);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
+
+        is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+
+        /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
+        /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
+        /// so the last resolved projection column has aliases fully expanded.
+        if (projection_order_by)
+        {
+            auto & projection_nodes = query_node.getProjection().getNodes();
+            ConvertToASTOptions ast_options;
+            ast_options.fully_qualified_identifiers = false;
+            projection_order_by = projection_nodes.back()->toAST(ast_options);
+            projection_order_by->setAlias({});
+        }
     }
+
+    /// Use a separate context for InterpreterSelectQuery with only the positional arguments
+    /// setting overridden. This preserves the original query_context's ClientInfo (including
+    /// query_kind and user identity) so that access control works correctly.
+    auto mut_context = Context::createCopy(query_context);
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
     InterpreterSelectQuery select(
         result.query_ast,
