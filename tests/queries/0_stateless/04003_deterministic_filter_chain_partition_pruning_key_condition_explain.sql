@@ -126,3 +126,45 @@ SET session_timezone = 'UTC';
 
 EXPLAIN indexes = 1
 SELECT d FROM test_monotonic_datetime WHERE toDateTime(d) = toDateTime('2026-01-02');
+
+
+DROP TABLE IF EXISTS test_partition_key_to_year_month;
+CREATE TABLE test_partition_key_to_year_month (d Date)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(d)
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_partition_key_to_year_month VALUES
+    ('2024-01-15'),
+    ('2024-02-15'),
+    ('2024-03-15'),
+    ('2024-04-15');
+
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) > toDate('2024-03-01')
+ORDER BY d;
+
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) < toDate('2024-04-01')
+ORDER BY d;
+
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) != toDate('2024-03-01')
+ORDER BY d;
+
+
+DROP TABLE IF EXISTS test_nondeterministic_function;
+CREATE TABLE test_nondeterministic_function (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_nondeterministic_function SELECT number FROM numbers(15);
+
+-- No atom created for partition pruning
+EXPLAIN indexes = 1
+SELECT count() FROM test_nondeterministic_function WHERE x + rand() = 9;
