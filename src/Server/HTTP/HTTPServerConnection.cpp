@@ -159,7 +159,7 @@ void HTTPServerConnection::run()
         catch (const Poco::Net::MessageException & e)
         {
             LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
-            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, e.message());
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -188,13 +188,24 @@ void HTTPServerConnection::run()
 }
 
 // static
-void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status)
+void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & message)
 {
     HTTPServerResponse response(session);
     response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
     response.setStatusAndReason(status);
     response.setKeepAlive(false);
-    response.send();
+
+    if (!message.empty())
+    {
+        response.setContentLength(message.size());
+        response.setContentType("text/plain");
+    }
+
+    auto out = response.send();
+
+    if (!message.empty())
+        out->write(message.data(), message.size());
+
     session.setKeepAlive(false);
     ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
 }

@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>

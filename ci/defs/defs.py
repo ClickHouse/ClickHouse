@@ -345,7 +345,7 @@ class JobNames:
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
     SQLANCER = "SQLancer"
-    LLVM_COVERAGE_MERGE = "LLVM Coverage Merge"
+    LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
