@@ -1489,6 +1489,14 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeProcessed();
                     }
+                    else if (file_metadata->wasProcessingResetWithoutFailure())
+                    {
+                        /// The file was just reset for retry (processing node removed),
+                        /// not actually marked as failed. This happens when reduce_retry_count
+                        /// is false (e.g. due to TOO_MANY_PARTS, or when batch halving is used
+                        /// to isolate a bad file).
+                        file_metadata->finalizeResetProcessing();
+                    }
                     else
                     {
                         file_metadata->finalizeFailed(exception_message);
@@ -1506,7 +1514,10 @@ void ObjectStorageQueueSource::finalizeCommit(
                             file_state, file_metadata->getPath());
                     }
 
-                    file_metadata->finalizeFailed(exception_message);
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_message);
                     break;
                 }
                 case FileState::ErrorOnRead:
