@@ -263,3 +263,20 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
         prev_count = int(instance.query_with_retry(
             count_query, check_callback=lambda res: int(res) > prev_count
         ))
+
+        # Clean up Kafka tables while the topic still exists, so that
+        # consumer group LeaveGroup works correctly. If tables are dropped
+        # after the topic is deleted (by the context manager exit), the
+        # consumer close can hang.
+        instance.query(
+            """
+            DROP TABLE IF EXISTS test.kafka1_mv;
+            DROP TABLE IF EXISTS test.kafka2_mv;
+            DROP TABLE IF EXISTS test.kafka3_mv;
+            DROP TABLE IF EXISTS test.kafka1;
+            DROP TABLE IF EXISTS test.kafka2;
+            ATTACH TABLE IF NOT EXISTS test.kafka3;
+            DROP TABLE IF EXISTS test.kafka3;
+            DROP TABLE IF EXISTS test.destination;
+            """
+        )
