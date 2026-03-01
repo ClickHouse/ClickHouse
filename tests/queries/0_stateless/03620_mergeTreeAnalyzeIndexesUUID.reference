@@ -11,9 +11,9 @@ select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8192+1 or key = 8192*3+1
 all_1_1_0	[(1,2),(3,4)]
 select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8192+1 or key = 8192*5+1);
 all_1_1_0	[(1,2),(5,6)]
-select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8193, 'all_1_1_0');
+select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8193, ['all_1_1_0']);
 all_1_1_0	[(1,2)]
-select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8193, 'no_such_part');
+select * from mergeTreeAnalyzeIndexesUUID('UUID', key = 8193, ['no_such_part']);
 -- Columns not from PK is allowed and ignored.
   select * from mergeTreeAnalyzeIndexesUUID('UUID', value = 0);
 all_1_1_0	[(0,12)]

@@ -11,9 +11,11 @@ select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or k
 all_1_1_0	[(1,2),(3,4)]
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or key = 8192*5+1);
 all_1_1_0	[(1,2),(5,6)]
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'all_1_1_0');
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, ['all_1_1_0']);
 all_1_1_0	[(1,2)]
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'no_such_part');
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, ['no_such_part']);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, array('all_1_1_0'));
+all_1_1_0	[(1,2)]
 -- Columns not from PK is allowed and ignored.
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, value = 0);
 all_1_1_0	[(0,12)]
