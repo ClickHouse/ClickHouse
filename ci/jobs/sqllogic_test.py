@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import html
+import json
 import os
 import sys
 from pathlib import Path
@@ -8,6 +10,9 @@ from praktika.result import Result
 from praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
+
+MIN_TOTAL_TESTS = 5_939_581
+MAX_FAILED_TESTS = 201_707
 
 
 # Reuse the same ClickHouseBinary helper from sqltest_job.py
@@ -81,6 +86,150 @@ class ClickHouseBinary:
             )
             return False
         return True
+
+
+def load_stage_reports(out_dir, mode_name):
+    """Load report.json files from each stage under a mode's output directory."""
+    stages_dir = os.path.join(out_dir, mode_name, f"{mode_name}-stages")
+    reports = {}
+    if not os.path.isdir(stages_dir):
+        print(f"Stages directory not found: {stages_dir}")
+        return reports
+    for entry in sorted(os.listdir(stages_dir)):
+        report_path = os.path.join(stages_dir, entry, "report.json")
+        if os.path.isfile(report_path):
+            with open(report_path, "r", encoding="utf-8") as f:
+                reports[entry] = json.load(f)
+            print(f"Loaded report: {report_path}")
+    return reports
+
+
+def check_thresholds(complete_test_reports):
+    """Check that the complete-clickhouse stage meets success thresholds.
+    Returns (passed, info_string)."""
+    report = complete_test_reports.get("complete-clickhouse")
+    if report is None:
+        return False, "FAILED: complete-clickhouse report not found"
+
+    stats = report.get("stats", {})
+    total_stats = stats.get("total", {})
+    total_success = total_stats.get("success", 0)
+    total_fail = total_stats.get("fail", 0)
+    total_tests = total_success + total_fail
+
+    lines = []
+    passed = True
+
+    if total_tests < MIN_TOTAL_TESTS:
+        lines.append(
+            f"FAILED: total tests {total_tests:,} < minimum {MIN_TOTAL_TESTS:,}"
+        )
+        passed = False
+    else:
+        lines.append(f"OK: total tests {total_tests:,} >= minimum {MIN_TOTAL_TESTS:,}")
+
+    if total_fail > MAX_FAILED_TESTS:
+        lines.append(
+            f"FAILED: failed tests {total_fail:,} > maximum {MAX_FAILED_TESTS:,}"
+        )
+        passed = False
+    else:
+        lines.append(
+            f"OK: failed tests {total_fail:,} <= maximum {MAX_FAILED_TESTS:,}"
+        )
+
+    info = "; ".join(lines)
+    return passed, info
+
+
+def generate_html_report(all_reports, report_path, threshold_passed, threshold_info):
+    """Generate an HTML report following the sqltest_job.py pattern."""
+    reset_color = "</b>"
+
+    def color_tag(ratio):
+        if ratio == 0:
+            return "<b style='color: red;'>"
+        elif ratio < 0.5:
+            return "<b style='color: orange;'>"
+        elif ratio < 1:
+            return "<b style='color: gray;'>"
+        else:
+            return "<b style='color: green;'>"
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(
+            "<html><body><pre style='font-size: 16pt; padding: 1em; line-height: 1.25;'>\n"
+        )
+
+        # Threshold status
+        if threshold_passed:
+            f.write(
+                f"<b style='color: green;'>Thresholds: PASSED{reset_color}\n"
+            )
+        else:
+            f.write(
+                f"<b style='color: red;'>Thresholds: FAILED{reset_color}\n"
+            )
+        f.write(f"  {html.escape(threshold_info)}\n\n")
+
+        # Per-mode breakdown
+        for mode_name, stage_reports in sorted(all_reports.items()):
+            f.write(f"<b>{html.escape(mode_name)}</b>\n")
+
+            for stage_name, report in sorted(stage_reports.items()):
+                stats = report.get("stats", {})
+                total = stats.get("total", {})
+                success = total.get("success", 0)
+                fail = total.get("fail", 0)
+                total_count = success + fail
+
+                if total_count == 0:
+                    f.write(f"  {html.escape(stage_name)}: no tests\n")
+                    continue
+
+                ratio = success / total_count
+                f.write(
+                    f"  {html.escape(stage_name)}: {color_tag(ratio)}"
+                    f"{success:,} / {total_count:,} ({ratio:.1%}){reset_color}\n"
+                )
+
+                # Statements/queries sub-breakdown
+                for sub_key in ("statements", "queries"):
+                    sub = stats.get(sub_key, {})
+                    sub_success = sub.get("success", 0)
+                    sub_fail = sub.get("fail", 0)
+                    sub_total = sub_success + sub_fail
+                    if sub_total == 0:
+                        continue
+                    sub_ratio = sub_success / sub_total
+                    f.write(
+                        f"    {sub_key}: {color_tag(sub_ratio)}"
+                        f"{sub_success:,} / {sub_total:,} ({sub_ratio:.1%}){reset_color}\n"
+                    )
+
+                # Top 20 failing test files
+                tests = report.get("tests", {})
+                failing = []
+                for test_name, test_data in tests.items():
+                    test_stats = test_data.get("stats", {}).get("total", {})
+                    test_fail = test_stats.get("fail", 0)
+                    if test_fail > 0:
+                        failing.append((test_fail, test_name))
+                failing.sort(reverse=True)
+
+                if failing:
+                    f.write(f"    Top failing tests (max 20):\n")
+                    for test_fail, test_name in failing[:20]:
+                        f.write(
+                            f"      <b style='color: red;'>{test_fail:,}</b>"
+                            f" failures: {html.escape(test_name)}\n"
+                        )
+
+            f.write("\n")
+
+        f.write("</pre></body></html>\n")
+
+    print(f"HTML report written to {report_path}")
 
 
 def main():
@@ -192,9 +341,42 @@ def main():
             )
         )
 
+    # Step 6: Generate report and check thresholds
+    report_html_path = os.path.join(out_dir, "report.html")
+    threshold_info = ""
+
+    if results[-1].is_ok():
+        print("Generate report and check thresholds")
+
+        def report_and_thresholds():
+            nonlocal threshold_info
+
+            all_reports = {}
+            for mode_name in ("statements-test", "complete-test"):
+                stage_reports = load_stage_reports(out_dir, mode_name)
+                if stage_reports:
+                    all_reports[mode_name] = stage_reports
+
+            complete_reports = all_reports.get("complete-test", {})
+            threshold_ok, threshold_info = check_thresholds(complete_reports)
+
+            generate_html_report(
+                all_reports, report_html_path, threshold_ok, threshold_info
+            )
+            return threshold_ok
+
+        results.append(
+            Result.from_commands_run(
+                name="Report & Thresholds",
+                command=report_and_thresholds,
+            )
+        )
+
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
+        files=[report_html_path] if os.path.isfile(report_html_path) else [],
+        info=threshold_info,
     ).complete_job()
 
 
