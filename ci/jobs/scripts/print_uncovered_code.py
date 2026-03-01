@@ -150,6 +150,7 @@ if __name__ == "__main__":
         name="Print Uncovered Code",
         status=Result.Status.SUCCESS,
         info=msg,
+        with_info_from_results=True,
     )
     r.set_comment(msg)
     r.complete_job()

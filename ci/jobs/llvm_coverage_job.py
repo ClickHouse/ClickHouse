@@ -260,7 +260,8 @@ if __name__ == "__main__":
                 f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
             )
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
-
+            uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
+                                 
             save_date_into_ci_db(
                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 pr_number,
@@ -278,7 +279,7 @@ if __name__ == "__main__":
                 diff_res.status,
                 coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
                 diff_coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
-                uncovered_code_url=f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}",
+                uncovered_code_url=uncovered_code_url,
             )
 
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
@@ -299,6 +300,7 @@ if __name__ == "__main__":
                     f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
                     f"{_pr_changed_lines_row}"
                     f"\n[Diff coverage report]({_diff_url})"
+                    f"\n[Uncovered code]({uncovered_code_url})"
                 ),
             )
         else:
