@@ -531,7 +531,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
 {
     SCOPE_EXIT({
-        file_status->reset();
+        (*file_status).reset();
         created_processing_node = false;
     });
 
