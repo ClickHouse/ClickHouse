@@ -313,7 +313,9 @@ void ExternalDictionariesLoader::reloadAllTriedToLoadInOrder() const
         }
         catch (...)
         {
-            /// If we can't parse the source config, skip this dictionary's dependencies
+            LOG_WARNING(getLogger("ExternalDictionariesLoader"),
+                "Failed to parse source config for dictionary '{}', skipping dependency resolution: {}",
+                info.loader_name, getCurrentExceptionMessage(false));
             continue;
         }
 
