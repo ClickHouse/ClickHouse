@@ -1,4 +1,3 @@
-SET automatic_parallel_replicas_mode = 0;
 SET allow_experimental_ts_to_grid_aggregate_function=1;
 
 SET cluster_for_parallel_replicas = 'test_shard_localhost';
@@ -20,6 +19,7 @@ INSERT INTO t_resampled_timeseries(step, metric_id, grid_timestamp, samples) VAL
 (10, 42, '2024-12-12 12:00:30', (['2024-12-12 12:00:29', '2024-12-12 12:00:23'], [100, 100])),
 (10, 42, '2024-12-12 12:00:40', (['2024-12-12 12:00:39', '2024-12-12 12:00:38'], [90, 100]));
 
+SET automatic_parallel_replicas_mode = 0;
 WITH
     toDateTime('2024-12-12 12:00:10', 'UTC') AS start_ts,
     toDateTime('2024-12-12 12:01:00', 'UTC') AS end_ts,

@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS table1;
 CREATE TABLE table1 (number UInt64) ENGINE=MergeTree ORDER BY number;
 INSERT INTO table1 SELECT number FROM numbers(300);
 
-SET automatic_parallel_replicas_mode = 0;
 SELECT count()
 FROM
 (
@@ -11,6 +10,7 @@ FROM
 );
 
 -- check that parallel_replicas_for_non_replicated_merge_tree(off by default) is respected in subquery
+SET automatic_parallel_replicas_mode = 0;
 SELECT count()
 FROM
 (
