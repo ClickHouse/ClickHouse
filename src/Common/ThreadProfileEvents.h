@@ -194,7 +194,6 @@ public:
     {
         None,
         Procfs,
-        Netlink,
     };
 
     static const char * metricsProviderString(MetricsProvider provider);
