@@ -1075,6 +1075,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1085,7 +1086,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
