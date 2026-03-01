@@ -2849,10 +2849,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else
                 key_expr_type_not_null = key_expr_type;
 
-            /// Native integers and DateTime are accurately compared without cast.
+            /// Native integers and DateTime/DateTime64 are accurately compared without cast.
             bool cast_not_needed =
-                (isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                && (isNativeInteger(const_type) || isDateTime(const_type));
+                (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
+                && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
