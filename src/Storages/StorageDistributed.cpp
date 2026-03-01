@@ -351,8 +351,8 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas
-        = settings[Setting::allow_experimental_parallel_reading_from_replicas] ? settings[Setting::max_parallel_replicas] : 1;
+    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
+        ? settings[Setting::max_parallel_replicas] : 1;
 
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
