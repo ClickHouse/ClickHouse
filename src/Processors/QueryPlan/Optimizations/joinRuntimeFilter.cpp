@@ -4,6 +4,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -12,11 +15,14 @@
 #include <Interpreters/Context.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/Block.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 
 namespace DB
@@ -62,6 +68,186 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
         join_algorithm == JoinAlgorithm::GRACE_HASH;
+}
+
+namespace
+{
+
+const ReadFromMergeTree * getMergeTreeStep(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            return read;
+
+        if (node->children.size() != 1)
+            return nullptr;
+
+        node = node->children.front();
+    }
+    return nullptr;
+}
+
+}
+
+struct JoinKeyStats
+{
+    UInt64 ndv;
+    UInt64 total_rows;
+};
+
+/**
+ * Retrieves statistics (NDV and Total Rows) for a specific join key on the build side.
+ *
+ * This function performs a "best effort" estimation by combining three sources of truth:
+ * 1. Plan Structure: Checks for explicit `LimitStep` nodes (e.g., subqueries with LIMIT).
+ * 2. Optimizer Estimates: Uses `ConditionSelectivityEstimator` which accounts for WHERE clauses.
+ * 3. Storage Metadata: Falls back to `MergeTree` data parts if the optimizer is uninitialized.
+ */
+static std::optional<JoinKeyStats> getJoinKeyStats(
+    QueryPlan::Node * build_filter_node,
+    const String & key_column_name)
+{
+    /// 1. Inspect the Query Plan for LIMIT constraints.
+    /// If the build side is a subquery like (SELECT * FROM table LIMIT 10), the cardinality 'n'
+    /// cannot exceed 10, regardless of how large the underlying table is.
+    std::optional<size_t> limit_value;
+    QueryPlan::Node * curr = build_filter_node;
+    while (curr)
+    {
+        if (const auto * limit = typeid_cast<const LimitStep *>(curr->step.get()))
+        {
+            limit_value = limit->getLimit();
+            break;
+        }
+        /// Only traverse down linear chains (single child) to find the limit.
+        if (curr->children.size() != 1)
+            break;
+        curr = curr->children.front();
+    }
+
+    const auto * merge_tree_step = getMergeTreeStep(build_filter_node);
+    if (!merge_tree_step)
+        return std::nullopt;
+
+    /// Helper to strip table aliases (e.g., "__table1.id" -> "id") so we can look up
+    /// the physical column statistics in the storage engine.
+    auto stripAlias = [](const String & name)
+    {
+        size_t dot_pos = name.find_last_of('.');
+        return (dot_pos == String::npos) ? name : name.substr(dot_pos + 1);
+    };
+
+    String physical_name = stripAlias(key_column_name);
+    auto estimator = merge_tree_step->getConditionSelectivityEstimator(Names{physical_name});
+    if (!estimator)
+        return std::nullopt;
+
+    auto profile = estimator->estimateRelationProfile();
+
+    /// --- Determining 'n' (Estimated Number of Distinct Values) ---
+
+    /// Priority 1: Trust the Optimizer's row estimate first.
+    /// This value is usually preferred because it accounts for filter selectivity (WHERE clauses).
+    UInt64 n = profile.rows;
+
+    /// Apply the hard LIMIT from the plan if it's smaller than the estimated rows.
+    if (limit_value && n > *limit_value)
+    {
+        n = *limit_value;
+    }
+
+    /// Priority 2: Refine using specific Column Statistics (NDV).
+    /// If the column has hyperloglog/uniq sketches, this is more accurate than raw row counts.
+    auto it = profile.column_stats.find(physical_name);
+    if (it != profile.column_stats.end() && it->second.num_distinct_values > 0)
+    {
+        n = std::min(n, it->second.num_distinct_values);
+    }
+
+    /// Priority 3: Storage Fallback (The Safety Net).
+    /// If 'n' is 0, it means the estimator is uninitialized (common with new tables or missing stats).
+    /// Should fallback to the raw storage count, BUT re-apply the LIMIT check should also be done.
+    /// This prevents a "LIMIT 10" query on a 1M row table from being treated as 1M rows.
+    if (n == 0)
+    {
+        n = merge_tree_step->getParts().getRowsCountAllParts();
+        if (limit_value && n > *limit_value)
+        {
+            n = *limit_value;
+        }
+    }
+
+    /// Calculate the final total rows estimate to return in the struct.
+    UInt64 final_total_rows = profile.rows;
+    if (limit_value && final_total_rows > *limit_value)
+        final_total_rows = *limit_value;
+
+    return JoinKeyStats{.ndv = n, .total_rows = final_total_rows};
+}
+
+/**
+ * Statically estimates the saturation of the Bloom filter to decide if it should be skipped.
+ *
+ * Rationale:
+ * A Bloom filter becomes ineffective when it is too saturated (too many bits are set to 1).
+ * If the saturation is high, the False Positive Probability (FPP) approaches 1.0, meaning
+ * the filter will pass almost every row from the probe side. In such cases, building and
+ * checking the filter is pure overhead (hashing cost + cache misses) with zero selectivity gain.
+ *
+ * Math:
+ * We estimate the expected fraction of bits set to 1 (saturation) using the standard approximation:
+ *
+ * P(saturation) = 1 - exp(-k * n / m)
+ *
+ * Where:
+ * n = Estimated Number of Distinct Values (NDV) from the build side statistics.
+ * m = Total size of the Bloom filter in bits (join_runtime_bloom_filter_bytes * 8).
+ * k = Number of hash functions (join_runtime_bloom_filter_hash_functions).
+ *
+ * Alignment with Runtime:
+ * This static check aligns with the dynamic runtime check controlled by
+ * `join_runtime_bloom_filter_max_ratio_of_set_bits`. Both checks measure bit saturation.
+ * We use saturation here (instead of the theoretical FPR) to ensure that if the planner
+ * decides to build a filter, the runtime won't immediately discard it for being "too full".
+ */
+static bool shouldDisableRuntimeFilter(
+    const std::optional<JoinKeyStats> & build_stats,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    size_t build_side_row_count = 0) /// Fallback row count from the plan step if stats are missing.
+{
+    // If the threshold is 1.0 (or higher), the user has explicitly disabled this optimization.
+    if (optimization_settings.join_runtime_filter_build_saturation_threshold >= 1.0)
+        return false;
+
+    // Determine 'n' (NDV).
+    // Priority:
+    // 1. Specific column NDV from statistics (most accurate).
+    // 2. Fallback to total row count if NDV is unknown/missing.
+    double n = 0;
+    if (build_stats && build_stats->ndv > 0)
+        n = static_cast<double>(build_stats->ndv);
+    else if (build_side_row_count > 0)
+        n = static_cast<double>(build_side_row_count);
+
+    // If still have no estimate for n, default to ENABLED (return false) to be safe.
+    if (n == 0)
+        return false;
+
+    double k = static_cast<double>(optimization_settings.join_runtime_bloom_filter_hash_functions);
+    double m = static_cast<double>(optimization_settings.join_runtime_bloom_filter_bytes * 8);
+
+    if (m == 0.0)
+        return true; // Filter has no space (0 bytes), so it is effectively fully saturated.
+
+    // Calculate expected saturation: P = 1 - e^(-kn/m)
+    double p = 1.0 - std::exp(-k * n / m);
+
+    LOG_DEBUG(getLogger("joinRuntimeFilter"),
+        "Saturation Check: n={}, m={}, k={}, p={:.4f}, threshold={:.2f}",
+        n, m, k, p, optimization_settings.join_runtime_filter_build_saturation_threshold);
+
+    return p >= optimization_settings.join_runtime_filter_build_saturation_threshold;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -178,16 +364,63 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
+        size_t build_side_row_count = 0;
+        std::optional<size_t> top_limit;
+        {
+            QueryPlan::Node * lnode = build_filter_node;
+            while (lnode)
+            {
+                if (const auto * limit = typeid_cast<const LimitStep *>(lnode->step.get()))
+                {
+                    top_limit = limit->getLimit();
+                    break;
+                }
+                if (lnode->children.size() != 1) break;
+                lnode = lnode->children.front();
+            }
+        }
+
+        if (const auto * merge_tree_step = getMergeTreeStep(build_filter_node))
+        {
+            build_side_row_count = merge_tree_step->getParts().getRowsCountAllParts();
+            if (top_limit && build_side_row_count > *top_limit)
+                build_side_row_count = *top_limit;
+        }
+
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
-            /// Make unique filter name for each of the predicates. If will be used at runtime to "connect" build side and apply side
             const String filter_name = filter_name_prefix + "_" + toString(i);
-
             const auto & join_key_build_side = join_keys_build_side[i];
             const auto & join_key_probe_side = join_keys_probe_side[i];
+            const auto build_key_name = join_key_build_side.name;
 
-            /// If types of left and right columns do not match then we need to deduce common super type for them
-            /// and add CAST-s to this type to build and apply sides
+            auto build_stats = getJoinKeyStats(build_filter_node, build_key_name);
+
+            // If stats exist, perform the check
+            if (build_stats)
+            {
+                if (shouldDisableRuntimeFilter(build_stats, optimization_settings, build_stats->ndv))
+                {
+                    LOG_DEBUG(getLogger("joinRuntimeFilter"), "Saturation high (n={}), skipping key {}", build_stats->ndv, build_key_name);
+                    continue;
+                }
+            }
+
+            // Determine effective n
+            // Priority 1: NDV from column stats (if > 0)
+            // Priority 2: Total rows from the plan step (fallback)
+            size_t effective_n = build_side_row_count;
+            if (build_stats && build_stats->ndv > 0)
+                effective_n = static_cast<size_t>(build_stats->ndv);
+
+            if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
+            {
+                LOG_DEBUG(getLogger("joinRuntimeFilter"),
+                    "Saturation Check: Disabling filter for '{}' (n={})",
+                    build_key_name, effective_n);
+                continue;
+            }
+
             DataTypePtr common_type;
             if (!join_key_build_side.type->equals(*join_key_probe_side.type))
             {
@@ -216,8 +449,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
             /// Add building filter to the build subtree of join
             {
-                QueryPlan::Node * new_build_filter_node = nullptr;
-                new_build_filter_node = &nodes.emplace_back();
+                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
                 new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
                     build_filter_node->step->getOutputHeader(),
                     join_key_build_side.name,
@@ -230,11 +462,18 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                     /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
-
                 build_filter_node = new_build_filter_node;
             }
+        }
+
+        if (all_filter_conditions.empty())
+        {
+            LOG_DEBUG(getLogger("joinRuntimeFilter"),
+                "All runtime filters disabled due to high saturation. Skipping FilterStep creation.");
+            return false;
         }
 
         if (all_filter_conditions.size() == 1)

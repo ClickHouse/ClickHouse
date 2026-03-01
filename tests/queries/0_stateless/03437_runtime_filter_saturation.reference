@@ -1,0 +1,6 @@
+--- Expect NO Runtime Filter (Saturation High) ---
+0
+--- Expect Runtime Filter (Check Disabled) ---
+1
+--- Expect Runtime Filter (Saturation Low) ---
+1
