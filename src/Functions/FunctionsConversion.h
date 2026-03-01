@@ -3621,13 +3621,13 @@ struct ToDateMonotonicity
         }
         else if (
             ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() < 0xFFFF) && (right.isNull() || right.safeGet<UInt64>() >= 0xFFFF)))
+             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() < 0xFFFF) && (right.isNull() || right.safeGet<Int64>() >= 0xFFFF)))
+                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() < 0xFFFF) && (right.isNull() || right.safeGet<Float64>() >= 0xFFFF))))
+                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
             || !isNativeNumber(type))
         {
             return {};
