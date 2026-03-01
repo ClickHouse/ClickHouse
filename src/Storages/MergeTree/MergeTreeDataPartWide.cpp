@@ -481,6 +481,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 #ifndef NDEBUG
         /// Most trivial types
         if (rows_count != 0
+            && size.data_uncompressed != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
             && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT}
