@@ -94,7 +94,7 @@ WITH
     ) AS t
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-WITH (
+WITH
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
@@ -110,11 +110,11 @@ WITH (
         WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS t)
+    ) AS t
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
 SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-WITH (
+WITH
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
@@ -128,7 +128,7 @@ WITH (
         WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
-    ) AS t)
+    ) AS t
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '');
 
 set joined_subquery_requires_alias=0, enable_analyzer=0; -- the query is invalid with the analyzer
