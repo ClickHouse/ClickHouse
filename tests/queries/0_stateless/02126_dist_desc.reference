@@ -6,4 +6,3 @@ select * from remote(\'127.2\', \'system.one\') format Null;	['DESC TABLE system
 select * from remote(\'127.2\', \'system\', \'one\') format Null;	['DESC TABLE system.one']
 select * from remote(\'127.2\', system.one) format Null;	['DESC TABLE system.one']
 select * from remote(\'127.2\', system, one) format Null;	['DESC TABLE system.one']
-system flush logs query_log;	[]
