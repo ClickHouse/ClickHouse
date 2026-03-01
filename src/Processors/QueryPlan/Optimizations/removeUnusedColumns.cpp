@@ -56,7 +56,14 @@ bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::No
         columns_to_discard.push_back(&(*output_it));
 
     if (columns_to_discard.empty())
+    {
+        /// Even when all column names match, the column representations might differ
+        /// (e.g., Const vs materialized after JoinStepLogical materializes its dummy column).
+        /// Sync the parent's input header with the child's output header.
+        if (!blocksHaveEqualStructure(*input_header, *output_header))
+            parent.step->updateInputHeader(parent.children[child_id]->step->getOutputHeader(), child_id);
         return false;
+    }
 
     ActionsDAG discarding_dag;
     for (const auto * column : columns_to_discard)
