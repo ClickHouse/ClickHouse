@@ -24,7 +24,6 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
 #include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
@@ -2848,14 +2847,9 @@ try
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
-        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
-            " neither clickhouse-server process has CAP_NET_ADMIN capability."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location."
             " 'taskstats' performance statistics will be disabled."
-            " It could happen due to incorrect ClickHouse package installation."
-            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep {}'."
-            " Note that it will not work on 'nosuid' mounted filesystems."
-            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
-            executable_path);
+            " It could happen due to incorrect ClickHouse package installation.");
     }
     else
     {
@@ -3125,9 +3119,6 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// safeExit calls _exit, which bypasses static destructors and atexit handlers.
-                /// Explicitly clean up OpenSSL to avoid LeakSanitizer false positives.
-                OpenSSLInitializer::cleanup();
                 safeExit(0);
             }
         });
@@ -3183,9 +3174,16 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
 #endif
         if (type == "http")
+        {
+            /// Allow custom http_handlers configuration for this protocol endpoint.
+            /// E.g. <protocols><my_http><type>http</type><handlers>http_handlers_alt</handlers></my_http></protocols>
+            String handlers_config_key;
+            if (config.has(conf_name + ".handlers"))
+                handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
+        }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
@@ -3752,6 +3750,7 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            String handlers_key = "http_handlers";
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
@@ -3768,6 +3767,8 @@ void Server::updateServers(
                         if (type == "http")
                         {
                             is_http = true;
+                            if (config.has(conf_name + ".handlers"))
+                                handlers_key = config.getString(conf_name + ".handlers");
                             break;
                         }
                     }
@@ -3793,9 +3794,9 @@ void Server::updateServers(
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
             if (force_restart)
-                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server->getDescription());
+                LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {
