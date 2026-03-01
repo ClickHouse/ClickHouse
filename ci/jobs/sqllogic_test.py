@@ -3,6 +3,7 @@
 import html
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -102,6 +103,44 @@ def load_stage_reports(out_dir, mode_name):
                 reports[entry] = json.load(f)
             print(f"Loaded report: {report_path}")
     return reports
+
+
+def classify_failures(report):
+    """Classify failed requests from a stage report by reason category.
+    Returns sorted list of (count, category) tuples, descending by count."""
+    categories = {}
+    code_re = re.compile(r"Code: (\d+)")
+
+    for test_data in report.get("tests", {}).values():
+        for req in test_data.get("requests", {}).values():
+            if req.get("status") != "error":
+                continue
+            reason = req.get("reason", "") or ""
+
+            if "different hashes" in reason:
+                cat = "Hash mismatch"
+            elif "different value count" in reason:
+                cat = "Row count mismatch"
+            elif "different values" in reason:
+                cat = "Value mismatch"
+            elif "different exceptions" in reason:
+                cat = "Exception mismatch"
+            elif "canonic result has exception" in reason:
+                cat = "Missing exception"
+            elif "actual result has exception" in reason:
+                cat = "Unexpected exception"
+            elif "columns count differ" in reason:
+                cat = "Column count mismatch"
+            else:
+                m = code_re.search(reason)
+                if m:
+                    cat = f"Code {m.group(1)}"
+                else:
+                    cat = "Other"
+
+            categories[cat] = categories.get(cat, 0) + 1
+
+    return sorted(categories.items(), key=lambda x: -x[1])
 
 
 def check_thresholds(complete_test_reports):
@@ -207,30 +246,15 @@ def generate_html_report(all_reports, report_path, threshold_passed, threshold_i
                         f"{sub_success:,} / {sub_total:,} ({sub_ratio:.1%}){reset_color}\n"
                     )
 
-                # Top 20 failing test files
-                tests = report.get("tests", {})
-                failing = []
-                for test_name, test_data in tests.items():
-                    test_stats = test_data.get("stats", {})
-                    test_fail = test_stats.get("total", {}).get("fail", 0)
-                    if test_fail > 0:
-                        stmt_fail = test_stats.get("statements", {}).get("fail", 0)
-                        query_fail = test_stats.get("queries", {}).get("fail", 0)
-                        failing.append((test_fail, stmt_fail, query_fail, test_name))
-                failing.sort(reverse=True)
-
-                if failing:
-                    f.write(f"    Top failing tests (max 20):\n")
-                    for test_fail, stmt_fail, query_fail, test_name in failing[:20]:
-                        parts = []
-                        if stmt_fail > 0:
-                            parts.append(f"{stmt_fail:,} stmt")
-                        if query_fail > 0:
-                            parts.append(f"{query_fail:,} query")
-                        classification = f" ({', '.join(parts)})" if parts else ""
+                # Failure classification by reason
+                classified = classify_failures(report)
+                if classified:
+                    f.write(f"    Failure categories:\n")
+                    for cat, count in classified:
+                        pct = 100.0 * count / fail if fail else 0
                         f.write(
-                            f"      <b style='color: red;'>{test_fail:,}</b>"
-                            f" failures{classification}: {html.escape(test_name)}\n"
+                            f"      <b style='color: red;'>{count:>9,}</b>"
+                            f"  {pct:5.1f}%  {html.escape(cat)}\n"
                         )
 
             f.write("\n")
