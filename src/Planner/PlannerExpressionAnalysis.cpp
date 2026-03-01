@@ -748,9 +748,18 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
           * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
           * otherwise coordinator does not find it in block.
+          *
+          * Similarly, if there is WITH FILL, we must preserve ORDER BY output columns through LIMIT BY,
+          * because the WithFill step (added after LIMIT BY in the plan) needs them in the block header.
+          *
+          * Example: SELECT 1 FROM t1 ORDER BY toNullable(1+0) WITH FILL LIMIT 1 BY c0;
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
+        bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
+        if (sort_analysis_result_optional.has_value()
+            && (has_with_fill
+                || (planner_query_processing_info.isFirstStage()
+                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->dag.getOutputs())
