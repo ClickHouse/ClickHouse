@@ -4,7 +4,7 @@ defaults:
   topology: 3
 scenarios:
 # ─── Baselines ─────────────────────────────────────────────────────────────
-- id: prod-mix
+- id: prod-mix-no-fault
   name: Prod mix (no faults)
   description: Full request mix (get, create, set, multi, list). Baseline for prod-mix-light.
   topology: 3
@@ -62,7 +62,7 @@ scenarios:
 #     - /e2e/prod/create
 #     - /e2e/prod/set
 # ─── Workload variants ─────────────────────────────────────────────────────
-- id: read
+- id: read-no-fault
   name: Read-only (no faults)
   description: get 90%, list 10%. Baseline for read-light.
   topology: 3
@@ -83,7 +83,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: write
+- id: write-no-fault
   name: Write-only (no faults)
   description: create 60%, set 40%. Baseline for write-light.
   topology: 3
@@ -104,7 +104,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: read-multi
+- id: read-multi-no-fault
   name: MultiRead batching (no faults)
   description: Batched get/list. Baseline for read-multi-light.
   topology: 3
@@ -128,7 +128,7 @@ scenarios:
   opts:
     feature_flags:
       multi_read: 1
-- id: write-multi
+- id: write-multi-no-fault
   name: Multi-op batches (no faults)
   description: Batch multi create/set. Baseline for write-multi-light.
   topology: 3
@@ -149,7 +149,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: list-heavy
+- id: list-heavy-no-fault
   name: List-heavy (no faults)
   description: list 75%, get 25%. Baseline for list-heavy-light.
   topology: 3
@@ -170,7 +170,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: churn
+- id: churn-no-fault
   name: Churn (no faults)
   description: create 80%, set 20%, remove_factor 0.7. Baseline for churn-light.
   topology: 3
@@ -191,7 +191,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: large-payload
+- id: large-payload-no-fault
   name: Large payload (no faults)
   description: 1–4 KB values, prod mix. Baseline for large-payload-light.
   topology: 3
@@ -212,7 +212,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: single-hot-get
+- id: single-hot-get-no-fault
   name: Single hot path (no faults)
   description: 100% get on one path. Baseline for single-hot-get-light.
   topology: 3
@@ -233,7 +233,7 @@ scenarios:
   - type: p99_le
   - type: log_sanity_ok
   - type: print_summary
-- id: multi-large
+- id: multi-large-no-fault
   name: Multi-large batches (no faults)
   description: 10–30 ops per batch. Baseline for multi-large-light.
   topology: 3
