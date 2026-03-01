@@ -1,5 +1,4 @@
-1	a
-3	c
-\N	b
-a
-b
+0	zero_row
+\N	null_row
+zero_row
+null_row
