@@ -247,8 +247,13 @@ if __name__ == "__main__":
         results.append(diff_res)
 
         # Generate report for changed blocks only
-        Shell.run("python3 ci/jobs/scripts/print_uncovered_code.py", verbose=True)
+        _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
+        Shell.run(
+            f"python3 ci/jobs/scripts/print_uncovered_code.py 2>&1 | tee {_print_log}",
+            verbose=True,
+        )
         print_res = Result.from_fs("Print Uncovered Code")
+        print_res.files.append(_print_log)
         results.append(print_res)
 
         if not info.is_local_run:
