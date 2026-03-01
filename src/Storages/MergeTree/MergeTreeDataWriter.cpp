@@ -884,6 +884,33 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
 
+    /// Detect columns that are entirely type-default values and exclude them from
+    /// the columns list, so they are not written to data files (neither Wide .bin
+    /// files nor the Compact shared data file).  The block itself is kept intact:
+    /// skip indices, projections, primary index, and min-max index are computed from
+    /// the full block by the writer independently of the columns list.
+    ///
+    /// Reading a part that lacks a column fills it with type defaults automatically
+    /// (the same mechanism as ALTER ADD COLUMN on existing parts).  Key columns
+    /// (sorting, partition, primary) are also safe to omit: primary.idx and
+    /// minmax_*.idx already contain the baked-in values, and the merge reader fills
+    /// defaults for missing column data.
+    bool has_empty_columns = false;
+    {
+        NameSet empty_columns;
+        const auto rows = block.rows();
+        for (const auto & col : block)
+        {
+            if (col.column->getNumberOfDefaultRows() == rows)
+                empty_columns.insert(col.name);
+        }
+        if (!empty_columns.empty())
+        {
+            columns = columns.eraseNames(empty_columns);
+            has_empty_columns = true;
+        }
+    }
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -894,7 +921,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/ false,
+        /*reset_columns=*/ has_empty_columns,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
