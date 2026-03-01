@@ -1,3 +1,5 @@
+-- Tags: long
+
 drop table if exists X sync;
 drop table if exists Y sync;
 
