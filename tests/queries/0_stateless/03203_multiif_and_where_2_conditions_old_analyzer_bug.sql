@@ -4,6 +4,8 @@ SET optimize_and_compare_chain = 1;
 SET use_query_condition_cache = 0;
 SET optimize_extract_common_expressions = 0;
 SET optimize_respect_aliases = 1;
+SET optimize_if_transform_strings_to_enum = 0;
+SET optimize_if_chain_to_multiif = 0;
 
 DROP TABLE IF EXISTS bugcheck1;
 
