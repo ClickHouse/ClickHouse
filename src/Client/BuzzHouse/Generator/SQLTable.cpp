@@ -1736,9 +1736,17 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 {
     Expr * expr = idef->mutable_expr();
     std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
+    auto generate_idx = [&]() -> IndexType
+    {
+        auto raw_idx = idx_range(rg.generator);
+        /// Value 3 was previously IDX_hypothesis which has been removed; remap to IDX_minmax.
+        if (raw_idx == 3)
+            raw_idx = static_cast<uint32_t>(IndexType::IDX_minmax);
+        return static_cast<IndexType>(raw_idx);
+    };
     const IndexType itpe = projection
         ? IndexType::IDX_basic
-        : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : static_cast<IndexType>(idx_range(rg.generator)));
+        : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : generate_idx());
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
