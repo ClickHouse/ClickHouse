@@ -211,18 +211,26 @@ def generate_html_report(all_reports, report_path, threshold_passed, threshold_i
                 tests = report.get("tests", {})
                 failing = []
                 for test_name, test_data in tests.items():
-                    test_stats = test_data.get("stats", {}).get("total", {})
-                    test_fail = test_stats.get("fail", 0)
+                    test_stats = test_data.get("stats", {})
+                    test_fail = test_stats.get("total", {}).get("fail", 0)
                     if test_fail > 0:
-                        failing.append((test_fail, test_name))
+                        stmt_fail = test_stats.get("statements", {}).get("fail", 0)
+                        query_fail = test_stats.get("queries", {}).get("fail", 0)
+                        failing.append((test_fail, stmt_fail, query_fail, test_name))
                 failing.sort(reverse=True)
 
                 if failing:
                     f.write(f"    Top failing tests (max 20):\n")
-                    for test_fail, test_name in failing[:20]:
+                    for test_fail, stmt_fail, query_fail, test_name in failing[:20]:
+                        parts = []
+                        if stmt_fail > 0:
+                            parts.append(f"{stmt_fail:,} stmt")
+                        if query_fail > 0:
+                            parts.append(f"{query_fail:,} query")
+                        classification = f" ({', '.join(parts)})" if parts else ""
                         f.write(
                             f"      <b style='color: red;'>{test_fail:,}</b>"
-                            f" failures: {html.escape(test_name)}\n"
+                            f" failures{classification}: {html.escape(test_name)}\n"
                         )
 
             f.write("\n")
