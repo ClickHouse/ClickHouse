@@ -15,6 +15,8 @@ struct CompressedField
     size_t uncompressed_size;
 };
 
+#ifdef ENABLE_FSST
+
 class ColumnFSST;
 
 template <bool compressed>
@@ -99,6 +101,7 @@ public:
         column.get(row_num, x);
         writeString(x.dump(), ostr);
     }
+
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
         nested->deserializeTextQuoted(column, istr, settings);
@@ -151,3 +154,9 @@ private:
 };
 
 }
+
+#endif
+
+#ifndef ENABLE_FSST
+using SerializationStringFSST = SerializationString;
+#endif

@@ -1,3 +1,5 @@
+#ifdef ENABLE_FSST
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +20,7 @@
 #include <Common/typeid_cast.h>
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+
 
 #include <fsst.h>
 
@@ -284,10 +287,7 @@ void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    if (!state)
-    {
-        state = std::make_shared<SerializeFSSTState<false>>();
-    }
+    state = state ? state : std::make_shared<SerializeFSSTState<false>>();
     auto serialize_state = std::static_pointer_cast<SerializeFSSTState<false>>(state);
 
     for (size_t ind = offset; ind < std::min(column->size(), offset + limit); ind++)
@@ -315,8 +315,8 @@ void SerializationStringFSST::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkStatePtr & state) const
 {
     state = state ? state : std::make_shared<SerializeFSSTState<true>>();
-
     auto serialize_state = std::static_pointer_cast<SerializeFSSTState<true>>(state);
+
     size_t state_size = 0;
     auto string_column = column->getStringColumn();
     const auto & origin_lengths = column->getLengths();
@@ -408,3 +408,5 @@ void SerializationStringFSST::deserializeBinaryBulkWithMultipleStreams(
 }
 
 };
+
+#endif

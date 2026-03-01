@@ -1,3 +1,5 @@
+#ifdef ENABLE_FSST
+
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -12,6 +14,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+
 
 #include <fsst.h>
 
@@ -372,3 +375,5 @@ ColumnPtr recursiveRemoveFSST(const ColumnPtr & column)
 }
 
 };
+
+#endif

@@ -13,6 +13,14 @@
 #include <Common/PODArray.h>
 #include <Common/WeakHash.h>
 
+#ifdef ENABLE_FSST
+
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+
 #include <fsst.h>
 
 namespace DB
@@ -190,3 +198,9 @@ public:
 ColumnPtr recursiveRemoveFSST(const ColumnPtr & column);
 
 };
+
+#endif
+
+#ifndef ENABLE_FSST
+using ColumnFSST = ColumnString;
+#endif
