@@ -24,7 +24,8 @@ Create a new git worktree for ClickHouse development with submodules hardlinked 
 ### 2. Validate inputs
 
 - Ensure `$0` (branch name) is provided. If not, use `AskUserQuestion` to ask the user for a branch name.
-- Use `AskUserQuestion` to ask the user for the **worktree destination path**. Suggest `<MAIN_REPO>/../<MAIN_REPO_NAME>-<branch-name>` as the default — this places the worktree as a sibling of the main repo directory, named after both the repo and the branch (e.g. `../ClickHouse-my-feature`). The user may enter a different path if preferred.
+- Compute `SAFE_BRANCH` by replacing all `/` characters in the branch name with `-`. For example, branch `release/25.12` → `SAFE_BRANCH=release-25.12`. This avoids creating nested directories from slashes in branch names.
+- Use `AskUserQuestion` to ask the user for the **worktree destination path**. Suggest `<MAIN_REPO>/../<MAIN_REPO_NAME>-<SAFE_BRANCH>` as the default — this places the worktree as a sibling of the main repo directory, named after both the repo and the branch (e.g. `../ClickHouse-my-feature` or `../ClickHouse-release-25.12`). The user may enter a different path if preferred.
 
 Let `WORKTREE_PATH` be the chosen path (resolved to an absolute path).
 
@@ -61,17 +62,20 @@ This is the key optimization — instead of cloning each submodule from the netw
 
 Determine `GIT_DIR` — the `.git` directory of the main repo. For a regular repo this is `<MAIN_REPO>/.git`. For a worktree it may differ; use `git -C <MAIN_REPO> rev-parse --git-common-dir` to get the correct path.
 
+Determine `WORKTREE_ENTRY` — the name git uses for this worktree's entry in `$GIT_DIR/worktrees/`. This is `$(basename <WORKTREE_PATH>)`.
+
 ```bash
 GIT_DIR=$(git -C <MAIN_REPO> rev-parse --git-common-dir)
+WORKTREE_ENTRY=$(basename <WORKTREE_PATH>)
 
 # Hardlink-copy the modules directory from the main repo
 cp -al $GIT_DIR/modules \
-       $GIT_DIR/worktrees/<branch-name>/modules
+       $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
 
 # Fix the worktree pointer inside each submodule's config.
 # The hardlinked configs still reference the main repo's worktree path,
 # so update them to point to the new worktree's contrib directories.
-find $GIT_DIR/worktrees/<branch-name>/modules -name config -exec \
+find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config -exec \
     sed -i "s|worktree = .*/contrib/|worktree = <WORKTREE_PATH>/contrib/|" {} +
 
 # Some submodules (e.g. contrib/boost) use the worktreeConfig extension,
@@ -80,7 +84,7 @@ find $GIT_DIR/worktrees/<branch-name>/modules -name config -exec \
 # "../../../../contrib/boost" that resolve correctly from the main repo's
 # modules dir but incorrectly from the worktree's modules dir.
 # Fix them to use absolute paths pointing to the new worktree.
-find $GIT_DIR/worktrees/<branch-name>/modules -name config.worktree -exec \
+find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
     sed -i "s|worktree = .*/contrib/|worktree = <WORKTREE_PATH>/contrib/|" {} +
 
 # Register submodules and write .git pointer files into contrib/ directories
@@ -115,7 +119,7 @@ Report to the user:
 ## Examples
 
 - `/create-worktree my-feature` — Create a new worktree with a new branch `my-feature`
-- `/create-worktree fix/issue-12345` — Create a new worktree, branch name can contain slashes
+- `/create-worktree fix/issue-12345` — Create a new worktree, branch name can contain slashes (slashes are replaced with dashes in the default directory name)
 
 ## Notes
 
