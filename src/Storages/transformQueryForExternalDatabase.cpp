@@ -193,6 +193,29 @@ bool isCompatible(ASTPtr & node)
             if (!isCompatible(expr))
                 return false;
 
+        /// When the parser's fast-path literal conversion produces
+        /// ASTLiteral(Tuple) as the IN set (e.g. `(id, name) IN ((1, 'a'))`
+        /// parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
+        /// we must wrap it in a function with empty name so that it
+        /// formats with an extra pair of parentheses: `((1, 'a'))`.
+        /// Without this, ASTLiteral(Tuple) formats as `(1, 'a')` and the
+        /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
+        /// as two separate scalar values instead of one tuple.
+        if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
+        {
+            auto & rhs = function->arguments->children[1];
+            if (const auto * rhs_literal = rhs->as<ASTLiteral>())
+            {
+                if (rhs_literal->value.getType() == Field::Types::Tuple)
+                {
+                    /// Use empty name — same "dirty trick" as for single-element
+                    /// tuples (line 183) — to produce just `(expr)` without a
+                    /// function name prefix.
+                    rhs = makeASTFunction("", rhs);
+                }
+            }
+        }
+
         /// It should be formatted in the operator form.
         function->setIsOperator(true);
 
