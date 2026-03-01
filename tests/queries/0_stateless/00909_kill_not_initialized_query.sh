@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: DETACH/ATTACH interferes with timing-sensitive KILL QUERY logic
 
 set -e
 
