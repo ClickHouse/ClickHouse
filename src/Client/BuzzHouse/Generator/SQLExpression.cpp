@@ -57,7 +57,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
     if (!has_nested)
     {
-        ColumnPath & cp = const_cast<ColumnPath &>(expr->path());
+        ColumnPath & cp = *expr->mutable_path();
 
         this->depth++;
         if (rg.nextMediumNumber() < nested_prob)
@@ -1338,7 +1338,6 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 }
                 this->ids.emplace_back(static_cast<uint32_t>(WINcume_dist));
                 this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
-                this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
                 this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
                 this->ids.emplace_back(static_cast<uint32_t>(WINrank));
                 this->ids.emplace_back(static_cast<uint32_t>(WINrow_number));

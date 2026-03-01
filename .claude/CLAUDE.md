@@ -76,6 +76,8 @@ When creating a pull request, append Changelog category and Changelog entry acco
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
+Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
+
 Always load and apply the following skills:
 
 - .claude/skills/build
@@ -83,3 +85,4 @@ Always load and apply the following skills:
 - .claude/skills/fix-sync
 - .claude/skills/alloc-profile
 - .claude/skills/bisect
+- .claude/skills/create-worktree

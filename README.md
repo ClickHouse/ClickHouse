@@ -47,7 +47,6 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
 * [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
 * [Bangalore GDG + Deutsche Bank Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/313325219/) - February 28th, 2026
 * [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
@@ -60,8 +59,8 @@ Upcoming meetups
 * [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
 * [San Francisco Observability FireSide Chat](https://luma.com/v5d8u087) - March 31st, 2026
 
-
 Recent meetups
+* [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
 * [Toronto Meetup](https://luma.com/8p8unbnw) - February 19th, 2026
 * [AI Night San Francisco](https://luma.com/j2ck1sbz)- February 11th, 2026
 * [ClickHouse London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/312314505/) - February 10th, 2026
@@ -72,12 +71,8 @@ Recent meetups
 * [ClickHouse France Meetup](https://www.meetup.com/clickhouse-france-user-group/events/312295018/) - January 28th, 2026
 * [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/312801791/) - January 27th, 2026
 * [New York Meetup](https://luma.com/iicnlq41) - January 26th, 2026
-* [Iceberg Meetup New York](https://luma.com/ifxnj82q) - January 23rd, 2026
-* [Data & AI Paris Meetup](https://luma.com/3szhmv9h) - January 22nd, 2026
-* [Iceberg Meetup Menlo Park](https://luma.com/abggijbh) - January 21st, 2026
-* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/312621832/) - January 10th, 2026
-* [AI Night San Francisco](https://luma.com/j2ck1sbz)- February 11th, 2026
-* [Toronto Meetup](https://luma.com/8p8unbnw) - February 19th, 2026
+
+
 
 
 ## Recent Recordings
