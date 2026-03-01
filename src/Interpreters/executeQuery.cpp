@@ -2032,6 +2032,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             auto fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
+            fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
             fuzz_context->setCurrentQueryId("");
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
