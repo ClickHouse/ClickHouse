@@ -10,3 +10,17 @@ DateTime64 unix_timestamp
 {"ts":1602756000.123}
 DateTime64 iso
 {"ts":"2020-10-15T10:00:00.123Z"}
+Roundtrip DateTime unix_timestamp
+{"ts":1602756000}
+Roundtrip DateTime64 unix_timestamp
+{"ts":1602756000.123}
+Roundtrip DateTime simple
+{"ts":"2020-10-15 10:00:00"}
+Roundtrip DateTime64 simple
+{"ts":"2020-10-15 10:00:00.123"}
+DateTime64 negative unix_timestamp
+{"ts":-0.877}
+DateTime64 negative close to epoch
+{"ts":-0.123}
+DateTime64 scale0 unix_timestamp
+{"ts":1602756000}

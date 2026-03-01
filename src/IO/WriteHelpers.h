@@ -764,6 +764,11 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
 
+    /// Handle negative fractional part by using the absolute value for processing.
+    /// This mirrors the approach used in writeTime64FractionalText.
+    if (fractional < 0)
+        fractional = -fractional;
+
     for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
         data[pos] += fractional % DateTime64(10);
 
@@ -967,6 +972,16 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
+
+    /// When whole part is zero and fractional part is negative (e.g. -0.123s),
+    /// DecimalUtils::split returns {whole=0, fractional=-123}. We need to
+    /// output "-0.123" but writeIntText(0) won't print a minus sign.
+    if (components.whole == 0 && components.fractional < 0)
+    {
+        buf.write('-');
+        components.fractional = -components.fractional;
+    }
+
     writeIntText(components.whole, buf);
 
     if (scale > 0)

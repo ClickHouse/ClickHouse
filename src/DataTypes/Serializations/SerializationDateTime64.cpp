@@ -191,7 +191,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else
     {
-        readIntText(x, istr);
+        readText(x, scale, istr, settings, time_zone, utc_time_zone);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -206,7 +206,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
