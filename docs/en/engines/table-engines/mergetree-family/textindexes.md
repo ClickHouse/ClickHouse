@@ -113,14 +113,12 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
-Text indexes can be defined on:
-- [String](/sql-reference/data-types/string.md)
-- [FixedString](/sql-reference/data-types/fixedstring.md)
-- [Array(String)](/sql-reference/data-types/array.md)
-- [Array(FixedString)](/sql-reference/data-types/array.md)
-- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) map functions) columns.
+Text indexes can be defined on columns of these types:
+- [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md),
+- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md), and
+- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions).
 
-The [Nullable(\[Fixed\]String)](/sql-reference/data-types/nullable.md) and [LowCardinality(\[Fixed\]String)](/sql-reference/data-types/lowcardinality.md) wrapped alternatives are also supported including `Array(Nullable([Fixed]String))`.
+Columns of type [Nullable(T)](/sql-reference/data-types/nullable.md) and [LowCardinality()](/sql-reference/data-types/lowcardinality.md) are also supported, including `Array(Nullable(String or FixedString))`.
 
 Alternatively, to add a text index to an existing table:
 

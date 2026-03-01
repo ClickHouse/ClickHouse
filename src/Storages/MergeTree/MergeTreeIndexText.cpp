@@ -1393,25 +1393,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    DataTypePtr unwrapped = index.data_types[0];
+    DataTypePtr nested_type = index.data_types[0];
     while (true)
     {
-        if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped.get()))
-            unwrapped = array_type->getNestedType();
-        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped.get()))
-            unwrapped = nullable_type->getNestedType();
-        else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(unwrapped.get()))
-            unwrapped = lc_type->getDictionaryType();
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
+            nested_type = array_type->getNestedType();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+            nested_type = nullable_type->getNestedType();
+        else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            nested_type = lc_type->getDictionaryType();
         else
             break;
     }
 
-    WhichDataType data_type(unwrapped);
+    WhichDataType data_type(nested_type);
     if (!data_type.isString() && !data_type.isFixedString())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns whose underlying type (after unwrapping `Nullable`, `Array`, and `LowCardinality`) is `String` or `FixedString`");
+            "Text index must be created on columns of type `String` or `FixedString`");
     }
 
     /// Create the preprocessor for validation.
