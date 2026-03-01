@@ -27,19 +27,19 @@ QUERY id: 0
           FUNCTION id: 14, function_name: ilike, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 15, nodes: 2
-                FUNCTION id: 16, function_name: materialize, function_type: ordinary, result_type: String
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
                   ARGUMENTS
-                    LIST id: 17, nodes: 1
-                      CONSTANT id: 18, constant_value: \'Привет, World\', constant_value_type: String
-                CONSTANT id: 19, constant_value: \'%привет%\', constant_value_type: String
-          FUNCTION id: 20, function_name: ilike, function_type: ordinary, result_type: UInt8
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'Привет, World\', constant_value_type: String
+                CONSTANT id: 16, constant_value: \'%привет%\', constant_value_type: String
+          FUNCTION id: 17, function_name: ilike, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 21, nodes: 2
-                FUNCTION id: 22, function_name: materialize, function_type: ordinary, result_type: String
+              LIST id: 18, nodes: 2
+                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
                   ARGUMENTS
-                    LIST id: 23, nodes: 1
-                      CONSTANT id: 24, constant_value: \'Привет, World\', constant_value_type: String
-                CONSTANT id: 25, constant_value: \'world%\', constant_value_type: String
+                    LIST id: 11, nodes: 1
+                      CONSTANT id: 12, constant_value: \'Привет, World\', constant_value_type: String
+                CONSTANT id: 19, constant_value: \'world%\', constant_value_type: String
   SETTINGS optimize_or_like_chain=0 enable_analyzer=1
 SELECT materialize(\'Привет, World\') AS s
 WHERE multiMatchAny(materialize(\'Привет, World\') AS s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
