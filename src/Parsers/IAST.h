@@ -76,7 +76,10 @@ public:
                 "Derived RESERVED_BITS must be greater than parent's");
         }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
         return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
+#pragma clang diagnostic pop
     }
 
     template <typename BitfieldStruct>
@@ -94,7 +97,10 @@ public:
                 "Derived RESERVED_BITS must be greater than parent's");
         }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
         return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
+#pragma clang diagnostic pop
     }
 
     UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }
