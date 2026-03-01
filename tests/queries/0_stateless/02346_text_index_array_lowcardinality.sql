@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS tab;
 
-
-# Test creation of table on top of Array(LowCardinality(FixedString)) and LowCardinality(String)
+-- Test creation of table on top of Array(LowCardinality(FixedString)) and LowCardinality(String)
 CREATE TABLE tab
 (
     id UInt32,
@@ -27,7 +26,6 @@ SELECT count() FROM tab WHERE has(arr_fixed, toFixedString('baz', 3));
 
 -- Test if the index is being used
 SELECT count() FROM tab WHERE has(arr, 'baz') SETTINGS log_comment = 'test_lc_array_index';
-
 
 -- make sure logs are available
 SYSTEM FLUSH LOGS;
