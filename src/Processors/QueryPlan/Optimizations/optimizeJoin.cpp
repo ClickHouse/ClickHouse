@@ -240,12 +240,191 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-/// Estimate filter selectivity by reading a small sample (1-2 granules) from the first data part
-/// and evaluating the filter expression(s) on it. Returns the fraction of rows that pass.
-///
-/// Handles both a parent FilterStep expression (`filter_dag`/`filter_column_name`) and a PREWHERE
-/// condition on the ReadFromMergeTree step. When both are present, both are evaluated and their
-/// combined (AND) selectivity is returned.
+/// Compiled filter expressions ready to evaluate on blocks.
+struct FilterEvaluator
+{
+    std::optional<ExpressionActions> filter_actions;
+    String filter_column_name;
+    std::optional<ExpressionActions> prewhere_actions;
+    String prewhere_column_name;
+
+    /// Count rows passing all filters in a block (AND semantics).
+    size_t countMatching(Block & block) const
+    {
+        if (prewhere_actions)
+            prewhere_actions->execute(block);
+        if (filter_actions)
+            filter_actions->execute(block);
+
+        if (prewhere_actions && filter_actions)
+        {
+            FilterDescription prewhere_result(*block.getByName(prewhere_column_name).column);
+            FilterDescription filter_result(*block.getByName(filter_column_name).column);
+            size_t num_rows = block.rows();
+            size_t matching_count = 0;
+            for (size_t i = 0; i < num_rows; ++i)
+                matching_count += ((*prewhere_result.data)[i] & (*filter_result.data)[i]) ? 1 : 0;
+            return matching_count;
+        }
+
+        const String & result_column_name = prewhere_actions ? prewhere_column_name : filter_column_name;
+        FilterDescription filter_result(*block.getByName(result_column_name).column);
+        return filter_result.countBytesInFilter();
+    }
+};
+
+/// Build a `FilterEvaluator` from the filter DAG and/or prewhere info.
+/// Returns nullopt if no filter expressions can be extracted.
+/// Populates `columns_to_read` with the columns required by the filters.
+static std::optional<FilterEvaluator> buildFilterEvaluator(
+    const ActionsDAG * filter_dag,
+    const String * filter_column_name,
+    const PrewhereInfoPtr & prewhere_info,
+    Names & columns_to_read)
+{
+    auto extract_sub_dag = [](const ActionsDAG & dag, const String & column_name) -> std::optional<ActionsDAG>
+    {
+        const auto * node = dag.tryFindInOutputs(column_name);
+        if (!node)
+            return std::nullopt;
+        return ActionsDAG::cloneSubDAG({node}, /*remove_aliases=*/ false);
+    };
+
+    std::optional<ActionsDAG> filter_sub_dag;
+    std::optional<ActionsDAG> prewhere_sub_dag;
+
+    if (filter_dag && filter_column_name)
+        filter_sub_dag = extract_sub_dag(*filter_dag, *filter_column_name);
+    if (prewhere_info)
+        prewhere_sub_dag = extract_sub_dag(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name);
+
+    if (!filter_sub_dag && !prewhere_sub_dag)
+        return std::nullopt;
+
+    NameSet required_columns_set;
+    if (filter_sub_dag)
+        for (const auto & name : filter_sub_dag->getRequiredColumnsNames())
+            required_columns_set.insert(name);
+    if (prewhere_sub_dag)
+        for (const auto & name : prewhere_sub_dag->getRequiredColumnsNames())
+            required_columns_set.insert(name);
+
+    columns_to_read.assign(required_columns_set.begin(), required_columns_set.end());
+    if (columns_to_read.empty())
+        return std::nullopt;
+
+    FilterEvaluator evaluator;
+    if (filter_sub_dag)
+        evaluator.filter_actions.emplace(std::move(*filter_sub_dag));
+    if (prewhere_sub_dag)
+        evaluator.prewhere_actions.emplace(std::move(*prewhere_sub_dag));
+    if (filter_column_name)
+        evaluator.filter_column_name = *filter_column_name;
+    if (prewhere_info)
+        evaluator.prewhere_column_name = prewhere_info->prewhere_column_name;
+
+    return evaluator;
+}
+
+/// Flat index over granules across all parts and ranges.
+/// Builds a prefix-sum array for O(log n) resolution of flat position to (part_index, mark).
+class GranuleIndex
+{
+public:
+    explicit GranuleIndex(const RangesInDataParts & parts_with_ranges)
+    {
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            for (const auto & range : parts_with_ranges[part_index].ranges)
+            {
+                cumulative_granule_counts.push_back(total_granule_count + (range.end - range.begin));
+                part_indices.push_back(part_index);
+                range_begins.push_back(range.begin);
+                total_granule_count = cumulative_granule_counts.back();
+            }
+        }
+    }
+
+    size_t totalGranules() const { return total_granule_count; }
+
+    /// Pick up to `count` evenly-spaced unique positions across the granule space.
+    /// Returns fewer positions when the table has fewer granules than requested.
+    std::vector<size_t> pickEvenlySpaced(size_t count) const
+    {
+        if (total_granule_count == 0)
+            return {};
+
+        size_t actual_count = std::min(count, total_granule_count);
+        std::vector<size_t> positions(actual_count);
+        for (size_t i = 0; i < actual_count; ++i)
+            positions[i] = (2 * i + 1) * total_granule_count / (2 * actual_count);
+        return positions;
+    }
+
+    /// Resolve a flat granule index to (part_index, mark).
+    std::pair<size_t, size_t> resolve(size_t flat_position) const
+    {
+        /// Binary search: find first entry where cumulative count exceeds flat_position.
+        size_t range_index = static_cast<size_t>(
+            std::upper_bound(cumulative_granule_counts.begin(), cumulative_granule_counts.end(), flat_position)
+            - cumulative_granule_counts.begin());
+        size_t preceding_granules = range_index > 0 ? cumulative_granule_counts[range_index - 1] : 0;
+        return {part_indices[range_index], range_begins[range_index] + (flat_position - preceding_granules)};
+    }
+
+private:
+    /// One entry per (part, range) pair: cumulative granule count, part index, range start mark.
+    std::vector<size_t> cumulative_granule_counts;
+    std::vector<size_t> part_indices;
+    std::vector<size_t> range_begins;
+    size_t total_granule_count = 0;
+};
+
+/// Read one granule from a part and return matching_rows / total_rows.
+static std::optional<Float64> measureGranuleSelectivity(
+    const ReadFromMergeTree & read_step,
+    const RangesInDataPart & part,
+    size_t mark,
+    const Names & columns_to_read,
+    const FilterEvaluator & evaluator)
+{
+    MarkRanges mark_ranges{{mark, mark + 1}};
+    auto pipe = createMergeTreeSequentialSource(
+        MergeTreeSequentialSourceType::Merge,
+        read_step.getMergeTreeData(),
+        read_step.getStorageSnapshot(),
+        RangesInDataPart(part.data_part, part.parent_part, 0, 0, mark_ranges),
+        std::make_shared<AlterConversions>(),
+        /*merged_part_offsets=*/ nullptr,
+        columns_to_read, mark_ranges,
+        /*filtered_rows_count=*/ nullptr,
+        /*apply_deleted_mask=*/ false,
+        /*read_with_direct_io=*/ false,
+        /*prefetch=*/ false);
+
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    size_t total_rows = 0;
+    size_t matching_rows = 0;
+    Block block;
+    while (executor.pull(block))
+    {
+        if (block.rows() == 0)
+            continue;
+        total_rows += block.rows();
+        matching_rows += evaluator.countMatching(block);
+    }
+
+    if (total_rows == 0)
+        return std::nullopt;
+    return Float64(matching_rows) / Float64(total_rows);
+}
+
+/// Estimate filter selectivity by sampling 3 evenly-spaced granules across all parts
+/// and ranges, evaluating the filter on each, and returning the median selectivity.
+/// The median provides robustness against outlier granules.
+/// Deterministic positioning ensures reproducible query plans.
 static std::optional<Float64> estimateFilterSelectivity(
     const ReadFromMergeTree & read_step,
     const ActionsDAG * filter_dag = nullptr,
@@ -254,8 +433,6 @@ static std::optional<Float64> estimateFilterSelectivity(
     try
     {
         auto prewhere_info = read_step.getPrewhereInfo();
-
-        /// We need at least one filter expression to estimate.
         if (!filter_dag && !prewhere_info)
             return std::nullopt;
 
@@ -265,130 +442,38 @@ static std::optional<Float64> estimateFilterSelectivity(
         if (!analyzed_result || analyzed_result->parts_with_ranges.empty())
             return std::nullopt;
 
-        const auto & first_part = analyzed_result->parts_with_ranges.front();
-        if (first_part.ranges.empty())
+        Names columns_to_read;
+        auto evaluator = buildFilterEvaluator(filter_dag, filter_column_name, prewhere_info, columns_to_read);
+        if (!evaluator)
             return std::nullopt;
 
-        /// Build sample mark ranges: take up to 2 marks from the first range.
-        const auto & first_range = first_part.ranges.front();
-        size_t sample_end = std::min(first_range.begin + 2, first_range.end);
-        if (sample_end <= first_range.begin)
+        GranuleIndex granule_index(analyzed_result->parts_with_ranges);
+        if (granule_index.totalGranules() == 0)
             return std::nullopt;
 
-        MarkRanges sample_marks;
-        sample_marks.emplace_back(first_range.begin, sample_end);
+        constexpr size_t num_samples = 3;
+        auto sample_positions = granule_index.pickEvenlySpaced(num_samples);
 
-        /// Extract minimal sub-DAGs containing only the filter computation, not pass-through columns.
-        /// A FilterStep's DAG typically includes ALIASes for all columns in its header; cloneSubDAG
-        /// with just the filter output node trims those away so we only read columns the filter needs.
-        std::optional<ActionsDAG> filter_sub_dag;
-        std::optional<ActionsDAG> prewhere_sub_dag;
-
-        if (filter_dag && filter_column_name)
+        /// Sample granules and collect selectivities.
+        std::vector<Float64> selectivities;
+        selectivities.reserve(num_samples);
+        for (size_t granule_position : sample_positions)
         {
-            const auto * output_node = filter_dag->tryFindInOutputs(*filter_column_name);
-            if (output_node)
-                filter_sub_dag = ActionsDAG::cloneSubDAG({output_node}, /*remove_aliases=*/ false);
-        }
-        if (prewhere_info)
-        {
-            const auto * output_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-            if (output_node)
-                prewhere_sub_dag = ActionsDAG::cloneSubDAG({output_node}, /*remove_aliases=*/ false);
+            auto [part_index, mark] = granule_index.resolve(granule_position);
+            if (auto selectivity = measureGranuleSelectivity(
+                    read_step, analyzed_result->parts_with_ranges[part_index],
+                    mark, columns_to_read, *evaluator))
+                selectivities.push_back(*selectivity);
         }
 
-        if (!filter_sub_dag && !prewhere_sub_dag)
+        if (selectivities.empty())
             return std::nullopt;
 
-        /// Collect required columns from the minimal sub-DAGs.
-        NameSet columns_set;
-        if (filter_sub_dag)
-            for (const auto & name : filter_sub_dag->getRequiredColumnsNames())
-                columns_set.insert(name);
-        if (prewhere_sub_dag)
-            for (const auto & name : prewhere_sub_dag->getRequiredColumnsNames())
-                columns_set.insert(name);
-
-        Names columns_to_read(columns_set.begin(), columns_set.end());
-        if (columns_to_read.empty())
-            return std::nullopt;
-
-        /// Read the sample block from the part.
-        /// We pass apply_deleted_mask=false because we only need a rough selectivity estimate
-        /// and don't need to filter out lightweight-deleted rows. This also avoids the need
-        /// for AlterConversions which require mutation context we don't have here.
-        auto pipe = createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
-            read_step.getMergeTreeData(),
-            read_step.getStorageSnapshot(),
-            RangesInDataPart(first_part.data_part, first_part.parent_part, 0, 0, sample_marks),
-            std::make_shared<AlterConversions>(),
-            /*merged_part_offsets=*/ nullptr,
-            columns_to_read,
-            sample_marks,
-            /*filtered_rows_count=*/ nullptr,
-            /*apply_deleted_mask=*/ false,
-            /*read_with_direct_io=*/ false,
-            /*prefetch=*/ false);
-
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        /// Prepare ExpressionActions from the minimal sub-DAGs.
-        std::optional<ExpressionActions> filter_actions;
-        std::optional<ExpressionActions> prewhere_actions;
-        if (filter_sub_dag)
-            filter_actions.emplace(std::move(*filter_sub_dag));
-        if (prewhere_sub_dag)
-            prewhere_actions.emplace(std::move(*prewhere_sub_dag));
-
-        Block block;
-        size_t total_rows = 0;
-        size_t matching_rows = 0;
-
-        while (executor.pull(block))
-        {
-            if (block.rows() == 0)
-                continue;
-
-            total_rows += block.rows();
-
-            /// Evaluate all filter expressions and count rows passing all of them (AND semantics).
-            if (prewhere_actions)
-                prewhere_actions->execute(block);
-            if (filter_actions)
-                filter_actions->execute(block);
-
-            if (prewhere_actions && filter_actions)
-            {
-                /// Both filters present — AND their results using raw UInt8 arrays.
-                FilterDescription prewhere_result(*block.getByName(prewhere_info->prewhere_column_name).column);
-                FilterDescription filter_result(*block.getByName(*filter_column_name).column);
-                size_t rows = block.rows();
-                size_t both = 0;
-                for (size_t i = 0; i < rows; ++i)
-                    both += ((*prewhere_result.data)[i] & (*filter_result.data)[i]) ? 1 : 0;
-                matching_rows += both;
-            }
-            else
-            {
-                const String & col_name = prewhere_actions
-                    ? prewhere_info->prewhere_column_name
-                    : *filter_column_name;
-                FilterDescription filter_result(*block.getByName(col_name).column);
-                matching_rows += filter_result.countBytesInFilter();
-            }
-        }
-
-        if (total_rows < 100)
-            return std::nullopt;
-
-        Float64 selectivity = Float64(matching_rows) / Float64(total_rows);
-
-        if (selectivity == 0.0)
-            return std::nullopt;
-
-        return selectivity;
+        std::sort(selectivities.begin(), selectivities.end());
+        Float64 median_selectivity = (selectivities.size() % 2 == 1)
+            ? selectivities[selectivities.size() / 2]
+            : (selectivities[selectivities.size() / 2 - 1] + selectivities[selectivities.size() / 2]) / 2.0;
+        return median_selectivity > 0.0 ? std::optional(median_selectivity) : std::nullopt;
     }
     catch (const Exception & e)
     {
