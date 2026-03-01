@@ -98,8 +98,11 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     {
         if (kind == ISerialization::Kind::SPARSE)
             column = ColumnSparse::create(std::move(column));
-        else if (kind == ISerialization::Kind::FSST)
+        else if (kind == ISerialization::Kind::FSST) {
+        #ifdef ENABLE_FSST
             column = ColumnFSST::create(std::move(column))->assumeMutable();
+        #endif
+        }
         else if (kind == ISerialization::Kind::REPLICATED)
             column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
     }
@@ -353,8 +356,11 @@ SerializationPtr IDataType::getSerialization(
     {
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
-        else if (kind == ISerialization::Kind::FSST)
+        else if (kind == ISerialization::Kind::FSST){
+        #ifdef ENABLE_FSST
             serialization = std::make_shared<SerializationStringFSST>(serialization);
+        #endif
+        }
         else if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)

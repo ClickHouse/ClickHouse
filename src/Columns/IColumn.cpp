@@ -919,8 +919,9 @@ template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
+#ifdef ENABLE_FSST
 template class IColumnHelper<ColumnFSST, IColumn>;
-
+#endif
 template class IColumnHelper<ColumnLowCardinality, IColumn>;
 template class IColumnHelper<ColumnNullable, IColumn>;
 template class IColumnHelper<ColumnConst, IColumn>;

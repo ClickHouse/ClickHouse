@@ -1,27 +1,28 @@
 #pragma once
 
-#include <cstddef>
-#include <memory>
-#include <vector>
-
-#include <Columns/ColumnString.h>
-#include <Columns/IColumn.h>
-#include <Columns/IColumn_fwd.h>
-#include <DataTypes/Serializations/SerializationStringFSST.h>
-#include <base/types.h>
-#include <Common/COW.h>
-#include <Common/PODArray.h>
-#include <Common/WeakHash.h>
-
 #ifdef ENABLE_FSST
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#pragma GCC diagnostic ignored "-Wcast-align"
-#pragma GCC diagnostic ignored "-Wcast-qual"
+#    include <cstddef>
+#    include <memory>
+#    include <vector>
 
-#include <fsst.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/IColumn.h>
+#    include <Columns/IColumn_fwd.h>
+#    include <DataTypes/Serializations/SerializationStringFSST.h>
+#    include <base/types.h>
+#    include <Common/COW.h>
+#    include <Common/PODArray.h>
+#    include <Common/WeakHash.h>
+
+
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
+#    pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#    pragma GCC diagnostic ignored "-Wcast-align"
+#    pragma GCC diagnostic ignored "-Wcast-qual"
+
+#    include <fsst.h>
 
 namespace DB
 {
@@ -199,8 +200,4 @@ ColumnPtr recursiveRemoveFSST(const ColumnPtr & column);
 
 };
 
-#endif
-
-#ifndef ENABLE_FSST
-using ColumnFSST = ColumnString;
 #endif

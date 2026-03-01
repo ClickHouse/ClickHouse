@@ -57,12 +57,14 @@ ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
         return kind_stack;
     }
 
+    #ifdef ENABLE_FSST
     if (const auto * column_fsst = typeid_cast<const ColumnFSST *>(&column))
     {
         auto kind_stack = getKindStack(*column_fsst->getStringColumn());
         kind_stack.push_back(Kind::FSST);
         return kind_stack;
     }
+    #endif
 
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
     {

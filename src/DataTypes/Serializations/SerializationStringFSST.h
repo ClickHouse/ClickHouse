@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENABLE_FSST
+
 #include <memory>
 
 #include <Columns/ColumnString.h>
@@ -15,7 +17,6 @@ struct CompressedField
     size_t uncompressed_size;
 };
 
-#ifdef ENABLE_FSST
 
 class ColumnFSST;
 
@@ -152,11 +153,6 @@ private:
     SerializationPtr nested;
     constexpr static size_t kCompressSize = 16 << 10; // 16KB
 };
-
 }
 
-#endif
-
-#ifndef ENABLE_FSST
-using SerializationStringFSST = SerializationString;
 #endif
