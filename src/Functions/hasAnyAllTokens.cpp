@@ -85,16 +85,16 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
 /// Function input accepts string, fixed string, array of string or array of fixed strings.
 bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
 {
-    const IDataType * inner_type = &type;
+    const IDataType * nested_type = &type;
 
     /// Unwrap an optional top-level Nullable.
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
-        inner_type = nullable->getNestedType().get();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
+        nested_type = nullable->getNestedType().get();
 
-    if (isStringOrFixedString(*inner_type))
+    if (isStringOrFixedString(*nested_type))
         return true;
 
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(inner_type))
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
     {
         const IDataType * element_type = array_type->getNestedType().get();
 
