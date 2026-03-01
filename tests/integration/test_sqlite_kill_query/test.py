@@ -81,15 +81,6 @@ ENGINE = SQLite('{SQLITE_DB_FILE_NAME}', 'big_data_table');
         cluster.shutdown()
 
 
-# Stop clickhouse-client by SIGINT signal that is the same as pressing Ctrl+C
-def stop_clickhouse_client():
-    client_pid = node1.get_process_pid("clickhouse client")
-    node1.exec_in_container(
-        ["bash", "-c", f"kill -INT {client_pid}"],
-        user="root",
-    )
-
-
 def test_kill_query(started_cluster):
     query_id = str(uuid.uuid4())
 
@@ -134,7 +125,7 @@ def test_cancel_query(started_cluster):
     node1.wait_for_log_line("Generate a chuck")
     time.sleep(1)
 
-    stop_clickhouse_client()
+    node1.stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
