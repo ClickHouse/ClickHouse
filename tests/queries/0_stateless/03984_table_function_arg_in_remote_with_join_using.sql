@@ -5,6 +5,7 @@
 
 SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
+SET enable_parallel_replicas = 0;
 
 SELECT generate_series AS c0
 FROM remote('localhost', generateSeries(1, 3)) AS t
