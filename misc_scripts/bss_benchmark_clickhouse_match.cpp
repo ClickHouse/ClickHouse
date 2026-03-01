@@ -362,23 +362,6 @@ void encodeRuntime(
             memcpy(dst + b * num_elements + i + 8, &hi, 8);
         }
     }
-    for (; i + 8 <= num_elements; i += 8)
-    {
-        for (int64_t b = 0; b < W; ++b)
-        {
-            uint64_t r =
-                u8(src[(i + 0) * W + b])        |
-               (u8(src[(i + 1) * W + b]) <<  8) |
-               (u8(src[(i + 2) * W + b]) << 16) |
-               (u8(src[(i + 3) * W + b]) << 24) |
-               (u8(src[(i + 4) * W + b]) << 32) |
-               (u8(src[(i + 5) * W + b]) << 40) |
-               (u8(src[(i + 6) * W + b]) << 48) |
-               (u8(src[(i + 7) * W + b]) << 56);
-
-            memcpy(dst + b * num_elements + i, &r, 8);
-        }
-    }
     for (; i < num_elements; ++i)
         for (int64_t b = 0; b < W; ++b)
             dst[b * num_elements + i] = src[i * W + b];
@@ -463,27 +446,6 @@ void decodeRuntime(
 
             for (int b = 0; b < W; ++b) {
                 uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
-                e0[b] = static_cast<uint8_t>(four);
-                e1[b] = static_cast<uint8_t>(four >> 8);
-                e2[b] = static_cast<uint8_t>(four >> 16);
-                e3[b] = static_cast<uint8_t>(four >> 24);
-            }
-        }
-    }
-
-    // 8-element tail
-    for (; i + 8 <= num_elements; i += 8) {
-        // NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
-        uint64_t streams[MAX_ELEMENT_WIDTH];
-        for (int b = 0; b < W; ++b)
-            memcpy(&streams[b], src + b * num_elements + i, 8);
-        for (int ei = 0; ei < 8; ei += 4) {
-            uint8_t *e0 = dst + (i + ei + 0) * W;
-            uint8_t *e1 = dst + (i + ei + 1) * W;
-            uint8_t *e2 = dst + (i + ei + 2) * W;
-            uint8_t *e3 = dst + (i + ei + 3) * W;
-            for (int b = 0; b < W; ++b) {
-                uint32_t four = static_cast<uint32_t>(streams[b] >> (ei * 8));
                 e0[b] = static_cast<uint8_t>(four);
                 e1[b] = static_cast<uint8_t>(four >> 8);
                 e2[b] = static_cast<uint8_t>(four >> 16);
@@ -1085,7 +1047,7 @@ int main()
     printf("\n");
 
     // --- Phase 4: benchmark ---
-    const int64_t DATA_SIZE = 1000LL << 20;
+    const int64_t DATA_SIZE = 250LL << 20;
     const int rounds = 10, inner = 4;
 
     for (int W : {2, 4, 8, 16, 20, 32, 64, 128})

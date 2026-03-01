@@ -7,9 +7,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
-
-#include <vector>
 #include <bit>
 
 #ifdef __x86_64__
@@ -35,34 +32,55 @@
 //  rows), so grouping them together creates long runs of similar bytes
 //  that compress dramatically better with a subsequent codec like LZ4
 //  or ZSTD.
-//
+//  
+// Can be Deleted later
 // =============================================================================
 //  Throughput reference (GB/s)
 //  Hardware: Intel i7-12500H (12th gen Alder Lake)
 //  Data: 500 MiB, 40 rounds × 8 inner iterations, averaged over 2 runs
+// 
+// =============================================================================
+//  ByteStreamSplit Benchmark — 256 MiB, 10 rounds × 4 inner, Clang -O2
+// =============================================================================
 //
-//                                      ENCODE            DECODE
-//  W     path                         min   median      min   median
-//  ---   ---------------------------  -----  -----     -----  -----
-//        Vectorized
-//   2    encodeW/decodeW              10.7   11.0       9.9   10.9
-//   4    encodeW/decodeW              10.1   10.5      11.0   11.4
-//   8    encodeW/decodeW              10.5   10.9      10.3   10.5
-//  16    encodeW<16>/SIMD              7.2    7.2       9.6    9.7
-//  20    runtime                       4.8    4.8       4.2    4.3
-//  32    runtime                       4.1    4.8       4.2    4.2
-//  64    runtime                       4.7    4.7       4.4    4.4
-// 128    runtime                       4.5    4.6       3.9    3.9
+//   W   path                    ENCODE (GB/s)    DECODE (GB/s)
+//                                min    med       min    med
+//  ---  ----------------------  ------  ------   ------  ------
 //
-//        Non-Vectorized (-fno-vectorize -fno-slp-vectorize)
-//   2    scalar                         3.4    3.4       6.3    6.4
-//   4    scalar                         3.5    3.5       6.2    6.3
-//   8    scalar                         3.4    3.5       5.3    5.4
-//  16    SIMD                           7.0    7.0       9.6    9.7
-//  20    runtime                        5.0    5.0       4.7    4.8
-//  32    runtime                        4.6    4.8       4.3    4.5
-//  64    runtime                        4.6    4.7       4.2    4.2
-// 128    runtime                        4.2    4.6       4.0    4.1
+//  memcpy (W=1)
+//   1   top-level               19.2   19.8      19.4   19.9
+//
+//  Ours — Vectorized (-O2)
+//   2   encodeW/decodeW         10.2   10.6      10.5   10.8
+//   4   encodeW/decodeW         10.1   10.2      10.4   10.8
+//   8   encodeW/decodeW          9.8   10.2       9.1   10.3
+//  16   encodeW<16>/SIMD         6.9    7.1       7.4    9.0
+//  20   runtime                  4.8    5.0       5.1    5.5
+//  32   runtime                  4.4    4.8       4.9    5.4
+//  64   runtime                  4.5    4.7       4.5    5.2
+// 128   runtime                  4.6    4.6       4.5    4.6
+//
+//  Ours — Non-Vectorized (-O2 -fno-vectorize -fno-slp-vectorize)
+//   2   scalar                   3.4    3.4       5.5    6.4
+//   4   scalar                   3.4    3.6       6.2    6.4
+//   8   scalar                   3.4    3.5       4.7    5.4
+//  16   SIMD                     4.0    4.6       3.7    3.9
+//  20   runtime                  5.0    5.1       3.9    3.9
+//  32   runtime                  4.8    4.9       3.7    3.7
+//  64   runtime                  4.7    4.8       3.0    3.0
+// 128   runtime                  4.6    4.6       2.9    2.9
+//
+// https://github.com/apache/arrow/blob/main/cpp/src/arrow/util/byte_stream_split_internal.h
+//
+//  Arrow (xsimd, -O2) 
+//   2   xsimd AVX2               9.7   10.2      10.0   10.7
+//   4   xsimd AVX2              10.0   10.7       9.7   10.9
+//   8   xsimd AVX2              10.5   11.0      10.6   10.9
+//  16   scalar<16>               4.7    5.7       4.6    4.7
+//  20   scalar dynamic           4.6    4.7       4.5    4.6
+//  32   scalar dynamic           4.4    4.6       3.7    4.1
+//  64   scalar dynamic           4.3    4.5       2.5    2.6
+// 128   scalar dynamic           3.9    3.9       2.4    2.4
 // =============================================================================
 namespace DB
 {
@@ -97,9 +115,7 @@ protected:
         return "Preprocessor (should be followed by a compression codec). "
                "Transposes bytes of fixed-width elements so that bytes at the "
                "same position within each element are grouped into contiguous "
-               "streams. Significantly improves compression of floating-point "
-               "and other fixed-width columnar data (Float32, Float64, "
-               "Decimal128, UUID, IPv6, FixedString).";
+               "streams.";
     }
 
 private:
@@ -486,23 +502,6 @@ ALWAYS_INLINE void encodeRuntime(
                 memcpy(d + b * num_elements + i + 8, &hi, 8);
             }
         }
-        for (; i + 8 <= num_elements; i += 8)
-        {
-            for (int64_t b = 0; b < W; ++b)
-            {
-                uint64_t r =
-                    u8(s[(i + 0) * W + b])        |
-                   (u8(s[(i + 1) * W + b]) <<  8) |
-                   (u8(s[(i + 2) * W + b]) << 16) |
-                   (u8(s[(i + 3) * W + b]) << 24) |
-                   (u8(s[(i + 4) * W + b]) << 32) |
-                   (u8(s[(i + 5) * W + b]) << 40) |
-                   (u8(s[(i + 6) * W + b]) << 48) |
-                   (u8(s[(i + 7) * W + b]) << 56);
-
-                memcpy(d + b * num_elements + i, &r, 8);
-            }
-        }
         for (; i < num_elements; ++i)
             for (int64_t b = 0; b < W; ++b)
                 d[b * num_elements + i] = s[i * W + b];
@@ -575,7 +574,7 @@ ALWAYS_INLINE void decodeW<16>(
 }
 
 /// Runtime-W decode for widths not handled by decodeW<W> specialisations.
-void decodeRuntime(
+ALWAYS_INLINE void decodeRuntime(
     const char * __restrict__ src_,
     char       * __restrict__ dst_,
     int64_t num_elements,
@@ -605,26 +604,6 @@ void decodeRuntime(
 
             for (int b = 0; b < W; ++b) {
                 uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
-                e0[b] = static_cast<uint8_t>(four);
-                e1[b] = static_cast<uint8_t>(four >> 8);
-                e2[b] = static_cast<uint8_t>(four >> 16);
-                e3[b] = static_cast<uint8_t>(four >> 24);
-            }
-        }
-    }
-
-    for (; i + 8 <= num_elements; i += 8) {
-        /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
-        uint64_t streams[MAX_ELEMENT_WIDTH];
-        for (int b = 0; b < W; ++b)
-            memcpy(&streams[b], src + b * num_elements + i, 8);
-        for (int ei = 0; ei < 8; ei += 4) {
-            uint8_t *e0 = dst + (i + ei + 0) * W;
-            uint8_t *e1 = dst + (i + ei + 1) * W;
-            uint8_t *e2 = dst + (i + ei + 2) * W;
-            uint8_t *e3 = dst + (i + ei + 3) * W;
-            for (int b = 0; b < W; ++b) {
-                uint32_t four = static_cast<uint32_t>(streams[b] >> (ei * 8));
                 e0[b] = static_cast<uint8_t>(four);
                 e1[b] = static_cast<uint8_t>(four >> 8);
                 e2[b] = static_cast<uint8_t>(four >> 16);
@@ -848,6 +827,14 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
             saved_element_bytes, MAX_ELEMENT_WIDTH);
 
     UInt32 bytes_to_skip = uncompressed_size % saved_element_bytes;
+
+    UInt8 saved_bytes_to_skip = static_cast<UInt8>(source[4]);
+    if (saved_bytes_to_skip != bytes_to_skip)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress ByteStreamSplit-encoded data: bytes_to_skip in header ({}) "
+            "does not match computed value ({}) — someone is writing bad data",
+            static_cast<UInt32>(saved_bytes_to_skip), bytes_to_skip);
 
     if (source_size < static_cast<UInt32>(HEADER_SIZE + bytes_to_skip))
         throw Exception(
