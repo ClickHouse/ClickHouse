@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
-#include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -13,7 +12,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/narrowPipe.h>
@@ -22,7 +20,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDictionary.h>
 
 #include <algorithm>
 #include <memory>
@@ -122,7 +119,8 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
         predicate,
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
-        cluster);
+        cluster,
+        getStorageSnapshot()->metadata);
 }
 
 /// The code executes on initiator
@@ -136,6 +134,8 @@ void IStorageCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
+    updateConfigurationIfNeeded(context);
+
     storage_snapshot->check(column_names);
 
     updateBeforeRead(context);

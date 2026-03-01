@@ -1,0 +1,59 @@
+-- Basic functionality
+0	0.2
+1	0.4
+2	0.6
+3	0.8
+4	1
+-- With PARTITION BY
+0	0	0.3333333333333333
+1	0	0.6666666666666666
+2	0	1
+3	1	0.3333333333333333
+4	1	0.6666666666666666
+5	1	1
+6	2	0.3333333333333333
+7	2	0.6666666666666666
+8	2	1
+9	3	1
+-- With DESC order
+4	0.2
+3	0.4
+2	0.6
+1	0.8
+0	1
+-- With ties in ordering values
+1	10	0.125
+2	20	0.375
+3	20	0.375
+4	30	0.75
+5	30	0.75
+6	30	0.75
+7	40	0.875
+8	50	1
+-- With multiple partitions and ties
+1	10	0.3333333333333333
+1	20	1
+1	20	1
+2	10	0.6666666666666666
+2	10	0.6666666666666666
+2	20	1
+-- With NULL values in ordering column
+1	10	0.2
+2	20	0.4
+3	\N	1
+4	30	0.6
+5	\N	1
+1	10	0.6
+2	20	0.8
+3	\N	0.4
+4	30	1
+5	\N	0.4
+1	10	0.2
+2	20	0.4
+3	\N	1
+4	30	0.6
+5	\N	1
+-- Single-row partition
+3	\N	1
+-- Empty partition
+-- Frame specification should produce an error

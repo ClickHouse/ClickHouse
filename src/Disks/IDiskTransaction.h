@@ -33,18 +33,14 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
-
-    /// Tries to commit all accumulated operations simultaneously.
-    /// If something fails rollback and throw exception.
-    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    virtual void commit() { commit(NoCommitOptions{}); }
-
-    virtual void undo() noexcept = 0;
+    virtual void commit() = 0;
 
     virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
     }
+
+    virtual void undo() noexcept = 0;
 
     virtual ~IDiskTransaction() = default;
 
@@ -53,9 +49,6 @@ public:
 
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const std::string & path) = 0;
-
-    /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const std::string & path) = 0;
 
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;

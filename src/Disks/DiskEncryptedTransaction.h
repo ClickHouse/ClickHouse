@@ -52,16 +52,13 @@ public:
             delegate_disk->getName(), disk_path);
     }
 
-    /// Tries to commit all accumulated operations simultaneously.
-    /// If something fails rollback and throw exception.
-    void commit(const TransactionCommitOptionsVariant & options) override
+    void commit() override
     {
-        delegate_transaction->commit(options);
+        delegate_transaction->commit();
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
             "Commit DiskEncryptedTransaction for delegating disk {} at path {}",
             delegate_disk->getName(), disk_path);
     }
-    void commit() override { commit(NoCommitOptions{}); }
 
     void undo() noexcept override
     {
@@ -87,13 +84,6 @@ public:
     {
         auto wrapped_path = wrappedPath(path);
         delegate_transaction->createDirectories(wrapped_path);
-    }
-
-    /// Remove all files from the directory. Directories are not removed.
-    void clearDirectory(const std::string & path) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate_transaction->clearDirectory(wrapped_path);
     }
 
     /// Move directory from `from_path` to `to_path`.

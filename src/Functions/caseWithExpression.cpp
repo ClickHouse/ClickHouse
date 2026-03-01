@@ -29,7 +29,6 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -62,14 +61,6 @@ public:
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
     ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
-        // handle Nothing type - it's an empty type that can't contain any values
-        // if either argument is Nothing, the result should be an empty column
-        if (expr.type->onlyNull() || when_value.type->onlyNull())
-        {
-            // return a constant false column
-            return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
-        }
-
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
 
@@ -95,7 +86,7 @@ public:
         auto equals_result = function_base->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
-        if (isColumnNullable(*equals_result))
+        if (equals_return_type->isNullable())
         {
             auto if_null_func = FunctionFactory::instance().get("ifNull", context);
             auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
@@ -232,7 +223,23 @@ private:
 
 REGISTER_FUNCTION(CaseWithExpression)
 {
-    factory.registerFunction<FunctionCaseWithExpression>();
+    FunctionDocumentation::Description description = R"(
+Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. Note that `NULL = NULL` evaluates to true in this context, unlike standard SQL equality.
+    )";
+    FunctionDocumentation::Syntax syntax = "caseWithExpression(expr, val1, result1[, val2, result2, ...], default)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "The expression to compare.", {"Expression"}},
+        {"val1", "Value to compare against.", {"Any"}},
+        {"result1", "Value to return when expr equals val1.", {"Any"}},
+        {"default", "Default value to return if no match is found.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result corresponding to the first matching value, or the default.", {"Any"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT CASE 1 WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'other' END", "one"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCaseWithExpression>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithExpr", "caseWithExpression");

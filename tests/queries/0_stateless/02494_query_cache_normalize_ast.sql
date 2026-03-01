@@ -2,7 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query cache (QC)
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- Run query whose result gets cached in the query cache.
 -- Besides "use_query_cache", pass two more knobs (one QC-specific knob and one non-QC-specific knob). We just care
@@ -26,4 +26,4 @@ WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query = 'SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false, max_threads = 16;';
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

@@ -1,3 +1,4 @@
+#include <Core/ServerSettings.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 
 #include <Access/ContextAccess.h>
@@ -15,10 +16,15 @@
 namespace DB
 {
 
+namespace ServerSetting
+{
+extern const ServerSettingsString default_replica_name;
+}
+
+
 ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
 {
-    return ColumnsDescription
-    {
+    return ColumnsDescription{
         {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
         {"view", std::make_shared<DataTypeString>(), "Table name."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Table uuid (Atomic database)."},
@@ -32,12 +38,12 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start, if status = Scheduled."},
         {"exception", std::make_shared<DataTypeString>(), "Error message from previous attempt if it failed."},
         {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh. Not available if status is `RunningOnAnotherReplica`."},
-        {"progress", std::make_shared<DataTypeFloat64>(), "Progress of the current refresh, between 0 and 1. Not available if status is RunningOnAnotherReplica."},
-        {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of rows read by the current refresh so far. Not available if status is RunningOnAnotherReplica."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
-        {"total_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows that need to be read by the current refresh. Not available if status is RunningOnAnotherReplica."},
-        {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
-        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number rof bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
+        {"progress", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "Progress of the current running or most recently completed refresh at the given replica, between 0 and 1. NULL if status is `RunningOnAnotherReplica` or the refresh is not running."},
+        {"read_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows read by the current running or most recently completed refresh at the given replica. NULL if status is `RunningOnAnotherReplica`."},
+        {"read_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of bytes read by the current running or most recently completed refresh at the given replica. NULL if status is `RunningOnAnotherReplica`"},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated total number of rows that need to be read by the current running or most recently completed refresh at the given replica. NULL if status is `RunningOnAnotherReplica`"},
+        {"written_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows written by the current running or most recently completed refresh at the given replica. NULL if status is `RunningOnAnotherReplica`"},
+        {"written_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of bytes written by the current running or most recently completed refresh at the given replica. NULL if status is `RunningOnAnotherReplica`"},
     };
 }
 
@@ -95,13 +101,26 @@ void StorageSystemViewRefreshes::fillData(
         if (refresh.refresh_running && retries)
             retries -= 1;
         res_columns[i++]->insert(retries);
-
-        res_columns[i++]->insert(Float64(refresh.progress.read_rows) / std::max(refresh.progress.total_rows_to_read, UInt64(1)));
-        res_columns[i++]->insert(refresh.progress.read_rows);
-        res_columns[i++]->insert(refresh.progress.read_bytes);
-        res_columns[i++]->insert(refresh.progress.total_rows_to_read);
-        res_columns[i++]->insert(refresh.progress.written_rows);
-        res_columns[i++]->insert(refresh.progress.written_bytes);
+        if (refresh.znode.last_attempt_replica.empty() || refresh.replica_name == refresh.znode.last_attempt_replica)
+        {
+            res_columns[i++]->insert(
+                static_cast<double>(refresh.progress.read_rows)
+                / static_cast<double>(std::max(refresh.progress.total_rows_to_read, UInt64(1))));
+            res_columns[i++]->insert(refresh.progress.read_rows);
+            res_columns[i++]->insert(refresh.progress.read_bytes);
+            res_columns[i++]->insert(refresh.progress.total_rows_to_read);
+            res_columns[i++]->insert(refresh.progress.written_rows);
+            res_columns[i++]->insert(refresh.progress.written_bytes);
+        }
+        else
+        {
+            res_columns[i++]->insert(Field());
+            res_columns[i++]->insert(Field());
+            res_columns[i++]->insert(Field());
+            res_columns[i++]->insert(Field());
+            res_columns[i++]->insert(Field());
+            res_columns[i++]->insert(Field());
+        }
     }
 }
 

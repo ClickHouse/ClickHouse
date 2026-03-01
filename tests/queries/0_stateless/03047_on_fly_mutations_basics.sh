@@ -18,6 +18,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    serialization_info_version = 'basic',
     storage_policy = 'default';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;
@@ -29,22 +30,22 @@ ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'd';
 ALTER TABLE t_lightweight_mut_1 UPDATE v = 'e' WHERE id = 2;
 ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'e';
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v, s FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
 SYSTEM FLUSH LOGS query_log;

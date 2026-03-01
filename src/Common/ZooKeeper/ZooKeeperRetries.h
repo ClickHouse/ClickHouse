@@ -49,7 +49,7 @@ public:
 
     void retryLoop(auto && f)
     {
-        retryLoop(f, []() {});
+        retryLoop(f, []{});
     }
 
     /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retryable error is encountered
@@ -95,6 +95,8 @@ public:
             current_iteration++;
         }
     }
+
+    void resetFailures() { total_failures = 0; keeper_error = {}; user_error = {}; }
 
     bool callAndCatchAll(auto && f)
     {

@@ -94,13 +94,35 @@ private:
 
     static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        return left[i] == right;
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] == static_cast<Initial>(right);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) == right;
+        }
+        else
+        {
+            return left[i] == right;
+        }
     }
 
     static constexpr bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
-        return left[i] == right[j];
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] == static_cast<Initial>(right[j]);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) == right[j];
+        }
+        else
+        {
+            return left[i] == right[j];
+        }
     }
 
     /// LowCardinality
@@ -122,12 +144,24 @@ private:
 
     static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
-        return left[i] >= right;
+        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
+        {
+            return left[i] >= static_cast<Initial>(right);
+        }
+        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
+        {
+            return static_cast<Result>(left[i]) >= right;
+        }
+        else
+        {
+            return left[i] >= right;
+        }
     }
 
-    static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
+    static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
 
-    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
+    static bool lessOrEqual(const Array & arr, const Field & rhs, size_t pos, size_t)
+    {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
 
@@ -666,7 +700,7 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    static NullMaps getNullMaps(const ColumnsWithTypeAndName & arguments) noexcept
+    static NullMaps getNullMaps(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -808,7 +842,7 @@ private:
             if (right->isNullable())
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            StringRef elem = right->getDataAt(0);
+            std::string_view elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
             if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
@@ -893,7 +927,7 @@ private:
                     array->getOffsets(),
                     left->getOffsets(),
                     item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size,
+                    item_const_string->getDataAt(0).size(),
                     result->getData(),
                     null_map_data,
                     null_map_item);

@@ -463,6 +463,16 @@ public:
             std::rethrow_exception(e);
     }
 
+    static void visit(ffi::SharedExpression * expression, ExpressionVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        [[maybe_unused]] uintptr_t result = ffi::visit_expression(&expression, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (auto e = data.getException())
+            std::rethrow_exception(e);
+    }
+
     static void visit(ffi::SharedPredicate * predicate, ExpressionVisitorData & data)
     {
         auto visitor = createVisitor(data);
@@ -491,6 +501,7 @@ private:
         MULTIPLY,
         DIVIDE,
         TO_JSON,
+        COALESCE,
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
@@ -528,13 +539,14 @@ private:
             .visit_minus = &throwNotImplemented<MINUS>,
             .visit_multiply = &throwNotImplemented<MULTIPLY>,
             .visit_divide = &throwNotImplemented<DIVIDE>,
+            .visit_coalesce = &throwNotImplemented<COALESCE>,
             .visit_column = &visitColumnExpression,
             .visit_struct_expr = &visitStructExpression,
             .visit_transform_expr = &visitTransformExpression,
             .visit_field_transform = &visitFieldTransform,
             .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
             .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
-            .visit_unknown = &throwNotImplementedUnknown
+            .visit_unknown = &throwNotImplementedUnknown,
         };
     }
 
@@ -734,7 +746,7 @@ private:
             DB::Field value;
             if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
             {
-                value = DB::DecimalField<DB::Decimal32>(value_ls, scale);
+                value = DB::DecimalField<DB::Decimal32>(static_cast<Int32>(value_ls), scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal32>(precision, scale));
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)
@@ -1007,7 +1019,7 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
 }
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
-    const ffi::Expression * expression,
+    ffi::SharedExpression * expression,
     const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging)

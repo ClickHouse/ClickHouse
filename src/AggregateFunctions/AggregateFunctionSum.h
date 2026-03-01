@@ -15,6 +15,7 @@
 
 #include "config.h"
 #include <Common/TargetSpecific.h>
+#include <base/wide_integer_impl.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -24,6 +25,28 @@
 namespace DB
 {
 struct Settings;
+
+/// Maps wide integer types to native builtin integer types for better performance in accumulation
+template <typename T>
+struct AccumulateResultType
+{
+    using type = T;
+};
+
+#if defined(__x86_64__)
+/// Use Clang's builtin _BitInt(256) for Int256 accumulation on x86_64
+template <>
+struct AccumulateResultType<wide::integer<256, signed>>
+{
+    using type = wide::BitInt256;
+};
+
+template <>
+struct AccumulateResultType<wide::integer<256, unsigned>>
+{
+    using type = wide::BitUInt256;
+};
+#endif
 
 /// Uses addOverflow method (if available) to avoid UB for sumWithOverflow()
 ///
@@ -50,16 +73,27 @@ struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
 template <typename T>
 struct AggregateFunctionSumData
 {
-    using Impl = AggregateFunctionSumAddOverflowImpl<T>;
-    T sum{};
+    using AccumulateResult = typename AccumulateResultType<T>::type;
+    using Impl = AggregateFunctionSumAddOverflowImpl<AccumulateResult>;
+    AccumulateResult sum{};
+
+    static constexpr AccumulateResult ALWAYS_INLINE toAccumulateResult(const T & value)
+    {
+#if defined(__x86_64__)
+        if constexpr (std::is_same_v<T, wide::integer<256, signed>> || std::is_same_v<T, wide::integer<256, unsigned>>)
+            return wide::toBitInt256(value);
+        else
+#endif
+            return static_cast<AccumulateResult>(value);
+    }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
     {
-        Impl::add(sum, value);
+        Impl::add(sum, toAccumulateResult(value));
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -76,14 +110,14 @@ struct AggregateFunctionSumData
 
             /// Something around the number of SSE registers * the number of elements fit in register.
             constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
+            AccumulateResult partial_sums[unroll_count]{};
 
             const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
             while (ptr < unrolled_end)
             {
                 for (size_t i = 0; i < unroll_count; ++i)
-                    Impl::add(partial_sums[i], T(ptr[i]));
+                    Impl::add(partial_sums[i], toAccumulateResult(static_cast<T>(ptr[i])));
                 ptr += unroll_count;
             }
 
@@ -92,10 +126,10 @@ struct AggregateFunctionSumData
         }
 
         /// clang cannot vectorize the loop if accumulator is class member instead of local variable.
-        T local_sum{};
+        AccumulateResult local_sum{};
         while (ptr < end_ptr)
         {
-            Impl::add(local_sum, T(*ptr));
+            Impl::add(local_sum, toAccumulateResult(static_cast<T>(*ptr)));
             ++ptr;
         }
         Impl::add(sum, local_sum);
@@ -107,27 +141,15 @@ struct AggregateFunctionSumData
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            addManyImplAVX512BW(ptr, start, end);
+            addManyImpl_x86_64_v4(ptr, start, end);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            addManyImplAVX512F(ptr, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            addManyImplAVX2(ptr, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            addManyImplSSE42(ptr, start, end);
+            addManyImpl_x86_64_v3(ptr, start, end);
             return;
         }
 #endif
@@ -135,7 +157,7 @@ struct AggregateFunctionSumData
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -150,11 +172,11 @@ struct AggregateFunctionSumData
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
-            T local_sum{};
+            AccumulateResult local_sum{};
             while (ptr < end_ptr)
             {
-                T multiplier = !*condition_map == add_if_zero;
-                Impl::add(local_sum, *ptr * multiplier);
+                AccumulateResult multiplier = !*condition_map == add_if_zero;
+                Impl::add(local_sum, toAccumulateResult(static_cast<T>(*ptr)) * multiplier);
                 ++ptr;
                 ++condition_map;
             }
@@ -163,32 +185,16 @@ struct AggregateFunctionSumData
         }
         else if constexpr (is_over_big_int<T>)
         {
-            /// Use a mask to discard or keep the value to reduce branch miss.
-            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
-            using MaskType = std::conditional_t<sizeof(T) == 16, Int8, Int64>;
-            alignas(64) const MaskType masks[2] = {0, -1};
-            T local_sum{};
-            while (ptr < end_ptr)
+            alignas(64) const uint64_t masks[2] = {0, ~0ULL};
+            AccumulateResult local_sum{};
+            for (size_t i = 0; i < count; ++i)
             {
-                Value v = *ptr;
-                if constexpr (!add_if_zero)
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!!*condition_map];
-                    else
-                        v.value &= masks[!!*condition_map];
-                }
-                else
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!*condition_map];
-                    else
-                        v.value &= masks[!*condition_map];
-                }
+                uint8_t flag = (condition_map[i] != add_if_zero);
 
-                Impl::add(local_sum, v);
-                ++ptr;
-                ++condition_map;
+                AccumulateResult mask{};
+                std::memset(&mask, static_cast<int>(masks[flag]), sizeof(AccumulateResult));
+
+                Impl::add(local_sum, toAccumulateResult(static_cast<T>(ptr[i])) & mask);
             }
             Impl::add(sum, local_sum);
             return;
@@ -200,7 +206,7 @@ struct AggregateFunctionSumData
             using EquivalentInteger = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
 
             constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
+            AccumulateResult partial_sums[unroll_count]{};
 
             const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
@@ -213,7 +219,7 @@ struct AggregateFunctionSumData
                     value &= (!condition_map[i] != add_if_zero) - 1;
                     Value d;
                     memcpy(&d, &value, sizeof(Value));
-                    Impl::add(partial_sums[i], d);
+                    Impl::add(partial_sums[i], toAccumulateResult(static_cast<T>(d)));
                 }
                 ptr += unroll_count;
                 condition_map += unroll_count;
@@ -223,11 +229,11 @@ struct AggregateFunctionSumData
                 Impl::add(sum, partial_sums[i]);
         }
 
-        T local_sum{};
+        AccumulateResult local_sum{};
         while (ptr < end_ptr)
         {
             if (!*condition_map == add_if_zero)
-                Impl::add(local_sum, T(*ptr));
+                Impl::add(local_sum, toAccumulateResult(static_cast<T>(*ptr)));
             ++ptr;
             ++condition_map;
         }
@@ -240,27 +246,15 @@ struct AggregateFunctionSumData
     void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            addManyConditionalInternalImplAVX512BW<Value, add_if_zero>(ptr, condition_map, start, end);
+            addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            addManyConditionalInternalImplAVX512F<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            addManyConditionalInternalImplAVX2<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            addManyConditionalInternalImplSSE42<Value, add_if_zero>(ptr, condition_map, start, end);
+            addManyConditionalInternalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
 #endif
@@ -297,7 +291,15 @@ struct AggregateFunctionSumData
 
     T get() const
     {
-        return sum;
+#if defined(__x86_64__)
+        if constexpr (std::is_same_v<AccumulateResult, wide::BitInt256> || std::is_same_v<AccumulateResult, wide::BitUInt256>)
+            return wide::fromBitInt256(sum);
+        else
+#endif
+        if constexpr (std::is_same_v<AccumulateResult, __int128>|| std::is_same_v<AccumulateResult, unsigned __int128>)
+            return *reinterpret_cast<const T*>(&sum);
+        else
+            return static_cast<T>(sum);
     }
 
 };
@@ -562,7 +564,8 @@ public:
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
 
         for (size_t i = from; i < to; ++i)
-            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+            if (places[offsets[i]])
+                add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -610,7 +613,7 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * aggregate_sum_ptr = aggregate_data_ptr;
 
-        b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
+        b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -621,11 +624,12 @@ public:
 
         auto * sum_value_ptr = aggregate_data_ptr;
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
+        sum_value->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * value_cast_to_result = nativeCast(b, arguments[0], this->getResultType());
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
 
-        b.CreateStore(sum_result_value, sum_value_ptr);
+        b.CreateStore(sum_result_value, sum_value_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
@@ -636,12 +640,14 @@ public:
 
         auto * sum_value_dst_ptr = aggregate_data_dst_ptr;
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
+        sum_value_dst->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * sum_value_src_ptr = aggregate_data_src_ptr;
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
+        sum_value_src->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
-        b.CreateStore(sum_return_value, sum_value_dst_ptr);
+        b.CreateStore(sum_return_value, sum_value_dst_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -651,7 +657,9 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * sum_value_ptr = aggregate_data_ptr;
 
-        return b.CreateLoad(return_type, sum_value_ptr);
+        auto * res = b.CreateLoad(return_type, sum_value_ptr);
+        res->setAlignment(llvm::Align(this->alignOfData()));
+        return res;
     }
 
 #endif

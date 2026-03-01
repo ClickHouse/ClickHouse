@@ -2,8 +2,9 @@
 
 #if USE_JEMALLOC
 
-#include <Core/ServerSettings.h>
+#include <Common/FramePointers.h>
 #include <Common/Exception.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/MemoryTracker.h>
@@ -68,7 +69,7 @@ void setProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string_view flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
@@ -98,6 +99,22 @@ void setMaxBackgroundThreads(size_t max_threads)
     setValue("max_background_threads", max_threads);
 }
 
+void setProfileSamplingRate(size_t lg_prof_sample)
+{
+    checkProfilingEnabled();
+
+    size_t current = getValue<size_t>("prof.lg_sample");
+    if (current == lg_prof_sample)
+    {
+        LOG_TRACE(getLogger("SystemJemalloc"), "Profiler sampling rate is already {}", current);
+        return;
+    }
+
+    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
+    LOG_INFO(getLogger("SystemJemalloc"), "Profiler sampling rate changed from {} to {}", current, lg_prof_sample);
+}
+
+
 namespace
 {
 
@@ -112,13 +129,17 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
 
     try
     {
-        StackTrace::FramePointers frame_pointers;
+        FramePointers frame_pointers;
         auto stacktrace_size = std::min<size_t>(backtrace_length, frame_pointers.size());
-        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *));
+        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *)); // NOLINT(bugprone-bitwise-pointer-cast)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(std::move(frame_pointers), stacktrace_size),
-            TraceSender::Extras{.size = static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {
@@ -137,7 +158,11 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(),
-            TraceSender::Extras{.size = -static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = -static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {
@@ -167,7 +192,8 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log)
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
 {
     if (enable_global_profiler)
     {
@@ -179,6 +205,9 @@ void setup(
 
     if (max_background_threads_num)
         setValue("max_background_threads", max_background_threads_num);
+
+    if (profiler_sampling_rate != 19)
+        setProfileSamplingRate(profiler_sampling_rate);
 
     collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);

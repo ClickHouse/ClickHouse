@@ -100,7 +100,11 @@ std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
+    ASTs asts,
+    ContextPtr context,
+    bool throw_unknown_collection,
+    std::vector<std::pair<std::string, ASTPtr>> * complex_args,
+    const StorageID * dependent_table_id)
 {
     if (asts.empty())
         return nullptr;
@@ -122,6 +126,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (!collection)
         return nullptr;
 
+    if (dependent_table_id)
+        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
+
     auto collection_copy = collection->duplicate();
 
     if (asts.size() == 1)
@@ -129,7 +136,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
-    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
@@ -152,7 +159,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     return collection_copy;

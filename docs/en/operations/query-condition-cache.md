@@ -55,19 +55,15 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
-Setting [query_condition_cache_selectivity_threshold](settings/settings#query_condition_cache_selectivity_threshold) (default: 1.0) allows to write entries to the cache only if the predicate has a smaller selectivity than the configured value.
-We recommend changing this value only if the system has little DRAM.
-
 ## Administration {#administration}
 
 The query condition cache is not retained between restarts of ClickHouse.
 
-To clear the query condition cache, run [`SYSTEM DROP QUERY CONDITION CACHE`](../sql-reference/statements/system.md#drop-query-condition-cache).
+To clear the query condition cache, run [`SYSTEM CLEAR QUERY CONDITION CACHE`](../sql-reference/statements/system.md#drop-query-condition-cache).
 
 The content of the cache is displayed in system table [system.query_condition_cache](system-tables/query_condition_cache.md).
 To calculate the current size of the query condition cache in MB, run `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.
-If you like to investigate individual filter conditions, you can check field `condition` in `system.query_condition_cache`.
-Note that the field is only populated if the query runs with enabled setting [query_condition_cache_store_conditions_as_plaintext](settings/settings#query_condition_cache_store_conditions_as_plaintext).
+If you like to investigate individual filter conditions, you can check field `condition` in `system.query_condition_cache`. Note that this field is only available in debug builds.
 
 The number of query condition cache hits and misses since database start are shown as events "QueryConditionCacheHits" and "QueryConditionCacheMisses" in system table [system.events](system-tables/events.md).
 Both counters are only updated for `SELECT` queries which run with setting `use_query_condition_cache = true`, other queries do not affect "QueryCacheMisses".

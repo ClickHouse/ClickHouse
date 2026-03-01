@@ -23,7 +23,6 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Logger.h>
 
 #include <filesystem>
 
@@ -203,7 +202,8 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
+
         if (!replace_if_exists)
             return false;
     }

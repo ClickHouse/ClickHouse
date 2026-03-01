@@ -1,1 +1,0 @@
-SELECT 1 FROM (SELECT 1 x) x LEFT JOIN (SELECT 2 y) y ON x.x = y.y JOIN (SELECT number FROM numbers(40)) z ON 1 SETTINGS join_algorithm = 'hash', join_output_by_rowlist_perkey_rows_threshold = 80, allow_experimental_join_right_table_sorting = 1;

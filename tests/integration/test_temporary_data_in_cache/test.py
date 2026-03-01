@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/local_disk:size=50M", "/tiny_local_cache:size=12M"],
+    tmpfs=["/test_tmp_data_in_cache_local_disk:size=50M", "/test_tmp_data_in_cache_tiny_local_cache:size=12M"],
 )
 
 
@@ -52,7 +52,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         ]
     )
 
-    q("SYSTEM DROP FILESYSTEM CACHE")
+    q("SYSTEM CLEAR FILESYSTEM CACHE")
     q("DROP TABLE IF EXISTS t1 SYNC")
 
     assert get_cache_size() == 0, dump_debug_info()

@@ -94,7 +94,7 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 # Prerequisites
 
-ClickHouse can be build on Linux, FreeBSD and macOS.
+ClickHouse can be built on Linux, FreeBSD and macOS.
 If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
 ## Create a Repository on GitHub {#create-a-repository-on-github}
@@ -51,7 +51,7 @@ You can either
 
 - if `git clone` is run without `--recurse-submodules`, run `git submodule update --init --jobs <N>` to checkout all submodules explicitly. (`<N>` can be set for example to `12` to parallelize the download.)
 
-- if `git clone` is run without `--recurse-submodules` and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
+- if `git clone` is run without `--recurse-submodules` and you like to use [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit history in submodules to save some space, run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
 
 To check the status of the Git submodules, run `git submodule status`.
 

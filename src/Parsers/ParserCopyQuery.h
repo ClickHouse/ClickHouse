@@ -17,7 +17,7 @@ namespace DB
 class ParserCopyQuery : public IParserBase
 {
 private:
-    bool parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node, Expected & expected);
+    bool parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected);
 
 protected:
     const char * getName() const override { return "COPY query"; }

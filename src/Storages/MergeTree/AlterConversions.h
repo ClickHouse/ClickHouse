@@ -42,6 +42,9 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
+    /// Column was dropped by a pending mutation (data in part is stale)
+    bool isColumnDropped(const std::string & name) const;
+
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
@@ -90,6 +93,10 @@ private:
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
 
+    /// Columns that were dropped by pending mutations.
+    /// If a column with the same name is re-added, old data in parts should be ignored.
+    NameSet dropped_columns;
+
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
@@ -102,6 +109,7 @@ private:
     size_t number_of_alter_mutations = 0;
 
     /// Names of columns which are updated by mutation commands.
+    /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
 
     /// Patches required to be applied for a part.

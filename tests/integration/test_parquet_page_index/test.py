@@ -35,7 +35,7 @@ def delete_if_exists(file_path):
 
 @pytest.mark.parametrize(
     "query, expected_result",
-    {
+    [
         (
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet "
@@ -57,7 +57,7 @@ def delete_if_exists(file_path):
             "INTO OUTFILE '{file_name}' FORMAT Parquet;",
             True,
         ),
-    },
+    ],
 )
 def test_parquet_page_index_select_into_outfile(query, expected_result, start_cluster):
     file_name = f"export{time.time()}.parquet"
@@ -72,7 +72,7 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
 
 @pytest.mark.parametrize(
     "query, expected_result",
-    {
+    [
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
@@ -94,7 +94,7 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
             "SELECT number, number+1 FROM system.numbers LIMIT 100 FORMAT Parquet",
             True,
         ),
-    },
+    ],
 )
 def test_parquet_page_index_insert_into_table_function_file(
     query, expected_result, start_cluster

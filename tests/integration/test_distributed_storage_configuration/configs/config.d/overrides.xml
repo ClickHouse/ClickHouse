@@ -19,10 +19,10 @@
     <storage_configuration>
         <disks>
             <disk1>
-                <path>/disk1/</path>
+                <path>/test_dist_conf_disk1/</path>
             </disk1>
             <disk2>
-                <path>/disk2/</path>
+                <path>/test_dist_conf_disk2/</path>
             </disk2>
         </disks>
 

@@ -4,11 +4,11 @@ description: 'differs from MergeTree in that it removes duplicate entries with t
 sidebar_label: 'ReplacingMergeTree'
 sidebar_position: 40
 slug: /engines/table-engines/mergetree-family/replacingmergetree
-title: 'ReplacingMergeTree'
+title: 'ReplacingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-# ReplacingMergeTree
+# ReplacingMergeTree table engine
 
 The engine differs from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 

@@ -1,13 +1,12 @@
 DROP TABLE IF EXISTS t_ind_merge_1;
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 SET enable_analyzer = 1;
 
 CREATE TABLE t_ind_merge_1 (a UInt64, b UInt64, c UInt64, d UInt64, INDEX idx_b b TYPE minmax)
 ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,
+    index_granularity_bytes = 0,
     merge_max_block_size = 8192,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,

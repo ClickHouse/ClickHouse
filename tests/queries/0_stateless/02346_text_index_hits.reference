@@ -38,14 +38,14 @@ idx_url
 idx_search_phrase,idx_url
 34	2014-03-17	2014-03-23
 27
-searchAny/searchAll reference without direct read from index
+hasAnyTokens/hasAllTokens reference without direct read from index
 8843360
 111669
 23690
 2922
 28
 126901
-searchAny/searchAll direct read from index
+hasAnyTokens/hasAllTokens direct read from index
 8843360
 111669
 23690

@@ -1,5 +1,5 @@
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+from .common_direct import *
+from .common_direct import _VarintBytes
 
 
 def get_kafka_producer(port, serializer, retries):
@@ -135,7 +135,7 @@ def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         auto_offset_reset="earliest",
     )
-    consumer.subscribe(topics=(topic))
+    consumer.subscribe(topics=[topic])
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
@@ -189,6 +189,37 @@ def kafka_consume_with_retry(
     if len(messages) != expected_messages:
         raise Exception(f"Got only {len(messages)} messages")
     return messages
+
+
+def kafka_produce_protobuf_messages_protobuflist(
+    kafka_cluster, topic, start_index, num_messages
+):
+    """Produce Kafka messages in ProtobufList format.
+
+    Each Kafka message is a single ProtobufList envelope containing
+    all num_messages rows. The wire format is:
+      varint(envelope_size) + repeated { varint(field_tag) + varint(msg_size) + msg_bytes }
+    """
+    # Build the envelope body: repeated field 1 (KeyValuePair) entries
+    envelope_body = b""
+    FIELD_TAG = _VarintBytes((1 << 3) | 2)  # field 1, wire type 2 (length-delimited)
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        envelope_body += FIELD_TAG + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    # Wrap with the envelope size prefix
+    data = _VarintBytes(len(envelope_body)) + envelope_body
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
+        value_serializer=producer_serializer,
+    )
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    logging.debug("Produced {} ProtobufList messages for topic {}".format(num_messages, topic))
 
 
 def kafka_produce_protobuf_messages_no_delimiters(
@@ -298,7 +329,7 @@ def avro_confluent_message(schema_registry_client, value):
 
 
 def create_settings_string(settings):
-    if settings is None:
+    if settings is None or len(settings) == 0:
         return ""
 
     def format_value(value):
@@ -400,7 +431,7 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
 
 
 def random_string(size=8):
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
+    return "".join(random.choices(string.ascii_uppercase, k=size))
 
 
 def gen_normal_json():
@@ -489,6 +520,31 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
     return res
+
+def clean_test_database_and_topics(instance, cluster):
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
 
 
 KAFKA_TOPIC_OLD = "old_t"

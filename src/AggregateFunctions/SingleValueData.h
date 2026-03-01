@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/AlignedUnion.h>
-#include <base/StringRef.h>
 
 namespace DB
 {
@@ -289,9 +288,9 @@ private:
     bool isSmall() const { return capacity == 0; }
     char * getDataMutable();
     const char * getData() const;
-    StringRef getStringRef() const;
+    std::string_view getStringView() const;
     void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
-    void changeImpl(StringRef value, Arena * arena);
+    void changeImpl(std::string_view value, Arena * arena);
 
 public:
     static constexpr bool is_compilable = false;
@@ -316,7 +315,6 @@ public:
 };
 
 static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
-
 
 /// For any other value types.
 struct SingleValueDataGeneric final : public SingleValueDataBase
@@ -380,6 +378,36 @@ public:
 };
 
 static_assert(sizeof(SingleValueDataGenericWithColumn) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGenericWithColumn struct");
+
+/// A variant of SingleValueData that does not own the value, but rather references a value in a column
+struct SingleValueReference final : public SingleValueDataBase
+{
+    static constexpr bool is_compilable = false;
+    using Self = SingleValueReference;
+
+    ColumnPtr column_ref;
+    size_t row_number;
+
+    bool has() const override { return column_ref != nullptr; }
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
+
+    bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    bool isEqualTo(const SingleValueDataBase &) const override;
+    void set(const IColumn & column, size_t row_num, Arena * arena) override;
+    void set(const SingleValueDataBase &, Arena * arena) override;
+
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfSmaller(const SingleValueDataBase &, Arena * arena) override;
+
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
+
+    static bool allocatesMemoryInArena() { return false; }
+};
+
+static_assert(sizeof(SingleValueReference) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueReference struct");
 
 bool canUseFieldForValueData(const DataTypePtr & value_type);
 

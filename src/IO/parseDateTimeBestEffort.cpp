@@ -1,5 +1,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -13,8 +14,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_DATETIME;
+extern const int LOGICAL_ERROR;
+extern const int CANNOT_PARSE_DATETIME;
 }
 
 
@@ -196,7 +197,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -211,7 +212,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -529,7 +530,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     // fit into result type. To provide less precise value rather than bogus one.
                     num_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
 
-                    fractional->digits = num_digits;
+                    fractional->digits = static_cast<UInt8>(num_digits);
                     readDecimalNumber(fractional->value, num_digits, digits);
                 }
                 else if (strict)
@@ -772,31 +773,55 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
-    if constexpr (strict)
+    if constexpr (!strict || std::is_same_v<ReturnType, void>)
     {
-        if constexpr (is_64)
+        if (has_time_zone_offset)
         {
-            if (year < 1900)
-                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime64: year {} is less than minimum supported year 1900", year);
+            res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
+            adjust_time_zone();
         }
         else
         {
-            if (year < 1970)
-                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year {} is less than minimum supported year 1970", year);
+            res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
         }
-    }
 
-    if (has_time_zone_offset)
-    {
-        res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-        adjust_time_zone();
+        if constexpr (std::is_same_v<ReturnType, bool>)
+            return true;
     }
     else
     {
-        res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-    }
+        if (has_time_zone_offset)
+        {
+            auto res_maybe = utc_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
+            if (!res_maybe)
+                return false;
 
-    return ReturnType(true);
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
+            res = *res_maybe;
+            adjust_time_zone();
+        }
+        else
+        {
+            auto res_maybe = local_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
+            if (!res_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
+            res = *res_maybe;
+        }
+
+        return true;
+    }
 }
 
 template <typename ReturnType, bool is_us_style, bool strict = false>
@@ -827,9 +852,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     }
 
     if constexpr (std::is_same_v<ReturnType, bool>)
-        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+        return DecimalUtils::tryGetDateTimeFromComponents(whole, fractional, scale, res);
 
-    res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
+    res = DecimalUtils::dateTimeFromComponents(whole, fractional, scale);
     return ReturnType(true);
 }
 

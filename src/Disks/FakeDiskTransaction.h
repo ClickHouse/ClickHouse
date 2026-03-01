@@ -25,7 +25,7 @@ public:
         LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
     }
 
-    void commit(const TransactionCommitOptionsVariant &) override {}
+    void commit() override {}
     void undo() noexcept override {}
 
     void createDirectory(const std::string & path) override
@@ -41,11 +41,6 @@ public:
     void createFile(const std::string & path) override
     {
         disk.createFile(path);
-    }
-
-    void clearDirectory(const std::string & path) override
-    {
-        disk.createDirectory(path);
     }
 
     void moveDirectory(const std::string & from_path, const std::string & to_path) override

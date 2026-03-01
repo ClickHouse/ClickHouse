@@ -169,7 +169,7 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
-        UInt uint_rhs = rhs < 0 ? -rhs : rhs;
+        UInt uint_rhs = static_cast<UInt>(rhs < 0 ? -rhs : rhs);
 
         /// Smaller octave: abs(rhs) < abs(float)
         /// FYI, TIL: octave is also called "binade", https://en.wikipedia.org/wiki/Binade
@@ -186,11 +186,11 @@ struct DecomposedFloat
 
         bool large_and_always_integer = normalizedExponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        UInt a = large_and_always_integer
-            ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
-            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent());
+        UInt a = static_cast<UInt>(
+            large_and_always_integer ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
+                                     : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent()));
 
-        UInt b = uint_rhs - (static_cast<UInt>(1) << normalizedExponent());
+        UInt b = static_cast<UInt>(uint_rhs - (static_cast<UInt>(1) << normalizedExponent()));
 
         if (a < b)
             return isNegative() ? 1 : -1;
