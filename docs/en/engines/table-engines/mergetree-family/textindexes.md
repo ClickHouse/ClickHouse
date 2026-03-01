@@ -858,30 +858,34 @@ Unlike other skip indexes, text index can be merged instead of rebuilt on merge 
 
 During index creation, three files are created (per part):
 
-**Dictionary blocks file (.dct)**
+### Dictionary blocks file (.dct)
 
 The tokens in the text index are sorted and stored in dictionary blocks of 512 tokens each (the block size is configurable by parameter `dictionary_block_size`).
 A dictionary blocks file (.dct) consists all the dictionary blocks of all index granules in a part.
 
-**Index header file (.idx)**
+### Index header file (.idx)
 
 The index header file contains for each dictionary block the block's first token and its relative offset in the dictionary blocks file.
 
 This sparse index structure is similar to ClickHouse's [sparse primary key index](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)).
 
-**Postings lists file (.pst)**
+### Postings lists file (.pst)
 
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the posting list is larger than `posting_list_block_size`, it is split into multiple blocks that are stored sequentially to the postings lists file.
 
-**Merging of text indexes**
+### Merging of text indexes
 
 When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process.
 During this step, the sorted dictionaries of the text indexes of each input part are read and combined into a new unified dictionary.
 The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
 This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
 If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
+
+### Debugging
+
+The [mergeTreeTextIndex](../../../sql-reference/table-functions/mergeTreeTextIndex.md) can be used to introspect text indexes.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
