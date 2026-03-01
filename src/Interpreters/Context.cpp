@@ -7294,7 +7294,7 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-bool Context::canUseTaskBasedParallelReplicas(bool ignore_automatic_mode) const
+bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
 
@@ -7304,12 +7304,12 @@ bool Context::canUseTaskBasedParallelReplicas(bool ignore_automatic_mode) const
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && settings_ref[Setting::max_parallel_replicas] > 1
-        && (ignore_automatic_mode || settings_ref[Setting::automatic_parallel_replicas_mode] == 0);
+        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
 }
 
-bool Context::canUseParallelReplicasOnInitiator(bool ignore_automatic_mode) const
+bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseTaskBasedParallelReplicas(ignore_automatic_mode) && !getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const

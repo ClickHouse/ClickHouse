@@ -26,10 +26,10 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool parallel_replicas_allow_in_with_subquery;
-extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
-extern const SettingsBool parallel_replicas_allow_materialized_views;
-extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_allow_materialized_views;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes

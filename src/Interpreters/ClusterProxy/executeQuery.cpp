@@ -952,16 +952,11 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     return false;
 }
 
-bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-    /// Build the plan with automatic_parallel_replicas_mode disabled so the Planner
-    /// doesn't suppress parallel replicas — we're checking structural compatibility here.
-    auto ctx = Context::createCopy(context);
-    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
-
-    InterpreterSelectQueryAnalyzer interpreter(select, ctx, select_query_options);
+    InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
     auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
