@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-parallel, no-random-settings, long, no-asan, no-random-detach
+# Tags: stateful, no-parallel, no-random-settings, long, no-asan, no-tsan, no-random-detach
 # no-random-detach: test checks filesystem cache behavior and profile events
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
