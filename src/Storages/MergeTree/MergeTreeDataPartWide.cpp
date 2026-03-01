@@ -481,14 +481,13 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 #ifndef NDEBUG
         /// Most trivial types
         if (rows_count != 0
-            && size.data_uncompressed != 0
-            && column.type->isValueRepresentedByNumber()
-            && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT}
             /// Skip columns that are declared in metadata but not actually persisted in this part.
             /// This can legitimately happen when concurrent ALTER ADD/DROP COLUMN and mutations
             /// produce a part where a column is in the columns list but has no data file.
-            && size.data_uncompressed != 0)
+            && size.data_uncompressed != 0
+            && column.type->isValueRepresentedByNumber()
+            && !column.type->haveSubtypes()
+            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)
