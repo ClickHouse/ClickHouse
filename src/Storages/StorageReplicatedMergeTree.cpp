@@ -758,7 +758,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
-                LOG_WARNING(log, "Replica {} was removed", replica);
+                LOG_WARNING(log, "Replica {} was removed during mutation. "
+                    "Mutation will be done asynchronously when replica is restored.", replica);
+                inactive_replicas.emplace(replica);
                 break;
             }
             if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
@@ -824,10 +826,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED,
                             "Mutation is not finished because table shutdown was called. "
                             "It will be done after table restart.");
-
-        /// Replica inactive, don't check mutation status
-        if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
-            continue;
 
         /// At least we have our current mutation
         std::set<String> mutation_ids;
