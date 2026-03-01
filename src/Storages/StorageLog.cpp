@@ -209,11 +209,12 @@ Chunk LogSource::generate()
     {
         ColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
+        auto top_level_column_name = Nested::extractTableName(name_type.name);
 
         try
         {
             column = name_type_on_disk.type->createColumn();
-            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
+            readData(name_type_on_disk, column, max_rows_to_read, caches[top_level_column_name]);
         }
         catch (Exception & e)
         {
