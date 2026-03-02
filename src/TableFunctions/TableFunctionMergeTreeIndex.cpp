@@ -220,15 +220,13 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeIndex>(
-    {
-        .documentation =
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true, with_minmax = true)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = true,
-    });
+        {.allow_readonly = true}
+    );
 }
 
 }

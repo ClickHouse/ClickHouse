@@ -166,7 +166,7 @@ public:
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const

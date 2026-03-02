@@ -652,6 +652,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
+    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
+    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
+    if not info.is_local_run:
+        try:
+            Utils.clear_dmesg()
+        except Exception as ex:
+            print(f"Failed to clear dmesg before integration tests: {ex}")
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
