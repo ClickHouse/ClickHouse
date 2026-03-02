@@ -149,7 +149,6 @@ geometry.LineString:   []
 geometry.Polygon:      [[(-0.188,51.5074),(-0.15330000000000002,51.5074),(-0.15330000000000002,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
 ```
 
-
 We can also ingest GeoJSON data into a table:
 
 ```sql title="Query"
