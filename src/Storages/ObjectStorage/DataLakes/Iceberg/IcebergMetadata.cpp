@@ -565,8 +565,8 @@ void IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (!args || args->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots requires a timestamp argument");
+        if (!args || args->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects exactly one argument (timestamp), got {}", args ? args->children.size() : 0);
 
         const auto * literal = args->children[0]->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::String)

@@ -569,9 +569,8 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 :::note
-- Only Iceberg format version 2 tables are supported
+- Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
 - The current snapshot is always preserved, even if it is older than the specified timestamp
-- Snapshots referenced by branches or tags are also preserved
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 :::

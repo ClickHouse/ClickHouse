@@ -870,10 +870,21 @@ void expireSnapshots(
             }
         }
 
+        std::set<String> retained_manifest_list_paths;
+        for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
+        {
+            auto snapshot = retained_snapshots->getObject(i);
+            if (snapshot->has(Iceberg::f_manifest_list))
+                retained_manifest_list_paths.insert(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        }
+
         Strings files_to_delete;
 
         for (const auto & ml_path : expired_manifest_list_paths)
         {
+            if (retained_manifest_list_paths.contains(ml_path))
+                continue;
+
             String storage_ml_path = getProperFilePathFromMetadataInfo(
                 ml_path, persistent_table_components.table_path, persistent_table_components.table_location);
 
@@ -918,6 +929,12 @@ void expireSnapshots(
                             files_to_delete.push_back(entry->file_path);
                     }
 
+                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+                    {
+                        if (!retained_data_file_paths.contains(entry->file_path))
+                            files_to_delete.push_back(entry->file_path);
+                    }
+
                     files_to_delete.push_back(mf_key.manifest_file_path);
                 }
             }
@@ -930,14 +947,18 @@ void expireSnapshots(
         if (metadata->has(Iceberg::f_snapshot_log))
         {
             auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
-            Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
-            for (UInt32 i = 0; i < snapshot_log->size(); ++i)
+            Int32 suffix_start = static_cast<Int32>(snapshot_log->size());
+            for (Int32 j = static_cast<Int32>(snapshot_log->size()) - 1; j >= 0; --j)
             {
-                auto entry = snapshot_log->getObject(i);
+                auto entry = snapshot_log->getObject(static_cast<UInt32>(j));
                 Int64 snap_id = entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-                if (!expired_snapshot_ids.contains(snap_id))
-                    retained_log->add(entry);
+                if (expired_snapshot_ids.contains(snap_id))
+                    break;
+                suffix_start = j;
             }
+            Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
+            for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
+                retained_log->add(snapshot_log->getObject(j));
             metadata->set(Iceberg::f_snapshot_log, retained_log);
         }
 
@@ -974,7 +995,10 @@ void expireSnapshots(
             const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
             if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
             {
-                LOG_WARNING(log, "Failed to update catalog metadata, but new metadata file was written");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to update catalog metadata after writing new metadata file. "
+                    "The table metadata may be in an inconsistent state");
             }
         }
 
