@@ -1,84 +1,98 @@
+-- Types mapping (per TPC-H spec section 1.3.1):
+--   Identifier         -> UInt32, covers the required >= 2,147,483,647 unique values
+--   Integer            -> Int32, covers the required -2,147,483,646 to 2,147,483,647 range
+--   Decimal            -> Decimal(12, 2), covers the required ±9,999,999,999.99 range
+--   Fixed text, N      -> FixedString(N), because ClickHouse treats CHAR(N) as variable-length String
+--   Variable text, N   -> String
+--   Date               -> Date
+--
+-- The spec requires that the chosen type for each datatype definition is applied consistently across all columns, except for Identifier
+-- columns: at SF > 300 some identifiers may exceed the 4-byte integer range, and the spec permits using a wider type for only that column.
+-- This schema has not been tested at SF > 300; some Identifier columns may need to be upgraded to a wider type.
+--
+-- Primary keys are per section 1.4.1 of the TPC-H specification.
+
 CREATE TABLE nation (
-    n_nationkey  INTEGER NOT NULL,
-    n_name       CHAR(25) NOT NULL,
-    n_regionkey  INTEGER NOT NULL,
-    n_comment    VARCHAR(152))
-ORDER BY (n_nationkey);
+    n_nationkey  UInt32,
+    n_name       FixedString(25),
+    n_regionkey  UInt32,
+    n_comment    String)
+PRIMARY KEY (n_nationkey);
 
 CREATE TABLE region (
-    r_regionkey  INTEGER NOT NULL,
-    r_name       CHAR(25) NOT NULL,
-    r_comment    VARCHAR(152))
-ORDER BY (r_regionkey);
+    r_regionkey  UInt32,
+    r_name       FixedString(25),
+    r_comment    String)
+PRIMARY KEY (r_regionkey);
 
 CREATE TABLE part (
-    p_partkey     INTEGER NOT NULL,
-    p_name        VARCHAR(55) NOT NULL,
-    p_mfgr        CHAR(25) NOT NULL,
-    p_brand       CHAR(10) NOT NULL,
-    p_type        VARCHAR(25) NOT NULL,
-    p_size        INTEGER NOT NULL,
-    p_container   CHAR(10) NOT NULL,
-    p_retailprice DECIMAL(15,2) NOT NULL,
-    p_comment     VARCHAR(23) NOT NULL )
-ORDER BY (p_partkey);
+    p_partkey     UInt32,
+    p_name        String,
+    p_mfgr        FixedString(25),
+    p_brand       FixedString(10),
+    p_type        String,
+    p_size        Int32,
+    p_container   FixedString(10),
+    p_retailprice Decimal(12,2),
+    p_comment     String)
+PRIMARY KEY (p_partkey);
 
 CREATE TABLE supplier (
-    s_suppkey     INTEGER NOT NULL,
-    s_name        CHAR(25) NOT NULL,
-    s_address     VARCHAR(40) NOT NULL,
-    s_nationkey   INTEGER NOT NULL,
-    s_phone       CHAR(15) NOT NULL,
-    s_acctbal     DECIMAL(15,2) NOT NULL,
-    s_comment     VARCHAR(101) NOT NULL)
-ORDER BY (s_suppkey);
+    s_suppkey     UInt32,
+    s_name        FixedString(25),
+    s_address     String,
+    s_nationkey   UInt32,
+    s_phone       FixedString(15),
+    s_acctbal     Decimal(12,2),
+    s_comment     String)
+PRIMARY KEY (s_suppkey);
 
 CREATE TABLE partsupp (
-    ps_partkey     INTEGER NOT NULL,
-    ps_suppkey     INTEGER NOT NULL,
-    ps_availqty    INTEGER NOT NULL,
-    ps_supplycost  DECIMAL(15,2)  NOT NULL,
-    ps_comment     VARCHAR(199) NOT NULL )
-ORDER BY (ps_partkey, ps_suppkey);
+    ps_partkey     UInt32,
+    ps_suppkey     UInt32,
+    ps_availqty    Int32,
+    ps_supplycost  Decimal(12,2),
+    ps_comment     String)
+PRIMARY KEY (ps_partkey, ps_suppkey);
 
 CREATE TABLE customer (
-    c_custkey     INTEGER NOT NULL,
-    c_name        VARCHAR(25) NOT NULL,
-    c_address     VARCHAR(40) NOT NULL,
-    c_nationkey   INTEGER NOT NULL,
-    c_phone       CHAR(15) NOT NULL,
-    c_acctbal     DECIMAL(15,2)   NOT NULL,
-    c_mktsegment  CHAR(10) NOT NULL,
-    c_comment     VARCHAR(117) NOT NULL)
-ORDER BY (c_custkey);
+    c_custkey     UInt32,
+    c_name        String,
+    c_address     String,
+    c_nationkey   UInt32,
+    c_phone       FixedString(15),
+    c_acctbal     Decimal(12,2),
+    c_mktsegment  FixedString(10),
+    c_comment     String)
+PRIMARY KEY (c_custkey);
 
 CREATE TABLE orders (
-    o_orderkey       INTEGER NOT NULL,
-    o_custkey        INTEGER NOT NULL,
-    o_orderstatus    CHAR(1) NOT NULL,
-    o_totalprice     DECIMAL(15,2) NOT NULL,
-    o_orderdate      DATE NOT NULL,
-    o_orderpriority  CHAR(15) NOT NULL,
-    o_clerk          CHAR(15) NOT NULL,
-    o_shippriority   INTEGER NOT NULL,
-    o_comment        VARCHAR(79) NOT NULL)
-ORDER BY (o_orderkey);
+    o_orderkey       UInt32,
+    o_custkey        UInt32,
+    o_orderstatus    FixedString(1),
+    o_totalprice     Decimal(12,2),
+    o_orderdate      Date,
+    o_orderpriority  FixedString(15),
+    o_clerk          FixedString(15),
+    o_shippriority   Int32,
+    o_comment        String)
+PRIMARY KEY (o_orderkey);
 
 CREATE TABLE lineitem (
-    l_orderkey    INTEGER NOT NULL,
-    l_partkey     INTEGER NOT NULL,
-    l_suppkey     INTEGER NOT NULL,
-    l_linenumber  INTEGER NOT NULL,
-    l_quantity    DECIMAL(15,2) NOT NULL,
-    l_extendedprice  DECIMAL(15,2) NOT NULL,
-    l_discount    DECIMAL(15,2) NOT NULL,
-    l_tax         DECIMAL(15,2) NOT NULL,
-    l_returnflag  CHAR(1) NOT NULL,
-    l_linestatus  CHAR(1) NOT NULL,
-    l_shipdate    DATE NOT NULL,
-    l_commitdate  DATE NOT NULL,
-    l_receiptdate DATE NOT NULL,
-    l_shipinstruct CHAR(25) NOT NULL,
-    l_shipmode     CHAR(10) NOT NULL,
-    l_comment      VARCHAR(44) NOT NULL)
-ORDER BY (l_orderkey, l_linenumber);
+    l_orderkey    UInt32,
+    l_partkey     UInt32,
+    l_suppkey     UInt32,
+    l_linenumber  Int32,
+    l_quantity    Decimal(12,2),
+    l_extendedprice  Decimal(12,2),
+    l_discount    Decimal(12,2),
+    l_tax         Decimal(12,2),
+    l_returnflag  FixedString(1),
+    l_linestatus  FixedString(1),
+    l_shipdate    Date,
+    l_commitdate  Date,
+    l_receiptdate Date,
+    l_shipinstruct  FixedString(25),
+    l_shipmode      FixedString(10),
+    l_comment       String)
+PRIMARY KEY (l_orderkey, l_linenumber);
