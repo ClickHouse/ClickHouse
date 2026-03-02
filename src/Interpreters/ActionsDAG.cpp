@@ -935,6 +935,11 @@ static ColumnWithTypeAndName executeActionForPartialResult(
             if (!key.column)
                 break;
 
+            /// arrayJoin changes the number of rows, which would break partial evaluation
+            /// where other columns maintain input_rows_count. Skip it for non-header evaluation.
+            if (input_rows_count > 0)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
@@ -1270,7 +1275,13 @@ ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const No
                         {
                             bool should_rename = new_input->result_name != rename->result_name;
                             const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
-                            mapped_input = &dag.addInput(input_name, new_input->result_type);
+                            /// Use the projection node's type for the INPUT since the actual data
+                            /// comes from the projection and has projection types. Using the query
+                            /// node's type would create a mismatch between the header and the data.
+                            /// For example, removeTrivialWrappers may strip materialize() from the
+                            /// query, causing a match with a projection column that has different
+                            /// LowCardinality wrapping.
+                            mapped_input = &dag.addInput(input_name, rename->result_type);
                             if (should_rename)
                                 mapped_input = &dag.addAlias(*mapped_input, new_input->result_name);
                         }
@@ -1723,6 +1734,26 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
 {
     const auto & func = materializeNodeWithoutRename(node, materialize_sparse);
     return addAlias(func, node.result_name);
+}
+
+void ActionsDAG::removeTrivialWrappers()
+{
+    auto is_trivial_wrapper = [](const Node * node)
+    {
+        return node->type == ActionType::FUNCTION && node->children.size() == 1
+            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
+    };
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            while (is_trivial_wrapper(child))
+                child = child->children[0];
+
+    for (auto *& output : outputs)
+        while (is_trivial_wrapper(output))
+            output = output->children[0];
+
+    removeUnusedActions();
 }
 
 ActionsDAG ActionsDAG::makeConvertingActions(
