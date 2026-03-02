@@ -498,7 +498,7 @@ static void buildTreeOffset(const std::deque<ExplainPlan::Frame> & frames, const
     settings_format.step_prefix.reserve(bytes_to_reserve);
     settings_format.other_prefix.reserve(bytes_to_reserve);
 
-    if (frames.size() == 1 )
+    if (frames.size() == 1)
     {
         if (!current.node->children.empty())
         {
@@ -534,7 +534,6 @@ static void buildTreeOffset(const std::deque<ExplainPlan::Frame> & frames, const
         settings_format.step_prefix += "├─";
         settings_format.other_prefix += "│ ";
     }
-    
 
     if (current.node->children.empty())
     {
@@ -542,7 +541,7 @@ static void buildTreeOffset(const std::deque<ExplainPlan::Frame> & frames, const
         settings_format.other_prefix += " ";
     }
     else
-    { 
+    {
         settings_format.step_prefix += "┬";
         settings_format.other_prefix += "│";
     }
@@ -561,10 +560,10 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
     checkInitialized();
 
     IQueryPlanStep::FormatSettings settings{
-        .out = buffer, 
-        .step_prefix = "", 
-        .other_prefix = "", 
-        .write_header = options.header, 
+        .out = buffer,
+        .step_prefix = "",
+        .other_prefix = "",
+        .write_header = options.header,
         .verbose = options.verbose,
         .pretty = options.pretty
     };
