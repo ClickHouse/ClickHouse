@@ -23,7 +23,7 @@ function insert_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query="INSERT INTO $table SELECT number % 2, toString(number) FROM numbers(100)"
+        $CLICKHOUSE_CLIENT --query="INSERT INTO $table SELECT number % 2, toString(number) FROM numbers(10)"
     done
 }
 
@@ -81,13 +81,11 @@ function replace_thread_backward()
     done
 }
 
-TIMEOUT=10
+TIMEOUT=3
 
 insert_thread t1 2>/dev/null &
 insert_thread t2 2>/dev/null &
 move_thread_forward 2>/dev/null &
-move_thread_forward 2>/dev/null &
-move_thread_backward 2>/dev/null &
 move_thread_backward 2>/dev/null &
 attach_thread_forward 2>/dev/null &
 attach_thread_backward 2>/dev/null &

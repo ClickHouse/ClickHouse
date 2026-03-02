@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -177,9 +178,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-    registerCreator("hypothesis", hypothesisIndexCreator);
-    registerValidator("hypothesis", hypothesisIndexValidator);
-
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
@@ -187,6 +185,12 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
+
+    /// Index type 'hypothesis' is no longer supported.
+    /// To allow loading tables with old indexes, register a dummy index which allows attach but
+    /// throws an exception when the user attempts to create or use it.
+    registerCreator("hypothesis", legacyHypothesisIndexCreator);
+    registerValidator("hypothesis", legacyHypothesisIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

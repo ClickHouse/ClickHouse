@@ -22,7 +22,6 @@
 #include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
 #include <base/Numa.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
@@ -325,7 +324,7 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 #if USE_JEMALLOC
-    Jemalloc::setup(
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
@@ -691,9 +690,6 @@ try
         if (current_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
-            /// safeExit calls _exit, which bypasses static destructors and atexit handlers.
-            /// Explicitly clean up OpenSSL to avoid LeakSanitizer false positives.
-            OpenSSLInitializer::cleanup();
             safeExit(0);
         }
     });
