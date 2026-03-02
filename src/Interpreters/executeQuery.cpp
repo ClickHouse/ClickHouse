@@ -2070,8 +2070,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             /// Log only the exception code, not the full message, to avoid triggering
-            /// stress test error pattern checks (e.g. "Logical error" in server logs).
-            LOG_TRACE(logger, "Fuzzed query failed with exception code {}", getCurrentExceptionCode());
+            /// stress test error pattern checks in server logs.
+            LOG_DEBUG(logger, "Fuzzed query failed with exception code {}", getCurrentExceptionCode());
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
         }
@@ -2160,8 +2160,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     catch (...)
                     {
                         /// Log only the exception code, not the full message, to avoid
-                        /// triggering stress test error pattern checks.
-                        LOG_ERROR(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
+                        /// triggering stress test error pattern checks in server logs.
+                        LOG_DEBUG(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
                     }
                 });
         }
@@ -2460,8 +2460,8 @@ void executeQuery(
                 catch (...)
                 {
                     /// Log only the exception code, not the full message, to avoid
-                    /// triggering stress test error pattern checks.
-                    LOG_ERROR(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
+                    /// triggering stress test error pattern checks in server logs.
+                    LOG_DEBUG(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
                 }
             }
         }
