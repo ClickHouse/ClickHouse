@@ -26,6 +26,8 @@ std::string_view flushProfile(const char * file_prefix);
 
 void setBackgroundThreads(bool enabled);
 
+void setProfileSamplingRate(size_t lg_prof_sample);
+
 void setMaxBackgroundThreads(size_t max_threads);
 
 template <typename T>
@@ -47,7 +49,8 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log);
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate);
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
