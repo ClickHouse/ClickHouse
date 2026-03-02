@@ -315,7 +315,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
-            if (sample_block->has(node->result_name))
+            if (node->type != ActionsDAG::ActionType::INPUT && sample_block->has(node->result_name))
                 schemer.external_columns.push_back(node->result_name);
     };
     if (row_level_filter)
@@ -698,7 +698,8 @@ void Reader::preparePrewhere()
             else
             {
                 if (!prewhere_output_column_idxs.contains(idx_in_output_block))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input: column '{}' (idx {})",
+                        col.name, idx_in_output_block);
             }
             step.input_idxs.push_back(idx_in_output_block);
         }

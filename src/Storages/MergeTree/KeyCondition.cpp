@@ -2250,7 +2250,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
-        if (!isFunctionReallyMonotonic(*func, *key_column_type))
+        if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
             return false;
 
         key_column_type = func->getResultType();
@@ -2789,6 +2789,21 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             bool condition_is_relaxed = false;
 
+            /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
+            /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
+            /// the left and right mark bounds before comparing with `const` to decide whether the mark can be skipped.
+            /// Monotonicity is required because `checkInRange` does not inspect every value in the mark.
+            /// It only inspects the left and right bounds and decides from those bounds whether the mark
+            /// can satisfy the predicate. This is correct only when the function is monotonic on that range,
+            /// because then all intermediate values stay between the transformed bounds (up to direction).
+            /// If the function is not monotonic, intermediate values can behave differently from both bounds,
+            /// and pruning based only on bounds can drop rows that actually match.
+            /// For example, suppose the sorting key is `x`, the current mark covers values from `-2` to `3`,
+            /// and the predicate is `x*x < 1`. At the two bounds, `x*x` is `4` and `9`, which do not satisfy
+            /// the predicate, but inside the same mark at `x = 0`, `x*x` is `0`, which does satisfy it.
+            /// So if we looked only at the bounds, we would incorrectly skip this mark.
+            /// If `single_point` is true (`left mark == right mark`), `f` can be any deterministic function, not necessarily
+            /// monotonic, because we evaluate only one value. In that case, monotonicity direction does not matter.
             if (isKeyPossiblyWrappedByMonotonicFunctions(
                     key_arg,
                     info,
@@ -2796,7 +2811,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     argument_num_of_space_filling_curve,
                     key_expr_type,
                     chain,
-                    single_point && func_name == "equals"))
+                    single_point))
             {
             }
             else if (
@@ -2849,10 +2864,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else
                 key_expr_type_not_null = key_expr_type;
 
-            /// Native integers and DateTime are accurately compared without cast.
+            /// Native integers and DateTime/DateTime64 are accurately compared without cast.
             bool cast_not_needed =
-                (isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                && (isNativeInteger(const_type) || isDateTime(const_type));
+                (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
+                && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {

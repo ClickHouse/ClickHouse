@@ -28,7 +28,7 @@ Exception::Exception(const std::string& msg, int code): _msg(msg), _pNested(0), 
 {
 }
 
-Exception::Exception(std::string&& msg, int code): _msg(msg), _pNested(0), _code(code)
+Exception::Exception(std::string&& msg, int code): _msg(std::move(msg)), _pNested(0), _code(code)
 {
 }
 

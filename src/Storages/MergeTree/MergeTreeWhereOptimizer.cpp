@@ -76,7 +76,7 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (storage_columns.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(options.kind, column))
             table_columns.insert(column);
     }
 
