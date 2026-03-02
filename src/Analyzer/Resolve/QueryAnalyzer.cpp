@@ -4349,9 +4349,8 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression)
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
 {
-    NameSet existing_columns;
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
 
@@ -4422,15 +4421,11 @@ static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table
             }
             default:
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                    table_expression->getNodeTypeName(),
-                    table_expression->formatASTForErrorMessage());
+                return false;
             }
         }
     }
-    return existing_columns;
+    return true;
 }
 
 /// Resolve join node in scope
@@ -4522,7 +4517,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         if (resolved_nodes.size() == 1)
                         {
                             /// Added column should not conflict with existing column names
-                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
+                            NameSet existing_columns;
+                            if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                                return nullptr;
 
                             NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
                             while (existing_columns.contains(column_name_type.name))

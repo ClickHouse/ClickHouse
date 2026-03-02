@@ -4272,7 +4272,7 @@ CONV_FN(DictionaryRange, dr)
 {
     ret += " RANGE(MIN ";
     ExprToString(ret, dr.min());
-    ret += "MAX ";
+    ret += " MAX ";
     ExprToString(ret, dr.max());
     ret += ")";
 }
@@ -4967,7 +4967,7 @@ CONV_FN(SystemCommand, cmd)
                     ret += "LIGHTWEIGHT";
                     if (sr.lightweight().replicas_size() > 0)
                     {
-                        ret += " ";
+                        ret += " FROM ";
                         for (int i = 0; i < sr.lightweight().replicas_size(); i++)
                         {
                             if (i != 0)
@@ -5536,7 +5536,7 @@ CONV_FN(ShowStatement, sh)
             ret += "PROFILES";
             break;
         case ShowType::kPolicies:
-            ret += "POLICIES ON ";
+            ret += "ROW POLICIES ON ";
             ExprSchemaTableToString(ret, sh.policies());
             break;
         case ShowType::kQuotas:

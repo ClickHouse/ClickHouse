@@ -32,29 +32,29 @@ StatementGenerator::StatementGenerator(
           rg.nextInFullRange(),
           {{
               {0.05, 0.20}, /// CreateTable
-              {0.05, 0.10}, /// CreateView
-              {0.01, 0.02}, /// Drop
-              {0.10, 0.25}, /// Insert
-              {0.01, 0.04}, /// LightDelete
-              {0.01, 0.02}, /// Truncate
-              {0.01, 0.03}, /// OptimizeTable
-              {0.01, 0.02}, /// CheckTable
-              {0.01, 0.01}, /// DescTable
-              {0.01, 0.01}, /// Exchange
-              {0.03, 0.29}, /// Alter
+              {0.05, 0.25}, /// CreateView
+              {0.01, 0.05}, /// Drop
+              {0.10, 0.30}, /// Insert
+              {0.01, 0.08}, /// LightDelete
+              {0.01, 0.03}, /// Truncate
+              {0.01, 0.08}, /// OptimizeTable
+              {0.01, 0.05}, /// CheckTable
+              {0.01, 0.03}, /// DescTable
+              {0.01, 0.10}, /// Exchange
+              {0.03, 0.30}, /// Alter
               {0.06, 0.25}, /// SetValues
-              {0.03, 0.08}, /// Attach
-              {0.01, 0.05}, /// Detach
-              {0.02, 0.06}, /// CreateDatabase
-              {0.02, 0.05}, /// CreateFunction
+              {0.03, 0.10}, /// Attach
+              {0.01, 0.06}, /// Detach
+              {0.02, 0.08}, /// CreateDatabase
+              {0.02, 0.08}, /// CreateFunction
               {0.05, 0.20}, /// SystemStmt
-              {0.01, 0.01}, /// BackupOrRestore
-              {0.05, 0.10}, /// CreateDictionary
-              {0.01, 0.01}, /// Rename
-              {0.01, 0.06}, /// LightUpdate
+              {0.01, 0.15}, /// BackupOrRestore
+              {0.05, 0.15}, /// CreateDictionary
+              {0.01, 0.10}, /// Rename
+              {0.01, 0.10}, /// LightUpdate
               {0.30, 0.90}, /// SelectQuery
-              {0.01, 0.03}, /// Kill
-              {0.01, 0.01} /// ShowStatement
+              {0.01, 0.10}, /// Kill
+              {0.01, 0.08} /// ShowStatement
           }}))
     , litGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
@@ -76,7 +76,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.30}, /// LitStr
               {0.01, 0.25}, /// LitSpecial
               {0.01, 0.10}, /// LitJSON
-              {0.01, 0.05}, /// LitNULLVal
+              {0.01, 0.15}, /// LitNULLVal
               {0.01, 0.10} /// LitFraction
           }}))
     , expGen(ProbabilityGenerator(
@@ -97,12 +97,12 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.30}, /// ArrayTupleExpr
               {0.01, 0.60}, /// FuncExpr
               {0.01, 0.25}, /// WindowFuncExpr
-              {0.01, 0.02}, /// TableStarExpr
+              {0.01, 0.10}, /// TableStarExpr
               {0.01, 0.05}, /// LambdaExpr
               {0.01, 0.05}, /// ProjectionExpr
-              {0.01, 0.05}, /// DictExpr
-              {0.01, 0.05}, /// JoinExpr
-              {0.01, 0.02} /// StarExpr
+              {0.01, 0.15}, /// DictExpr
+              {0.01, 0.15}, /// JoinExpr
+              {0.01, 0.15} /// StarExpr
           }}))
     , predGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
@@ -997,8 +997,7 @@ bool StatementGenerator::tableOrFunctionRef(
         const bool isCluster = (cluster_func && (nopt < cluster_func + 1));
 
         setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, t, tof->mutable_tfunc());
-        tof = isCluster ? const_cast<ClusterFunc &>(tof->tfunc().cluster()).mutable_tof()
-                        : const_cast<RemoteFunc &>(tof->tfunc().remote()).mutable_tof();
+        tof = isCluster ? tof->mutable_tfunc()->mutable_cluster()->mutable_tof() : tof->mutable_tfunc()->mutable_remote()->mutable_tof();
         cluster_or_remote = true;
     }
 
@@ -1089,7 +1088,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     const uint32_t desc_query = 5;
     const uint32_t desc_function = 5;
     const uint32_t desc_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
-    const uint32_t prob_space = desc_table + desc_view + desc_query + desc_function + desc_system_table;
+    const uint32_t prob_space = desc_table + desc_view + desc_dict + desc_query + desc_function + desc_system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1447,7 +1446,7 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
         for (uint32_t j = 0; j < nupdates; j++)
         {
             const ColumnPathChain & entry = this->entries[j];
-            UpdateSet & uset = const_cast<UpdateSet &>(j == 0 ? upt->update() : upt->other_updates(j - 1));
+            UpdateSet & uset = *(j == 0 ? upt->mutable_update() : upt->mutable_other_updates(j - 1));
             Expr * expr = uset.mutable_expr();
 
             if (rg.nextBool())
@@ -1799,7 +1798,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  this->entries.clear();
                  rcol->mutable_new_name()->CopyFrom(rcol->old_name());
                  const uint32_t size = rcol->new_name().sub_cols_size();
-                 Column & ncol = const_cast<Column &>(size ? rcol->new_name().sub_cols(size - 1) : rcol->new_name().col());
+                 Column & ncol = *(size ? rcol->mutable_new_name()->mutable_sub_cols(size - 1) : rcol->mutable_new_name()->mutable_col());
                  ncol.set_column("c" + std::to_string(ncname));
              }},
             /// Clear column
@@ -3072,7 +3071,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     if (newn->has_est() && rg.nextBool())
     {
         /// Change database
-        Database * db = const_cast<ExprSchemaTable &>(newn->est()).mutable_database();
+        Database * db = newn->mutable_est()->mutable_database();
 
         if (!has_database || rg.nextSmallNumber() < 4)
         {

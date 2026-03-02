@@ -132,7 +132,7 @@ possible_properties = {
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
-    "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.01, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
@@ -372,7 +372,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
@@ -392,7 +392,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
     },
@@ -430,7 +430,7 @@ cache_storage_properties = {
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": threads_lambda,
-    "max_elements": threshold_generator(0.2, 0.2, 3, 10000000),
+    "max_elements": threshold_generator(0.2, 0.2, 100, 10000000),
     "max_file_segment_size": file_size_value(100),
     "overcommit_eviction_evict_step": threshold_generator(
         0.2, 0.2, 0, 10 * 1024 * 1024
@@ -459,7 +459,7 @@ all_disks_properties = {
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
     "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
-    "skip_access_check": true_false_lambda,
+    # "skip_access_check": true_false_lambda, may break the startup
 }
 
 
@@ -602,7 +602,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
         iter_prev_disk = prev_disk = random.choice(range(0, i))
@@ -630,6 +630,7 @@ def add_single_disk(
     allowed_disk_xml.text = f"disk{i}"
     final_type = disk_type
     final_super_type = disk_type
+    final_metadata_type = "local"  # default
 
     if disk_type == "object_storage":
         object_storages = ["local"]
@@ -652,7 +653,7 @@ def add_single_disk(
         metadata_type = "keeper" if object_storage_type == "s3_with_keeper" else "local"
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
-                ["local", "plain", "web"]
+                ["plain", "web"]
                 if object_storage_type == "web"
                 else ["local", "plain", "plain_rewritable"]
             )
@@ -662,6 +663,7 @@ def add_single_disk(
             metadata_type = random.choice(possible_metadata_types)
         metadata_xml = ET.SubElement(next_disk, "metadata_type")
         metadata_xml.text = metadata_type
+        final_metadata_type = metadata_type
 
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
@@ -725,6 +727,7 @@ def add_single_disk(
         if random.randint(1, 100) <= 70:
             metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
             apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
+        final_metadata_type = "keeper"
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
@@ -760,7 +763,7 @@ def add_single_disk(
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
         apply_properties_recursively(next_disk, all_disks_properties)
-    return (prev_disk, final_type, final_super_type)
+    return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
 class DiskPropertiesGroup(PropertiesGroup):
@@ -785,6 +788,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         created_disks_types = []
         created_cache_disks = []
         created_keeper_disks = []
+        safe_for_database_disk = []
 
         for i in range(0, number_disks):
             possible_types = (
@@ -816,6 +820,10 @@ class DiskPropertiesGroup(PropertiesGroup):
                 and next_created_disk_pair[2] == "s3_with_keeper"
             ):
                 created_keeper_disks.append(i)
+            if next_created_disk_pair[3] == "local" and next_created_disk_pair[
+                2
+            ] not in ("cache", "encrypted"):
+                safe_for_database_disk.append(i)
 
         # Allow any disk in any table engine
         disks_table_engines.text = ",".join(
@@ -891,10 +899,10 @@ class DiskPropertiesGroup(PropertiesGroup):
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if number_disks > 0 and random.randint(1, 100) <= 30:
+        if len(safe_for_database_disk) > 0 and random.randint(1, 100) <= 30:
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
-            disk_element.text = f"disk{random.randint(0, number_disks - 1)}"
+            disk_element.text = f"disk{random.choice(safe_for_database_disk)}"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
