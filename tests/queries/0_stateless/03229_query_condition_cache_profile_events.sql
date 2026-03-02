@@ -29,7 +29,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
@@ -44,7 +44,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;'
@@ -63,7 +63,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
@@ -78,7 +78,7 @@ SELECT
     ProfileEvents['QueryConditionCacheMisses'],
     toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query = 'SELECT * FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'

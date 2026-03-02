@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <cerrno>
 

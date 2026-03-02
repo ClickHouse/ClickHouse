@@ -124,6 +124,7 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -429,7 +430,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -452,7 +453,7 @@ def main():
             commands.append(CH.enable_thread_fuzzer_config)
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:
@@ -535,9 +536,10 @@ def main():
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 5-minute margin.
+        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
+        # (server shutdown, system table export, log collection — all slow under sanitizers).
         job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 300
+        soft_limit_margin = 3600
         global_time_limit = 0
         if is_flaky_check or is_targeted_check:
             global_time_limit = max(
@@ -563,6 +565,11 @@ def main():
                 global_time_limit = max(
                     job_timeout - soft_limit_margin - int(stop_watch.duration), 0
                 )
+                if global_time_limit <= 0:
+                    print(
+                        "NOTE: Soft time limit exhausted; stopping before next iteration"
+                    )
+                    break
 
             run_tests(
                 batch_num=batch_num if not tests_to_run else 0,
@@ -620,11 +627,6 @@ def main():
 
                 # On final run, replace results with collected ones
                 if is_final_run or stop_by_elapsed_time:
-                    test_result.results = collected_test_results
-                    # Set overall status to failed if any collected test cases failed
-                    has_failures = any(not t.is_ok() for t in collected_test_results)
-                    if has_failures and test_result.is_ok():
-                        test_result.set_failed()
                     break
 
         # Run additional build types for bugfix validation.
@@ -664,6 +666,14 @@ def main():
 
                     if not bt_result.is_ok():
                         break
+
+        # Apply collected results from multi-run mode
+        if run_sets_cnt > 1 and collected_test_results:
+            test_result.results = collected_test_results
+            # Set overall status to failed if any collected test cases failed
+            has_failures = any(not t.is_ok() for t in collected_test_results)
+            if has_failures and test_result.is_ok():
+                test_result.set_failed()
 
         if not info.is_local_run:
             CH.stop_log_exports()
