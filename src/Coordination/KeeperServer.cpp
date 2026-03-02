@@ -123,6 +123,14 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
+    String cipher_list_property = fmt::format("openSSL.{}.cipherList", key);
+    if (config.has(cipher_list_property))
+        params.cipherList = config.getString(cipher_list_property);
+
+    String dh_params_file_property = fmt::format("openSSL.{}.dhParamsFile", key);
+    if (config.has(dh_params_file_property))
+        params.dhParamsFile = config.getString(dh_params_file_property);
+
     std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
     int disabled_protocols = 0;
