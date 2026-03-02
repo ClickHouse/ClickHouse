@@ -943,55 +943,6 @@ class Utils:
             path += ":" + path_cur
         os.environ["PATH"] = path
 
-    @classmethod
-    def get_git_info(cls) -> Tuple[str, str, str, str, str, str]:
-        # Get git info from Info singleton, if not present, get it from shell commands
-        # current_commit_sha, merge_base_commit_sha, branch, base_branch, repo_name, pr_number
-        info = Info()
-
-        current_commit_sha = info.get_kv_data("current_commit_sha")
-        if current_commit_sha is None:
-            current_commit_sha = Shell.get_output(
-                "git rev-parse HEAD", verbose=True
-            ).strip()
-
-        merge_base_commit_sha = info.get_kv_data("merge_base_commit_sha")
-        if merge_base_commit_sha is None:
-            # Use gh api to get the merge base commit between master and HEAD
-            merge_base_commit_sha = Shell.get_output(
-                f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
-                verbose=True,
-            ).strip()
-
-        branch = (
-            info.git_branch
-            or Shell.get_output("git branch --show-current", verbose=True).strip()
-        )
-        base_branch = info.base_branch or Shell.get_output(
-            "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
-        ).strip().replace("origin/", "")
-        repo_name = (
-            info.repo_name
-            or Shell.get_output(
-                "basename -s .git `git config --get remote.origin.url`", verbose=True
-            ).strip()
-        )
-        pr_number = (
-            info.pr_number
-            if info.pr_number > 1
-            else Shell.get_output(
-                "gh pr view --json number -q .number", verbose=True
-            ).strip()
-        )
-        return (
-            current_commit_sha,
-            merge_base_commit_sha,
-            branch,
-            base_branch,
-            repo_name,
-            pr_number,
-        )
-
     class Stopwatch:
         def __init__(self):
             self.start_time = datetime.now().timestamp()

@@ -187,16 +187,6 @@ public:
     /// This method is called right before the query execution.
     virtual void customizeContext(ContextMutablePtr /*context*/) {}
 
-    void dummyFuncToTestCoverage()
-    {
-        int a = 0;
-        for (int i = 0; i < 10; ++i)
-        {
-            a += i;
-        }
-        LOG_DEBUG(log, "Dummy function to test coverage: {}", a);
-    }
-
 private:
     IServer & server;
     TCPServer & tcp_server;

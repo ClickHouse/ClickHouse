@@ -1,43 +1,4 @@
-# Debug: List available llvm tools
-echo "Available LLVM tools:"
-command -v llvm-profdata-21 || echo "llvm-profdata-21: not found"
-command -v llvm-cov-21 || echo "llvm-cov-21: not found"
-command -v llvm-profdata || echo "llvm-profdata: not found"
-command -v llvm-cov || echo "llvm-cov: not found"
-
-# Auto-detect available LLVM tools
-if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 21 20 19 18 17 16 ""; do
-    if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
-      LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
-      break
-    fi
-  done
-fi
-
-if [ -z "$LLVM_COV" ]; then
-  for ver in 21 20 19 18 17 16 ""; do
-    if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
-      LLVM_COV="llvm-cov${ver:+-$ver}"
-      break
-    fi
-  done
-fi
-
-echo "Using LLVM tools: LLVM_PROFDATA=$LLVM_PROFDATA, LLVM_COV=$LLVM_COV"
-
-# Check if tools were found
-if [ -z "$LLVM_PROFDATA" ]; then
-  echo "ERROR: llvm-profdata not found in PATH"
-  exit 1
-fi
-
-if [ -z "$LLVM_COV" ]; then
-  echo "ERROR: llvm-cov not found in PATH"
-  exit 1
-fi
-
-
+#!/bin/bash
 cd ci/tmp
 
 if [[ ! -f "llvm_coverage.info" ]]; then
@@ -46,10 +7,6 @@ if [[ ! -f "llvm_coverage.info" ]]; then
 fi
 
 # Try to find .info file from S3, checking up to 30 ancestor commits
-FOUND=0
-ATTEMPT=0
-MAX_ATTEMPTS=30
-
 IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 FOUND=0
@@ -66,7 +23,7 @@ done
 
 
 if [ $FOUND -eq 0 ]; then
-echo "Warning: Could not find coverage file after checking ${MAX_ATTEMPTS} commits"
+echo "Warning: Could not find coverage file after checking ${#COMMITS[@]} commits"
 echo "Skipping differential coverage analysis"
 exit 0
 fi
@@ -93,12 +50,6 @@ if [ -z "$changed_files" ]; then
   exit 0
 fi
 
-# Build --include args
-include_args=""
-for f in $changed_files; do
-    include_args="$include_args --include */$f"
-done
-
 patterns=()
 while IFS= read -r f; do
   [ -n "$f" ] && patterns+=("*$f")
@@ -115,8 +66,6 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   -o baseline.changed.info 2>/dev/null
 
 echo Workspace path: $WORKSPACE_PATH
-
-# differential: PR link, current commit, current branch, baseline branch, baseline commit, ссылка на diff
 
 HEADER_TITLE="differential coverage report"
 if [ -n "${PR_NUMBER}" ]; then
@@ -145,7 +94,6 @@ genhtml \
   --simplified-colors \
   --filter missing \
   --flat \
-  $include_args \
   current.changed.info \
   2>/dev/null
 

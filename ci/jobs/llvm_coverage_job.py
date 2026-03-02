@@ -83,6 +83,55 @@ def collect_html_report_files(
     return files, assets
 
 
+def get_git_info() -> tuple[str, str, str, str, str, str]:
+    # Get git info from Info singleton, if not present, get it from shell commands
+    # merge_base_commit_sha, branch, base_branch, repo_name, pr_number
+    info = Info()
+
+    current_commit_sha = info.sha
+    if current_commit_sha is None:
+        current_commit_sha = Shell.get_output(
+            "git rev-parse HEAD", verbose=True
+        ).strip()
+
+    merge_base_commit_sha = info.get_kv_data("merge_base_commit_sha")
+    if merge_base_commit_sha is None:
+        # Use gh api to get the merge base commit between master and HEAD
+        merge_base_commit_sha = Shell.get_output(
+            f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
+            verbose=True,
+        ).strip()
+
+    branch = (
+        info.git_branch
+        or Shell.get_output("git branch --show-current", verbose=True).strip()
+    )
+    base_branch = info.base_branch or Shell.get_output(
+        "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
+    ).strip().replace("origin/", "")
+    repo_name = (
+        info.repo_name
+        or Shell.get_output(
+            "basename -s .git `git config --get remote.origin.url`", verbose=True
+        ).strip()
+    )
+    pr_number = (
+        info.pr_number
+        if info.pr_number > 0
+        else Shell.get_output(
+            "gh pr view --json number -q .number", verbose=True
+        ).strip()
+    )
+    return (
+        current_commit_sha,
+        merge_base_commit_sha,
+        branch,
+        base_branch,
+        repo_name,
+        pr_number,
+    )
+
+
 def save_date_into_ci_db(
     date_str: str,
     pr_number: int,
@@ -156,10 +205,10 @@ if __name__ == "__main__":
         base_branch,
         repo_name,
         pr_number,
-    ) = Utils.get_git_info()
+    ) = get_git_info()
 
-    prev_30_commits = info.get_kv_data("master_commits_before_merge_base")
-    if prev_30_commits is None:
+    prev_30_commits = []
+    if int(pr_number) > 0:
         # Get 30 commits starting from merge base commit and walking backwards.
         raw = Shell.get_output(
             f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base_commit_sha}&per_page=30' -q '.[].sha'",
@@ -266,7 +315,7 @@ if __name__ == "__main__":
             )
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
-                                 
+
             save_date_into_ci_db(
                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 pr_number,

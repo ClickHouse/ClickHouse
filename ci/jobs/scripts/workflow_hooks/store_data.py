@@ -6,7 +6,6 @@ from ci.praktika.digest import Digest
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
-import subprocess, json
 
 if __name__ == "__main__":
     info = Info()
@@ -39,18 +38,18 @@ if __name__ == "__main__":
 
         info.store_kv_data("previous_commits_sha", commits)
 
-    # store current commit and merge base between master and current branch
-    try:
-        info.store_kv_data("current_commit_sha", info.sha)
-        # Get the merge base commit using git
-        merge_base_commit_sha = Shell.get_output(
-            f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
-            verbose=True,
-        ).strip()
-        info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
+    if info.pr_number > 0:
+        # store merge base between master and current branch
+        try:
+            # Get the merge base commit using git
+            merge_base_commit_sha = Shell.get_output(
+                f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+                verbose=True,
+            ).strip()
+            info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
-    except Exception as e:
-        print(f"Failed to get merge base via git: {e}")
+        except Exception as e:
+            print(f"Failed to get merge base via git: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:

@@ -142,7 +142,6 @@ if __name__ == "__main__":
                     prefix = ">>" if block_start <= i <= block_end else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
-        is_failing = True
     else:
         print("No uncovered changed lines found.")
 

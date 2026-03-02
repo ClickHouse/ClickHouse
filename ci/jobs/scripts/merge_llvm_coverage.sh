@@ -119,7 +119,6 @@ genhtml "llvm_coverage.info" \
     --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
     --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
     --output-directory "llvm_coverage_html_report" \
-    --verbose \
     --legend \
     --demangle-cpp \
     --branch-coverage \
@@ -138,6 +137,4 @@ genhtml "llvm_coverage.info" \
     --ignore-errors branch \
     --ignore-errors range \
     --filter missing \
-    --quiet \
-    >/dev/null
-
+    --quiet 
