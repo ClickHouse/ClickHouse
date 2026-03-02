@@ -29,7 +29,7 @@ SELECT
     read_rows,
     arraySort(arrayMap(x -> splitByChar('.', x)[-1], columns))
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT sum(b) FROM t_index_hint%'
 ORDER BY event_time_microseconds;
@@ -67,7 +67,7 @@ SELECT
     read_rows,
     arraySort(arrayMap(x -> splitByChar('.', x)[-1], columns))
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT count() FROM t_index_hint%'
 ORDER BY event_time_microseconds;

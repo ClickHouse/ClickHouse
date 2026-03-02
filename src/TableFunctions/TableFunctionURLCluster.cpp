@@ -43,7 +43,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
 
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURLCluster>();
+    factory.registerFunction<TableFunctionURLCluster>({});
 }
 
 }
