@@ -1,172 +1,76 @@
-  Expression (Project names)
-    Limit (preliminary LIMIT)
-    Limit 10
-    Offset 0
-      Sorting (Sorting for ORDER BY)
-      Sort description: sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))) DESC, __table2.o_orderdate ASC
-      Limit 10
-        Expression ((Before ORDER BY + Projection))
-          Aggregating
-          Keys: __table3.l_orderkey, __table2.o_orderdate, __table2.o_shippriority
-          Aggregates:
-              sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount)))
-                Function: sum(Decimal(18, 4)) → Decimal(38, 4)
-                Arguments: multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))
-          Skip merging: 0
-            Expression
-              Join (JOIN FillRightFirst)
-              Type: INNER
-              Strictness: ALL
-              Algorithm: ConcurrentHashJoin
-              Clauses: [(__table2.o_orderkey) = (__table3.l_orderkey)]
-                Expression (Left Pre Join Actions)
-                  Expression
-                    Join (JOIN FillRightFirst)
-                    Type: INNER
-                    Strictness: ALL
-                    Algorithm: ConcurrentHashJoin
-                    Clauses: [(__table1.c_custkey) = (__table2.o_custkey)]
-                      Expression (Left Pre Join Actions)
-                        Filter
-                        AND column: equals(__table1.c_mktsegment, \'BUILDING\'_String)
-                        Filter column: and(equals(__table1.c_mktsegment, \'BUILDING\'_String), __applyFilter(_runtime_filter_15791288203044155872_0, __table1.c_custkey)) (removed)
-                          ReadNothing (Read from NullSource)
-                      Expression
-                        BuildRuntimeFilter (Build runtime join filter on __table2.o_custkey)
-                        Filter id: _runtime_filter_15791288203044155872_0
-                        Allow not exact filter: 1
-                          Filter
-                          AND column: less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String))
-                          Filter column: and(less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)), __applyFilter(_runtime_filter_5506205781326526211_0, __table2.o_orderkey)) (removed)
-                            ReadNothing (Read from NullSource)
-                Expression (Right Pre Join Actions)
-                  BuildRuntimeFilter (Build runtime join filter on __table3.l_orderkey)
-                  Filter id: _runtime_filter_5506205781326526211_0
-                  Allow not exact filter: 1
-                    Filter ((WHERE + Change column names to column identifiers))
-                    Filter column: greater(__table3.l_shipdate, _CAST(9204_Date, \'Date\'_String)) (removed)
-                      ReadNothing (Read from NullSource)
+Expression (Project names)
+  Limit (preliminary LIMIT)
+  Limit 5
+  Offset 0
+    Sorting (Sorting for ORDER BY)
+    Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+    Limit 5
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+        Keys: modulo(__table1.number, 10_UInt8)
+        Aggregates:
+            sum(__table1.number)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.number
+        Skip merging: 0
+          Expression (Before GROUP BY)
+            Filter ((WHERE + Change column names to column identifiers))
+            Filter column: greater(__table1.number, 100_UInt8) (removed)
+              ReadFromSystemNumbers
 ┌Expression (Project names)
-│    Actions: INPUT : 0 -> sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))) Decimal(38, 4) : 0
-│             INPUT : 1 -> __table3.l_orderkey Int32 : 1
-│             INPUT : 2 -> __table2.o_orderdate Date : 2
-│             INPUT : 3 -> __table2.o_shippriority Int32 : 3
-│             ALIAS sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))) :: 0 -> revenue Decimal(38, 4) : 4
-│             ALIAS __table3.l_orderkey :: 1 -> l_orderkey Int32 : 0
-│             ALIAS __table2.o_orderdate :: 2 -> o_orderdate Date : 1
-│             ALIAS __table2.o_shippriority :: 3 -> o_shippriority Int32 : 2
-│    Positions: 0 4 1 2
+│    Actions: INPUT : 0 -> modulo(__table1.number, 10_UInt8) UInt8 : 0
+│             INPUT : 1 -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 1
+│             ALIAS modulo(__table1.number, 10_UInt8) :: 0 -> key UInt8 : 2
+│             ALIAS multiply(sum(__table1.number), 2_UInt8) :: 1 -> total UInt64 : 0
+│    Positions: 2 0
 └─┬Limit (preliminary LIMIT)
-  │    Limit 10
+  │    Limit 5
   │    Offset 0
   └─┬Sorting (Sorting for ORDER BY)
-    │    Sort description: sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))) DESC, __table2.o_orderdate ASC
-    │    Limit 10
+    │    Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+    │    Limit 5
     └─┬Expression ((Before ORDER BY + Projection))
-      │    Actions: INPUT :: 0 -> sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))) Decimal(38, 4) : 0
-      │             INPUT :: 1 -> __table3.l_orderkey Int32 : 1
-      │             INPUT :: 2 -> __table2.o_orderdate Date : 2
-      │             INPUT :: 3 -> __table2.o_shippriority Int32 : 3
-      │    Positions: 0 2 1 3
+      │    Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+      │             INPUT :: 1 -> modulo(__table1.number, 10_UInt8) UInt8 : 1
+      │             COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 2
+      │             FUNCTION multiply(sum(__table1.number) :: 0, 2_UInt8 :: 2) -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 3
+      │    Positions: 3 1
       └─┬Aggregating
-        │    Keys: __table3.l_orderkey, __table2.o_orderdate, __table2.o_shippriority
+        │    Keys: modulo(__table1.number, 10_UInt8)
         │    Aggregates:
-        │        sum(multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount)))
-        │          Function: sum(Decimal(18, 4)) → Decimal(38, 4)
-        │          Arguments: multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount))
+        │        sum(__table1.number)
+        │          Function: sum(UInt64) → UInt64
+        │          Arguments: __table1.number
         │    Skip merging: 0
-        └─┬Expression
-          │    Actions: INPUT :: 0 -> __table2.o_orderdate Date : 0
-          │             INPUT :: 1 -> __table2.o_shippriority Int32 : 1
-          │             INPUT :: 2 -> __table3.l_orderkey Int32 : 2
-          │             INPUT : 3 -> __table3.l_extendedprice Decimal(15, 2) : 3
-          │             INPUT : 4 -> __table3.l_discount Decimal(15, 2) : 4
-          │             COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 5
-          │             FUNCTION minus(1_UInt8 :: 5, __table3.l_discount :: 4) -> minus(1_UInt8, __table3.l_discount) Decimal(15, 2) : 6
-          │             FUNCTION multiply(__table3.l_extendedprice :: 3, minus(1_UInt8, __table3.l_discount) :: 6) -> multiply(__table3.l_extendedprice, minus(1_UInt8, __table3.l_discount)) Decimal(18, 4) : 4
-          │    Positions: 2 0 1 4
-          └─┬Join (JOIN FillRightFirst)
-            │    Type: INNER | Strictness: ALL | Algorithm: ConcurrentHashJoin
-            │    Clauses: [(__table2.o_orderkey) = (__table3.l_orderkey)]
-            ├─┬Expression (Left Pre Join Actions)
-            │ │    Actions: INPUT :: 0 -> __table2.o_orderkey Int32 : 0
-            │ │             INPUT :: 1 -> __table2.o_orderdate Date : 1
-            │ │             INPUT :: 2 -> __table2.o_shippriority Int32 : 2
-            │ │    Positions: 0 1 2
-            │ └─┬Expression
-            │   │    Actions: INPUT :: 0 -> __table2.o_orderdate Date : 0
-            │   │             INPUT :: 1 -> __table2.o_shippriority Int32 : 1
-            │   │             INPUT :: 2 -> __table2.o_orderkey Int32 : 2
-            │   │    Positions: 0 1 2
-            │   └─┬Join (JOIN FillRightFirst)
-            │     │    Type: INNER | Strictness: ALL | Algorithm: ConcurrentHashJoin
-            │     │    Clauses: [(__table1.c_custkey) = (__table2.o_custkey)]
-            │     ├─┬Expression (Left Pre Join Actions)
-            │     │ │    Actions: INPUT :: 0 -> __table1.c_custkey Int32 : 0
-            │     │ │    Positions: 0
-            │     │ └─┬Filter
-            │     │   │    AND column: equals(__table1.c_mktsegment, \'BUILDING\'_String)
-            │     │   │    Actions: INPUT : 0 -> c_mktsegment String : 0
-            │     │   │             COLUMN Const(String) -> \'BUILDING\'_String String : 1
-            │     │   │             FUNCTION equals(c_mktsegment :: 0, \'BUILDING\'_String :: 1) -> equals(__table1.c_mktsegment, \'BUILDING\'_String) UInt8 : 2
-            │     │   │    Positions: 2 2
-            │     │   │    Filter column: and(equals(__table1.c_mktsegment, \'BUILDING\'_String), __applyFilter(_runtime_filter_9393131476130862066_0, __table1.c_custkey)) (removed)
-            │     │   │    Actions: INPUT : 1 -> c_custkey Int32 : 0
-            │     │   │             COLUMN Const(String) -> _runtime_filter_9393131476130862066_0 String : 1
-            │     │   │             INPUT : 0 -> equals(__table1.c_mktsegment, \'BUILDING\'_String) UInt8 : 2
-            │     │   │             ALIAS c_custkey : 0 -> __table1.c_custkey Int32 : 3
-            │     │   │             FUNCTION __applyFilter(_runtime_filter_9393131476130862066_0 :: 1, c_custkey :: 0) -> __applyFilter(_runtime_filter_9393131476130862066_0, __table1.c_custkey) UInt8 : 4
-            │     │   │             FUNCTION and(equals(__table1.c_mktsegment, \'BUILDING\'_String) :: 2, __applyFilter(_runtime_filter_9393131476130862066_0, __table1.c_custkey) :: 4) -> and(equals(__table1.c_mktsegment, \'BUILDING\'_String), __applyFilter(_runtime_filter_9393131476130862... UInt8 : 0
-            │     │   │    Positions: 0 3
-            │     │   └──ReadNothing (Read from NullSource)
-            │     └─┬Expression
-            │       │    Actions: INPUT :: 0 -> __table2.o_custkey Int32 : 0
-            │       │             INPUT :: 1 -> __table2.o_orderdate Date : 1
-            │       │             INPUT :: 2 -> __table2.o_shippriority Int32 : 2
-            │       │             INPUT :: 3 -> __table2.o_orderkey Int32 : 3
-            │       │    Positions: 0 1 2 3
-            │       └─┬BuildRuntimeFilter (Build runtime join filter on __table2.o_custkey)
-            │         │    Filter id: _runtime_filter_9393131476130862066_0
-            │         │    Allow not exact filter: 1
-            │         └─┬Filter
-            │           │    AND column: less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String))
-            │           │    Actions: INPUT : 0 -> o_orderdate Date : 0
-            │           │             COLUMN Const(UInt16) -> _CAST(9204_Date, \'Date\'_String) Date : 1
-            │           │             FUNCTION less(o_orderdate : 0, _CAST(9204_Date, \'Date\'_String) :: 1) -> less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)) UInt8 : 2
-            │           │    Positions: 2 0 2
-            │           │    Filter column: and(less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)), __applyFilter(_runtime_filter_10609240560643155269_0, __table2.o_orderkey)) (removed)
-            │           │    Actions: INPUT : 2 -> o_shippriority Int32 : 0
-            │           │             INPUT : 3 -> o_custkey Int32 : 1
-            │           │             INPUT : 4 -> o_orderkey Int32 : 2
-            │           │             INPUT : 1 -> o_orderdate Date : 3
-            │           │             COLUMN Const(String) -> _runtime_filter_10609240560643155269_0 String : 4
-            │           │             INPUT : 0 -> less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)) UInt8 : 5
-            │           │             ALIAS o_shippriority :: 0 -> __table2.o_shippriority Int32 : 6
-            │           │             ALIAS o_custkey :: 1 -> __table2.o_custkey Int32 : 0
-            │           │             ALIAS o_orderkey : 2 -> __table2.o_orderkey Int32 : 1
-            │           │             ALIAS o_orderdate :: 3 -> __table2.o_orderdate Date : 7
-            │           │             FUNCTION __applyFilter(_runtime_filter_10609240560643155269_0 :: 4, o_orderkey :: 2) -> __applyFilter(_runtime_filter_10609240560643155269_0, __table2.o_orderkey) UInt8 : 3
-            │           │             FUNCTION and(less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)) :: 5, __applyFilter(_runtime_filter_10609240560643155269_0, __table2.o_orderkey) :: 3) -> and(less(__table2.o_orderdate, _CAST(9204_Date, \'Date\'_String)), __applyFilter(_runtime_filter_10609... UInt8 : 2
-            │           │    Positions: 2 7 6 1 0
-            │           └──ReadNothing (Read from NullSource)
-            └─┬Expression (Right Pre Join Actions)
-              │    Actions: INPUT :: 0 -> __table3.l_orderkey Int32 : 0
-              │             INPUT :: 1 -> __table3.l_extendedprice Decimal(15, 2) : 1
-              │             INPUT :: 2 -> __table3.l_discount Decimal(15, 2) : 2
-              │    Positions: 0 1 2
-              └─┬BuildRuntimeFilter (Build runtime join filter on __table3.l_orderkey)
-                │    Filter id: _runtime_filter_10609240560643155269_0
-                │    Allow not exact filter: 1
-                └─┬Filter ((WHERE + Change column names to column identifiers))
-                  │    Filter column: greater(__table3.l_shipdate, _CAST(9204_Date, \'Date\'_String)) (removed)
-                  │    Actions: INPUT : 0 -> l_orderkey Int32 : 0
-                  │             INPUT : 1 -> l_extendedprice Decimal(15, 2) : 1
-                  │             INPUT : 2 -> l_discount Decimal(15, 2) : 2
-                  │             INPUT : 3 -> l_shipdate Date : 3
-                  │             COLUMN Const(UInt16) -> _CAST(9204_Date, \'Date\'_String) Date : 4
-                  │             ALIAS l_orderkey :: 0 -> __table3.l_orderkey Int32 : 5
-                  │             ALIAS l_extendedprice :: 1 -> __table3.l_extendedprice Decimal(15, 2) : 0
-                  │             ALIAS l_discount :: 2 -> __table3.l_discount Decimal(15, 2) : 1
-                  │             FUNCTION greater(l_shipdate :: 3, _CAST(9204_Date, \'Date\'_String) :: 4) -> greater(__table3.l_shipdate, _CAST(9204_Date, \'Date\'_String)) UInt8 : 2
-                  │    Positions: 2 5 0 1
-                  └──ReadNothing (Read from NullSource)
+        └─┬Expression (Before GROUP BY)
+          │    Actions: INPUT : 0 -> __table1.number UInt64 : 0
+          │             COLUMN Const(UInt8) -> 10_UInt8 UInt8 : 1
+          │             FUNCTION modulo(__table1.number : 0, 10_UInt8 :: 1) -> modulo(__table1.number, 10_UInt8) UInt8 : 2
+          │    Positions: 2 0
+          └─┬Filter ((WHERE + Change column names to column identifiers))
+            │    Filter column: greater(__table1.number, 100_UInt8) (removed)
+            │    Actions: INPUT : 0 -> number UInt64 : 0
+            │             COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
+            │             ALIAS number : 0 -> __table1.number UInt64 : 2
+            │             FUNCTION greater(number :: 0, 100_UInt8 :: 1) -> greater(__table1.number, 100_UInt8) UInt8 : 3
+            │    Positions: 3 2
+            └──ReadFromSystemNumbers
+┌Expression (Project names)
+└─┬Limit (preliminary LIMIT)
+  │    Limit 5
+  │    Offset 0
+  └─┬Sorting (Sorting for ORDER BY)
+    │    Sort description: multiply(sum(__table1.number), 2_UInt8) DESC
+    │    Limit 5
+    └─┬Expression ((Before ORDER BY + Projection))
+      └─┬Aggregating
+        │    Keys: modulo(__table1.number, 10_UInt8)
+        │    Aggregates:
+        │        sum(__table1.number)
+        │          Function: sum(UInt64) → UInt64
+        │          Arguments: __table1.number
+        │    Skip merging: 0
+        └─┬Expression (Before GROUP BY)
+          └─┬Filter ((WHERE + Change column names to column identifiers))
+            │    Filter column: greater(__table1.number, 100_UInt8) (removed)
+            └──ReadFromSystemNumbers
