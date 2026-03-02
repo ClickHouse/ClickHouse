@@ -1596,14 +1596,14 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 {
     const auto & context = planner_context->getQueryContext();
     const Settings & settings = context->getSettingsRef();
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && settings[Setting::automatic_parallel_replicas_mode] != 0)
     {
         LOG_DEBUG(
             log,
-            "Setting 'allow_experimental_parallel_reading_from_replicas' is enabled but 'automatic_parallel_replicas_mode' is enabled."
-            "To enforce use of parallel replicas please disable 'automatic_parallel_replicas_mode'.");
+            "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+            "To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
