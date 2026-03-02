@@ -1229,7 +1229,7 @@ try
     MainThreadStatus::getInstance();
 
 #if USE_JEMALLOC
-    Jemalloc::setup(
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
