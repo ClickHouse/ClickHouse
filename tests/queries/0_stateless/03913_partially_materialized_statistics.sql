@@ -2,8 +2,7 @@
 -- no-fasttest, countmin sketch is not compiled in fasttest
 
 DROP TABLE IF EXISTS test_table;
-SET allow_statistics = 1;
-SET materialize_statistics_on_insert = 1;
+SET allow_experimental_statistics = 1;
 
 CREATE TABLE test_table
 (
