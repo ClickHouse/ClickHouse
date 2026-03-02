@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -192,7 +193,12 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            res->replica_zk_path = zk_path;
+            if (!zk_path.empty())
+            {
+                res->full_replica_zk_path = std::move(zk_path);
+                res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
+                res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
+            }
         }
         else
             return false;

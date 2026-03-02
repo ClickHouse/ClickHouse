@@ -10,7 +10,7 @@ SELECT count() FROM remote('127.0.0.{1..6}', currentDatabase(), tt) settings log
 SYSTEM FLUSH LOGS query_log;
 
 SELECT countIf(ProfileEvents['ParallelReplicasQueryCount']>0) FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
 AND initial_query_id IN (select query_id from system.query_log where current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = '02875_89f3c39b-1919-48cb-b66e-ef9904e73146')
 SETTINGS parallel_replicas_for_non_replicated_merge_tree=0;
 

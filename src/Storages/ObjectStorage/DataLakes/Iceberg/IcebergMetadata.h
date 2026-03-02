@@ -50,7 +50,9 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
