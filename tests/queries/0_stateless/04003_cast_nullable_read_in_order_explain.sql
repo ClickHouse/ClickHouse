@@ -2,7 +2,6 @@
 -- EXPLAIN output may differ
 
 -- { echo }
--- Tags: no-parallel-replicas
 
 SET optimize_read_in_order = 1;
 
