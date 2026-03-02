@@ -103,8 +103,6 @@ public:
     ManifestFileIterator(ManifestFileIterator &&) = delete;
     ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
 
-    size_t getFileBytesSize() const { return file_bytes_size; }
-
 private:
     ManifestFileIterator(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
@@ -118,7 +116,6 @@ private:
         Int64 inherited_snapshot_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
-        size_t file_bytes_size,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
         size_t total_rows,
@@ -139,7 +136,6 @@ private:
     const Int64 inherited_snapshot_id;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
-    const size_t file_bytes_size;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::optional<DB::KeyDescription> partition_key_description;
 

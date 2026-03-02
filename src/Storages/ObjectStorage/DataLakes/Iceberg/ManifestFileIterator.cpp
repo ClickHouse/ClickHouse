@@ -249,7 +249,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_snapshot_id_,
         context_,
         manifest_schema_id,
-        0,
         std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
         std::move(partition_key_description),
         total_rows,
@@ -269,7 +268,6 @@ ManifestFileIterator::ManifestFileIterator(
     Int64 inherited_snapshot_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
-    size_t file_bytes_size_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t total_rows_,
@@ -286,7 +284,6 @@ ManifestFileIterator::ManifestFileIterator(
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
-    , file_bytes_size(file_bytes_size_)
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(std::move(partition_key_description_))
     , total_rows(total_rows_)
