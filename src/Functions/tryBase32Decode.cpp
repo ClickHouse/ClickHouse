@@ -16,21 +16,29 @@ using FunctionTryBase32Decode = FunctionBaseXXConversion<TryBase32DecodeImpl>;
 
 REGISTER_FUNCTION(TryBase32Decode)
 {
-    factory.registerFunction<FunctionTryBase32Decode>(FunctionDocumentation{
-        .description = R"(
-Decode a [Base32](https://datatracker.ietf.org/doc/html/rfc4648) encoded string. If the input string is not a valid Base32 return an empty string.)",
-        .arguments = {
-            {"arg", "A Base32 (rfc4648) encoded string"},
-        },
-        .examples = {
-            {"simple_decoding1", "SELECT tryBase32Decode('ME======')", "a"},
-            {"simple_decoding2", "SELECT tryBase32Decode('JBSWY3DP')", "Hello"},
-            {"non_ascii", "SELECT hex(tryBase32Decode('4W2HIXV4'))", "E5B4745EBC"},
-            {"invalid_base32", "SELECT tryBase32Decode('invalid_base32')", ""},
-            {"empty_string", "SELECT tryBase32Decode('')", ""},
-            {"non_base32_characters", "SELECT tryBase32Decode('12345')", ""},
-        },
-        .introduced_in = {25, 5},
-        .category = FunctionDocumentation::Category::String});
+    FunctionDocumentation::Description description = R"(
+Accepts a string and decodes it using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) encoding scheme.
+)";
+    FunctionDocumentation::Syntax syntax = "tryBase32Decode(encoded)";
+    FunctionDocumentation::Arguments arguments = {
+        {"encoded", "String column or constant to decode. If the string is not valid Base32-encoded, returns an empty string in case of error.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT tryBase32Decode('IVXGG33EMVSA====');",
+        R"(
+┌─tryBase32Decode('IVXGG33EMVSA====')─┐
+│ Encoded                             │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTryBase32Decode>(documentation);
 }
 }

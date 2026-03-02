@@ -1,5 +1,6 @@
--- Tags: long
+-- Tags: long, no-asan, no-msan
 
+SET use_statistics = 0;
 drop table if exists tab_l;
 drop table if exists tab_m;
 drop table if exists tab_r;
@@ -19,6 +20,8 @@ set enable_analyzer=1;
 set query_plan_join_swap_table=0;
 set query_plan_join_shard_by_pk_ranges=1;
 set allow_experimental_parallel_reading_from_replicas=0;
+set enable_join_runtime_filters=0;
+set max_threads=4;
 
 -- { echo On }
 
@@ -52,7 +55,6 @@ select * from tab_l l inner join tab_m m on l.d = m.a inner join tab_r r on l.a 
 select explain e from (explain actions = 1 select * from tab_l l inner join tab_m m on l.d = m.a inner join tab_r r on l.a * 2 = r.a * 2 and l.b + l.c = r.c * 2 and l.d = r.d)
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
---- join_use_nulls is not supported. Here we check that is not broken in general.
 set join_use_nulls=1;
 
 -- two tables

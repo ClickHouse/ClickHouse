@@ -13,7 +13,9 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -39,6 +41,9 @@ private:
     size_t mark_segment_size{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
+
+    /// See the comment in getTask method.
+    bool failed_to_get_task{false};
 };
 
 }

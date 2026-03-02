@@ -1,0 +1,27 @@
+-- { echo }
+select sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=0, distributed_index_analysis=1, cluster_for_parallel_replicas='parallel_replicas';
+49999995000000
+select sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, distributed_index_analysis=1, cluster_for_parallel_replicas='parallel_replicas';
+49999995000000
+select sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1, distributed_index_analysis=1, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';
+49999995000000
+Row 1:
+──────
+q:                                   select sum(key) from test_10m settings `?`=?, distributed_index_analysis=?, cluster_for_parallel_replicas=?;
+queries_with_subqueries:             10
+distributed_index_analysis_replicas: 1
+read_with_parallel_replicas:         0
+
+Row 2:
+──────
+q:                                   select sum(key) from test_10m settings `?`=?, distributed_index_analysis=?, cluster_for_parallel_replicas=?;
+queries_with_subqueries:             19
+distributed_index_analysis_replicas: 1
+read_with_parallel_replicas:         1
+
+Row 3:
+──────
+q:                                   select sum(key) from test_10m settings `?`=?, distributed_index_analysis=?, cluster_for_parallel_replicas=?;
+queries_with_subqueries:             3
+distributed_index_analysis_replicas: 1
+read_with_parallel_replicas:         1

@@ -26,7 +26,7 @@ mv_table is not deduplicated because different tokens:
 2	B
 2	B
 2	C
-with incorrect ussage of user deduplication token
+with incorrect usage of user deduplication token
 partitioned_table is deduplicated because equal tokens:
 1	A
 2	B

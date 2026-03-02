@@ -48,7 +48,7 @@ void SerializationLowCardinality::enumerateStreams(
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    if (settings.use_specialized_prefixes_substreams)
+    if (settings.use_specialized_prefixes_and_suffixes_substreams)
     {
         settings.path.push_back(Substream::DictionaryKeysPrefix);
         callback(settings.path);
@@ -238,7 +238,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -283,7 +283,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
+    settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
@@ -537,12 +537,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
-    {
-        column = cached_column;
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         return;
-    }
 
+    size_t prev_size = column->size();
     auto mutable_column = column->assumeMutable();
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(*mutable_column);
 
@@ -589,7 +587,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
         {
-            auto null_map = ColumnUInt8::create(num_keys, 0);
+            auto null_map = ColumnUInt8::create(num_keys, static_cast<UInt8>(0));
             if (num_keys)
                 null_map->getElement(0) = 1;
 
@@ -624,7 +622,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             if (column_is_empty)
                 low_cardinality_column.setSharedDictionary(global_dictionary);
 
-            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column));
+            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column), /*is_shared=*/true);
             low_cardinality_column.insertRangeFrom(*local_column, 0, num_rows);
         }
         else
@@ -642,7 +640,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
                 if (dictionary_type->isNullable())
                 {
-                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), 0);
+                    ColumnPtr null_map = ColumnUInt8::create(used_add_keys->size(), static_cast<UInt8>(0));
                     used_add_keys = ColumnNullable::create(used_add_keys, null_map);
                 }
 
@@ -704,7 +702,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     }
 
     column = std::move(mutable_column);
-    addToSubstreamsCache(cache, settings.path, column);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
 }
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

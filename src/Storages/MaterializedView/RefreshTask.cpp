@@ -1,29 +1,31 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Common/Macros.h>
-#include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Context.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/Macros.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace CurrentMetrics
@@ -82,6 +84,7 @@ RefreshTask::RefreshTask(
     , refresh_schedule(strategy)
     , refresh_append(strategy.append)
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
@@ -156,8 +159,15 @@ OwnedRefreshTask RefreshTask::create(
 {
     auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
-    task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
+    task->refresh_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshTask",
         [self = task.get()] { self->refreshTask(); });
+
+    task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+    {
+        w->root_watch_active.store(false);
+        w->should_reread_znodes.store(true);
+        (*task_waker)(response);
+    });
 
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
@@ -223,6 +233,7 @@ void RefreshTask::drop(ContextPtr context)
 {
     if (coordination.coordinated)
     {
+        auto component_guard = Coordination::setCurrentComponent("RefreshTask::drop");
         auto zookeeper = context->getZooKeeper();
 
         zookeeper->tryRemove(coordination.path + "/replicas/" + coordination.replica_name);
@@ -301,7 +312,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
 RefreshTask::Info RefreshTask::getInfo() const
 {
     std::lock_guard guard(mutex);
-    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
+    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .replica_name = coordination.replica_name, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
 }
 
 void RefreshTask::start()
@@ -324,6 +335,7 @@ void RefreshTask::stop()
 
 void RefreshTask::startReplicated()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::startReplicated");
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
@@ -346,6 +358,7 @@ void RefreshTask::stopReplicated(const String & reason)
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::stopReplicated");
     const auto zookeeper = [this]()
     {
         std::lock_guard guard(mutex);
@@ -459,6 +472,7 @@ void RefreshTask::setFakeTime(std::optional<Int64> t)
 
 void RefreshTask::refreshTask()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::refreshTask");
     std::unique_lock lock(mutex);
 
     auto schedule_keeper_retry = [&] {
@@ -655,13 +669,15 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
+    static constexpr bool internal = true;
+
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
+    boost::intrusive_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
@@ -682,7 +698,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            CurrentThread::QueryScope query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 
@@ -692,7 +708,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
             process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -716,39 +732,43 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ false, view_storage_id.database_name,
+                &interpreter, /*internal*/ internal, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
-            PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-            executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-
             {
-                std::unique_lock exec_lock(execution.executor_mutex);
+                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+
+                {
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    if (execution.interrupt_execution.load())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                    execution.executor = &executor;
+                }
+                SCOPE_EXIT({
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    execution.executor = nullptr;
+                });
+
+                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+
+                /// A cancelled PipelineExecutor may return without exception but with incomplete results.
+                /// In this case make sure to:
+                ///  * report exception rather than success,
+                ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
+                ///    being unexpectedly destroyed before completion and without uncaught exception
+                ///    (specifically, the assert in ~WriteBuffer()).
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-                execution.executor = &executor;
+
+                /// `executor` must be destroyed before `pipeline`!
             }
-            SCOPE_EXIT({
-                std::unique_lock exec_lock(execution.executor_mutex);
-                execution.executor = nullptr;
-            });
 
-            executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
-
-            /// A cancelled PipelineExecutor may return without exception but with incomplete results.
-            /// In this case make sure to:
-            ///  * report exception rather than success,
-            ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
-            ///    being unexpectedly destroyed before completion and without uncaught exception
-            ///    (specifically, the assert in ~WriteBuffer()).
-            if (execution.interrupt_execution.load())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -775,13 +795,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ false, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
         }
 
         if (cancelled)
@@ -936,24 +956,12 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr,
-            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-            {
-                w->root_watch_active.store(false);
-                w->should_reread_znodes.store(true);
-                task_waker(response);
-            });
+        zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr,
-            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-            {
-                w->children_watch_active.store(false);
-                w->should_reread_znodes.store(true);
-                task_waker(response);
-            });
+        zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -989,9 +997,14 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
+        {
+            ops.emplace_back(
+                zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
+        }
         else
+        {
             ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/running", -1));
+        }
 
         Coordination::Responses responses;
 
@@ -1032,7 +1045,7 @@ void RefreshTask::interruptExecution()
     if (execution.executor)
     {
         execution.executor->cancel();
-        LOG_DEBUG(log, "Cancelling refresh");
+        LOG_DEBUG(log, "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
     }
 }
 

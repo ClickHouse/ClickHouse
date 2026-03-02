@@ -38,7 +38,7 @@ enum class ExtractAllGroupsResultKind : uint8_t
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
- * Depending on `Impl::Kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
+ * Depending on `kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
  *
  *  SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * =>
@@ -48,22 +48,25 @@ enum class ExtractAllGroupsResultKind : uint8_t
  * =>
  *   [['abc', 'def', 'ghi'], ['111', '222', '333']
 */
-template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
-    ContextPtr context;
+    const UInt64 regexp_max_matches_per_row;
+    const char * function_name;
+    ExtractAllGroupsResultKind kind;
 
 public:
-    static constexpr auto Kind = Impl::Kind;
-    static constexpr auto name = Impl::Name;
-
-    explicit FunctionExtractAllGroups(ContextPtr context_)
-        : context(context_)
+    FunctionExtractAllGroups(ContextPtr context, const char * name_, ExtractAllGroupsResultKind kind_)
+        : regexp_max_matches_per_row(context->getSettingsRef()[Setting::regexp_max_matches_per_row].value)
+        , function_name(name_)
+        , kind(kind_)
     {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
+    static FunctionPtr create(ContextPtr context, const char * name, ExtractAllGroupsResultKind kind)
+    {
+        return std::make_shared<FunctionExtractAllGroups>(context, name, kind);
+    }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -124,12 +127,12 @@ public:
         ColumnArray::Offset current_root_offset = 0;
         ColumnArray::Offset current_nested_offset = 0;
 
-        if constexpr (Kind == ExtractAllGroupsResultKind::VERTICAL)
+        if (kind == ExtractAllGroupsResultKind::VERTICAL)
         {
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view current_row = column_haystack->getDataAt(i).toView();
+                std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 const auto * pos = current_row.data();
@@ -158,9 +161,6 @@ public:
         }
         else
         {
-            /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row].value;
-
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
@@ -176,8 +176,8 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data;
-                const auto * end = pos + current_row.size;
+                const auto * pos = current_row.data();
+                const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
                         0, end - pos, RE2::UNANCHORED, matched_groups.data(),
@@ -188,10 +188,11 @@ public:
                         all_matches.push_back(matched_groups[group]);
 
                     ++matches_per_row;
-                    if (matches_per_row > max_matches_per_row)
+                    /// Additional limit to fail fast on supposedly incorrect usage.
+                    if (matches_per_row > regexp_max_matches_per_row)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                                 "Too many matches per row (> {}) in the result of function {}",
-                                max_matches_per_row, getName());
+                                regexp_max_matches_per_row, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
                 }

@@ -41,12 +41,12 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
-            auto object_metadata = object_storage->getObjectMetadata(key);
+            auto object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
 
             if (callback)
                 callback(FileProgress(0, object_metadata.size_bytes));
 
-            return std::make_shared<ObjectInfo>(key, std::move(object_metadata));
+            return std::make_shared<ObjectInfo>(RelativePathWithMetadata{key, std::move(object_metadata)});
         }
     }
 
@@ -81,9 +81,10 @@ ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    bool supports_subset_of_columns)
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
 }
 
 }

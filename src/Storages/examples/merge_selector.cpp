@@ -54,11 +54,13 @@ int main(int, char **)
 
     size_t sum_size_written = sum_parts_size;
     size_t num_merges = 1;
-    const std::vector<size_t> max_merge_sizes = {100ULL * 1024 * 1024 * 1024};
+    const size_t max_bytes = 100ULL * 1024 * 1024 * 1024;
+    const size_t max_rows = std::numeric_limits<size_t>::max();
+    std::vector<MergeConstraint> constraints{{max_bytes, max_rows}};
 
     while (parts.size() > 1)
     {
-        PartsRanges selected_ranges = selector.select(ranges, max_merge_sizes, nullptr);
+        PartsRanges selected_ranges = selector.select(ranges, constraints, nullptr);
 
         if (selected_ranges.empty())
         {
@@ -129,7 +131,7 @@ int main(int, char **)
 
     std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
-        << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
+        << "Write amplification: " << static_cast<double>(sum_size_written) / static_cast<double>(sum_parts_size) << "\n"
         << "Num merges: " << num_merges << "\n";
 
     for (const auto & part : parts)

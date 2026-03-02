@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "
         if(SUM(ProfileEvents['MergeTreeDataWriterCompressedBytes']) >= 1024, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergeTreeDataWriterCompressedBytes']))),
         if(SUM(ProfileEvents['MergeTreeDataWriterBlocks']) >= 8, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergeTreeDataWriterBlocks'])))
     FROM system.part_log
-    WHERE event_time > now() - INTERVAL 10 MINUTE
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
         AND database == currentDatabase() AND table == 'test'
         AND event_type == 'NewPart';
 "
@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --query "
         if(count() > 2, 'Ok', 'Error: ' || toString(count())),
         if(SUM(ProfileEvents['MergedRows']) >= 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows'])))
     FROM system.part_log
-    WHERE event_time > now() - INTERVAL 10 MINUTE
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
         AND database == currentDatabase() AND table == 'test'
         AND event_type == 'MergeParts';
 "
@@ -52,7 +52,7 @@ for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
     res=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM system.part_log
-        WHERE event_time > now() - INTERVAL 10 MINUTE
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
             AND database == currentDatabase() AND table == 'test'
             AND event_type == 'MutatePart';"
     )
@@ -69,7 +69,7 @@ ${CLICKHOUSE_CLIENT} --query "
         if(SUM(ProfileEvents['MutatedRows']) == 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MutatedRows']))),
         if(SUM(ProfileEvents['FileOpen']) > 1, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['FileOpen'])))
     FROM system.part_log
-    WHERE event_time > now() - INTERVAL 10 MINUTE
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
         AND database == currentDatabase() AND table == 'test'
         AND event_type == 'MutatePart';
 "

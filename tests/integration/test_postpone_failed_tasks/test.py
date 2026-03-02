@@ -45,7 +45,7 @@ def prepare_cluster(use_replicated_table):
     for node in all_nodes:
         node.rotate_logs()
         node.query(f"CREATE TABLE test_table(x UInt32) ENGINE {engine} ORDER BY x")
-        node.query("INSERT INTO test_table SELECT * FROM system.numbers LIMIT 10")
+        node.query("INSERT INTO test_table SELECT * FROM numbers(10) ORDER BY ALL")
 
 
 @pytest.fixture(scope="module")

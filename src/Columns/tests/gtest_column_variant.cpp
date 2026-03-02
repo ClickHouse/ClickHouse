@@ -69,7 +69,7 @@ template <typename Ptr>
 void reorderDiscriminators(const std::vector<ColumnVariant::Discriminator> & local_to_global_order, Ptr & discriminators)
 {
     std::vector<ColumnVariant::Discriminator> global_to_local_order(local_to_global_order.size());
-    for (size_t i = 0; i != local_to_global_order.size(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != local_to_global_order.size(); ++i)
         global_to_local_order[local_to_global_order[i]] = i;
 
     auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators *>(discriminators.get())->getData();
@@ -540,9 +540,9 @@ TEST(ColumnVariant, FilterOneColumnNoNulls)
 {
     auto column = createVariantWithOneFullColumNoNulls(3, false);
     IColumn::Filter filter;
-    filter.push_back(1);
-    filter.push_back(0);
-    filter.push_back(1);
+    filter.push_back(true);
+    filter.push_back(false);
+    filter.push_back(true);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 2);
     ASSERT_EQ((*filtered_column)[0].safeGet<UInt64>(), 0);
@@ -553,13 +553,13 @@ TEST(ColumnVariant, FilterGeneral)
 {
     auto column = ColumnVariant::create(createDiscriminators2(), createColumns2());
     IColumn::Filter filter;
-    filter.push_back(0);
-    filter.push_back(1);
-    filter.push_back(1);
-    filter.push_back(0);
-    filter.push_back(0);
-    filter.push_back(1);
-    filter.push_back(0);
+    filter.push_back(false);
+    filter.push_back(true);
+    filter.push_back(true);
+    filter.push_back(false);
+    filter.push_back(false);
+    filter.push_back(true);
+    filter.push_back(false);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 3);
     ASSERT_EQ((*filtered_column)[0].safeGet<String>(), "Hello");

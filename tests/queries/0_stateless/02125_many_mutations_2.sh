@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree, no-replicated-database, no-object-storage
+# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree, no-replicated-database, no-object-storage, no-flaky-check
 # no-shared-merge-tree -- this test is too slow
+# no-flaky-check -- too slow with thread fuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,10 +20,9 @@ $CLICKHOUSE_CLIENT -q "select count() from many_mutations"
 
 job()
 {
-   for i in {1..1000}
-   do
-      echo "alter table many_mutations delete where y = ${i} * 2 settings mutations_sync = 0;"
-   done | $CLICKHOUSE_CLIENT
+   for i in {1..1000}; do
+     $CLICKHOUSE_CURL -sS $CLICKHOUSE_URL -d "alter table many_mutations delete where y = ${i} * 2 settings mutations_sync = 0"
+   done
 }
 
 job &
@@ -57,7 +57,7 @@ alter table many_mutations update y = y + 1 where 1 settings mutations_sync=2;
 system flush logs part_log;
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 select count() from many_mutations;
-select * from system.part_log where database = currentDatabase() and table == 'many_mutations' and peak_memory_usage > 1e9;
+select * from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() and table == 'many_mutations' and peak_memory_usage > 1e9;
 truncate table many_mutations;
 drop table many_mutations;
 "

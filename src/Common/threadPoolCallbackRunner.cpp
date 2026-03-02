@@ -1,3 +1,4 @@
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Common/futex.h>
@@ -12,7 +13,7 @@ namespace ErrorCodes
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast() = default;
 
-void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_)
+void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_)
 {
     chassert(!pool);
     mode = Mode::ThreadPool;
@@ -20,14 +21,6 @@ void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max
     max_threads = max_threads_;
     thread_name = thread_name_;
     thread_group = thread_group_;
-
-    /// We could dynamically add and remove threads based on load, but it's not clear whether it's
-    /// worth the added complexity.
-    for (size_t i = 0; i < max_threads; ++i)
-    {
-        pool->scheduleOrThrowOnError([this] { threadFunction(); });
-        ++threads; // only if scheduleOrThrowOnError didn't throw
-    }
 }
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast(Mode mode_) : mode(mode_)
@@ -53,6 +46,18 @@ void ThreadPoolCallbackRunnerFast::shutdown()
     queue_cv.notify_all();
 #endif
     shutdown_cv.wait(lock, [&] { return threads == 0; });
+
+    if (mode == Mode::ThreadPool)
+        chassert(active_tasks.load() == queue.size());
+}
+
+void ThreadPoolCallbackRunnerFast::startMoreThreadsIfNeeded(size_t active_tasks_, std::unique_lock<std::mutex> &)
+{
+    while (threads < max_threads && threads < active_tasks_ && !shutdown_requested)
+    {
+        pool->scheduleOrThrow([this] { threadFunction(); });
+        ++threads; // only if scheduleOrThrow didn't throw
+    }
 }
 
 void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
@@ -60,9 +65,13 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
+    size_t active_tasks_ = 1 + active_tasks.fetch_add(1, std::memory_order_relaxed);
+
     {
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
+
+        startMoreThreadsIfNeeded(active_tasks_, lock);
     }
 
     if (mode == Mode::ThreadPool)
@@ -85,20 +94,35 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
+    size_t n = fs.size();
+    size_t active_tasks_ = n + active_tasks.fetch_add(n, std::memory_order_relaxed);
+
     {
         std::unique_lock lock(mutex);
         queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
+
+        try
+        {
+            startMoreThreadsIfNeeded(active_tasks_, lock);
+        }
+        catch (...)
+        {
+            /// Keep `queue` consistent with `queue_size`.
+            queue.erase(queue.end() - n, queue.end());
+            active_tasks.fetch_sub(n, std::memory_order_relaxed);
+            throw;
+        }
     }
 
     if (mode == Mode::ThreadPool)
     {
 #ifdef OS_LINUX
-        UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
+        UInt32 prev_size = queue_size.fetch_add(static_cast<UInt32>(n), std::memory_order_release);
         if (prev_size < max_threads)
-            futexWake(&queue_size, fs.size());
+            futexWake(&queue_size, static_cast<int>(n));
 #else
-        if (fs.size() < 4)
-            for (size_t i = 0; i < fs.size(); ++i)
+        if (n < 4)
+            for (size_t i = 0; i < n; ++i)
                 queue_cv.notify_one();
         else
             queue_cv.notify_all();
@@ -117,23 +141,33 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
         queue.pop_front();
     }
     f();
+    active_tasks.fetch_sub(1, std::memory_order_relaxed);
     return true;
 }
 
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
-    ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+    std::optional<ThreadGroupSwitcher> switcher;
+    switcher.emplace(thread_group, thread_name);
 
     while (true)
     {
+        bool timed_out = false;
+
 #ifdef OS_LINUX
         UInt32 x = queue_size.load(std::memory_order_relaxed);
         while (true)
         {
             if (x == 0)
             {
-                futexWait(&queue_size, 0);
+                Int64 waited = futexTimedWait(&queue_size, 0, THREAD_IDLE_TIMEOUT_NS);
                 x = queue_size.load(std::memory_order_relaxed);
+
+                if (waited < 0 && errno == ETIMEDOUT && x == 0)
+                {
+                    timed_out = true;
+                    break;
+                }
             }
             else if (queue_size.compare_exchange_weak(
                         x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
@@ -145,15 +179,37 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
         {
             std::unique_lock lock(mutex);
 
-#ifndef OS_LINUX
-            queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
+#ifdef OS_LINUX
+            /// Important to never stop the last thread if queue is not empty (checked under the
+            /// same `lock` as decrementing `threads`). Otherwise we'll deadlock like this:
+            ///  0. `threads` == 1, queue is empty.
+            ///  1. The worker thread times out; it didn't lock mutex or decrement `threads` yet.
+            ///  2. A manager thread enqueues a task. It sees active_tasks == 1 and `threads` == 1,
+            ///     so it doesn't start another thread.
+            ///  3. The worker thread exits.
+            ///  4. There are no threads, but the queue is not empty, oops.
+            if (timed_out && !queue.empty() && !shutdown_requested)
+                /// We can't just proceed to `queue.pop_front()` here because we haven't
+                /// decremented queue_size.
+                continue;
+#else
+            timed_out = !queue_cv.wait_for(
+                lock, std::chrono::nanoseconds(THREAD_IDLE_TIMEOUT_NS),
+                [&] { return shutdown_requested || !queue.empty(); });
 #endif
 
-            if (shutdown_requested)
+            if (shutdown_requested || timed_out)
             {
+                /// Important that we destroy the `ThreadGroupSwitcher` before decrementing `threads`.
+                /// Otherwise ~ThreadGroupSwitcher may access global Context after the query is
+                /// finished, which may race with mutating Context (specifically, Settings) at the
+                /// start of next query.
+                switcher.reset();
+
                 threads -= 1;
                 if (threads == 0)
                     shutdown_cv.notify_all();
+
                 return;
             }
 
@@ -174,7 +230,11 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
             tryLogCurrentException("FastThreadPool");
             chassert(false);
         }
+
+        active_tasks.fetch_sub(1, std::memory_order_relaxed);
     }
+
+    chassert(false);
 }
 
 bool ShutdownHelper::try_lock_shared()
@@ -254,7 +314,7 @@ void ShutdownHelper::shutdown()
     wait_shutdown();
 }
 
-template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool &, const std::string &);
+template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadName thread);
 template class ThreadPoolCallbackRunnerLocal<void>;
 
 }

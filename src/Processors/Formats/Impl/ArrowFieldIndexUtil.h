@@ -217,7 +217,9 @@ private:
                     if (clickhouse_to_parquet_names)
                     {
                         if (auto it = clickhouse_to_parquet_names->find(full_name); it != clickhouse_to_parquet_names->end())
+                        {
                             full_name = it->second;
+                        }
                     }
 
                     findRequiredIndices(Nested::concatenateName(name, field_name), full_name, header_index, field_type, field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
@@ -233,7 +235,7 @@ private:
         else if (const auto * type_map = typeid_cast<const DB::DataTypeMap *>(nested_type.get()))
         {
             findRequiredIndices(name, transformed_name, header_index, type_map->getKeyType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
-            findRequiredIndices(name, transformed_name, header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
+            findRequiredIndices(Nested::concatenateName(name, "value"), Nested::concatenateName(transformed_name, "value"), header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file, clickhouse_to_parquet_names);
             return;
         }
         auto it = field_indices.find(transformed_name);

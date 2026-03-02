@@ -10,7 +10,7 @@ Thank you!
 When you open your first pull request in the ClickHouse repository, a bot will ask to accept the ClickHouse Individual CLA (Contributor License Agreement).
 Please review and sign it.
 
-Optionally, to make contributions even more tight legally, your employer as a legal entity may want to sign a ClickHouse Corporate CLA with ClickHouse, Inc.
+Optionally, to make contributions more legally binding, your employer as a legal entity may want to sign a ClickHouse Corporate CLA with ClickHouse, Inc.
 If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal@clickhouse.com).
 
 ## Technical Information
@@ -20,3 +20,7 @@ See [ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pv
 [This](https://clickhouse.com/docs/development/developer-instruction) and [this](https://clickhouse.com/docs/development/build) document describe how to check out and compile the source code of ClickHouse.
 
 If you want to contribute to documentation, please see the [documentation repository](https://github.com/ClickHouse/clickhouse-docs).
+
+## See Also
+
+See also [ClickHouse AI Policy](AI_POLICY.md).

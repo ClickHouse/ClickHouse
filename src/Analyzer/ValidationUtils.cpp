@@ -1,27 +1,33 @@
 #include <Analyzer/ValidationUtils.h>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Storages/IStorage.h>
+
+#include <memory>
+#include <ranges>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_PREWHERE;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int ILLEGAL_PREWHERE;
-    extern const int UNSUPPORTED_METHOD;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -196,6 +202,8 @@ public:
         auto column_node_source = column_node->getColumnSource();
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
             return;
+        if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
+            return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
             "Column '{}' is not under aggregate function and not in GROUP BY keys. In query {}",
@@ -356,6 +364,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
         if (query_node_typed.hasInterpolate())
             validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
+
+        if (query_node_typed.hasLimitBy())
+            validate_group_by_columns_visitor.visit(query_node_typed.getLimitByNode());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
@@ -539,6 +550,78 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 nodes_to_process.push_back(child);
         }
     }
+}
+
+void validateFromClause(const QueryTreeNodePtr & node)
+{
+    const auto & root_query_node = node->as<QueryNode &>();
+    auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
+
+    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTree() };
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+                [[fallthrough]];
+            case QueryTreeNodeType::TABLE_FUNCTION:
+                break;
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node = node_to_process->as<QueryNode &>();
+                const auto & correlated_columns = query_node.getCorrelatedColumns();
+                for (const auto & column : correlated_columns)
+                {
+                    if (!correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Lateral joins are not supported. Correlated column '{}' is found in the FROM clause. In query {}",
+                            column->formatASTForErrorMessage(),
+                            node->formatASTForErrorMessage());
+                }
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                    nodes_to_process.push_back(union_node);
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
+                nodes_to_process.push_back(array_join_node.getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & join_node = node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
+                    nodes_to_process.push_back(expr);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
 }
 
 }

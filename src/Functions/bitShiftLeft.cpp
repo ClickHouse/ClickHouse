@@ -27,12 +27,12 @@ struct BitShiftLeftImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else if (b < 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
-        else if (static_cast<UInt256>(b) > 8 * sizeof(A))
+        else if (static_cast<UInt256>(b) >= 8 * sizeof(A))
             return static_cast<Result>(0);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
         else
-            return static_cast<Result>(a) << static_cast<Result>(b);
+            return static_cast<Result>(static_cast<Result>(a) << static_cast<Result>(b));
     }
 
     /// For String
@@ -48,11 +48,10 @@ struct BitShiftLeftImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 
@@ -68,21 +67,20 @@ struct BitShiftLeftImpl
             else
                 length = end + shift_left_bytes - begin;
 
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             UInt8 * op_pointer = const_cast<UInt8 *>(begin);
             UInt8 * out = out_vec.data() + old_size;
 
-            UInt8 previous = 0;
+            UInt8 previous = static_cast<UInt8>(0);
             while (op_pointer < end)
             {
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
                     *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
-                    previous = *op_pointer << shift_left_bits;
+                    previous = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 }
                 else
                 {
@@ -93,7 +91,7 @@ struct BitShiftLeftImpl
             }
             if (shift_left_bits)
             {
-                *out = *(op_pointer - 1) << shift_left_bits;
+                *out = static_cast<UInt8>(*(op_pointer - 1) << shift_left_bits);
                 out++;
             }
 
@@ -117,7 +115,7 @@ struct BitShiftLeftImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
@@ -139,7 +137,7 @@ struct BitShiftLeftImpl
 
             while (op_pointer < end)
             {
-                *out = *op_pointer << shift_left_bits;
+                *out = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 if (op_pointer + 1 < end)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
@@ -215,7 +213,7 @@ R"(
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitShiftLeft>(documentation);
 }

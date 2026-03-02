@@ -59,12 +59,13 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
+    auto data_settings = data.getSettings(projection);
     switch (part_type->getValue())
     {
         case PartType::Wide:
-            return std::make_shared<MergeTreeDataPartWide>(data, name, *part_info, part_storage, parent_part);
+            return std::make_shared<MergeTreeDataPartWide>(data, *data_settings, name, *part_info, part_storage, parent_part);
         case PartType::Compact:
-            return std::make_shared<MergeTreeDataPartCompact>(data, name, *part_info, part_storage, parent_part);
+            return std::make_shared<MergeTreeDataPartCompact>(data, *data_settings, name, *part_info, part_storage, parent_part);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of part {}", part_storage->getRelativePath());
@@ -104,6 +105,12 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withParentPart(const IMerge
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent part cannot be projection");
 
     parent_part = parent_part_;
+    return *this;
+}
+
+MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withProjection(ProjectionDescriptionRawPtr projection_)
+{
+    projection = projection_;
     return *this;
 }
 
@@ -165,7 +172,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
     if (!storage || !mark_type)
     {
         /// Didn't find any data or mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0);
+        return withBytesAndRows(0, 0, 0);
     }
 
     part_storage = std::move(storage);
@@ -181,16 +188,16 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
     if (!mark_type)
     {
         /// Didn't find any mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0);
+        return withBytesAndRows(0, 0, 0);
     }
 
     part_type = mark_type->part_type;
     return *this;
 }
 
-MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count)
+MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level)
 {
-    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count));
+    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count, part_level, projection));
 }
 
 }

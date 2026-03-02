@@ -20,12 +20,19 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+class Logger;
+}
 
 namespace zkutil
 {
-    class ZooKeeperNodeCache;
-    using EventPtr = std::shared_ptr<Poco::Event>;
+class ZooKeeperNodeCache;
+}
+
+namespace Coordination
+{
+using EventPtr = std::shared_ptr<Poco::Event>;
 }
 
 namespace DB
@@ -64,7 +71,7 @@ public:
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
-        const zkutil::EventPtr & zk_changed_event = nullptr,
+        const Coordination::EventPtr & zk_changed_event = nullptr,
         bool is_config_changed = true);
 
     static void processIncludes(
@@ -77,7 +84,7 @@ public:
         std::unordered_set<std::string> * contributing_zk_paths = {},
         std::vector<std::string> * contributing_files = {},
         zkutil::ZooKeeperNodeCache * zk_node_cache = {},
-        const zkutil::EventPtr & zk_changed_event = {});
+        const Coordination::EventPtr & zk_changed_event = {});
 
     static XMLDocumentPtr parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser);
 
@@ -107,8 +114,8 @@ public:
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache & zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
+        zkutil::ZooKeeperNodeCache * zk_node_cache,
+        const Coordination::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false,
         bool is_config_changed = true);
 
@@ -191,7 +198,7 @@ private:
             const LoggerPtr & log,
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
-            const zkutil::EventPtr & zk_changed_event,
+            const Coordination::EventPtr & zk_changed_event,
             std::unordered_set<std::string> * contributing_zk_paths);
 };
 

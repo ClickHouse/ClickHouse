@@ -8,7 +8,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
@@ -17,10 +16,7 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-
-#include "config.h"
 
 
 namespace DB
@@ -48,7 +44,6 @@ namespace
  */
 class ITableFunctionXDBC : public ITableFunction
 {
-private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
@@ -87,7 +82,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "JDBC"; }
+    const char * getStorageEngineName() const override { return "JDBC"; }
 };
 
 class TableFunctionODBC : public ITableFunctionXDBC
@@ -108,7 +103,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
-    const char * getStorageTypeName() const override { return "ODBC"; }
+    const char * getStorageEngineName() const override { return "ODBC"; }
 };
 
 

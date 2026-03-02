@@ -2,38 +2,60 @@
 
 #include "config.h"
 
+#include <cstddef>
+
+namespace DB::Jemalloc
+{
+
+constexpr bool default_enable_global_profiler = false;
+constexpr bool default_enable_background_threads = true;
+constexpr size_t default_max_background_threads_num = 0;
+constexpr bool default_collect_global_profile_samples_in_trace_log = false;
+constexpr size_t default_profiler_sampling_rate = 19;
+
+/// Config key names used in both `BaseDaemon::initialize` and `ServerSettings` DECLARE macros.
+constexpr auto config_enable_global_profiler = "jemalloc_enable_global_profiler";
+constexpr auto config_enable_background_threads = "jemalloc_enable_background_threads";
+constexpr auto config_max_background_threads_num = "jemalloc_max_background_threads_num";
+constexpr auto config_collect_global_profile_samples_in_trace_log = "jemalloc_collect_global_profile_samples_in_trace_log";
+constexpr auto config_profiler_sampling_rate = "jemalloc_profiler_sampling_rate";
+
+}
+
 #if USE_JEMALLOC
 
-#include <string>
+#include <string_view>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
 namespace DB
 {
 
-void purgeJemallocArenas();
+struct ServerSettings;
 
-void checkJemallocProfilingEnabled();
+namespace Jemalloc
+{
 
-void setJemallocProfileActive(bool value);
+void purgeArenas();
 
-std::string flushJemallocProfile(const std::string & file_prefix);
+void checkProfilingEnabled();
 
-void setJemallocBackgroundThreads(bool enabled);
+std::string_view flushProfile(const char * file_prefix);
 
-void setJemallocMaxBackgroundThreads(size_t max_threads);
+void setBackgroundThreads(bool enabled);
+
+void setProfileSamplingRate(size_t lg_prof_sample);
+
+void setMaxBackgroundThreads(size_t max_threads);
 
 template <typename T>
-void setJemallocValue(const char * name, T value)
+void setValue(const char * name, T value)
 {
-    T old_value;
-    size_t old_value_size = sizeof(T);
-    mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T));
-    LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
+    mallctl(name, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
 }
 
 template <typename T>
-T getJemallocValue(const char * name)
+T getValue(const char * name)
 {
     T value;
     size_t value_size = sizeof(T);
@@ -41,23 +63,40 @@ T getJemallocValue(const char * name)
     return value;
 }
 
+void setup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate);
+
+/// Verify that the current jemalloc settings match the expected values.
+/// Called from Server/Keeper after `setup` was already called in `BaseDaemon::initialize`
+/// (and re-applied after the watchdog fork). Fires `chassert` on mismatch.
+void verifySetup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate);
+
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
 /// and using it in mallctlbymib calls
 template <typename T>
-struct JemallocMibCache
+struct MibCache
 {
-    explicit JemallocMibCache(const char * name)
+    explicit MibCache(const char * name)
     {
         mallctlnametomib(name, mib, &mib_length);
     }
 
-    void setValue(T value)
+    void setValue(T value) const
     {
         mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
-    T getValue()
+    T getValue() const
     {
         T value;
         size_t value_size = sizeof(T);
@@ -65,7 +104,7 @@ struct JemallocMibCache
         return value;
     }
 
-    void run()
+    void run() const
     {
         mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
     }
@@ -75,6 +114,16 @@ private:
     size_t mib[max_mib_length];
     size_t mib_length = max_mib_length;
 };
+
+const MibCache<bool> & getThreadProfileActiveMib();
+const MibCache<bool> & getThreadProfileInitMib();
+
+void setCollectLocalProfileSamplesInTraceLog(bool value);
+
+std::string_view getLastFlushProfileForThread();
+
+
+}
 
 }
 

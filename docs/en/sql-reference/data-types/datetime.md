@@ -5,6 +5,7 @@ sidebar_label: 'DateTime'
 sidebar_position: 16
 slug: /sql-reference/data-types/datetime
 title: 'DateTime'
+doc_type: 'reference'
 ---
 
 # DateTime
@@ -39,7 +40,7 @@ You can explicitly set a time zone for `DateTime`-type columns when creating a t
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings-formats.md#date_time_input_format) setting.
 
@@ -116,12 +117,12 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```sql
 SELECT
 toDateTime(timestamp, 'Europe/London') AS lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') AS mos_time
+toDateTime(timestamp, 'Asia/Istanbul') AS istanbul_time
 FROM dt
 ```
 
 ```text
-┌───────────lon_time──┬────────────mos_time─┐
+┌───────────lon_time──┬───────istanbul_time─┐
 │ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
 │ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘

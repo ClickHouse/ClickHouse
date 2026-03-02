@@ -118,13 +118,13 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             auth_settings[S3AuthSetting::region],
             RemoteHostFilter(),
             s3_max_redirects,
-            s3_retry_attempts,
+            S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
             s3_slow_all_threads_after_network_error,
             s3_slow_all_threads_after_retryable_error,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
-            /* get_request_throttler = */ {},
-            /* put_request_throttler = */ {},
+            /* opt_disk_name = */ {},
+            /* request_throttler = */ {},
             new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
@@ -285,7 +285,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
-    setThreadName("KeeperS3SnpT");
+    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
 
     while (!shutdown_called)
     {

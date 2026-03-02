@@ -241,7 +241,7 @@ public:
             /// we care about.
             IColumn::Filter filter(unfinished_rows);
             for (size_t i = 0; i < prev_selector.size(); ++i)
-                filter[i] = prev_selector[i];
+                filter[i] = static_cast<UInt8>(prev_selector[i]);
             ColumnPtr lambda_col_filtered = lambda_col->filter(filter, lambda_col->size());
             IColumn::MutablePtr lambda_col_filtered_cloned = lambda_col_filtered->cloneResized(lambda_col_filtered->size()); /// clone so we can bind more arguments
             auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
@@ -337,7 +337,7 @@ SELECT arrayFold(
 };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayFold>(documentation);
 }

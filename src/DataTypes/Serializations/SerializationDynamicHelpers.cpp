@@ -48,7 +48,7 @@ ColumnPtr createIndexes(
         else if (global_discr == shared_variant_discr)
         {
             auto value = shared_variant_column.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             data.push_back(static_cast<IndexesColumn::ValueType>(shared_variant_type_to_index.at(type->getName())));
         }
@@ -63,18 +63,6 @@ ColumnPtr createIndexes(
 
 }
 
-DataTypePtr getIndexesTypeForFlattenedDynamicColumn(size_t max_index)
-{
-    if (max_index <= std::numeric_limits<UInt8>::max())
-        return std::make_shared<DataTypeUInt8>();
-    if (max_index <= std::numeric_limits<UInt16>::max())
-        return std::make_shared<DataTypeUInt16>();
-    if (max_index <= std::numeric_limits<UInt32>::max())
-        return std::make_shared<DataTypeUInt32>();
-    return std::make_shared<DataTypeUInt64>();
-}
-
-
 FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column)
 {
     const auto & variant_info = dynamic_column.getVariantInfo();
@@ -84,7 +72,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     FlattenedDynamicColumn flattened_dynamic_column;
     /// Mapping from the discriminator of a variant to an index of this type in flattened list.
     std::unordered_map<ColumnVariant::Discriminator, size_t> discriminator_to_index;
-    for (size_t i = 0; i != variant_types.size(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
     {
         /// SharedVariant will be processed later.
         if (i == shared_variant_discr)
@@ -103,7 +91,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     for (size_t i = 0; i != shared_variant_column.size(); ++i)
     {
         auto value = shared_variant_column.getDataAt(i);
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         auto it = shared_variant_type_to_index.find(type_name);
@@ -120,21 +108,21 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     }
 
     /// Now choose type for indexes column and create it.
-    size_t max_index = flattened_dynamic_column.types.size(); /// This index will be used for NULL.
-    flattened_dynamic_column.indexes_type = getIndexesTypeForFlattenedDynamicColumn(max_index);
+    size_t num_indexes = flattened_dynamic_column.types.size() + 1; /// +1 for NULL index.
+    flattened_dynamic_column.indexes_type = getSmallestIndexesType(num_indexes);
     switch (flattened_dynamic_column.indexes_type->getTypeId())
     {
         case TypeIndex::UInt8:
-            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt8>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt8>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, flattened_dynamic_column.types.size());
             break;
         case TypeIndex::UInt16:
-            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt16>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt16>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, flattened_dynamic_column.types.size());
             break;
         case TypeIndex::UInt32:
-            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt32>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt32>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, flattened_dynamic_column.types.size());
             break;
         case TypeIndex::UInt64:
-            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt64>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, max_index);
+            flattened_dynamic_column.indexes_column = createIndexes<ColumnUInt64>(dynamic_column, discriminator_to_index, shared_variant_type_to_index, flattened_dynamic_column.types.size());
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type as type of indices column type: {}", flattened_dynamic_column.indexes_type->getName());

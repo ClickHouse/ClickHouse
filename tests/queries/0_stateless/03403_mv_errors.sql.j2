@@ -1,3 +1,4 @@
+-- Tags: no-msan
 
 drop table if exists src;
 create table src (key Int, value Int) engine=Null();
@@ -110,6 +111,7 @@ select
     exception_code as view_exception_code
 from system.query_views_log
 where
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     startsWith(view_name, currentDatabase() || '.mv')
 )
 JOIN
@@ -122,6 +124,7 @@ select
     Settings['materialized_views_ignore_errors'] as materialized_views_ignore_errors
 from system.query_log
 where
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     type != 'QueryStart' and
     query_kind = 'Insert' and
     current_database = currentDatabase()

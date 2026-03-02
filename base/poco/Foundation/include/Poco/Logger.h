@@ -127,6 +127,7 @@ public:
     /// The "channel" and "level" properties are set-only.
 
     void log(const Message & msg);
+    void log(Message && msg);
     /// Logs the given message if its priority is
     /// greater than or equal to the Logger's log level.
 

@@ -51,8 +51,6 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
-    /// This is a constructor which adds some steps to pipeline.
-    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -94,7 +92,8 @@ public:
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
 
-    void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
+    void addMergingAggregatedMemoryEfficientTransform(
+        AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
@@ -165,7 +164,6 @@ public:
     void addCreatingSetsTransform(
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
-        StoragePtr external_table,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 
@@ -212,7 +210,7 @@ public:
         return concurrency_control;
     }
 
-    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
+    void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

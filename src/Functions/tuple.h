@@ -66,7 +66,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
-            return ColumnTuple::create(input_rows_count);
+            return DataTypeTuple({}).createColumnConstWithDefaultValue(input_rows_count);
 
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);

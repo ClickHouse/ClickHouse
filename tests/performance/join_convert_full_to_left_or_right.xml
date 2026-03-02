@@ -1,0 +1,12 @@
+<test>
+    <create_query>CREATE TABLE users1 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
+    <create_query>CREATE TABLE users2 (uid UInt64, name String, age Int16) ENGINE=MergeTree() ORDER BY ()</create_query>
+
+    <fill_query>INSERT INTO users1 SELECT number as uid, 'Alice' as name, 30 as age FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO users2 SELECT number as uid, 'Alice2' as name, 30 as age FROM numbers(10000000)</fill_query>
+
+    <query><![CDATA[ SELECT count() FROM users2 u1 FULL JOIN (SELECT *, 'bar' as x FROM users1) u2 ON u1.uid = u2.uid WHERE x = 'bar' AND u2.uid < 100 ]]></query>
+
+    <drop_query>DROP TABLE users1</drop_query>
+    <drop_query>DROP TABLE users2</drop_query>
+</test>

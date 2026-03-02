@@ -1,0 +1,4 @@
+<clickhouse>
+    <jemalloc_enable_global_profiler>0</jemalloc_enable_global_profiler>
+    <jemalloc_collect_global_profile_samples_in_trace_log>0</jemalloc_collect_global_profile_samples_in_trace_log>
+</clickhouse>

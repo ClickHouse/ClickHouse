@@ -50,10 +50,11 @@ struct MergeTreeDataPartChecksums
     FileChecksums files;
 
     void addFile(const String & file_name, UInt64 file_size, Checksum::uint128 file_hash);
+    void addFile(const String & file_name, const Checksum & checksum);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
+    bool has(const String & file_name) const { return files.contains(file_name); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 

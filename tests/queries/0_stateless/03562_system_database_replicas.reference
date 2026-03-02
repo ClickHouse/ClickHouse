@@ -1,0 +1,67 @@
+-----------------------
+simple SELECT
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+db_1
+db_2
+db_3
+db_4
+db_5
+db_6
+0
+-----------------------
+count
+6
+-----------------------
+SELECT with LIMIT
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+-----------------------
+SELECT with max_block
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+-----------------------
+SELECT with WHERE
+db_1	0	1	r1	/test/db_1/replicas/s1|r1	/test/db_1	s1	1	1		0
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+0
+-----------------------
+DROP DATABASE
+db_2	0	1	r1	/test/db_2/replicas/s1|r1	/test/db_2	s1	1	1		0
+db_3	0	1	r1	/test/db_3/replicas/s1|r1	/test/db_3	s1	1	1		0
+db_4	0	1	r1	/test/db_4/replicas/s1|r1	/test/db_4	s1	1	1		0
+db_5	0	1	r1	/test/db_5/replicas/s1|r1	/test/db_5	s1	1	1		0
+db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
+-----------------------
+SELECT max_log_ptr
+s1	r1	OK	0	0
+db_2	2

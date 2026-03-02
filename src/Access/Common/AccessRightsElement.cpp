@@ -142,13 +142,20 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
+void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
+{
+    buffer << "(" << backQuoteIfNeed(filter) << ")";
+}
+
 void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
 {
     auto is_enabled_user_name_access_type = true;
+    auto is_enabled_read_write_grants = true;
     if (const auto context = Context::getGlobalContextInstance())
     {
         const auto & access_control = context->getAccessControl();
         is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
     }
 
     buffer << "ON ";
@@ -177,6 +184,11 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
                 buffer << backQuoteIfNeed(parameter);
                 if (wildcard)
                     buffer << "*";
+                else
+                {
+                    if (hasFilter() && is_enabled_read_write_grants)
+                        formatFilter(buffer);
+                }
             }
         }
     }
@@ -192,7 +204,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else
+    else if (!database.empty())
     {
         buffer << backQuoteIfNeed(database);
 
@@ -200,6 +212,10 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
             buffer << "*";
 
         buffer << ".*";
+    }
+    else
+    {
+        buffer << "*";
     }
 }
 

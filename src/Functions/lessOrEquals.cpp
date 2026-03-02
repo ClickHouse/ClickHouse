@@ -17,8 +17,8 @@ REGISTER_FUNCTION(LessOrEquals)
     // Documentation for lessOrEquals
     FunctionDocumentation::Description description = "Compares two values for less-than-or-equal-to relation.";
     FunctionDocumentation::Syntax syntax = R"(
-    lessOrEquals(a, b)
-    -- a <= b
+lessOrEquals(a, b)
+-- a <= b
 )";
     FunctionDocumentation::Arguments arguments = {
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
@@ -34,7 +34,7 @@ REGISTER_FUNCTION(LessOrEquals)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionLessOrEquals>(documentation);
 }
 

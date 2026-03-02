@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -128,6 +129,29 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
             }
             break;
         }
+        case StorageType::Azure:
+        {
+            auto callback = [table_id] (std::ostream & os)
+            {
+                Poco::JSON::Object obj;
+                obj.set("table_id", table_id);
+                obj.set("operation", "READ");
+                obj.stringify(os);
+            };
+
+            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
+            {
+                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
+                std::string sas_token = creds_object->get("sas_token").extract<String>();
+
+                auto creds = std::make_shared<AzureCredentials>(sas_token);
+                metadata.setStorageCredentials(creds);
+            }
+            break;
+        }
         default:
             break;
     }
@@ -190,30 +214,48 @@ bool UnityCatalog::tryGetTableMetadata(
             if (result.requiresSchema())
             {
                 DB::NamesAndTypesList schema;
-                auto columns_json = object->getArray("columns");
-
-                for (size_t i = 0; i < columns_json->size(); ++i)
+                try
                 {
-                    const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                    std::string name = column_json->getValue<String>("name");
-                    auto is_nullable = column_json->getValue<bool>("nullable");
-                    auto type_json_str = column_json->get("type_json").extract<String>();
-                    DB::DataTypePtr data_type;
-                    /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
-                    if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                    auto columns_json = object->getArray("columns");
+
+                    for (size_t i = 0; i < columns_json->size(); ++i)
                     {
-                        type_json_str.pop_back();
-                        String type_name = type_json_str.substr(1);
-                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
-                        data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                        const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                        std::string name = column_json->getValue<String>("name");
+                        auto is_nullable = column_json->getValue<bool>("nullable");
+                        auto type_json_str = column_json->get("type_json").extract<String>();
+                        DB::DataTypePtr data_type;
+                        /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
+                        if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                        {
+                            type_json_str.pop_back();
+                            String type_name = type_json_str.substr(1);
+                            auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                            data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                        }
+                        else
+                        {
+                            Poco::JSON::Parser parser;
+                            auto parsed_json_type = parser.parse(type_json_str);
+                            data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                        }
+                        schema.push_back({name, data_type});
                     }
-                    else
+                    LOG_TEST(log, "Parsed schema: {}", schema.toString());
+                }
+                catch (...)
+                {
+                    /// Non-delta tables can have very weird datatypes in schemas like https://docs.databricks.com/aws/en/sql/language-manual/data-types/null-type
+                    /// We still don't know how to read them so we can ignore absence of schema and return weird output for SHOW CREATE TABLE.
+                    if (!result.isDefaultReadableTable())
                     {
-                        Poco::JSON::Parser parser;
-                        auto parsed_json_type = parser.parse(type_json_str);
-                        data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                        LOG_DEBUG(
+                            log, "Cannot read table `{}` because of schema parsing exception `{}`, but it is not delta table, so we ignore this error",
+                            full_table_name, DB::getCurrentExceptionMessage(false));
+                        return true;
                     }
-                    schema.push_back({name, data_type});
+
+                    throw;
                 }
 
                 result.setSchema(schema);
@@ -398,6 +440,30 @@ UnityCatalog::UnityCatalog(
     , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
 }
+
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID &)
+{
+    return [this] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update credentials in the catalog");
+
+        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+        if (hasValueAndItsNotNone("aws_temp_credentials", object))
+        {
+            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
+            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
+            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
+            std::string session_token = creds_object->get("session_token").extract<String>();
+
+            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+            return creds;
+        }
+        return nullptr;
+    };
+}
+
 
 }
 

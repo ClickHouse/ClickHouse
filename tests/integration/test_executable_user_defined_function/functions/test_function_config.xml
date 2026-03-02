@@ -48,11 +48,12 @@
         <name>test_function_send_chunk_header_python</name>
         <return_type>String</return_type>
         <argument>
+            <name>number</name>
             <type>UInt64</type>
         </argument>
-        <format>TabSeparated</format>
+        <format>JSONEachRow</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>input_chunk_header.py</command>
+        <command>input_chunk_header_json.py</command>
     </function>
 
     <function>
@@ -60,11 +61,12 @@
         <name>test_function_send_chunk_header_pool_python</name>
         <return_type>String</return_type>
         <argument>
+            <name>number</name>
             <type>UInt64</type>
         </argument>
-        <format>TabSeparated</format>
+        <format>JSONEachRow</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>input_chunk_header.py</command>
+        <command>input_chunk_header_json.py</command>
     </function>
 
     <function>
@@ -393,6 +395,18 @@
         <command>input_exit_error.py</command>
         <!-- default -->
         <!-- <check_exit_code>1</check_exit_code> -->
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_python_exception_default</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_python_exception.py</command>
+        <!-- Using default stderr_reaction (now 'throw' after the change) -->
     </function>
 
     <!-- The next two UDFs have an explicit 'deterministic' tag defined -->

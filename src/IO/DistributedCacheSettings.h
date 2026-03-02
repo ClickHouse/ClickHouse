@@ -24,6 +24,7 @@ struct DistributedCacheSettings
     size_t data_packet_ack_window = ::DistributedCache::ACK_DATA_PACKET_WINDOW;
     size_t credentials_refresh_period_seconds = ::DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
     size_t write_through_cache_buffer_size = 0;
+    bool read_if_exists_otherwise_bypass = false;
 
     DistributedCachePoolBehaviourOnLimit pool_behaviour_on_limit = DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL;
     size_t receive_response_wait_milliseconds = 10000;

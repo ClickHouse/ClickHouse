@@ -13,6 +13,7 @@
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -73,12 +74,11 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
 void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     {
-        auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
 
-        for (const auto & [_, cache_data] : caches)
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
@@ -91,6 +91,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
+    }
+
+    if (auto page_cache = getContext()->getPageCache())
+    {
+        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
+            "Current limit on the size of userspace page cache, in bytes." };
     }
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
@@ -197,7 +203,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -237,7 +243,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
-            if (!db.second->canContainMergeTreeTables())
+            if (db.second->isExternal())
                 continue;
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
@@ -286,7 +292,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
@@ -348,6 +354,29 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
+    {
+        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        size_t queries_memory_usage = 0;
+        size_t queries_peak_memory_usage = 0;
+        for (const auto & [user, info] : user_info)
+        {
+            queries_memory_usage += info.memory_usage;
+            queries_peak_memory_usage += info.peak_memory_usage;
+        }
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
+    }
+
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
+
+    {
+        Float64 max_merge_elapsed = 0;
+        for (const auto & merge : getContext()->getMergeList().get())
+            max_merge_elapsed = std::max(merge.elapsed, max_merge_elapsed);
+        new_values["LongestRunningMerge"]
+            = {max_merge_elapsed, "Elapsed time in seconds of the longest currently running background merge."};
+    }
+
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
@@ -372,9 +401,9 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
@@ -436,9 +465,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
-            heavy_update_interval = heavy_metric_update_period.count();
+            heavy_update_interval = static_cast<double>(heavy_metric_update_period.count());
         else
-            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
+            heavy_update_interval = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count()) / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateMutationAndDetachedPartsStats();
@@ -448,9 +477,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         /// Normally heavy metrics don't delay the rest of the metrics calculation
         /// otherwise log the warning message
         auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
-        if (watch.elapsedSeconds() > (update_period.count() / 2.))
+        if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 2.))
             log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
-        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
+        else if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 4. * 3))
             log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
         LOG_IMPL(log, log_level.first, log_level.second,
                  "Update heavy metrics. "

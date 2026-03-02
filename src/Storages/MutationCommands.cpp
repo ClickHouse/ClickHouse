@@ -30,32 +30,57 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
-bool MutationCommand::affectsAllColumns() const
+bool MutationCommand::isPureMetadataCommand() const
 {
-    return type == DELETE || type == APPLY_DELETED_MASK;
+    return type == ALTER_WITHOUT_MUTATION;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
+bool MutationCommand::isEmptyCommand() const
 {
-    if (command->type == ASTAlterCommand::DELETE)
+    return type == EMPTY;
+}
+
+bool MutationCommand::isDropOrRename() const
+{
+    return type == Type::DROP_COLUMN
+        || type == Type::DROP_INDEX
+        || type == Type::DROP_PROJECTION
+        || type == Type::DROP_STATISTICS
+        || type == Type::RENAME_COLUMN;
+}
+
+bool MutationCommand::affectsAllColumns() const
+{
+    return type == DELETE
+        || type == APPLY_DELETED_MASK
+        || type == REWRITE_PARTS;
+}
+
+std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & command, bool parse_alter_commands, bool with_pure_metadata_commands)
+{
+    MutationCommand res;
+    res.ast = command.clone();
+    if (with_pure_metadata_commands)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = DELETE;
-        res.predicate = command->predicate->clone();
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.type = ALTER_WITHOUT_MUTATION;
         return res;
     }
-    if (command->type == ASTAlterCommand::UPDATE)
+
+    if (command.type == ASTAlterCommand::DELETE)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
+        res.type = DELETE;
+        res.predicate = command.predicate->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
+        return res;
+    }
+    if (command.type == ASTAlterCommand::UPDATE)
+    {
         res.type = UPDATE;
-        res.predicate = command->predicate->clone();
-        if (command->partition)
-            res.partition = command->partition->clone();
-        for (const ASTPtr & assignment_ast : command->update_assignments->children)
+        res.predicate = command.predicate->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
+        for (const ASTPtr & assignment_ast : command.update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
@@ -67,163 +92,146 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         }
         return res;
     }
-    if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
+    if (command.type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = APPLY_DELETED_MASK;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
-    else if (command->type == ASTAlterCommand::APPLY_PATCHES)
+    else if (command.type == ASTAlterCommand::APPLY_PATCHES)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = APPLY_PATCHES;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
+    if (command.type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MATERIALIZE_INDEX;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         res.predicate = nullptr;
-        res.index_name = command->index->as<ASTIdentifier &>().name();
+        res.index_name = command.index->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_STATISTICS)
+    if (command.type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MATERIALIZE_STATISTICS;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         res.predicate = nullptr;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command.statistics_decl)
+        {
+            res.statistics_columns = command.statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        }
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
+    if (command.type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MATERIALIZE_PROJECTION;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         res.predicate = nullptr;
-        res.projection_name = command->projection->as<ASTIdentifier &>().name();
+        res.projection_name = command.projection->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_COLUMN)
+    if (command.type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MATERIALIZE_COLUMN;
-        if (command->partition)
-            res.partition = command->partition->clone();
-        res.column_name = getIdentifierName(command->column);
+        if (command.partition)
+            res.partition = command.partition->clone();
+        res.column_name = getIdentifierName(command.column);
         return res;
     }
     /// MODIFY COLUMN x REMOVE MATERIALIZED/RESET SETTING/MODIFY SETTING is a valid alter command, but doesn't have any specified column type,
     /// thus no mutation is needed
-    if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN && command->remove_property.empty()
-        && nullptr == command->settings_changes && nullptr == command->settings_resets)
+    if (parse_alter_commands && command.type == ASTAlterCommand::MODIFY_COLUMN && command.remove_property.empty()
+        && nullptr == command.settings_changes && nullptr == command.settings_resets)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::READ_COLUMN;
-        const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
-        if (nullptr == ast_col_decl.type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command->formatForErrorMessage());
+        const auto & ast_col_decl = command.col_decl->as<ASTColumnDeclaration &>();
+        if (nullptr == ast_col_decl.getType())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command.formatForErrorMessage());
         res.column_name = ast_col_decl.name;
-        res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
+        res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_COLUMN)
+    if (parse_alter_commands && command.type == ASTAlterCommand::DROP_COLUMN)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_COLUMN;
-        res.column_name = getIdentifierName(command->column);
-        if (command->partition)
-            res.partition = command->partition->clone();
-        if (command->clear_column)
+        res.column_name = getIdentifierName(command.column);
+        if (command.partition)
+            res.partition = command.partition->clone();
+        if (command.clear_column)
             res.clear = true;
 
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
+    if (parse_alter_commands && command.type == ASTAlterCommand::DROP_INDEX)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
-        res.column_name = command->index->as<ASTIdentifier &>().name();
-        if (command->partition)
-            res.partition = command->partition->clone();
-        if (command->clear_index)
+        res.column_name = command.index->as<ASTIdentifier &>().name();
+        if (command.partition)
+            res.partition = command.partition->clone();
+        if (command.clear_index)
             res.clear = true;
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTICS)
+    if (parse_alter_commands && command.type == ASTAlterCommand::DROP_STATISTICS)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_STATISTICS;
-        if (command->partition)
-            res.partition = command->partition->clone();
-        if (command->clear_index)
+        if (command.partition)
+            res.partition = command.partition->clone();
+        if (command.clear_statistics)
             res.clear = true;
-        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        if (command.statistics_decl)
+            res.statistics_columns = command.statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)
+    if (parse_alter_commands && command.type == ASTAlterCommand::DROP_PROJECTION)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_PROJECTION;
-        res.column_name = command->projection->as<ASTIdentifier &>().name();
-        if (command->partition)
-            res.partition = command->partition->clone();
-        if (command->clear_projection)
+        res.column_name = command.projection->as<ASTIdentifier &>().name();
+        if (command.partition)
+            res.partition = command.partition->clone();
+        if (command.clear_projection)
             res.clear = true;
         return res;
     }
-    if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
+    if (parse_alter_commands && command.type == ASTAlterCommand::RENAME_COLUMN)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MutationCommand::Type::RENAME_COLUMN;
-        res.column_name = command->column->as<ASTIdentifier &>().name();
-        res.rename_to = command->rename_to->as<ASTIdentifier &>().name();
+        res.column_name = command.column->as<ASTIdentifier &>().name();
+        res.rename_to = command.rename_to->as<ASTIdentifier &>().name();
         return res;
     }
-    if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
+    if (command.type == ASTAlterCommand::MATERIALIZE_TTL)
     {
-        MutationCommand res;
-        res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
+        return res;
+    }
+    if (command.type == ASTAlterCommand::REWRITE_PARTS)
+    {
+        res.type = REWRITE_PARTS;
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
 
-    MutationCommand res;
-    res.ast = command->ptr();
     res.type = ALTER_WITHOUT_MUTATION;
     return res;
 }
 
 
-std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata_commands) const
+boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata_commands) const
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
-        if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
+        if (!command.isPureMetadataCommand() || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
     return res;
@@ -235,7 +243,7 @@ void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_comm
     writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
 }
 
-void MutationCommands::readText(ReadBuffer & in)
+void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_commands)
 {
     String commands_str;
     readEscapedString(commands_str, in);
@@ -247,16 +255,17 @@ void MutationCommands::readText(ReadBuffer & in)
     for (const auto & child : commands_ast->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
-        auto command = MutationCommand::parse(command_ast, true);
+        auto command = MutationCommand::parse(*command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
+        command->ast = child;
         push_back(std::move(*command));
     }
 }
 
-std::string MutationCommands::toString() const
+std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 {
-    return ast()->formatWithSecretsOneLine();
+    return ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
 }
 
 
@@ -264,7 +273,7 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
     {
-        if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
+        if (!command.isEmptyCommand() && !command.isPureMetadataCommand())
             return true;
     }
     return false;

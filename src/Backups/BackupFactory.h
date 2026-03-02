@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Backups/IBackup.h>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/IBackup.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
-#include <memory>
-#include <optional>
-#include <unordered_map>
 
 
 namespace DB
@@ -36,6 +37,8 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
+        BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
+        size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;

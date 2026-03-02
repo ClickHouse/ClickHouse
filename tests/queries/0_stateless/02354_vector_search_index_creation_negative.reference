@@ -4,5 +4,7 @@ Three or six index arguments
 3nd argument (dimensions) must be UInt64 and > 0
 4nd argument (quantization), if given, must be String and f32, f16, ...
 5nd argument (M), if given, must be UInt64 and > 1
+Binary quantization requires cosine distance
+Binary quantization requires the dimension as a multiple of 8
 Must be created on single column
 Must be created on Array(Float32|Float64|BFloat16) columns

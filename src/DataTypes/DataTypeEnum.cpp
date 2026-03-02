@@ -1,7 +1,9 @@
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -78,6 +80,12 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
+Type DataTypeEnum<Type>::getDefaultValue() const
+{
+    return this->getValues().front().second;
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     const auto & default_value = this->getValues().front().second;
@@ -140,6 +148,7 @@ static void checkOverflow(Int64 value)
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unexpected value {}", toString(value));
 }
 
+
 template <typename Type>
 Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
@@ -152,7 +161,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        return this->getNameForValue(static_cast<Type>(value)).toString();
+        return std::string{this->getNameForValue(static_cast<Type>(value))};
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
@@ -221,7 +230,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
+            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(literal_child_assign_num + assign_count));
             assign_number_child.emplace_back(func);
         }
         else if (child->as<ASTFunction>())

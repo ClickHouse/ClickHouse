@@ -31,6 +31,15 @@ struct ASTWindowDefinition : public IAST
 
     std::string getDefaultWindowName() const;
 
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &partition_by);
+        f(nullptr, &order_by);
+        f(nullptr, &frame_begin_offset);
+        f(nullptr, &frame_end_offset);
+    }
+
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

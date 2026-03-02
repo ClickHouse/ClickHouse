@@ -87,7 +87,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1); /// Push NULL.
+                            res_null_map->push_back(static_cast<uint8_t>(1)); /// Push NULL.
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -153,7 +153,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -236,12 +236,9 @@ namespace
                     }
                     else
                     {
-                        res_data.push_back(0);  /// An empty string, including zero at the end.
-
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
 
-                        ++res_string_prev_offset;
                         res_string_offsets.push_back(res_string_prev_offset);
 
                         ++res_array_prev_offset;
@@ -300,7 +297,7 @@ namespace
                     res_offsets[i] = res_prev_offset;
 
                     if (nullable)
-                        res_null_map->push_back(1);
+                        res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                 }
 
                 src_prev_offset = src_offsets[i];
@@ -417,7 +414,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }

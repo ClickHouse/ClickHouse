@@ -16,6 +16,7 @@ CREATE TABLE t_ind_merge_2 (
 ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,
+    index_granularity_bytes = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0,
@@ -39,7 +40,7 @@ SELECT
     groups[2] AS merged,
     groups[3] AS gathered
 FROM system.text_log
-WHERE ((query_id = uuid || '::all_1_2_1') OR (query_id = currentDatabase() || '.t_ind_merge_2::all_1_2_1')) AND notEmpty(groups)
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND ((query_id = uuid || '::all_1_2_1') OR (query_id = currentDatabase() || '.t_ind_merge_2::all_1_2_1')) AND notEmpty(groups)
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_ind_merge_2;

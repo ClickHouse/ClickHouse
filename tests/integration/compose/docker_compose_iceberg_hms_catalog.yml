@@ -13,9 +13,10 @@ services:
       - AWS_REGION=us-east-1
     ports:
       - 8080:8080
-      - 10000:10000
-      - 10001:10001
-
+      - 10004:10000
+      - 10005:10001
+    stop_grace_period: 5s
+    cpus: 3
   hive:
     image: clickhouse/integration-test-with-hms
     restart: unless-stopped
@@ -33,7 +34,8 @@ services:
       timeout: 5s
       retries: 45
       start_period: 45s
-
+    stop_grace_period: 5s
+    cpus: 3
   # TODO: can we simply use with_minio=True instead?
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
@@ -49,7 +51,8 @@ services:
       - 9001
       - 9000
     command: ["server", "/data", "--console-address", ":9001"]
-
+    stop_grace_period: 5s
+    cpus: 3
   # TODO: move this code to cluster.py
   mc:
     depends_on:
@@ -68,3 +71,5 @@ services:
       /usr/bin/mc policy set public minio/warehouse-hms;
       tail -f /dev/null
       "
+      stop_grace_period: 5s
+    cpus: 3

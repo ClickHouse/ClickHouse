@@ -24,7 +24,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     , check_period_ms(local_disk_check_period_ms)
     , log(getLogger("DiskLocalCheckThread"))
 {
-    task = getContext()->getSchedulePool().createTask(log->name(), [this] { run(); });
+    task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { run(); });
 }
 
 void DiskLocalCheckThread::startup()

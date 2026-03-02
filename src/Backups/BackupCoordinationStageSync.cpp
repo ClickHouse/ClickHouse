@@ -115,13 +115,15 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , failure_after_host_disconnected_for_seconds(with_retries.getKeeperSettings().failure_after_host_disconnected_for_seconds)
     , finish_timeout_after_error(with_retries.getKeeperSettings().finish_timeout_after_error)
     , sync_period_ms(with_retries.getKeeperSettings().sync_period_ms)
-    , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version)
+    // all_hosts.size() is added to max_attempts_after_bad_version since each host change the num_hosts node once, and it's a valid case
+    , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version + all_hosts.size())
     , zookeeper_path(zookeeper_path_)
     , root_zookeeper_path(zookeeper_path.parent_path().parent_path())
     , operation_zookeeper_path(zookeeper_path.parent_path())
     , operation_node_name(zookeeper_path.parent_path().filename())
     , start_node_path(zookeeper_path / ("started|" + current_host))
     , finish_node_path(zookeeper_path / ("finished|" + current_host))
+    , initiator_start_node_path(zookeeper_path / ("started|" + String{kInitiator}))
     , num_hosts_node_path(zookeeper_path / "num_hosts")
     , error_node_path(zookeeper_path / "error")
     , alive_node_path(zookeeper_path / ("alive|" + current_host))
@@ -159,6 +161,9 @@ void BackupCoordinationStageSync::initializeState()
 
     if (!state.hosts.contains(String{kInitiator}))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of hosts must contain the initiator");
+
+    /// We know the version of the current host.
+    state.hosts.at(current_host).version = kCurrentVersion;
 }
 
 
@@ -203,6 +208,7 @@ void BackupCoordinationStageSync::startup()
 {
     createRootNodes();
     createStartAndAliveNodesAndCheckConcurrency();
+    readInitiatorVersion();
     startWatchingThread();
 }
 
@@ -416,6 +422,29 @@ void BackupCoordinationStageSync::checkConcurrency(Coordination::ZooKeeperWithFa
 }
 
 
+void BackupCoordinationStageSync::readInitiatorVersion()
+{
+    if (current_host == kInitiator)
+    {
+        chassert(getInitiatorVersion() == kCurrentVersion);
+        return;
+    }
+
+    auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::readInitiatorVersion", WithRetries::kInitialization);
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+        String initiator_start_node;
+        if (!zookeeper->tryGet(initiator_start_node_path, initiator_start_node))
+        {
+            LOG_TRACE(log, "Couldn't read the initiator's version, assuming {}", kInitialVersion);
+        }
+        std::lock_guard lock{mutex};
+        state.hosts.at(String{kInitiator}).version = parseStartNode(initiator_start_node, String{kInitiator});
+    });
+}
+
+
 void BackupCoordinationStageSync::startWatchingThread()
 {
     watching_thread_future = schedule([this]() { watchingThread(); }, Priority{});
@@ -445,6 +474,9 @@ void BackupCoordinationStageSync::stopWatchingThread()
 
 void BackupCoordinationStageSync::watchingThread()
 {
+    LOG_TRACE(log, "Started the watching thread");
+
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::watchingThread");
     auto should_stop = [&]
     {
         std::lock_guard lock{mutex};
@@ -523,14 +555,32 @@ void BackupCoordinationStageSync::createAliveNode(Coordination::ZooKeeperWithFau
 void BackupCoordinationStageSync::resetConnectedFlag()
 {
     std::lock_guard lock{mutex};
+    auto monotonic_now = std::chrono::steady_clock::now();
+    auto now = std::chrono::system_clock::now();
     for (auto & [_, host_info] : state.hosts)
+    {
+        /// Update the last connection time only for hosts that were previously connected.
+        /// This ensures the disconnection timer in cancelQueryIfDisconnectedTooLong() starts
+        /// from the moment we first detected the issue (i.e., when we could no longer read ZooKeeper),
+        /// rather than from the time of the last successful readCurrentState() call.
+        /// Without this, when the initiator itself loses its ZooKeeper connection,
+        /// resetConnectedFlag() marks all hosts as disconnected but their last_connection_time
+        /// remains stale (from the previous sync cycle), which can cause
+        /// cancelQueryIfDisconnectedTooLong() to trigger immediately if sync_period_ms
+        /// exceeds failure_after_host_disconnected_for_seconds.
+        if (host_info.connected)
+        {
+            host_info.last_connection_time = now;
+            host_info.last_connection_time_monotonic = monotonic_now;
+        }
         host_info.connected = false;
+    }
 }
 
 
 void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
-    zk_nodes_changed->reset();
+    (*zk_nodes_changed).reset();
 
     /// Get zk nodes and subscribe on their changes.
     Strings new_zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);
@@ -569,6 +619,23 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
     auto monotonic_now = std::chrono::steady_clock::now();
 
     /// Read the current state from zookeeper nodes.
+    /// First we process the "started" nodes because we need to read versions from them.
+    for (const auto & zk_node : new_zk_nodes)
+    {
+        if (zk_node.starts_with("started|"))
+        {
+            String host = zk_node.substr(strlen("started|"));
+            if (auto * host_info = get_host_info(host))
+            {
+                if (!host_info->started)
+                {
+                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
+                    host_info->started = true;
+                }
+            }
+        }
+    }
+
     for (const auto & zk_node : new_zk_nodes)
     {
         if (zk_node == "error")
@@ -579,18 +646,6 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
                 auto [exception, host] = parseErrorNode(serialized_error);
                 if (exception)
                     new_state.addErrorInfo(exception, host);
-            }
-        }
-        else if (zk_node.starts_with("started|"))
-        {
-            String host = zk_node.substr(strlen("started|"));
-            if (auto * host_info = get_host_info(host))
-            {
-                if (!host_info->started)
-                {
-                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
-                    host_info->started = true;
-                }
             }
         }
         else if (zk_node.starts_with("finished|"))
@@ -974,6 +1029,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
 
     stopWatchingThread();
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
         auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);
@@ -1175,18 +1231,15 @@ void BackupCoordinationStageSync::waitOtherHostsFinish(bool throw_if_error) cons
 
 void BackupCoordinationStageSync::waitOtherHostsFinishImpl(const String & reason, std::optional<std::chrono::seconds> timeout, bool throw_if_error) const
 {
-    std::unique_lock lock{mutex};
+    UniqueLock lock{mutex};
 
-    /// TSA_NO_THREAD_SAFETY_ANALYSIS is here because Clang Thread Safety Analysis doesn't understand std::unique_lock.
-    auto other_hosts_finished = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS { return otherHostsFinishedNoLock(); };
-
-    if (other_hosts_finished())
+    if (otherHostsFinishedNoLock())
     {
         LOG_TRACE(log, "Other hosts have already finished");
         return;
     }
 
-    bool failed_to_set_error = TSA_SUPPRESS_WARNING_FOR_READ(tried_to_set_error) && !TSA_SUPPRESS_WARNING_FOR_READ(state).host_with_error;
+    bool failed_to_set_error = tried_to_set_error && !state.host_with_error;
     if (failed_to_set_error)
     {
         /// Tried to create the 'error' node, but failed.
@@ -1195,20 +1248,19 @@ void BackupCoordinationStageSync::waitOtherHostsFinishImpl(const String & reason
         return;
     }
 
-    /// TSA_NO_THREAD_SAFETY_ANALYSIS is here because Clang Thread Safety Analysis doesn't understand std::unique_lock.
-    auto check_if_hosts_finish = [&](bool time_is_out) TSA_NO_THREAD_SAFETY_ANALYSIS
-    {
-        return checkIfOtherHostsFinish(reason, timeout, time_is_out, throw_if_error);
-    };
-
     if (timeout)
     {
-        if (!state_changed.wait_for(lock, *timeout, [&] { return check_if_hosts_finish(/* time_is_out = */ false); }))
-            check_if_hosts_finish(/* time_is_out = */ true);
+        if (!state_changed.wait_for(
+                lock.getUnderlyingLock(),
+                *timeout,
+                [&] TSA_REQUIRES(mutex) { return checkIfOtherHostsFinish(reason, timeout, false, throw_if_error); }))
+            checkIfOtherHostsFinish(reason, timeout, true, throw_if_error);
     }
     else
     {
-        state_changed.wait(lock, [&] { return check_if_hosts_finish(/* time_is_out = */ false); });
+        state_changed.wait(
+            lock.getUnderlyingLock(),
+            [&] TSA_REQUIRES(mutex) { return checkIfOtherHostsFinish(reason, timeout, false, throw_if_error); });
     }
 }
 

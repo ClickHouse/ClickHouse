@@ -4,7 +4,11 @@
 
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
+#include <Common/Exception.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/CommonParsers.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -12,12 +16,12 @@
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
     M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
     M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
+    M(BackgroundSchedulePoolLog, background_schedule_pool_log, "Contains history of background schedule pool task executions.") \
     M(TraceLog,              trace_log,            "Contains stack traces collected by the sampling query profiler.") \
     M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
     M(TransposedMetricLog,   transposed_metric_log,"Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Transposed form of system.metric_log.") \
-    M(LatencyLog,            latency_log,          "Contains history of all latency buckets, periodically flushed to disk.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
@@ -35,6 +39,10 @@
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
+    M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
+    M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
+    M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
+    M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -43,6 +51,61 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+class StorageWithComment : public IAST
+{
+public:
+    ASTPtr storage;
+    ASTPtr comment;
+
+    String getID(char) const override { return "Storage with comment definition"; }
+
+    ASTPtr clone() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+    }
+
+protected:
+    void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+    }
+};
+
+class ParserStorageWithComment : public IParserBase
+{
+protected:
+    const char * getName() const override { return "storage definition with comment"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+        ASTPtr storage;
+
+        if (!storage_p.parse(pos, storage, expected))
+            return false;
+
+        ParserKeyword s_comment(Keyword::COMMENT);
+        ParserStringLiteral string_literal_parser;
+        ASTPtr comment;
+
+        if (s_comment.ignore(pos, expected))
+            string_literal_parser.parse(pos, comment, expected);
+
+        auto storage_with_comment = make_intrusive<StorageWithComment>();
+        storage_with_comment->storage = std::move(storage);
+        storage_with_comment->comment = std::move(comment);
+
+        node = storage_with_comment;
+        return true;
+    }
+};
 
 /** Allow to store structured log in system table.
   *
@@ -89,7 +152,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway, const Strings & names);
+    void flush(const std::vector<std::pair<String, String>> & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -105,6 +168,8 @@ public:
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
+
+    void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings
@@ -113,7 +178,6 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
-    std::string view_name_for_transposed_metric_log;
 };
 
 template <typename LogElement>

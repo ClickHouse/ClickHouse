@@ -4,12 +4,17 @@ description: 'CoalescingMergeTree inherits from the MergeTree engine. Its key fe
 sidebar_label: 'CoalescingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/coalescingmergetree
-title: 'CoalescingMergeTree'
+title: 'CoalescingMergeTree table engine'
 keywords: ['CoalescingMergeTree']
 show_related_blogs: true
+doc_type: 'reference'
 ---
 
-# CoalescingMergeTree
+# CoalescingMergeTree table engine
+
+:::note Available from version 25.6
+This table engine is available from version 25.6 and higher in both OSS and Cloud.
+:::
 
 This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row that contains the latest non-NULL values for each column.
 
@@ -38,10 +43,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 #### Columns {#columns}
 
-`columns` - a tuple with the names of columns where values will be united. Optional parameter.
-    The columns must be of a numeric type and must not be in the partition or sorting key.
-
- If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
+`columns` - Optional. A tuple with the names of columns where values will be united. The provided columns must not be in the partition or sorting key. If `columns` is not specified, ClickHouse unites the values in all columns that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 

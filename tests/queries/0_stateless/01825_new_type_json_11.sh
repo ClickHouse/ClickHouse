@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_11"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_11 (obj JSON) ENGINE = MergeTree ORDER BY tuple()" --enable_json_type 1
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_11 (obj JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS replace_long_file_name_to_hash=1" --enable_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_11 FORMAT JSONAsObject"
 {

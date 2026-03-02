@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-async-insert
+# Tags: long, no-replicated-database, no-async-insert
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -363,5 +363,33 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.cluster_mv" | grep -c "DEFINER = $user3"
 
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE $db.test_mv_1;
+DROP TABLE $db.test_mv_3;
+DROP TABLE $db.test_mv_4;
+DROP TABLE $db.test_mv_5;
 
+DROP TABLE $db.mv1;
+DROP TABLE $db.mv2;
+
+DROP TABLE $db.test_view_row_1;
+DROP TABLE $db.test_view_g_1;
+DROP TABLE $db.test_view_g_2;
+DROP TABLE $db.test_mv_row_2;
+
+DROP TABLE $db.test_view_2;
+DROP TABLE $db.test_view_3;
+DROP TABLE $db.test_view_4;
+DROP TABLE $db.test_view_5;
+DROP TABLE $db.test_view_6;
+DROP TABLE $db.test_view_7;
+DROP TABLE $db.test_view_8;
+DROP TABLE $db.test_view_9;
+DROP TABLE $db.test_view_10;
+DROP TABLE $db.test_view_11;
+
+DROP TABLE $db.cluster_mv ON CLUSTER test_shard_localhost;
+
+DROP TABLE $db.materialized_events;
+EOF
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";

@@ -4,6 +4,7 @@ sidebar_label: 'USER'
 sidebar_position: 39
 slug: /sql-reference/statements/create/user
 title: 'CREATE USER'
+doc_type: 'reference'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
@@ -17,6 +18,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [IN access_storage_type]
+    [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
@@ -123,13 +125,20 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
     ```
 
-    The length of the password is limited to 72 characters with this method. The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
+    The length of the password is limited to 72 characters with this method. 
+    The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
 
     ```xml
     <bcrypt_workfactor>12</bcrypt_workfactor>
     ```
 
     The work factor must be between 4 and 31, with a default value of 12.
+
+   :::warning
+   For applications with high-frequency authentication,
+   consider alternative authentication methods due to
+   bcrypt's computational overhead at higher work factors.
+   :::
 
 6. The type of the password can also be omitted:
 
@@ -211,24 +220,22 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 
 `mira` should start client app at the host where the ClickHouse server runs.
 
-Create the user account `john`, assign roles to it and make this roles default:
+Create the user account `john` and assign roles:
 
 ```sql
-CREATE USER john DEFAULT ROLE role1, role2;
+CREATE USER john ROLE role1, role2;
 ```
 
-Create the user account `john` and make all his future roles default:
+Create the user account `john`, assign roles and make some of them default:
 
 ```sql
-CREATE USER john DEFAULT ROLE ALL;
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
 ```
 
-When some role is assigned to `john` in the future, it will become default automatically.
-
-Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
+or
 
 ```sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 ```
 
 Create the user account `john` and allow him to grant his privileges to the user with `jack` account:

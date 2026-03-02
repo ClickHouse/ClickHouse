@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/DateLUTImpl.h>
 #include <IO/ReadBuffer.h>
 
 #include <vector>
@@ -50,6 +51,10 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 
 /// Try to parse Date or DateTime value from a string.
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings);
+
+bool tryInferDateFromString(std::string_view field, DayNum & date);
+bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
 
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.
@@ -101,12 +106,20 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
 /// Make type Nullable recursively:
-/// - Type -> Nullable(type)
-/// - Array(Type) -> Array(Nullable(Type))
-/// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
-/// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
-/// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
+///  - Type -> Nullable(type)
+///  - Array(Type) -> Array(Nullable(Type))
+///  - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
+///    If settings.schema_inference_allow_nullable_tuple_type is enabled, also wraps the whole tuple:
+///      Tuple(...) -> Nullable(Tuple(...))
+///  - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
+///  - LowCardinality(Type) -> LowCardinality(Nullable(Type))
+/// Does not recurse into types with custom name.
+/// E.g. type `Point` (aka `Tuple(Float64, Float64)`) stays unchanged as `Point`, it does not become
+/// `Tuple(Nullable(Float64), Nullable(Float64))`.
+/// But `Bool` becomes `Nullable(Bool)`.
 DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
 
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.

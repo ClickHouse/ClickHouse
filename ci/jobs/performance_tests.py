@@ -22,21 +22,19 @@ perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
-select test, query_index,
+SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-from query_metrics_v2
+    any(query_display_name) AS query_display_name
+FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
 -- some time to notice that something is wrong.
--- TODO: switch 3 month to 1 month once we have data in the table
-where event_date between now() - interval 3 month - interval 1 week
-    and now() - interval 1 week
-    and metric = 'client_time'
-    and pr_number = 0
-group by test, query_index, query_display_name
-having count(*) > 100"""
+WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+    AND metric = 'client_time'
+    AND pr_number = 0
+GROUP BY test, query_index
+HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
@@ -278,7 +276,7 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_custom_data("previous_commits_sha") or []
+    commits = info.get_kv_data("previous_commits_sha") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
@@ -289,7 +287,7 @@ def find_prev_build(info, build_type):
 
 
 def find_base_release_build(info, build_type):
-    commits = info.get_custom_data("release_branch_base_sha_with_predecessors") or []
+    commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
@@ -355,9 +353,7 @@ def main():
         print(
             "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
         )
-        reference_sha = info.get_custom_data(
-            "release_branch_base_sha_with_predecessors"
-        )[0]
+        reference_sha = info.get_kv_data("release_branch_base_sha_with_predecessors")[0]
         Shell.check(
             f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
             verbose=True,
@@ -412,7 +408,7 @@ def main():
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
-            # f"cp -r ./tests/performance {perf_right}",
+            f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
@@ -453,11 +449,28 @@ def main():
     if res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster()
-            assert cidb.is_ready()
+            cidb = CIDBCluster(
+                url="https://play.clickhouse.com?user=play", user="", pwd=""
+            )
+            if not cidb.is_ready():
+                print(
+                    "WARNING: CIDB is not ready, will proceed without historical thresholds"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
             )
+            if result is None:
+                print(
+                    "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             with open(
                 f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
             ) as f:
@@ -484,6 +497,7 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
+                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -518,8 +532,15 @@ def main():
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
+            # May slow down the server
+            f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
+            f"rm {perf_right_config}/config.d/serverwide_trace_collector.xml ||:",
+            f"rm {perf_right_config}/config.d/jemalloc_flush_profile.yaml ||:",
+            f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
+            # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
+            f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
             restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead
@@ -593,11 +614,14 @@ def main():
         assert test_files
 
         def run_tests():
+            # Run 10 random queries per test by default, but all queries for benchmarks
+            benchmarks = {"clickbench.xml", "tpch.xml"}
             for test in test_files:
+                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     runs=7,
-                    max_queries=10,
+                    max_queries=max_queries,
                     results_path=perf_wd,
                 )
             return True
@@ -714,8 +738,6 @@ def main():
 
         def too_many_slow(msg):
             match = re.search(r"(|.* )(\d+) slower.*", msg)
-            # This threshold should be synchronized with the value in
-            # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
             threshold = 5
             return int(match.group(2).strip()) > threshold if match else False
 

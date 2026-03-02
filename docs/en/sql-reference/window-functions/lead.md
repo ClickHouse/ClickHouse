@@ -4,6 +4,7 @@ sidebar_label: 'lead'
 sidebar_position: 10
 slug: /sql-reference/window-functions/lead
 title: 'lead'
+doc_type: 'reference'
 ---
 
 # lead

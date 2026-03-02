@@ -5,11 +5,12 @@ sidebar_label: 'Domains'
 sidebar_position: 56
 slug: /sql-reference/data-types/domains/
 title: 'Domains'
+doc_type: 'reference'
 ---
 
 # Domains
 
-Domains are special-purpose types that add some extra features atop of existing base type, but leaving on-wire and on-disc format of the underlying data type intact. At the moment, ClickHouse does not support user-defined domains.
+Domains are special-purpose types that add extra features on top of existing base types, while leaving the on-wire and on-disk format of the underlying data type intact. Currently, ClickHouse does not support user-defined domains.
 
 You can use domains anywhere corresponding base type can be used, for example:
 

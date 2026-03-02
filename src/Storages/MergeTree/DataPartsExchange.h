@@ -9,6 +9,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
 #include <Common/ActionBlocker.h>
+#include <IO/ReadBuffer.h>
 
 
 namespace zkutil
@@ -37,7 +38,7 @@ public:
     Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);

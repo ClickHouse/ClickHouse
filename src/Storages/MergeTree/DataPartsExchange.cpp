@@ -20,14 +20,11 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomDelay.h>
-#include <Common/FailPoint.h>
-#include <Common/thread_local_rng.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
-#include <random>
 
 namespace fs = std::filesystem;
 
@@ -58,12 +55,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -104,7 +95,7 @@ struct ReplicatedFetchReadCallback
         if (replicated_fetch_entry->total_size_bytes_compressed != 0)
         {
             replicated_fetch_entry->progress.store(
-                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    static_cast<double>(bytes_count) / static_cast<double>(replicated_fetch_entry->total_size_bytes_compressed),
                     std::memory_order_relaxed);
         }
     }
@@ -123,8 +114,11 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
+    // nothing to read from body
+    body.reset();
+
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
     String part_name = params.get("part");
@@ -300,19 +294,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         HashingWriteBuffer hashing_out(out);
 
         const auto & is_cancelled = blocker.getCounter();
-        auto cancellation_hook = [&]()
-        {
-            if (is_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-            fiu_do_on(FailPoints::replicated_sends_failpoint,
-            {
-                std::bernoulli_distribution fault(0.1);
-                if (fault(thread_local_rng))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
-            });
-        };
-        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
+        copyDataWithThrottler(*file_in, hashing_out, is_cancelled, data.getSendsThrottler());
 
         hashing_out.finalize();
 
@@ -376,7 +358,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     static const UInt32 wait_timeout_ms = 1000;
     auto pred = [&] ()
     {
-        auto lock = data.lockParts();
+        auto lock = data.readLockParts();
         return part->getState() != MergeTreeDataPartState::PreActive;
     };
 
@@ -441,7 +423,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
-    uri.setPort(port);
+    uri.setPort(static_cast<uint16_t>(port));
     uri.setQueryParameters(
     {
         {"endpoint",                endpoint_id},
@@ -466,14 +448,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 if (data_disk->supportZeroCopyReplication())
                 {
                     LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), data_disk->getDataSourceDescription().toString());
-                    capability.push_back(data_disk->getDataSourceDescription().toString());
+                    capability.push_back(data_disk->getDataSourceDescription().name());
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
             LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
-            capability.push_back(disk->getDataSourceDescription().toString());
+            capability.push_back(disk->getDataSourceDescription().name());
         }
     }
 
@@ -520,7 +502,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
+            if (disk_candidate->getDataSourceDescription().name() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;

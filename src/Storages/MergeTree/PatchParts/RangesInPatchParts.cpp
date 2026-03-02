@@ -2,10 +2,15 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Interpreters/Context.h>
 
 namespace ProfileEvents
 {
@@ -205,33 +210,133 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
     std::vector<MarkRanges> optimized_ranges(raw_ranges.size());
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
-    {
-        auto ranges_for_patch = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
-        optimized_ranges[i] = MarkRanges(ranges_for_patch.begin(), ranges_for_patch.end());
-    }
+        optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
 
     return optimized_ranges;
 }
 
-std::set<MarkRange> RangesInPatchParts::getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const
+MarkRanges RangesInPatchParts::getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const
 {
-    std::set<MarkRange> res;
-
     auto it = ranges_by_name.find(patch_name);
     if (it == ranges_by_name.end())
-        return res;
+        return {};
 
+    /// The result ranges must be sorted.
+    std::set<MarkRange> res;
     const auto & patch_ranges = it->second;
 
     for (const auto & range : ranges)
     {
-        auto left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
-        auto right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
+        const auto * left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
+        const auto * right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
 
         res.insert(left, right);
     }
 
-    return res;
+    return MarkRanges(res.begin(), res.end());
+}
+
+static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & granule)
+{
+    const auto & minmax_granule = assert_cast<const MergeTreeIndexGranuleMinMax &>(granule);
+    chassert(minmax_granule.hyperrectangle.size() == 1);
+
+    UInt64 min = minmax_granule.hyperrectangle[0].left.safeGet<UInt64>();
+    UInt64 max = minmax_granule.hyperrectangle[0].right.safeGet<UInt64>();
+
+    return {min, max};
+}
+
+MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+
+    auto metadata_snapshot = patch_part->getMetadataSnapshot();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+
+    auto it = std::ranges::find_if(
+        secondary_indices,
+        [&](const auto & index)
+        { return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name; });
+
+    if (it == secondary_indices.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);
+
+    if (it->type != "minmax")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
+
+    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    /// Check that index exists in data part. It may be absent for parts created in earlier versions.
+    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
+        return {};
+
+    size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
+    MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
+
+    auto context = Context::getGlobalContextInstance();
+    auto mark_cache = context->getIndexMarkCache();
+    auto uncompressed_cache = context->getIndexUncompressedCache();
+
+    MergeTreeIndexReader reader(
+        index_ptr,
+        patch_part,
+        total_marks_without_final,
+        index_mark_ranges,
+        mark_cache.get(),
+        uncompressed_cache.get(),
+        /*vector_similarity_index_cache=*/ nullptr,
+        settings);
+
+    MergeTreeIndexGranulePtr granule = nullptr;
+    MinMaxStats result(ranges.size());
+
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        auto & stats = result[i];
+        size_t last_mark = std::min(ranges[i].end, total_marks_without_final);
+
+        if (ranges[i].begin == last_mark)
+            continue;
+
+        reader.read(ranges[i].begin, nullptr, granule);
+        std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
+
+        for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
+        {
+            reader.read(j, nullptr, granule);
+            auto [min, max] = getMinMaxValues(*granule);
+
+            stats.min = std::min(stats.min, min);
+            stats.max = std::max(stats.max, max);
+        }
+    }
+
+    return result;
+}
+
+bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
+{
+    return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
+}
+
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+    MarkRanges result;
+
+    for (auto range : ranges)
+    {
+        auto it = patch_stats.find(range);
+
+        if (it != patch_stats.end()
+            && intersects(result_stats.block_number_stat, it->second.block_number_stat)
+            && intersects(result_stats.block_offset_stat, it->second.block_offset_stat))
+        {
+            result.push_back(range);
+        }
+    }
+
+    return result;
 }
 
 }

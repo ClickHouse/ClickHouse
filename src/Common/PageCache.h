@@ -44,6 +44,7 @@ struct PageCacheKey
 
     UInt128 hash() const;
     std::string toString() const;
+    size_t capacity() const { return path.capacity() + file_version.capacity(); }
 };
 
 class PageCacheCell
@@ -52,6 +53,7 @@ public:
     PageCacheKey key;
 
     size_t size() const { return m_size; }
+    size_t capacity() const { return sizeof(*this) + key.capacity() + m_size; }
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
@@ -71,7 +73,7 @@ struct PageCacheWeightFunction
 {
     size_t operator()(const PageCacheCell & x) const
     {
-        return x.size();
+        return x.capacity();
     }
 };
 
@@ -121,9 +123,13 @@ public:
     /// will be just a standalone PageCacheCell not connected to the cache.
     MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
 
+    MappedPtr get(const PageCacheKey & key, bool inject_eviction);
+
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
-    void autoResize(Int64 memory_usage, size_t memory_limit);
+    /// Make the cache smaller by `memory_limit - memory_usage` bytes.
+    /// Returns true if succeeded, false if cache size was reduced as much as possible but it wasn't enough.
+    bool autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;

@@ -141,14 +141,18 @@ namespace
 
     /// If `is_right_pad` - it's the rightPad() function instead of leftPad().
     /// If `is_utf8` - lengths are measured in code points instead of bytes.
-    template <bool is_right_pad, bool is_utf8>
     class FunctionPadString : public IFunction
     {
     public:
-        static constexpr auto name = is_right_pad ? (is_utf8 ? "rightPadUTF8" : "rightPad") : (is_utf8 ? "leftPadUTF8" : "leftPad");
-        static FunctionPtr create(const ContextPtr) { return std::make_shared<FunctionPadString>(); }
+        FunctionPadString(const char * name_, bool is_right_pad_, bool is_utf8_)
+            : function_name(name_), is_right_pad(is_right_pad_), is_utf8(is_utf8_) {}
 
-        String getName() const override { return name; }
+        static FunctionPtr create(const char * name, bool is_right_pad, bool is_utf8)
+        {
+            return std::make_shared<FunctionPadString>(name, is_right_pad, is_utf8);
+        }
+
+        String getName() const override { return function_name; }
 
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -269,12 +273,12 @@ namespace
             }
         }
 
-        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
-        void executeForSourceAndLength(
+        template <bool is_right_pad_, bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
+        static void executePad(
             SourceStrings && strings,
             SourceLengths && lengths,
             const PaddingChars<is_actually_utf8> & padding_chars,
-            StringSink & res_sink) const
+            StringSink & res_sink)
         {
             bool is_const_new_length = lengths.isConst();
             ssize_t new_length = 0;
@@ -305,7 +309,7 @@ namespace
                     if (is_const_new_length)
                     {
                         size_t rows_count = res_sink.offsets.size();
-                        res_sink.reserve((new_length + 1 /* zero terminator */) * rows_count);
+                        res_sink.reserve(new_length * rows_count);
                     }
                 }
 
@@ -320,25 +324,121 @@ namespace
                 }
                 else if (new_length > current_length)
                 {
-                    if constexpr (!is_right_pad)
+                    if constexpr (!is_right_pad_)
                         padding_chars.appendTo(res_sink, new_length - current_length);
 
                     writeSlice(str, res_sink);
 
-                    if constexpr (is_right_pad)
+                    if constexpr (is_right_pad_)
                         padding_chars.appendTo(res_sink, new_length - current_length);
                 }
             }
         }
+
+        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
+        void executeForSourceAndLength(
+            SourceStrings && strings,
+            SourceLengths && lengths,
+            const PaddingChars<is_actually_utf8> & padding_chars,
+            StringSink & res_sink) const
+        {
+            if (is_right_pad)
+                executePad<true>(std::forward<SourceStrings>(strings), std::forward<SourceLengths>(lengths), padding_chars, res_sink);
+            else
+                executePad<false>(std::forward<SourceStrings>(strings), std::forward<SourceLengths>(lengths), padding_chars, res_sink);
+        }
+
+        const char * const function_name;
+        const bool is_right_pad;
+        const bool is_utf8;
     };
 }
 
 REGISTER_FUNCTION(PadString)
 {
-    factory.registerFunction<FunctionPadString<false, false>>(); /// leftPad
-    factory.registerFunction<FunctionPadString<false, true>>();  /// leftPadUTF8
-    factory.registerFunction<FunctionPadString<true, false>>();  /// rightPad
-    factory.registerFunction<FunctionPadString<true, true>>();   /// rightPadUTF8
+    FunctionDocumentation::Description description_left = R"(
+Pads a string from the left with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
+)";
+    FunctionDocumentation::Syntax syntax_left = "leftPad(string, length[, pad_string])";
+    FunctionDocumentation::Arguments arguments_left = {
+        {"string", "Input string that should be padded.", {"String"}},
+        {"length", "The length of the resulting string. If the value is smaller than the input string length, then the input string is shortened to `length` characters.", {"(U)Int*"}},
+        {"pad_string", "Optional. The string to pad the input string with. If not specified, then the input string is padded with spaces.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_left = {"Returns a left-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_left = {
+    {
+        "Usage example",
+        "SELECT leftPad('abc', 7, '*'), leftPad('def', 7)",
+        R"(
+┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
+│ ****abc                │     def           │
+└────────────────────────┴───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, {}, returned_value_left, examples_left, introduced_in, category};
+
+    FunctionDocumentation::Description description_left_utf8 = R"(
+Pads a UTF8 string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Unlike [`leftPad`](#leftPad) which measures the string length in bytes, the string length is measured in code points.
+)";
+    FunctionDocumentation::Syntax syntax_left_utf8 = "leftPadUTF8(string, length[, pad_string])";
+    FunctionDocumentation::Examples examples_left_utf8 = {
+    {
+        "Usage example",
+        "SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7)",
+        R"(
+┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
+│ ***абвг                     │    дежз                │
+└─────────────────────────────┴────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_left_utf8 = {description_left_utf8, syntax_left_utf8, arguments_left, {}, returned_value_left, examples_left_utf8, introduced_in, category};
+
+    FunctionDocumentation::Description description_right = R"(
+Pads a string from the right with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
+)";
+    FunctionDocumentation::Syntax syntax_right = "rightPad(string, length[, pad_string])";
+    FunctionDocumentation::ReturnedValue returned_value_right = {"Returns a right-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_right = {
+    {
+        "Usage example",
+        "SELECT rightPad('abc', 7, '*'), rightPad('abc', 7)",
+        R"(
+┌─rightPad('abc', 7, '*')─┬─rightPad('abc', 7)─┐
+│ abc****                 │ abc                │
+└─────────────────────────┴────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_left, {}, returned_value_right, examples_right, introduced_in, category};
+
+    FunctionDocumentation::Description description_right_utf8 = R"(
+Pads the string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Unlike [`rightPad`](#rightPad) which measures the string length in bytes, the string length is measured in code points.
+)";
+    FunctionDocumentation::Syntax syntax_right_utf8 = "rightPadUTF8(string, length[, pad_string])";
+    FunctionDocumentation::ReturnedValue returned_value_right_utf8 = {"Returns a right-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_right_utf8 = {
+    {
+        "Usage example",
+        "SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7)",
+        R"(
+┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
+│ абвг***                      │ абвг                    │
+└──────────────────────────────┴─────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation documentation_right_utf8 = {description_right_utf8, syntax_right_utf8, arguments_left, {}, returned_value_right_utf8, examples_right_utf8, introduced_in, category};
+
+    factory.registerFunction("leftPad", [](ContextPtr){ return FunctionPadString::create("leftPad", false, false); }, documentation_left);
+    factory.registerFunction("leftPadUTF8", [](ContextPtr){ return FunctionPadString::create("leftPadUTF8", false, true); }, documentation_left_utf8);
+    factory.registerFunction("rightPad", [](ContextPtr){ return FunctionPadString::create("rightPad", true, false); }, documentation_right);
+    factory.registerFunction("rightPadUTF8", [](ContextPtr){ return FunctionPadString::create("rightPadUTF8", true, true); }, documentation_right_utf8);
 
     factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
     factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);

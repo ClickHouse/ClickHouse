@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Interpreters/Squashing.h>
-#include <Processors/IInflatingTransform.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 
 namespace DB
 {
 
-class PlanSquashingTransform : public IInflatingTransform
+class PlanSquashingTransform : public ExceptionKeepingTransform
 {
 public:
     PlanSquashingTransform(
@@ -15,10 +15,11 @@ public:
     String getName() const override { return "PlanSquashingTransform"; }
 
 protected:
-    void consume(Chunk chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
+
     bool canGenerate() override;
-    Chunk generate() override;
-    Chunk getRemaining() override;
+    GenerateResult getRemaining() override;
 
 private:
     Squashing squashing;

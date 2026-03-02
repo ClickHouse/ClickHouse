@@ -32,7 +32,6 @@ extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_SLOW;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
@@ -55,42 +54,47 @@ enum class FunctionSleepVariant : uint8_t
     PerRow
 };
 
-template <FunctionSleepVariant variant>
 class FunctionSleep : public IFunction
 {
 private:
+    const char * function_name;
+    FunctionSleepVariant variant;
     UInt64 max_microseconds;
     QueryStatusPtr query_status;
 
 public:
-    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
-    }
-
-    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
-        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
+    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_, QueryStatusPtr query_status_)
+        : function_name(name_)
+        , variant(variant_)
+        , max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
         , query_status(query_status_)
     {
     }
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, FunctionSleepVariant variant, ContextPtr context)
+    {
+        return std::make_shared<FunctionSleep>(
+            name, variant,
+            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which(arguments[0]);
+        auto is_float_or_native_uint = [](const IDataType & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat() || which.isNativeUInt();
+        };
 
-        if (!which.isFloat() && !which.isNativeUInt())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected UInt* or Float*",
-                arguments[0]->getName(),
-                getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"seconds", is_float_or_native_uint, nullptr, "UInt* or Float*"}
+        };
+        validateFunctionArguments(getName(), arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -176,8 +180,96 @@ public:
 
 REGISTER_FUNCTION(Sleep)
 {
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
+    FunctionDocumentation::Description description_sleep = R"(
+Pauses the execution of a query by the specified number of seconds.
+The function is primarily used for testing and debugging purposes.
+
+The `sleep()` function should generally not be used in production environments, as it can negatively impact query performance and system responsiveness.
+However, it can be useful in the following scenarios:
+
+1. **Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
+
+:::warning
+It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
+:::
+
+For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
+)";
+    FunctionDocumentation::Syntax syntax_sleep = "sleep(seconds)";
+    FunctionDocumentation::Arguments arguments_sleep = {
+        {"seconds", "The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.", {"const UInt*", "const Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sleep = {"Returns `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleep = {
+        {
+            "Usage example",
+            R"(
+-- This query will pause for 2 seconds before completing.
+-- During this time, no results will be returned, and the query will appear to be hanging or unresponsive.
+SELECT sleep(2);
+            )",
+            R"(
+┌─sleep(2)─┐
+│        0 │
+└──────────┘
+1 row in set. Elapsed: 2.012 sec.
+            )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sleep = {1, 1};
+    FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, {}, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
+
+    factory.registerFunction("sleep",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleep", FunctionSleepVariant::PerBlock, std::move(ctx)); },
+        documentation_sleep);
+
+    FunctionDocumentation::Description description_sleepEachRow = R"(
+Pauses the execution of a query for a specified number of seconds for each row in the result set.
+
+The `sleepEachRow()` function is primarily used for testing and debugging purposes, similar to the [`sleep()`](#sleep) function.
+It allows you to simulate delays or introduce pauses in the processing of each row, which can be useful in scenarios such as:
+
+1. **Testing**: When testing or benchmarking ClickHouse's performance under specific conditions, you can use `sleepEachRow()` to simulate delays or introduce pauses for each row processed.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
+
+:::warning
+Like the `sleep()` function, it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
+    FunctionDocumentation::Arguments arguments_sleepEachRow = {
+        {"seconds", "The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.", {"const UInt*", "const Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sleepEachRow = {"Returns `0` for each row.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleepEachRow = {
+        {
+            "Usage example",
+            R"(
+-- The output will be delayed, with a 0.5-second pause between each row.
+SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
+            )",
+            R"(
+┌─number─┬─sleepEachRow(0.5)─┐
+│      0 │                 0 │
+│      1 │                 0 │
+│      2 │                 0 │
+│      3 │                 0 │
+│      4 │                 0 │
+└────────┴───────────────────┘
+            )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sleepEachRow = {1, 1};
+    FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, {}, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
+
+    factory.registerFunction("sleepEachRow",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleepEachRow", FunctionSleepVariant::PerRow, std::move(ctx)); },
+        documentation_sleepEachRow);
 }
 
 }

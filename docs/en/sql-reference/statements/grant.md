@@ -4,6 +4,7 @@ sidebar_label: 'GRANT'
 sidebar_position: 38
 slug: /sql-reference/statements/grant
 title: 'GRANT Statement'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -74,6 +75,11 @@ Also `john` has the `GRANT OPTION` privilege, so it can grant other users with p
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
+:::note
+While there are many system tables which new users can access by default, they  may not be able to access every system table by default without grants.
+Additionally, access to certain system tables such as `system.zookeeper` is restricted for Cloud users for security reasons.
+:::
+
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
 ## Wildcard grants {#wildcard-grants}
@@ -137,7 +143,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALLOW SQL SECURITY NONE`
     - `ALTER QUOTA`
     - `ALTER ROLE`
-    - `ALTER ROW POLICY` 
+    - `ALTER ROW POLICY`
     - `ALTER SETTINGS PROFILE`
     - `ALTER USER`
     - `CREATE QUOTA`
@@ -168,10 +174,10 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER DROP COLUMN`
         - `ALTER MATERIALIZE COLUMN`
         - `ALTER MODIFY COLUMN`
-        - `ALTER RENAME COLUMN` 
+        - `ALTER RENAME COLUMN`
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
-        - `ALTER DROP CONSTRAINT` 
+        - `ALTER DROP CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -181,7 +187,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER DROP INDEX`
         - `ALTER MATERIALIZE INDEX`
         - `ALTER ORDER BY`
-        - `ALTER SAMPLE BY` 
+        - `ALTER SAMPLE BY`
       - `ALTER MATERIALIZE TTL`
       - `ALTER MODIFY COMMENT`
       - `ALTER MOVE PARTITION`
@@ -191,9 +197,9 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER ADD STATISTICS`
         - `ALTER DROP STATISTICS`
         - `ALTER MATERIALIZE STATISTICS`
-        - `ALTER MODIFY STATISTICS` 
+        - `ALTER MODIFY STATISTICS`
       - `ALTER TTL`
-      - `ALTER UPDATE` 
+      - `ALTER UPDATE`
     - `ALTER VIEW`
       - `ALTER VIEW MODIFY QUERY`
       - `ALTER VIEW REFRESH`
@@ -218,7 +224,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP FUNCTION`
     - `DROP RESOURCE`
     - `DROP TABLE`
-    - `DROP VIEW` 
+    - `DROP VIEW`
     - `DROP WORKLOAD`
   - [`INSERT`](#insert)
   - [`INTROSPECTION`](#introspection)
@@ -240,7 +246,7 @@ The hierarchy of privileges in ClickHouse is shown below:
   - [`SELECT`](#select)
   - [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
   - [`SHOW`](#show)
-    - `SHOW COLUMNS` 
+    - `SHOW COLUMNS`
     - `SHOW DATABASES`
     - `SHOW DICTIONARIES`
     - `SHOW TABLES`
@@ -327,7 +333,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
   - [`TRUNCATE`](#truncate)
-  - `UNDROP TABLE` 
+  - `UNDROP TABLE`
 - [`NONE`](#none)
 
 Examples of how this hierarchy is treated:
@@ -433,7 +439,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
   - `ALTER VIEW`. Level: `GROUP`
-  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
   - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
@@ -451,7 +457,7 @@ Examples of how this hierarchy is treated:
 
 ### BACKUP {#backup}
 
-Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](../../operations/backup.md).
+Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](/operations/backup/overview).
 
 ### CREATE {#create}
 
@@ -577,9 +583,9 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
 - `SYSTEM`. Level: `GROUP`
   - `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
   - `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
-    - `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
-    - `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
-    - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+    - `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR DNS CACHE`, `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    - `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR MARK CACHE`, `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
   - `SYSTEM RELOAD`. Level: `GROUP`
     - `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
     - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
@@ -614,37 +620,110 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](/sql-reference/table-functions).
 
-- `SOURCES`. Level: `GROUP`  
-  - `AZURE`. Level: `GLOBAL`  
-  - `FILE`. Level: `GLOBAL`  
-  - `HDFS`. Level: `GLOBAL`  
-  - `HIVE`. Level: `GLOBAL`  
-  - `JDBC`. Level: `GLOBAL`  
-  - `KAFKA`. Level: `GLOBAL`  
-  - `MONGO`. Level: `GLOBAL`  
-  - `MYSQL`. Level: `GLOBAL`  
-  - `NATS`. Level: `GLOBAL`  
-  - `ODBC`. Level: `GLOBAL`  
-  - `POSTGRES`. Level: `GLOBAL`  
-  - `RABBITMQ`. Level: `GLOBAL`  
-  - `REDIS`. Level: `GLOBAL`  
-  - `REMOTE`. Level: `GLOBAL`  
-  - `S3`. Level: `GLOBAL`  
-  - `SQLITE`. Level: `GLOBAL`  
-  - `URL`. Level: `GLOBAL`
+- `READ`. Level: `GLOBAL_WITH_PARAMETER`  
+- `WRITE`. Level: `GLOBAL_WITH_PARAMETER`
 
-The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
+Possible parameters:
+- `AZURE`
+- `FILE`
+- `HDFS`
+- `HIVE`
+- `JDBC`
+- `KAFKA`
+- `MONGO`
+- `MYSQL`
+- `NATS`
+- `ODBC`
+- `POSTGRES`
+- `RABBITMQ`
+- `REDIS`
+- `REMOTE`
+- `S3`
+- `SQLITE`
+- `URL`
+
+:::note
+The separation on READ/WRITE grants for sources is available starting with version 25.7 and only with server setting
+`access_control_improvements.enable_read_write_grants`
+
+Otherwise, you should use the syntax `GRANT AZURE ON *.* TO user` which is equivalent to the new `GRANT READ, WRITE ON AZURE TO user` 
+:::
 
 Examples:
 
 - To create a table with the [MySQL table engine](../../engines/table-engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
 - To use the [mysql table function](../../sql-reference/table-functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
 
+### Source Filter Grants {#source-filter-grants}
+
+:::note
+This feature is available starting with version 25.8 and only with server setting
+`access_control_improvements.enable_read_write_grants`
+:::
+
+You can grant access to specific source URIs by using regular expression filters. This allows fine-grained control over which external data sources users can access.
+
+**Syntax:**
+
+```sql
+GRANT READ ON S3('regexp_pattern') TO user
+```
+
+This grant will allow the user to read only from S3 URIs that match the specified regular expression pattern.
+
+**Examples:**
+
+Grant access to specific S3 bucket paths:
+```sql
+-- Allow user to read only from s3://foo/ paths
+GRANT READ ON S3('s3://foo/.*') TO john
+
+-- Allow user to read from specific file patterns
+GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
+
+-- Multiple filters can be granted to the same user
+GRANT READ ON S3('s3://foo/.*') TO john
+GRANT READ ON S3('s3://bar/.*') TO john
+```
+
+:::warning
+Source filter takes **regexp** as a parameter, so a grant
+`GRANT READ ON URL('http://www.google.com') TO john;`
+
+will allow queries
+```sql
+SELECT * FROM url('https://www.google.com');
+SELECT * FROM url('https://www-google.com');
+```
+
+because `.` is treated as an `Any Single Character` in the regexps. 
+This may lead to potential vulnerability. The correct grant should be
+```sql
+GRANT READ ON URL('https://www\.google\.com') TO john;
+```
+:::
+
+**Re-granting with GRANT OPTION:**
+
+If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
+```sql
+-- Original grant with GRANT OPTION
+GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
+
+-- John can now regrant this access to others
+GRANT CURRENT GRANTS(READ ON S3) TO alice
+```
+
+**Important limitations:**
+
+- **Partial revokes are not allowed:** You cannot revoke a subset of a granted filter pattern. You must revoke the entire grant and re-grant with new patterns if needed.
+- **Wildcard grants are not allowed:** You cannot use `GRANT READ ON *('regexp')` or similar wildcard-only patterns. Specific source must be provided.
+
 ### dictGet {#dictget}
 
 - `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) functions.
+Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
 
 Privilege level: `DICTIONARY`.
 
@@ -689,6 +768,12 @@ Allows using a specified table engine when creating a table. Applies to [table e
 - `GRANT TABLE ENGINE ON * TO john`
 - `GRANT TABLE ENGINE ON TinyLog TO john`
 
+:::note
+By default, for backward compatibility reasons, creating a table with a specific table engine ignores grants,
+however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+in config.xml.
+:::
+
 ### ALL {#all}
 
 <CloudNotSupportedBadge/>
@@ -696,7 +781,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/cloud-access-management/overview#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/manage-cloud-users) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 

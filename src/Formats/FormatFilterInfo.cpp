@@ -15,11 +15,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
+    chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
+    for (const auto & [column_name, field_id] : storage_encoding)
+        if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
@@ -43,19 +48,21 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
-    FormatFilterInfo::FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_)
-        : filter_actions_dag(filter_actions_dag_)
-        , context(context_)
-        , column_mapper(column_mapper_)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo(
+    std::shared_ptr<const ActionsDAG> filter_actions_dag_,
+    const ContextPtr & context_,
+    ColumnMapperPtr column_mapper_,
+    FilterDAGInfoPtr row_level_filter_,
+    PrewhereInfoPtr prewhere_info_)
+    : filter_actions_dag(filter_actions_dag_)
+    , context(context_)
+    , row_level_filter(std::move(row_level_filter_))
+    , prewhere_info(std::move(prewhere_info_))
+    , column_mapper(column_mapper_)
+{
+}
 
-    FormatFilterInfo::FormatFilterInfo()
-        : filter_actions_dag(nullptr)
-        , context(static_cast<const ContextPtr &>(nullptr))
-        , column_mapper(nullptr)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo() = default;
 
 
 bool FormatFilterInfo::hasFilter() const
@@ -73,9 +80,35 @@ void FormatFilterInfo::initKeyCondition(const Block & keys)
     if (!ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
+    if (prewhere_info || row_level_filter)
+    {
+        auto add_columns = [&](const ActionsDAG & dag)
+        {
+            for (const auto & col : dag.getRequiredColumns())
+            {
+                if (!keys.has(col.name) && !additional_columns.has(col.name))
+                    additional_columns.insert({col.type->createColumn(), col.type, col.name});
+            }
+        };
+
+        if (row_level_filter)
+            add_columns(row_level_filter->actions);
+        if (prewhere_info)
+            add_columns(prewhere_info->prewhere_actions);
+    }
+
+    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+    for (const auto & col : additional_columns)
+        columns.push_back(col);
+    Names names;
+    names.reserve(columns.size());
+    for (const auto & col : columns)
+        names.push_back(col.name);
+
     ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
     key_condition = std::make_shared<const KeyCondition>(
-        inverted_dag, ctx, keys.getNames(), std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));
+        inverted_dag, ctx, names,
+        std::make_shared<ExpressionActions>(ActionsDAG(columns)));
 }
 
 void FormatFilterInfo::initOnce(std::function<void()> f)
@@ -98,4 +131,5 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
             }
         });
 }
+
 }

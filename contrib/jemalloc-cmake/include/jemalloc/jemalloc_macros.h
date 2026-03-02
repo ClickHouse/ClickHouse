@@ -52,7 +52,7 @@
 #define MALLCTL_ARENAS_DESTROYED	4097
 
 #if defined(__cplusplus) && defined(JEMALLOC_USE_CXX_THROW)
-#  define JEMALLOC_CXX_THROW throw()
+#  define JEMALLOC_CXX_THROW noexcept (true)
 #else
 #  define JEMALLOC_CXX_THROW
 #endif
@@ -86,6 +86,7 @@
 #    define JEMALLOC_ALLOCATOR
 #  endif
 #  define JEMALLOC_COLD
+#  define JEMALLOC_WARN_ON_USAGE(warning_message)
 #elif defined(JEMALLOC_HAVE_ATTR)
 #  define JEMALLOC_ATTR(s) __attribute__((s))
 #  define JEMALLOC_ALIGNED(s) JEMALLOC_ATTR(aligned(s))
@@ -126,6 +127,11 @@
 #  else
 #    define JEMALLOC_COLD
 #  endif
+#  ifdef JEMALLOC_HAVE_ATTR_DEPRECATED
+#    define JEMALLOC_WARN_ON_USAGE(warning_message) JEMALLOC_ATTR(deprecated(warning_message))
+#  else
+#    define JEMALLOC_WARN_ON_USAGE(warning_message)
+#  endif
 #else
 #  define JEMALLOC_ATTR(s)
 #  define JEMALLOC_ALIGNED(s)
@@ -140,9 +146,10 @@
 #  define JEMALLOC_RESTRICT_RETURN
 #  define JEMALLOC_ALLOCATOR
 #  define JEMALLOC_COLD
+#  define JEMALLOC_WARN_ON_USAGE(warning_message)
 #endif
 
-#if (defined(__APPLE__) || defined(__FreeBSD__)) && !defined(JEMALLOC_NO_RENAME)
+#if (defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || (defined(__linux__) && !defined(__GLIBC__))) && !defined(JEMALLOC_NO_RENAME)
 #  define JEMALLOC_SYS_NOTHROW
 #else
 #  define JEMALLOC_SYS_NOTHROW JEMALLOC_NOTHROW

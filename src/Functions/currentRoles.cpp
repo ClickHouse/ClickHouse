@@ -26,19 +26,30 @@ namespace
         DEFAULT_ROLES,
     };
 
-    template <Kind kind>
+    String toString(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::CURRENT_ROLES: return "currentRoles";
+            case Kind::ENABLED_ROLES: return "enabledRoles";
+            case Kind::DEFAULT_ROLES: return "defaultRoles";
+        }
+    }
+
     class FunctionCurrentRoles : public IFunction
     {
     public:
-        static constexpr auto name = (kind == Kind::CURRENT_ROLES) ? "currentRoles" : ((kind == Kind::ENABLED_ROLES) ? "enabledRoles" : "defaultRoles");
-        static FunctionPtr create(const ContextPtr & context) { return std::make_shared<FunctionCurrentRoles>(context); }
+        static FunctionPtr create(const ContextPtr & context, Kind kind)
+        {
+            return std::make_shared<FunctionCurrentRoles>(context, kind);
+        }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        String getName() const override { return name; }
+        String getName() const override { return toString(kind); }
 
-        explicit FunctionCurrentRoles(const ContextPtr & context_)
-            : context(context_)
+        explicit FunctionCurrentRoles(const ContextPtr & context_, Kind kind_)
+            : context(context_), kind(kind_)
         {}
 
         size_t getNumberOfArguments() const override { return 0; }
@@ -65,20 +76,21 @@ namespace
     private:
         void initialize() const
         {
-            if constexpr (kind == Kind::CURRENT_ROLES)
+            switch (kind)
             {
-                role_names = context->getRolesInfo()->getCurrentRolesNames();
-            }
-            else if constexpr (kind == Kind::ENABLED_ROLES)
-            {
-                role_names = context->getRolesInfo()->getEnabledRolesNames();
-            }
-            else
-            {
-                static_assert(kind == Kind::DEFAULT_ROLES);
-                const auto & manager = context->getAccessControl();
-                if (const auto user = context->getAccess()->tryGetUser())
-                    role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
+                case Kind::CURRENT_ROLES:
+                    role_names = context->getRolesInfo()->getCurrentRolesNames();
+                    break;
+                case Kind::ENABLED_ROLES:
+                    role_names = context->getRolesInfo()->getEnabledRolesNames();
+                    break;
+                case Kind::DEFAULT_ROLES:
+                {
+                    const auto & manager = context->getAccessControl();
+                    if (const auto user = context->getAccess()->tryGetUser())
+                        role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
+                    break;
+                }
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
@@ -87,15 +99,85 @@ namespace
 
         mutable std::once_flag initialized_flag;
         ContextPtr context;
+        Kind kind;
         mutable Strings role_names;
     };
 }
 
 REGISTER_FUNCTION(CurrentRoles)
 {
-    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>();
-    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>();
+    FunctionDocumentation::Description description_currentRoles = R"(
+Returns an array of the roles which are assigned to the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_currentRoles = "currentRoles()";
+    FunctionDocumentation::Arguments arguments_currentRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_currentRoles = {"Returns an array of the roles which are assigned to the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_currentRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT currentRoles();
+        )",
+        R"(
+┌─currentRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_currentRoles = {21, 9};
+    FunctionDocumentation::Category category_currentRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_currentRoles = {description_currentRoles, syntax_currentRoles, arguments_currentRoles, {}, returned_value_currentRoles, examples_currentRoles, introduced_in_currentRoles, category_currentRoles};
+
+    FunctionDocumentation::Description description_enabledRoles = R"(
+Returns an array of the roles which are enabled for the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_enabledRoles = "enabledRoles()";
+    FunctionDocumentation::Arguments arguments_enabledRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_enabledRoles = {"Returns an array of role names which are enabled for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_enabledRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT enabledRoles();
+        )",
+        R"(
+┌─enabledRoles()─────────────────────────────────────────────────┐
+│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_enabledRoles = {21, 9};
+    FunctionDocumentation::Category category_enabledRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_enabledRoles = {description_enabledRoles, syntax_enabledRoles, arguments_enabledRoles, {}, returned_value_enabledRoles, examples_enabledRoles, introduced_in_enabledRoles, category_enabledRoles};
+
+    FunctionDocumentation::Description description_defaultRoles = R"(
+Returns an array of default roles for the current user.
+    )";
+    FunctionDocumentation::Syntax syntax_defaultRoles = "defaultRoles()";
+    FunctionDocumentation::Arguments arguments_defaultRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_defaultRoles = {"Returns an array of default roles for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_defaultRoles = {
+    {
+        "Usage example",
+        R"(
+SELECT defaultRoles();
+        )",
+        R"(
+┌─defaultRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultRoles = {21, 9};
+    FunctionDocumentation::Category category_defaultRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, {}, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
+
+    factory.registerFunction("currentRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::CURRENT_ROLES); }, documentation_currentRoles);
+    factory.registerFunction("enabledRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::ENABLED_ROLES); }, documentation_enabledRoles);
+    factory.registerFunction("defaultRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::DEFAULT_ROLES); }, documentation_defaultRoles);
 }
 
 }

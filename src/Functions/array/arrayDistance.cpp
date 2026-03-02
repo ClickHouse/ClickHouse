@@ -8,6 +8,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <cmath>
+
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
@@ -81,7 +83,7 @@ struct L2Distance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -123,7 +125,7 @@ struct L2Distance
             state.sum = _mm512_reduce_add_pd(sums);
     }
 
-    AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -189,7 +191,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
     }
 
     template <typename ResultType>
@@ -201,7 +203,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
     }
 };
 
@@ -268,7 +270,7 @@ struct CosineDistance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -331,7 +333,7 @@ struct CosineDistance
         }
     }
 
-    AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -611,7 +613,7 @@ private:
                 if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
                            || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
                 {
-                    if (isArchSupported(TargetArch::AVX512F))
+                    if (isArchSupported(TargetArch::x86_64_v4))
                     {
                         Kernel::template accumulateCombineF32F64<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
                         processed_with_simd = true;
@@ -619,7 +621,7 @@ private:
                 }
                 else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
                 {
-                    if (isArchSupported(TargetArch::AVX512BF16))
+                    if (isArchSupported(TargetArch::x86_64_sapphirerapids))
                     {
                         Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
                         processed_with_simd = true;
@@ -630,7 +632,7 @@ private:
             if (!processed_with_simd)
             {
                 /// Process chunks in a vectorized manner.
-                static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
+                static constexpr size_t VEC_SIZE = 8; /// the choice of the constant has no huge performance impact. 16 breaks interleaving with clang-21. 8 is ok.
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
                 for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
                 {

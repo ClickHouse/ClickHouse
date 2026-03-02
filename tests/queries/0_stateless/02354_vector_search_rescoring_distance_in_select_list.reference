@@ -1,0 +1,33 @@
+Create tables with Array(Float32) and Array(BFloat16) column
+Column: Array(Float32)
+-- Search vector: Array(Float64)
+5	0
+6	0.0087890625
+7	0.041259765625
+8	0.088134765625
+-- Search vector: Array(Float32)
+5	0
+6	0.0087890625
+7	0.041259766
+8	0.088134766
+-- Search vector: Array(BFloat16)
+5	0
+6	0.0087890625
+7	0.041259766
+8	0.088134766
+Column: Array(BFloat16)
+-- Search vector: Array(Float64)
+5	0
+6	0.0087890625
+7	0.03515625
+8	0.088134765625
+-- Search vector: Array(Float32)
+5	0
+6	0.0087890625
+7	0.03515625
+8	0.088134766
+-- Search vector: Array(BFloat16)
+5	0
+6	0.0087890625
+7	0.03515625
+8	0.088134766

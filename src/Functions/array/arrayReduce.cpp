@@ -221,7 +221,7 @@ Applies an aggregate function to array elements and returns its result.
 The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`.
 When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 )";
-    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)]";
+    FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)])";
     FunctionDocumentation::Arguments arguments = {
         {"agg_f", "The name of an aggregate function which should be a constant.", {"String"}},
         {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`.", {"Array(T)"}},
@@ -247,7 +247,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayReduce>(documentation);
 }

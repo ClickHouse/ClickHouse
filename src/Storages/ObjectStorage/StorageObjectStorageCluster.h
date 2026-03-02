@@ -18,7 +18,8 @@ public:
         const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool is_table_function_ = false);
 
     std::string getName() const override;
 
@@ -26,12 +27,15 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
         const ContextPtr & context,
-        size_t number_of_replicas) const override;
+        ClusterPtr cluster,
+        StorageMetadataPtr storage_metadata_snapshot) const override;
 
     String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
 private:
     void updateQueryToSendIfNeeded(

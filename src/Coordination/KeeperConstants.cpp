@@ -1,3 +1,5 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -141,7 +143,7 @@
     M(S3CopyObject) \
     M(S3ListObjects) \
     M(S3HeadObject) \
-    M(S3GetObjectAttributes) \
+    M(S3GetObjectTagging) \
     M(S3CreateMultipartUpload) \
     M(S3UploadPartCopy) \
     M(S3UploadPart) \
@@ -167,7 +169,7 @@
     M(DiskS3CopyObject) \
     M(DiskS3ListObjects) \
     M(DiskS3HeadObject) \
-    M(DiskS3GetObjectAttributes) \
+    M(DiskS3GetObjectTagging) \
     M(DiskS3CreateMultipartUpload) \
     M(DiskS3UploadPartCopy) \
     M(DiskS3UploadPart) \
@@ -209,12 +211,6 @@
     M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds) \
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds) \
     M(AsynchronousReaderIgnoredBytes) \
-\
-    M(FileSegmentWaitReadBufferMicroseconds) \
-    M(FileSegmentReadMicroseconds) \
-    M(FileSegmentCacheWriteMicroseconds) \
-    M(FileSegmentPredownloadMicroseconds) \
-    M(FileSegmentUsedBytes) \
 \
     M(ReadBufferSeekCancelConnection) \
 \
@@ -268,7 +264,14 @@
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
     M(KeeperStorageRehashMicroseconds) \
-    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
+    M(KeeperSetWatchesRequest) \
+    M(KeeperCheckWatchRequest) \
+    M(KeeperAddWatchRequest) \
+    M(KeeperRemoveWatchRequest) \
+    M(KeeperChangelogWrittenBytes) \
+    M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperSnapshotWrittenBytes) \
+    M(KeeperSnapshotFileSyncMicroseconds) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -302,6 +305,11 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+\
+    M(JemallocFailedAllocationSampleTracking) \
+    M(JemallocFailedDeallocationSampleTracking) \
+\
+    M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
 
 namespace ProfileEvents
 {
@@ -390,4 +398,39 @@ extern const std::vector<Metric> keeper_metrics
     APPLY_FOR_KEEPER_METRICS(M)
 };
 #undef M
+}
+
+#define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperReceiveRequestTimeMetricFamily) \
+    M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
+    M(KeeperWritePreCommitTimeMetricFamily) \
+    M(KeeperWriteCommitTimeMetricFamily) \
+    M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
+    M(KeeperSendResponseTimeMetricFamily) \
+    M(KeeperReadWaitForWriteTimeMetricFamily) \
+    M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeBytesMetricFamily) \
+
+
+namespace HistogramMetrics
+{
+#define M(NAME) extern MetricFamily &(NAME);
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+
+
+std::vector<MetricFamily *> keeper_histograms
+{
+#define M(NAME) &(NAME),
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+};
+
+}
+
+#undef APPLY_FOR_KEEPER_HISTOGRAMS
+
+namespace DimensionalMetrics
+{
+    std::vector<MetricFamily *> keeper_dimensional_metrics;
 }

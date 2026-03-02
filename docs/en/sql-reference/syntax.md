@@ -1,10 +1,10 @@
 ---
 description: 'Documentation for Syntax'
-displayed_sidebar: 'sqlreference'
 sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
 title: 'Syntax'
+doc_type: 'reference'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -44,7 +44,7 @@ When a query is received, the server calculates no more than [max_query_size](..
 (by default, 1 MB), and the rest is stream parsed.
 This is to allow for avoiding issues with large `INSERT` queries, which is the recommended way to insert your data in ClickHouse.
 
-When using the [`Values`](../interfaces/formats.md/#data-format-values) format in an `INSERT` query, 
+When using the [`Values`](/interfaces/formats/Values) format in an `INSERT` query, 
 it may appear that data is parsed the same as for expressions in a `SELECT` query however this is not the case. 
 The `Values` format is much more limited.
 
@@ -171,15 +171,32 @@ In string literals, you need to escape at least `'` and `\` using escape codes `
 
 Numeric literals are parsed as follows:
 
-- First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
-- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
-- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- If the literal is prefixed with a minus sign `-`, the token is skipped and the result is negated after parsing.
+- The numeric literal is first parsed as a 64-bit unsigned integer, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+  - If the value is prefixed with `0b` or `0x`/`0X`, the number is parsed as binary or hexadecimal, respectively.
+  - If the value is negative and the absolute magnitude is greater than 2<sup>63</sup>, an error is returned.
+- If unsuccessful, the value is next parsed as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
 - Otherwise, an error is returned.
 
 Literal values are cast to the smallest type that the value fits in.
 For example:
 - `1` is parsed as `UInt8`
 - `256` is parsed as `UInt16`. 
+
+:::note Important
+Integer values wider than 64-bit (`UInt128`, `Int128`, `UInt256`, `Int256`) must be cast to a larger type to parse properly:
+
+```sql
+-170141183460469231731687303715884105728::Int128
+340282366920938463463374607431768211455::UInt128
+-57896044618658097711785492504343953926634992332820282019728792003956564819968::Int256
+115792089237316195423570985008687907853269984665640564039457584007913129639935::UInt256
+```
+
+This bypasses the above algorithm and parses the integer with a routine that supports arbitrary precision.
+
+Otherwise, the literal will be parsed as a floating-point number and thus subject to loss of precision due to truncation.
+:::
 
 For more information, see [Data types](../sql-reference/data-types/index.md).
 
@@ -223,7 +240,7 @@ The following should be noted for `NULL`:
 
 - Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isNull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isNotNull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -366,19 +383,22 @@ For more information, see the sections:
 
 ## Expressions {#expressions}
 
-An expression can be the following: 
+An expression can be any of the following:
 - a function
 - an identifier
 - a literal
-- an application of an operator
+- the application of an operator
 - an expression in brackets
 - a subquery
-- or an asterisk. 
+- an asterisk
 
 It can also contain an [alias](#expression-aliases).
 
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
+
+A constant expression is an expression whose result is known during query analysis, i.e. before execution.
+For example, expressions over literals are constant expressions.
 
 ## Expression Aliases {#expression-aliases}
 
@@ -392,7 +412,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
+| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#CAST) function, the `AS` keyword has another meaning. See the description of the function. |
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 

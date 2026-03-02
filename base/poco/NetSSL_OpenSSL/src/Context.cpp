@@ -408,7 +408,7 @@ void Context::flushSessionCache()
 	poco_assert (isForServerUse());
 
 	Poco::Timestamp now;
-	SSL_CTX_flush_sessions(_pSSLContext, static_cast<long>(now.epochTime()));
+	SSL_CTX_flush_sessions_ex(_pSSLContext, static_cast<long>(now.epochTime()));
 }
 
 

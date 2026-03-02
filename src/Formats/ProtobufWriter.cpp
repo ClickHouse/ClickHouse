@@ -45,8 +45,6 @@ namespace
         buf.resize_assume_reserved(ptr - buf.data());
     }
 
-    UInt64 encodeZigZag(Int64 value) { return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63); }
-
     enum WireType
     {
         VARINT = 0,
