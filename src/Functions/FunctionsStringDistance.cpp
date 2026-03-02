@@ -10,6 +10,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
 #include <climits>
 
@@ -318,6 +320,188 @@ struct ByteEditDistanceMyersImpl
     }
 };
 
+template <bool is_utf8, typename Word = UInt64>
+struct BlockMyersEditDistance
+{
+    struct PatternMasksASCII
+    {
+        static constexpr size_t W = sizeof(Word) * 8;
+        UInt32 num_blocks = 0;
+        std::array<std::vector<Word>, 256> tbl; // tbl[c][k] = bitmask of positions of char c in block k of the needle
+
+        void build(const UInt8 * needle, UInt32 m)
+        {
+            num_blocks = (m + W - 1) / W; // ceil(m / W)
+            for (auto & v : tbl)
+                v.assign(num_blocks, Word(0));
+            for (UInt32 i = 0; i < m; ++i)
+                tbl[needle[i]][i / W] |= Word(1) << (i % W);
+        }
+
+        // Returns pointer to the beginning of the block array for character c, or pointer to empty array if c does not appear in the needle.
+        const Word * operator[](UInt8 c) const { return tbl[c].data(); }
+    };
+
+    struct PatternMasksUTF8
+    {
+        static constexpr size_t W = sizeof(Word) * 8;
+        UInt32 num_blocks = 0;
+        absl::flat_hash_map<UInt32, std::vector<Word>> tbl;
+
+        void build(const UInt32 * needle, UInt32 m)
+        {
+            num_blocks = (m + W - 1) / W;
+            for (UInt32 i = 0; i < m; ++i)
+            {
+                auto [it, inserted] = tbl.try_emplace(needle[i], num_blocks, Word(0));
+                it->second[i / W] |= Word(1) << (i % W);
+            }
+        }
+
+        const Word * operator[](UInt32 c) const
+        {
+            auto it = tbl.find(c);
+            return (it == std::cend(tbl)) ? nullptr : it->second.data();
+        }
+    };
+
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+    static constexpr size_t W = sizeof(Word) * 8;
+
+    // Requires haystack_len and needle_len > 0
+    static UInt32 distance(
+        const SymbolT * __restrict haystack, UInt32 haystack_len,
+        const SymbolT * __restrict needle,   UInt32 needle_len)
+    {
+        const UInt32 num_blocks   = (needle_len + W - 1) / W;
+        const UInt32 last         = num_blocks - 1;
+        const UInt32 bits_in_last = needle_len - last * W;   // in [1, W]
+        const Word last_mask  = (bits_in_last == W)
+                                    ? ~Word(0)
+                                    : (Word(1) << bits_in_last) - Word(1);
+
+        // score_mask selects the bit corresponding to the last character
+        // of the needle (position m-1). Its state determines whether
+        // the edit distance increases or decreases for this column.
+        const Word score_mask = Word(1) << (bits_in_last - 1);
+
+        using PatternMasks = std::conditional_t<is_utf8, PatternMasksUTF8, PatternMasksASCII>;
+        PatternMasks PM_tbl;
+        PM_tbl.build(needle, needle_len);
+
+        // As in the non-blocked version, but this time per block:
+        // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
+        std::vector<Word> VP(num_blocks, ~Word(0));
+        std::vector<Word> VN(num_blocks, Word(0));
+        UInt32 score = needle_len;
+
+        for (UInt32 col = 0; col < haystack_len; ++col)
+        {
+            const SymbolT ch = haystack[col];
+            const Word *  pm = PM_tbl[ch]; // may be nullptr (no match anywhere)
+
+            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks)
+            // Carry from the addition within block k propagates to block k+1.
+            // carry = 0 initially (there is no carry into block 0).
+            Word add_carry = 0;
+
+            // Store HP and HN in temporary arrays for now.
+            // We cannot overwrite VP/VN yet because we still need their old values.
+            // Small needle - use stack scratch:
+            Word hp_scratch[64], hn_scratch[64], d0_scratch[64]; // max ~4096-bit needle
+            // Large needle - use vector if needed
+            std::vector<Word> hp_heap, hn_heap, d0_heap;
+            Word *hp_arr = hp_scratch, *hn_arr = hn_scratch, *d0_arr = d0_scratch;
+            if (num_blocks > 64)
+            {
+                hp_heap.resize(num_blocks); hn_heap.resize(num_blocks); d0_heap.resize(num_blocks);
+                hp_arr = hp_heap.data(); hn_arr = hn_heap.data(); d0_arr = d0_heap.data();
+            }
+
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                const Word pm_k = pm ? pm[k] : Word(0);
+                const Word vp   = VP[k];
+                const Word vn   = VN[k];
+
+                Word X  = pm_k | vn;
+                Word Y  = X & vp;
+
+                // Blocked addition: sum = Y + vp + add_carry
+                // carry_out = overflow of the Word addition
+                Word s1 = Y + vp;
+                Word c1 = (s1 < Y) ? Word(1) : Word(0);
+                Word s2 = s1 + add_carry;
+                Word c2 = (s2 < s1) ? Word(1) : Word(0);
+                add_carry = c1 | c2;  // single-bit carry out
+
+                Word D0 = (s2 ^ vp) | X;
+                Word HP = vn  | ~(D0 | vp);
+                Word HN = vp & D0;
+
+                hp_arr[k] = HP;
+                hn_arr[k] = HN;
+                d0_arr[k] = D0;
+            }
+
+            // Update the edit distance score from the last block
+            if (hp_arr[last] & score_mask) ++score;
+            if (hn_arr[last] & score_mask) --score;
+
+            // Pass 2: shift HP/HN left by 1 (cross-block) and update VP/VN
+            // In the single-word version this is just: (HP << 1) | 1.
+            // With multiple blocks, the shift must carry across block boundaries:
+            //   - For block 0: shift left and insert 1 as the lowest bit.
+            //   - For block k > 0: shift left and insert the top bit (MSB)
+            //     from the previous block.
+            // HN is shifted the same way, except its first inserted bit is 0.
+            Word hp_carry_in = Word(1); // the "+1" in the original formula
+            Word hn_carry_in = Word(0);
+
+            // For each block:
+            // 1) Shift HP and HN left by one bit.
+            //    - The highest bit becomes the carry into the next block.
+            //    - The lowest bit comes from the previous block (hp_carry_in / hn_carry_in).
+            // 2) In the last block, mask off bits beyond the pattern length
+            //    so we don’t affect unused bits.
+            // 3) Update VP and VN using the standard Myers formulas.
+            // 4) Pass the outgoing carry to the next block.
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                Word HP = hp_arr[k];
+                Word HN = hn_arr[k];
+                Word D0 = d0_arr[k];
+
+                // Capture the bit that will shift into the next block
+                Word hp_carry_out = HP >> (W - 1);
+                Word hn_carry_out = HN >> (W - 1);
+
+                Word HP_sh = (HP << 1) | hp_carry_in;
+                Word HN_sh = (HN << 1) | hn_carry_in;
+
+                // Mask last block: bits above needle_len - 1 must stay 0/1
+                // VP is initialised to ~0 so we must keep top bits of last block as 1.
+                // The mask only applies to HP_sh and HN_sh (and D0 for last block).
+                if (k == last)
+                {
+                    HP_sh &= last_mask;
+                    HN_sh &= last_mask;
+                    D0    &= last_mask;
+                }
+
+                // VP/VN update (same formula as single-block)
+                VP[k] = HN_sh | ~(D0 | HP_sh);
+                VN[k] = HP_sh & D0;
+
+                hp_carry_in = hp_carry_out;
+                hn_carry_in = hn_carry_out;
+            }
+        }
+
+        return score;
+    }
+};
+
 
 template <bool is_utf8>
 struct ByteEditDistanceDPImpl
@@ -424,16 +608,16 @@ struct ByteEditDistanceImpl
             }
         }
 
-        auto dispatchMyers = [&]<typename T>()
+        auto dispatchMyers = [&]<typename F>()
         {
             if constexpr (is_utf8)
             {
-                return ByteEditDistanceMyersImpl<is_utf8, T>::distance(
+                return F::distance(
                     haystack_utf8.data(), static_cast<UInt32>(haystack_size), needle_utf8.data(), static_cast<UInt32>(needle_size));
             }
             else
             {
-                return ByteEditDistanceMyersImpl<is_utf8, T>::distance(
+                return F::distance(
                     reinterpret_cast<const SymbolT *>(haystack),
                     static_cast<UInt32>(haystack_size),
                     reinterpret_cast<const SymbolT *>(needle),
@@ -441,12 +625,21 @@ struct ByteEditDistanceImpl
             }
         };
 
+        constexpr auto cutoff_size = []{
+            if constexpr (!is_utf8)
+                return 8192;
+            else
+                return 4096;
+        }();
+
         if (needle_size <= sizeof(UInt64) * CHAR_BIT)
-            return dispatchMyers.template operator()<UInt64>();
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt64>>();
         else if (needle_size <= sizeof(UInt128) * CHAR_BIT)
-            return dispatchMyers.template operator()<UInt128>();
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt128>>();
         else if (needle_size <= sizeof(UInt256) * CHAR_BIT)
-            return dispatchMyers.template operator()<UInt256>();
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt256>>();
+        else if (needle_size <= cutoff_size)
+            return dispatchMyers.template operator()<BlockMyersEditDistance<is_utf8, UInt64>>();
         else
         {
             if constexpr (is_utf8)
