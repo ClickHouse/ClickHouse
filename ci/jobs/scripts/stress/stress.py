@@ -266,7 +266,7 @@ def run_func_test(
         commands.append(full_command)
         check_command = (
             full_command
-            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+            + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
         try:
