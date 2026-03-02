@@ -1062,7 +1062,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings 
 
     if (query_plan)
     {
-        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
     }
     else
     {
