@@ -95,16 +95,20 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
             need_parens = true;
 
         /// When `settings_ast` is set on the whole SelectWithUnionQuery (inherited
-        /// from ASTQueryWithOutput), the base class formats `SETTINGS ...` after
-        /// the UNION chain. Without parentheses around individual SELECTs, the
+        /// from ASTQueryWithOutput) and no `out_file` or `format_ast` precedes it
+        /// in the formatted output, the base class formats `SETTINGS ...` immediately
+        /// after the UNION chain. Without parentheses around individual SELECTs, the
         /// re-parser's `ParserSelectQuery` would consume SETTINGS as part of the
         /// last individual SELECT, moving it from SelectWithUnionQuery to the last
         /// SelectQuery and breaking the formatting roundtrip.
+        /// When `out_file` or `format_ast` is present, they are formatted before
+        /// SETTINGS, and `ParserSelectQuery` stops before them (it doesn't handle
+        /// INTO OUTFILE or FORMAT), so SETTINGS remains on SelectWithUnionQuery.
         /// Wrapping each SELECT in parentheses prevents this: the parser treats
         /// each `(SELECT ...)` as a self-contained subquery, and SETTINGS stays on
         /// the outer SelectWithUnionQuery. `ParserUnionQueryElement` flattens
         /// single-child subqueries back to `SelectQuery`, preserving the AST structure.
-        if (settings_ast && (*it)->as<ASTSelectQuery>())
+        if (settings_ast && !out_file && !format_ast && (*it)->as<ASTSelectQuery>())
             need_parens = true;
 
         if (need_parens)
