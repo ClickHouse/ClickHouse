@@ -23,7 +23,6 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
-#include <DataTypes/FieldToDataType.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
@@ -546,13 +545,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+void ColumnVector<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
-    const auto & val = castToNearestFieldType(data[n]);
     if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(val);
-    return FieldToDataType()(val);
+        name_buf << FieldVisitorToString()(castToNearestFieldType(data[n]));
 }
 
 template <typename T>
@@ -1042,45 +1039,51 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <typename T>
-void ColumnVector<T>::getExtremes(Field & min, Field & max) const
+void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    size_t size = data.size();
-
-    if (size == 0)
+    if (start >= end)
     {
         min = T(0);
         max = T(0);
         return;
     }
 
-    bool has_value = false;
-
     /** Skip all NaNs in extremes calculation.
         * If all values are NaNs, then return NaN.
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
-
-    T cur_min = NaNOrZero<T>();
-    T cur_max = NaNOrZero<T>();
-
-    for (const T & x : data)
+    size_t i = start;
+    if constexpr (is_floating_point<T>)
     {
-        if (isNaN(x))
-            continue;
-
-        if (!has_value)
+        for (; i < end; i++)
         {
-            cur_min = x;
-            cur_max = x;
-            has_value = true;
-            continue;
+            if (!isNaN(data[i]))
+                break;
+        }
+        if (i == end)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+    }
+
+    T cur_min = data.data()[i];
+    T cur_max = data.data()[i];
+
+    i++;
+    for (; i < end; i++)
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (isNaN(data[i]))
+                continue;
         }
 
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        const T & x = data.data()[i];
+        cur_min = std::min(x, cur_min);
+        cur_max = std::max(x, cur_max);
     }
 
     min = NearestFieldType<T>(cur_min);

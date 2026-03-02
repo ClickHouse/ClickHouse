@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>

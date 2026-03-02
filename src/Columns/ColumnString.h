@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -11,6 +10,7 @@
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 
@@ -20,11 +20,6 @@ class SipHash;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 class Arena;
 
@@ -115,12 +110,10 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-
         if (options.notFull(name_buf))
             writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-        return std::make_shared<DataTypeString>();
     }
 
     std::string_view getDataAt(size_t n) const override
@@ -202,7 +195,7 @@ public:
     void popBack(size_t n) override
     {
         if (n > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+            throwCannotPopBack(n, getName(), size());
 
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
@@ -301,7 +294,7 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool canBeInsideNullable() const override { return true; }
 

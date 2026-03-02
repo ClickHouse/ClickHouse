@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
@@ -270,7 +269,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
         name_buf << '{';
@@ -289,7 +288,7 @@ DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & nam
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameAndTypeImpl(name_buf, n, options);
+            column->getValueNameImpl(name_buf, n, options);
         }
     }
 
@@ -310,7 +309,7 @@ DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & nam
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameAndTypeImpl(name_buf, n, options);
+            column->getValueNameImpl(name_buf, n, options);
         }
     }
 
@@ -346,14 +345,12 @@ DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & nam
             const auto column = decoded_type->createColumn();
             decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-            column->getValueNameAndTypeImpl(name_buf, 0, options);
+            column->getValueNameImpl(name_buf, 0, options);
         }
     }
 
     if (options.notFull(name_buf))
         name_buf << "}";
-
-    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -1213,7 +1210,7 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         permuted_dynamic_paths[path] = column->permute(perm, limit);
 
     auto permuted_shared_data = shared_data->permute(perm, limit);
-    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
@@ -1542,7 +1539,7 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
+void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
 {
     if (empty())
     {

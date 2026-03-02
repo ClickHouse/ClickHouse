@@ -679,8 +679,7 @@ def test_not_specified_catalog_type(started_cluster):
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
-    with pytest.raises(Exception):
-        node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]

@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <gtest/gtest.h>
+#include <Common/ErrnoException.h>
 
 #define EXPECT_THROW_ERROR_CODE(statement, expected_exception, expected_code)    \
     EXPECT_THROW(                                                                \

@@ -486,9 +486,9 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
+                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>> || std::is_same_v<Op<T0>, SignImpl<T0>>)
                     {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
+                        /// We don't need to cast the argument to the result type if it's abs/bitcount/sign function.
                         result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
                     }
                     else
