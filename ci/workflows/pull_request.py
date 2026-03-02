@@ -131,6 +131,9 @@ workflow = Workflow.Config(
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
         JobConfigs.llvm_coverage_job,
+        JobConfigs.sqllogic_test_master_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[

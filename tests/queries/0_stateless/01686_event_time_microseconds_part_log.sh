@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} -q "
     WITH (
          SELECT (event_time, event_time_microseconds)
          FROM system.part_log
-         WHERE table = 'table_with_single_pk' AND database = currentDatabase() AND event_type = 'NewPart'
+         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'table_with_single_pk' AND database = currentDatabase() AND event_type = 'NewPart'
          ORDER BY event_time DESC
          LIMIT 1
     ) AS time
@@ -76,7 +76,7 @@ ${CLICKHOUSE_CLIENT} -q "
     WITH (
          SELECT (event_time, event_time_microseconds)
          FROM system.part_log
-         WHERE table = 'table_with_single_pk' AND database = currentDatabase() AND event_type = 'RemovePart'
+         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = 'table_with_single_pk' AND database = currentDatabase() AND event_type = 'RemovePart'
          ORDER BY event_time DESC
          LIMIT 1
     ) AS time

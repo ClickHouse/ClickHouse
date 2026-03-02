@@ -7,6 +7,13 @@
 #    include <Common/Exception.h>
 #    include <Core/ValueWithType.h>
 #    include <DataTypes/IDataType.h>
+/// On PPC64LE, termios.h defines CR1, CR2, CR3 as macros which conflict
+/// with parameter names in llvm/IR/ConstantRange.h (included transitively).
+#    if defined(__powerpc64__)
+#        undef CR1
+#        undef CR2
+#        undef CR3
+#    endif
 #    include <llvm/IR/IRBuilder.h>
 
 

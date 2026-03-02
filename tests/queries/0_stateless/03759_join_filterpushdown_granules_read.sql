@@ -69,7 +69,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 2000, 'ok', format('error: {} @ {}', ProfileEvents['JoinResultRowCount'], query_id)),
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-    AND event_date >= yesterday() AND query_kind = 'Select'
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select'
     AND event_time >= (SELECT ts FROM start_ts)
     AND log_comment IN ('left_join', 'left_join_view')
 ;
@@ -82,7 +82,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 2000, 'ok', format('error: {} @ {}', ProfileEvents['JoinResultRowCount'], query_id)),
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-    AND event_date >= yesterday() AND query_kind = 'Select'
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select'
     AND event_time >= (SELECT ts FROM start_ts)
     AND log_comment IN ('right_join', 'right_join_view')
 ;
