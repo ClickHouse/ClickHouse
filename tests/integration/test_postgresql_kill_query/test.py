@@ -163,7 +163,7 @@ SETTINGS max_block_size = 10000""",
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chuck from stream")
+    node1.wait_for_log_line("Generate a chunk from stream")
     time.sleep(1)
 
     node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
@@ -243,7 +243,7 @@ SETTINGS max_block_size = 10000"""
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Generate a chuck from stream")
+    node1.wait_for_log_line("Generate a chunk from stream")
     time.sleep(2)
 
     node1.stop_clickhouse_client()
