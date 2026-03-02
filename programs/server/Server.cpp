@@ -1497,12 +1497,9 @@ try
 
         LOG_DEBUG(log, "Shut down storages.");
 
-#if USE_NURAFT
         /// Signal Keeper TCP handlers to close before waiting for connections,
         /// otherwise they keep running indefinitely and block shutdown.
-        if (auto keeper_dispatcher = global_context->tryGetKeeperDispatcher())
-            keeper_dispatcher->signalShutdown();
-#endif
+        global_context->signalKeeperDispatcherShutdown();
 
         if (!servers_to_start_before_tables.empty())
         {

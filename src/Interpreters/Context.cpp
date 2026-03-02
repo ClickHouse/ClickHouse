@@ -5012,6 +5012,14 @@ void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) 
 }
 #endif
 
+void Context::signalKeeperDispatcherShutdown() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->signalShutdown();
+#endif
+}
+
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
