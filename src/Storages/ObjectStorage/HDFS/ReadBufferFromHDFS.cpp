@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
+#include <limits>
 
 
 namespace DB
@@ -164,23 +165,47 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
-        auto bytes_read = wrapErr<tSize>(hdfsPread, fs.get(), fin, buffer, safe_cast<int>(size), offset);
-        rlock.unlock(std::max(0, bytes_read));
 
-        if (bytes_read < 0)
+        constexpr size_t max_single_pread = static_cast<size_t>(std::numeric_limits<int>::max());
+        size_t total_read = 0;
+
+        while (total_read < size)
         {
-            throw Exception(
-                ErrorCodes::HDFS_ERROR,
-                "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                hdfs_uri,
-                hdfs_file_path,
-                std::string(hdfsGetLastError()));
+            const size_t remaining = size - total_read;
+            const size_t current_read_size = std::min(remaining, max_single_pread);
+
+            const auto bytes_read = wrapErr<tSize>(
+                hdfsPread,
+                fs.get(),
+                fin,
+                buffer + total_read,
+                safe_cast<int>(current_read_size),
+                safe_cast<tOffset>(offset + total_read));
+
+            if (bytes_read < 0)
+            {
+                throw Exception(
+                    ErrorCodes::HDFS_ERROR,
+                    "Fail to read from HDFS: {}, file path: {}. Error: {}",
+                    hdfs_uri,
+                    hdfs_file_path,
+                    std::string(hdfsGetLastError()));
+            }
+
+            if (!bytes_read)
+                break;
+
+            total_read += static_cast<size_t>(bytes_read);
+
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->throttle(bytes_read);
+
+            if (static_cast<size_t>(bytes_read) < current_read_size)
+                break;
         }
-        if (bytes_read && read_settings.remote_throttler)
-        {
-            read_settings.remote_throttler->throttle(bytes_read);
-        }
-        return bytes_read;
+
+        rlock.unlock(total_read);
+        return total_read;
     }
 };
 
