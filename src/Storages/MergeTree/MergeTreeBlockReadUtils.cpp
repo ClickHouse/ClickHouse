@@ -157,7 +157,7 @@ NameSet injectRequiredColumns(
     if (!data_part_info_for_reader.isProjectionPart())
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases)
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 

@@ -7,7 +7,7 @@ CREATE TABLE t_log_alias (c0 Array(String) ALIAS [toString(_table)], c1 Int64) E
 INSERT INTO t_log_alias (c1) VALUES (1), (2), (3);
 
 SELECT c0 FROM t_log_alias;
-SELECT c0.size0 FROM t_log_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT c0.size0 FROM t_log_alias;
 
 DROP TABLE t_log_alias;
 
@@ -17,6 +17,6 @@ CREATE TABLE t_tinylog_alias (c0 Array(String) ALIAS [toString(_table)], c1 Int6
 INSERT INTO t_tinylog_alias (c1) VALUES (1), (2), (3);
 
 SELECT c0 FROM t_tinylog_alias;
-SELECT c0.size0 FROM t_tinylog_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT c0.size0 FROM t_tinylog_alias;
 
 DROP TABLE t_tinylog_alias;
