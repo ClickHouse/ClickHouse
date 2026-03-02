@@ -37,6 +37,7 @@ CREATE VIEW text_index_cache_stats AS (
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
+  ORDER BY event_time_microseconds DESC
   LIMIT 1
 );
 
@@ -51,6 +52,12 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_128');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_128');
+
+SELECT '--- cache hit on a previously queried token.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_000');
 
 SELECT '--- cache miss on a token not previously queried.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_127');
@@ -73,6 +80,12 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_129');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_129');
+
+SELECT '--- cache hit on a token queried after clearing cache.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_125');
 
 SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
 DROP TABLE tab;
