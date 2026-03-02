@@ -71,5 +71,6 @@ WHERE number BETWEEN 1e6 AND 1e6 + 100
 SELECT number
 FROM numbers()
 WHERE number >= 1e15
+  AND number < 1e15 + 100000
   AND bitAnd(sipHash64(number), 0xFFFFF) = 0
 LIMIT 1;
