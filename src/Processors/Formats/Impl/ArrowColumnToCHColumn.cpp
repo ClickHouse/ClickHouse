@@ -1165,12 +1165,12 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             DataTypePtr array_type;
             /// If type hint is Nested, we should return Nested type,
             /// because we differentiate Nested and simple Array(Tuple)
-            if (type_hint && isNested(type_hint))
+            const auto * tuple_type = type_hint && isNested(type_hint)
+                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
+                : nullptr;
+            if (tuple_type)
             {
-                if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_column.type.get()))
-                    array_type = createNested(tuple_type->getElements(), tuple_type->getElementNames());
-                else
-                    array_type = std::make_shared<DataTypeArray>(nested_column.type);
+                array_type = createNested(tuple_type->getElements(), tuple_type->getElementNames());
             }
             else
             {
