@@ -8,9 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS error_log;"
 
 # Get the previous number of errors for 111, 222 and 333
-errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 111")
-errors_222=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 222")
-errors_333=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 333")
+errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 111")
+errors_222=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 222")
+errors_333=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333")
 
 # Throw three random errors: 111, 222 and 333
 $CLICKHOUSE_CLIENT -m -q "
@@ -22,9 +22,9 @@ SYSTEM FLUSH LOGS error_log;
 
 # Check that the three random errors are propagated
 $CLICKHOUSE_CLIENT -m -q "
-SELECT sum(value) > $errors_111 FROM system.error_log WHERE code = 111;
-SELECT sum(value) > $errors_222 FROM system.error_log WHERE code = 222;
-SELECT sum(value) > $errors_333 FROM system.error_log WHERE code = 333;
+SELECT sum(value) > $errors_111 FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 111;
+SELECT sum(value) > $errors_222 FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 222;
+SELECT sum(value) > $errors_333 FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333;
 "
 
 # Ensure that if we throw them again, they're still propagated
@@ -36,21 +36,21 @@ SYSTEM FLUSH LOGS error_log;
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-SELECT sum(value) > $(($errors_111+1)) FROM system.error_log WHERE code = 111;
-SELECT sum(value) > $(($errors_222+1)) FROM system.error_log WHERE code = 222;
-SELECT sum(value) > $(($errors_333+1)) FROM system.error_log WHERE code = 333;
+SELECT sum(value) > $(($errors_111+1)) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 111;
+SELECT sum(value) > $(($errors_222+1)) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 222;
+SELECT sum(value) > $(($errors_333+1)) FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333;
 "
 
 # Test to check if columns with prefix last_error are populated
 $CLICKHOUSE_CLIENT -m -q "
 SELECT not isNull(last_error_time), last_error_query_id != '', last_error_message != ''
-FROM system.error_log WHERE code = 333 ORDER BY last_error_time DESC LIMIT 1
+FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333 ORDER BY last_error_time DESC LIMIT 1
 FORMAT CSV;
 "
 
 $CLICKHOUSE_CLIENT -m -q "
 SELECT arrayCount(x -> x != '', arrayMap(x -> demangle(addressToSymbol(x)), last_error_trace)) > 10
-FROM system.error_log WHERE code = 333 ORDER BY last_error_time DESC LIMIT 1
+FROM system.error_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND code = 333 ORDER BY last_error_time DESC LIMIT 1
 FORMAT CSV
 SETTINGS allow_introspection_functions=1;
 "

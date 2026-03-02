@@ -194,7 +194,7 @@ SELECT quantile(val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, {}, documentation});
+    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
@@ -234,7 +234,7 @@ SELECT quantiles(0.25, 0.5, 0.75, 0.9)(val) FROM t;
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, documentation_quantiles, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);

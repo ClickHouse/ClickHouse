@@ -225,6 +225,16 @@
             background-color: var(--button-color);
         }
 
+        .loading-hourglass
+        {
+            display: inline-block;
+            margin-left: 0.5em;
+            color: var(--misc-text-color);
+            animation: hourglass-animation 2s linear infinite;
+            line-height: 0;
+            vertical-align: middle;
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -393,7 +403,7 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus, #download-div:hover, #download-div:focus
+        #run:hover, #run:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -403,6 +413,47 @@
         {
             grid-area: hint;
             color: var(--misc-text-color);
+        }
+
+        #copy-div
+        {
+            display: none;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 0.65rem;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .copy-balloon
+        {
+            position: absolute;
+            bottom: calc(100% + 0.25rem);
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--button-color);
+            color: var(--button-text-color);
+            padding: 0.25rem 0.5rem;
+            white-space: nowrap;
+            font-size: 0.85em;
+            opacity: 0;
+            animation: balloon-fade 1s ease-out;
+            pointer-events: none;
+        }
+
+        @keyframes balloon-fade
+        {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        #copy-icon
+        {
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
         }
 
         #download-div
@@ -421,6 +472,7 @@
         {
             width: 1em;
             height: 1em;
+            vertical-align: middle;
         }
 
         #download-dropdown
@@ -623,6 +675,12 @@
                 <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <query-progress id="query-progress"></query-progress>
+                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                </div>
                 <div id="download-div" class="shadow">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -1117,6 +1175,7 @@ class QueryResultElement extends HTMLElement
     get isExplainGraph() { return this._is_explain_graph; }
     get explainGraph() { return this._explain_graph; }
     set queryText(v) { this._queryText = v; }
+    get rawText() { return this._dataUnparsed.textContent; }
 
     _clearElement(elem)
     {
@@ -1987,7 +2046,14 @@ async function loadDatabases(server_address, user, password) {
 
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                loadTables(server_address, user, password, elem.database, database).then(ok => { if (ok !== false) database.dataset['opened'] = 1; });
+                let hourglass = document.createElement('span');
+                hourglass.className = 'loading-hourglass';
+                hourglass.textContent = '\u29D7';
+                database_link.after(hourglass);
+                loadTables(server_address, user, password, elem.database, database).then(ok => {
+                    hourglass.remove();
+                    if (ok !== false) database.dataset['opened'] = 1;
+                });
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
@@ -2108,7 +2174,7 @@ databases_toggle.addEventListener('click', e => {
 });
 
 document.getElementById('menu').addEventListener('click', e => {
-    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('#databases')) {
+    if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
 });
@@ -2204,6 +2270,7 @@ async function postImpl(posted_request_num, query)
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
 
     clear();
     progressEl.start();
@@ -2243,6 +2310,7 @@ async function postImpl(posted_request_num, query)
 
             progressEl.clear();
             document.getElementById('download-div').style.display = 'none';
+            document.getElementById('copy-div').style.display = 'none';
             return;
         } else if (format == default_format) {
             is_table = true;
@@ -2315,6 +2383,7 @@ async function postImpl(posted_request_num, query)
         logoEl.style.display = 'none';
         progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
+        document.getElementById('copy-div').style.display = 'none';
         return;
     }
 
@@ -2327,6 +2396,7 @@ async function postImpl(posted_request_num, query)
 
     progressEl.finish();
     document.getElementById('download-div').style.display = 'block';
+    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
     last_query_for_download = query;
 
     if (is_raw) {
@@ -2434,6 +2504,7 @@ async function restoreFromHistory(state) {
     }
 
     progressEl.finish();
+    document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
 
     if (is_raw) {
         resultEl.elapsedNs = state.elapsed_ns;
@@ -2822,6 +2893,29 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+// Copy raw result to clipboard
+document.getElementById('copy-div').addEventListener('click', function() {
+    let text = resultEl.rawText;
+    if (!text) return;
+
+    let button = this;
+    let showBalloon = function(message) {
+        let balloon = document.createElement('span');
+        balloon.className = 'copy-balloon';
+        balloon.textContent = message;
+        button.appendChild(balloon);
+        balloon.addEventListener('animationend', () => balloon.remove());
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+            () => showBalloon('Result copied'),
+            () => showBalloon('Copy failed'));
+    } else {
+        showBalloon('Copy not supported');
+    }
+});
 
 // Download functionality
 let last_query_for_download = '';

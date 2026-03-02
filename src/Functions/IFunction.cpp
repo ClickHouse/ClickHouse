@@ -637,7 +637,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
         {
             bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
-                arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+                arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {
