@@ -807,7 +807,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         dp->set_sync(rg.nextSmallNumber() < 3);
         if (rg.nextSmallNumber() < 3)
         {
-            generateSettingValues(rg, serverSettings, dp->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, dp->mutable_setting_values());
         }
     }
 }
@@ -930,7 +930,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         }
         if (rg.nextSmallNumber() < 3)
         {
-            generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
         }
     }
 }
@@ -956,7 +956,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     {
         SettingValues * vals = ct->mutable_setting_values();
 
-        generateSettingValues(rg, serverSettings, vals);
+        generateSettingValues(rg, formatSettings, vals);
         if (rg.nextSmallNumber() < 3)
         {
             SetValue * sv = vals->add_other_values();
@@ -1150,7 +1150,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     {
         SettingValues * vals = dt->mutable_setting_values();
 
-        generateSettingValues(rg, serverSettings, vals);
+        generateSettingValues(rg, formatSettings, vals);
         if (rg.nextSmallNumber() < 3)
         {
             SetValue * sv = vals->add_other_values();
@@ -1520,7 +1520,7 @@ void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg,
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, st->mutable_setting_values());
     }
 }
 
@@ -1575,7 +1575,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     trunc->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, trunc->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, trunc->mutable_setting_values());
     }
 }
 
@@ -1663,7 +1663,7 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, exc->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, exc->mutable_setting_values());
     }
 }
 
@@ -1991,7 +1991,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
                      generateHotTableSettingsValues(rg, false, svs);
                  if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
-                     generateSettingValues(rg, serverSettings, svs);
+                     generateSettingValues(rg, formatSettings, svs);
              }},
             {5,
              [&]
@@ -2003,7 +2003,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
                      generateHotTableSettingList(rg, sl);
                  if (!sl->has_setting() || rg.nextSmallNumber() < 4)
-                     generateSettingList(rg, serverSettings, sl);
+                     generateSettingList(rg, formatSettings, sl);
              }},
             /// Projections
             {2 * static_cast<uint32_t>(no_oracle && is_mt), [&] { addTableProjection(rg, t, true, ati->mutable_add_projection()); }},
@@ -2254,7 +2254,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
     setClusterClause(rg, cluster, at->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, at->mutable_setting_values());
     }
 }
 
@@ -2317,7 +2317,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, att->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, att->mutable_setting_values());
     }
 }
 
@@ -2374,7 +2374,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     det->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, det->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, det->mutable_setting_values());
     }
 }
 
@@ -2730,7 +2730,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
 
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, st->mutable_setting_values());
     }
 }
 
@@ -3094,7 +3094,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     setClusterClause(rg, cluster, ren->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, ren->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, ren->mutable_setting_values());
     }
 }
 
@@ -3119,7 +3119,7 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, kil->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, kil->mutable_setting_values());
     }
 }
 
@@ -3204,7 +3204,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateAlter(rg, in_parallel, sq->mutable_alter());
             break;
         case SQLOp::SetValues:
-            generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, sq->mutable_setting_values());
             break;
         case SQLOp::Attach:
             generateAttach(rg, sq->mutable_attach());

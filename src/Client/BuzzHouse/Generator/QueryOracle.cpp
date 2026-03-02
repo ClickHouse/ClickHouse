@@ -399,7 +399,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             gen.generateNextOptimizeTableInternal(rg, t, true, ot);
             if (rg.nextSmallNumber() < 3)
             {
-                gen.generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
             }
             intermediate_queries.emplace_back(next);
         }
@@ -423,11 +423,11 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
             if (rg.nextSmallNumber() < 4)
             {
-                gen.generateSettingValues(rg, serverSettings, det->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, det->mutable_setting_values());
             }
             if (rg.nextSmallNumber() < 4)
             {
-                gen.generateSettingValues(rg, serverSettings, att->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, att->mutable_setting_values());
             }
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
@@ -529,7 +529,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 }
                 if (rg.nextSmallNumber() < 3)
                 {
-                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+                    gen.generateSettingValues(rg, formatSettings, at->mutable_setting_values());
                 }
             }
             else

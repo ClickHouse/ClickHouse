@@ -1482,7 +1482,7 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextSmallNumber() < 4)
         {
             /// Add server settings
-            generateSettingValues(rg, serverSettings, te->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, te->mutable_setting_values());
         }
         if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
         {
@@ -2805,7 +2805,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, cd->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, cd->mutable_setting_values());
     }
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -2922,7 +2922,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
-        generateSettingValues(rg, serverSettings, deng->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, deng->mutable_setting_values());
     }
     if (rg.nextSmallNumber() < 3)
     {
