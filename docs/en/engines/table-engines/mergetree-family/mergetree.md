@@ -455,7 +455,6 @@ For the `Map` data type, the client can specify if the index should be created f
 > Note: With `text` index generally availability (GA) starting from ClickHouse version 26.2, `ngrambf_v1` index is NOT recommended anymore for full text search.
 > See [here](textindexes.md) for details.
 
-
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
 ```text title="Syntax"
