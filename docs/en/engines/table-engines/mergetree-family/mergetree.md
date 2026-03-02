@@ -1128,7 +1128,10 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` family:
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
 ```sql
 CREATE TABLE tab
@@ -1140,7 +1143,7 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
-We can also manipulate statistics with `ALTER` statements:
+We can also manipulate statistics with `ALTER` statements.
 
 ```sql
 ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
