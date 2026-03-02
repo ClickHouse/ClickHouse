@@ -918,7 +918,15 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};
+    query_node->getWindow().getNodes().clear();
+    query_node->getQualify() = {};
     query_node->getOrderBy().getNodes().clear();
+    query_node->getInterpolate() = {};
+    if (query_node->hasLimitByLimit())
+        query_node->getLimitByLimit() = {};
+    if (query_node->hasLimitByOffset())
+        query_node->getLimitByOffset() = {};
+    query_node->getLimitBy().getNodes().clear();
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
