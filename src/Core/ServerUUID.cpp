@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {

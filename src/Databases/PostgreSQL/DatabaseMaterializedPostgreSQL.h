@@ -13,6 +13,8 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseAtomic.h>
 
+#include <atomic>
+
 
 namespace DB
 {
@@ -93,7 +95,7 @@ private:
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;
-    bool shutdown_called = false;
+    std::atomic<bool> shutdown_called = false;
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };

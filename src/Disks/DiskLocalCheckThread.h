@@ -1,12 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {

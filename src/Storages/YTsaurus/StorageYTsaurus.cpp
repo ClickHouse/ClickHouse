@@ -69,7 +69,7 @@ Pipe StorageYTsaurus::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -82,9 +82,7 @@ Pipe StorageYTsaurus::read(
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));
-    auto ptr = YTsaurusSourceFactory::createSource(client, {.cypress_path = cypress_path, .settings = settings}, sample_block, max_block_size);
-
-    return Pipe(ptr);
+    return YTsaurusSourceFactory::createPipe(client, cypress_path, {.settings = settings}, sample_block, max_block_size, num_streams);
 }
 
 YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
