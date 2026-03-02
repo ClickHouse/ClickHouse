@@ -197,6 +197,8 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
+        # Hedged requests are not compatible with parallel replicas and produce a warning on stderr
+        client_options.append("use_hedged_requests=0")
 
     if random.random() < 0.2:
         client_options.append(

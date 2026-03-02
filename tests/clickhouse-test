@@ -1315,6 +1315,8 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+            # Hedged requests are not compatible with parallel replicas and produce a warning on stderr
+            random_settings["use_hedged_requests"] = 0
 
     @staticmethod
     def get_random_settings(args, tags):
