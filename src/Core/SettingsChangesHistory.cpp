@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_cache", false, true, "Enable statistics cache"},
             {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
+            {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
             {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
             {"allow_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
