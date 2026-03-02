@@ -21,6 +21,7 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 struct TableFunctionFactoryData
 {
     TableFunctionCreator creator;
+    FunctionDocumentation documentation;
     TableFunctionProperties properties;
 
     TableFunctionFactoryData() = default;
@@ -29,8 +30,8 @@ struct TableFunctionFactoryData
 
     template <typename Creator>
         requires (!std::is_same_v<Creator, TableFunctionFactoryData>)
-    TableFunctionFactoryData(Creator creator_, TableFunctionProperties properties_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
+    TableFunctionFactoryData(Creator creator_, FunctionDocumentation documentation_, TableFunctionProperties properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
     {
     }
 };
@@ -45,17 +46,14 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-        const std::string & name,
-        Value value,
-        Case case_sensitiveness = Case::Sensitive);
+    void registerFunction(const std::string & name, Value value, Case case_sensitiveness = Case::Sensitive);
 
     template <typename Function>
-    void registerFunction(TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
+    void registerFunction(FunctionDocumentation documentation, TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name,
-                         TableFunctionFactoryData{std::move(creator), {std::move(properties)}} ,
+                         TableFunctionFactoryData(std::move(creator), std::move(documentation), {std::move(properties)}) ,
                          case_sensitiveness);
     }
 
@@ -65,6 +63,7 @@ public:
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
+    std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
     std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
@@ -78,6 +77,7 @@ private:
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
 
+    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
     std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
     TableFunctions table_functions;
