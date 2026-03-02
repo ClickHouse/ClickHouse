@@ -440,6 +440,14 @@ try
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
+        if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} file format doesn't support schema inference. You must specify the structure manually",
+                *format_name);
+        }
+
         /// We need some stateless methods of ISchemaReader, but during reading schema we
         /// could not even create a schema reader (for example when we got schema from cache).
         /// Let's create stateless schema reader from empty read buffer.
