@@ -1,4 +1,5 @@
 -- { echo }
+-- Tags: no-parallel-replicas
 
 SET optimize_read_in_order = 1;
 DROP TABLE IF EXISTS test_nullable_order_by;
