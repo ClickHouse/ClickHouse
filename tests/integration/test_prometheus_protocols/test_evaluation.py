@@ -1,9 +1,7 @@
 import pytest
 
-import time
-
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -231,14 +229,20 @@ def do_query_test(
     result,
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
+    eps=0,
 ):
     assert execute_query_in_prometheus(query, timestamp) == result
-    assert execute_query_in_clickhouse_sql(query, timestamp) == TSV(chresult)
-    chresult_via_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
-    if clickhouse_http_api_result_is_same_as_prometheus:
-        assert chresult_via_http_api == result
-    else:
-        assert chresult_via_http_api != result
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert (
+        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        == clickhouse_http_api_result_is_same_as_prometheus
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
 def do_query_test_expect_error(
@@ -267,20 +271,26 @@ def do_range_query_test(
     result,
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
+    eps=0,
 ):
     assert (
         execute_range_query_in_prometheus(query, start_time, end_time, step) == result
     )
-    assert execute_range_query_in_clickhouse_sql(
-        query, start_time, end_time, step
-    ) == TSV(chresult)
-    chresult_via_http_api = execute_range_query_in_clickhouse_http_api(
+
+    actual_chresult = execute_range_query_in_clickhouse_sql(
         query, start_time, end_time, step
     )
-    if clickhouse_http_api_result_is_same_as_prometheus:
-        assert chresult_via_http_api == result
-    else:
-        assert chresult_via_http_api != result
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_range_query_in_clickhouse_http_api(
+        query, start_time, end_time, step
+    )
+    assert (
+        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        == clickhouse_http_api_result_is_same_as_prometheus
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
 def test_up():
@@ -769,14 +779,19 @@ def test_date_time_functions():
         "days_in_month(vector(time()))",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "28"]}]}',
-        [["[]", "2026-02-08 20:30:40.000", 28]]
+        [["[]", "2026-02-08 20:30:40.000", 28]],
     )
 
     do_query_test(
         "days_in_month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "31"]]}]}',
-        [["[('job','test')]", "[('1970-01-01 00:01:50.000',30),('1970-01-01 00:02:00.000',31)]"]]
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:50.000',30),('1970-01-01 00:02:00.000',31)]",
+            ]
+        ],
     )
 
     do_query_test(
@@ -984,24 +999,31 @@ def test_math_functions():
     )
 
     do_query_test(
-        "exp(vector(2.5))",
+        "exp(vector(2))",
         500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "12.182493960703473"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 12.182493960703473]],
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "7.38905609893065"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 7.389056098924109]],
+        eps=1e-11,  # See https://github.com/ClickHouse/ClickHouse/issues/30340
     )
 
     do_query_test(
-        "exp(deltas)",
-        400,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [400, "1"]}]}',
-        [["[('job','test')]", "1970-01-01 00:06:40.000", 1]],
+        "exp(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "0.1353352832366127"], [200, "0.36787944117144233"], [300, "0.6065306597126334"], [400, "1"], [500, "1.6487212707001282"], [600, "2.718281828459045"], [700, "7.38905609893065"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',0.13533528323672805),('1970-01-01 00:03:20.000',0.3678794411711252),('1970-01-01 00:05:00.000',0.6065306597123097),('1970-01-01 00:06:40.000',1),('1970-01-01 00:08:20.000',1.6487212707014907),('1970-01-01 00:10:00.000',2.7182818284606256),('1970-01-01 00:11:40.000',7.389056098924109)]",
+            ]
+        ],
+        eps=1e-11,  # See https://github.com/ClickHouse/ClickHouse/issues/30340
     )
 
     do_query_test(
-        "ln(vector(2.5))",
+        "ln(vector(2))",
         500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.9162907318741551"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 0.9162907318741551]],
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.6931471805599453"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 0.6931471805599453]],
     )
 
     do_query_test(
@@ -1100,10 +1122,16 @@ def test_math_functions():
     )
 
     do_query_test(
-        "sin(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0.8414709848078965"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0.8414709848078965]],
+        "sin(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-0.9092974268256816"], [200, "-0.8414709848078965"], [300, "-0.479425538604203"], [400, "0"], [500, "0.479425538604203"], [600, "0.8414709848078965"], [700, "0.9092974268256816"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-0.9092974268256817),('1970-01-01 00:03:20.000',-0.8414709848078965),('1970-01-01 00:05:00.000',-0.479425538604203),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.479425538604203),('1970-01-01 00:10:00.000',0.8414709848078965),('1970-01-01 00:11:40.000',0.9092974268256817)]",
+            ]
+        ],
+        eps=1e-15,
     )
 
     do_query_test(
@@ -1114,24 +1142,36 @@ def test_math_functions():
     )
 
     do_query_test(
-        "cos(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0.5403023058681398"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0.5403023058681398]],
-    )
-
-    do_query_test(
-        "tan(vector(1.5))",
-        500,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "14.101419947171719"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 14.101419947171719]],
-    )
-
-    do_query_test(
-        "tan(deltas)",
+        "cos(deltas)[700:100]",
         700,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [700, "-2.185039863261519"]}]}',
-        [["[('job','test')]", "1970-01-01 00:11:40.000", -2.185039863261519]],
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-0.4161468365471424"], [200, "0.5403023058681398"], [300, "0.8775825618903728"], [400, "1"], [500, "0.8775825618903728"], [600, "0.5403023058681398"], [700, "-0.4161468365471424"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-0.4161468365471424),('1970-01-01 00:03:20.000',0.5403023058681398),('1970-01-01 00:05:00.000',0.8775825618903728),('1970-01-01 00:06:40.000',1),('1970-01-01 00:08:20.000',0.8775825618903728),('1970-01-01 00:10:00.000',0.5403023058681398),('1970-01-01 00:11:40.000',-0.4161468365471424)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "tan(vector(1))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "1.557407724654902"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", 1.5574077246549023]],
+        eps=1e-15,
+    )
+
+    do_query_test(
+        "tan(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "2.185039863261519"], [200, "-1.557407724654902"], [300, "-0.5463024898437905"], [400, "0"], [500, "0.5463024898437905"], [600, "1.557407724654902"], [700, "-2.185039863261519"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',2.185039863261519),('1970-01-01 00:03:20.000',-1.5574077246549023),('1970-01-01 00:05:00.000',-0.5463024898437905),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5463024898437905),('1970-01-01 00:10:00.000',1.5574077246549023),('1970-01-01 00:11:40.000',-2.185039863261519)]",
+            ]
+        ],
+        eps=1e-15,
     )
 
     do_query_test(
@@ -1142,10 +1182,16 @@ def test_math_functions():
     )
 
     do_query_test(
-        "asin(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "1.5707963267948966"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 1.5707963267948966]],
+        "asin(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "-1.5707963267948966"], [300, "-0.5235987755982989"], [400, "0"], [500, "0.5235987755982989"], [600, "1.5707963267948966"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',-1.5707963267948966),('1970-01-01 00:05:00.000',-0.5235987755982991),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5235987755982991),('1970-01-01 00:10:00.000',1.5707963267948966),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
+        eps=1e-15,
     )
 
     do_query_test(
@@ -1156,10 +1202,16 @@ def test_math_functions():
     )
 
     do_query_test(
-        "acos(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0]],
+        "acos(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "3.141592653589793"], [300, "2.0943951023931957"], [400, "1.5707963267948966"], [500, "1.0471975511965976"], [600, "0"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',3.141592653589793),('1970-01-01 00:05:00.000',2.0943951023931957),('1970-01-01 00:06:40.000',1.5707963267948966),('1970-01-01 00:08:20.000',1.0471975511965974),('1970-01-01 00:10:00.000',0),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
+        eps=1e-15,
     )
 
     do_query_test(
@@ -1170,10 +1222,15 @@ def test_math_functions():
     )
 
     do_query_test(
-        "atan(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0.7853981633974483"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0.7853981633974483]],
+        "atan(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-1.1071487177940904"], [200, "-0.7853981633974483"], [300, "-0.4636476090008061"], [400, "0"], [500, "0.4636476090008061"], [600, "0.7853981633974483"], [700, "1.1071487177940904"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-1.1071487177940904),('1970-01-01 00:03:20.000',-0.7853981633974483),('1970-01-01 00:05:00.000',-0.4636476090008061),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.4636476090008061),('1970-01-01 00:10:00.000',0.7853981633974483),('1970-01-01 00:11:40.000',1.1071487177940904)]",
+            ]
+        ],
     )
 
     do_query_test(
@@ -1184,10 +1241,15 @@ def test_math_functions():
     )
 
     do_query_test(
-        "sinh(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "1.1752011936438014"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 1.1752011936438014]],
+        "sinh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-3.626860407847019"], [200, "-1.1752011936438014"], [300, "-0.5210953054937474"], [400, "0"], [500, "0.5210953054937474"], [600, "1.1752011936438014"], [700, "3.626860407847019"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-3.626860407847019),('1970-01-01 00:03:20.000',-1.1752011936438014),('1970-01-01 00:05:00.000',-0.5210953054937474),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5210953054937474),('1970-01-01 00:10:00.000',1.1752011936438014),('1970-01-01 00:11:40.000',3.626860407847019)]",
+            ]
+        ],
     )
 
     do_query_test(
@@ -1198,28 +1260,37 @@ def test_math_functions():
     )
 
     do_query_test(
-        "cosh(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "1.5430806348152437"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 1.5430806348152437]],
+        "cosh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "3.7621956910836314"], [200, "1.5430806348152437"], [300, "1.1276259652063807"], [400, "1"], [500, "1.1276259652063807"], [600, "1.5430806348152437"], [700, "3.7621956910836314"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',3.7621956910836314),('1970-01-01 00:03:20.000',1.5430806348152437),('1970-01-01 00:05:00.000',1.1276259652063807),('1970-01-01 00:06:40.000',1),('1970-01-01 00:08:20.000',1.1276259652063807),('1970-01-01 00:10:00.000',1.5430806348152437),('1970-01-01 00:11:40.000',3.7621956910836314)]",
+            ]
+        ],
     )
 
     do_query_test(
         "tanh(vector(1))",
         500,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "0.7615941559557649"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", 0.7615941559557649]],
+        [["[]", "1970-01-01 00:08:20.000", 0.7615946626193841]],
+        eps=1e-6,  # See https://github.com/ClickHouse/ClickHouse/issues/62390
     )
 
-    # FIXME: The function tanh() in ClickHouse doesn't seem to be very accurate:
-    # "SELECT tanh(1)" returns 0.7615941559557646 or even 0.7615946626193841,
-    # whereas the correct value is 0.7615941559557649.
-    # do_query_test(
-    #     "tanh(deltas)",
-    #     600,
-    #     '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0.7615941559557649"]}]}',
-    #     [["[('job','test')]", "1970-01-01 00:10:00.000", 0.7615946626193841]],
-    # )
+    do_query_test(
+        "tanh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-0.9640275800758169"], [200, "-0.7615941559557649"], [300, "-0.46211715726000974"], [400, "0"], [500, "0.46211715726000974"], [600, "0.7615941559557649"], [700, "0.9640275800758169"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-0.964027555388663),('1970-01-01 00:03:20.000',-0.7615947917469623),('1970-01-01 00:05:00.000',-0.46211751165947257),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.46211811616870957),('1970-01-01 00:10:00.000',0.7615946626193841),('1970-01-01 00:11:40.000',0.9640275074014772)]",
+            ]
+        ],
+        eps=1e-6,  # See https://github.com/ClickHouse/ClickHouse/issues/62390
+    )
 
     do_query_test(
         "asinh(vector(1))",
@@ -1229,10 +1300,15 @@ def test_math_functions():
     )
 
     do_query_test(
-        "asinh(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0.881373587019543"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0.881373587019543]],
+        "asinh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "-1.4436354751788103"], [200, "-0.881373587019543"], [300, "-0.48121182505960347"], [400, "0"], [500, "0.48121182505960347"], [600, "0.881373587019543"], [700, "1.4436354751788103"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',-1.4436354751788103),('1970-01-01 00:03:20.000',-0.881373587019543),('1970-01-01 00:05:00.000',-0.48121182505960347),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.48121182505960347),('1970-01-01 00:10:00.000',0.881373587019543),('1970-01-01 00:11:40.000',1.4436354751788103)]",
+            ]
+        ],
     )
 
     do_query_test(
@@ -1243,10 +1319,15 @@ def test_math_functions():
     )
 
     do_query_test(
-        "acosh(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "0"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", 0]],
+        "acosh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "NaN"], [300, "NaN"], [400, "NaN"], [500, "NaN"], [600, "0"], [700, "1.3169578969248166"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',nan),('1970-01-01 00:05:00.000',nan),('1970-01-01 00:06:40.000',nan),('1970-01-01 00:08:20.000',nan),('1970-01-01 00:10:00.000',0),('1970-01-01 00:11:40.000',1.3169578969248166)]",
+            ]
+        ],
     )
 
     do_query_test(
@@ -1257,10 +1338,15 @@ def test_math_functions():
     )
 
     do_query_test(
-        "atanh(deltas)",
-        600,
-        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [600, "+Inf"]}]}',
-        [["[('job','test')]", "1970-01-01 00:10:00.000", "inf"]],
+        "atanh(deltas)[700:100]",
+        700,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[100, "NaN"], [200, "-Inf"], [300, "-0.5493061443340548"], [400, "0"], [500, "0.5493061443340548"], [600, "+Inf"], [700, "NaN"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',-inf),('1970-01-01 00:05:00.000',-0.5493061443340548),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5493061443340548),('1970-01-01 00:10:00.000',inf),('1970-01-01 00:11:40.000',nan)]",
+            ]
+        ],
     )
 
 
