@@ -1,8 +1,4 @@
 <test>
-    <settings>
-        <allow_experimental_statistics>1</allow_experimental_statistics>
-    </settings>
-
     <create_query>
         CREATE TABLE t_minmax_stats_src(c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64)
         ENGINE = Memory;

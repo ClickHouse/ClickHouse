@@ -1,7 +1,8 @@
 #include <Functions/FunctionsConversion.h>
 
 #if USE_EMBEDDED_COMPILER
-#    include "DataTypes/Native.h"
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
 #endif
 
 
@@ -46,6 +47,144 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
         null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
     }
     return null_map;
+}
+
+}
+
+namespace detail
+{
+
+ColumnPtr ConvertImplFromDynamicToColumn::execute(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
+{
+    /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
+    /// and construct the result based on discriminators.
+    const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+    const auto & variant_column = column_dynamic.getVariantColumn();
+    const auto & variant_info = column_dynamic.getVariantInfo();
+
+    /// First, cast usual variants to result type.
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+    std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
+    std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
+    for (size_t i = 0; i != variant_types.size(); ++i)
+    {
+        /// Skip shared variant, it will be processed later.
+        if (i == column_dynamic.getSharedVariantDiscriminator())
+            continue;
+
+        ColumnsWithTypeAndName new_args = arguments;
+        new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
+        cast_variant_columns[i] = nested_convert(new_args, result_type);
+        if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
+        {
+            cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
+            cast_variant_columns_is_const[i] = true;
+        }
+    }
+
+    /// Second, collect all variants stored in shared variant and cast them to result type.
+    std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+    DataTypes variant_types_from_shared_variant;
+    /// We will need to know what variant to use when we see discriminator of a shared variant.
+    /// To do it, we remember what variant was extracted from each row and what was it's offset.
+    PaddedPODArray<UInt64> shared_variant_indexes;
+    PaddedPODArray<UInt64> shared_variant_offsets;
+    std::unordered_map<String, UInt64> shared_variant_to_index;
+    const auto & shared_variant = column_dynamic.getSharedVariant();
+    const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+    const auto & local_discriminators = variant_column.getLocalDiscriminators();
+    const auto & offsets = variant_column.getOffsets();
+    if (!shared_variant.empty())
+    {
+        shared_variant_indexes.reserve(input_rows_count);
+        shared_variant_offsets.reserve(input_rows_count);
+        FormatSettings format_settings;
+        const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            if (local_discriminators[i] == shared_variant_local_discr)
+            {
+                auto value = shared_variant.getDataAt(offsets[i]);
+                ReadBufferFromMemory buf(value);
+                auto type = decodeDataType(buf);
+                auto type_name = type->getName();
+                auto it = shared_variant_to_index.find(type_name);
+                /// Check if we didn't create column for this variant yet.
+                if (it == shared_variant_to_index.end())
+                {
+                    it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
+                    variant_columns_from_shared_variant.push_back(type->createColumn());
+                    variant_types_from_shared_variant.push_back(type);
+                }
+
+                shared_variant_indexes.push_back(it->second);
+                shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
+                type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
+            }
+            else
+            {
+                shared_variant_indexes.emplace_back();
+                shared_variant_offsets.emplace_back();
+            }
+        }
+    }
+
+    /// Cast all extracted variants into result type.
+    std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
+    std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
+    for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
+    {
+        ColumnsWithTypeAndName new_args = arguments;
+        new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
+        cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
+        if (cast_shared_variant_columns[i] && isColumnConst(*cast_shared_variant_columns[i]))
+        {
+            cast_shared_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_shared_variant_columns[i]).getDataColumnPtr();
+            cast_shared_variant_columns_is_const[i] = true;
+        }
+    }
+
+    /// Construct result column from all cast variants.
+    auto res = result_type->createColumn();
+    res->reserve(input_rows_count);
+    for (size_t i = 0; i != input_rows_count; ++i)
+    {
+        auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            res->insertDefault();
+        }
+        else if (global_discr == shared_variant_discr)
+        {
+            if (cast_shared_variant_columns[shared_variant_indexes[i]])
+            {
+                size_t offset = cast_shared_variant_columns_is_const[shared_variant_indexes[i]] ? 0 : shared_variant_offsets[i];
+                res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], offset);
+            }
+            else
+            {
+                res->insertDefault();
+            }
+        }
+        else
+        {
+            if (cast_variant_columns[global_discr])
+            {
+                size_t offset = cast_variant_columns_is_const[global_discr] ? 0 : offsets[i];
+                res->insertFrom(*cast_variant_columns[global_discr], offset);
+            }
+            else
+            {
+                res->insertDefault();
+            }
+        }
+    }
+
+    return res;
 }
 
 }
@@ -2228,8 +2367,23 @@ FunctionBasePtr createFunctionBaseCast(
 
     detail::FunctionCast::MonotonicityForRange monotonicity;
 
+    auto monotonicity_result_type = recursiveRemoveLowCardinality(return_type);
+
+    /// Monotonicity for CAST is determined by conversion to the nested target type.
+    /// Nullable only wraps the conversion result and does not change the order of successfully converted values.
+    /// We remove Nullable here so CAST(..., Nullable(T)) can reuse T monotonicity metadata in optimizeReadInOrder
+    /// and KeyCondition function-chain analysis. This is not a problem because both of them still validate monotonicity
+    /// on actual argument types/ranges using getMonotonicityForRange.
+    /// We do not do this for accurateCastOrNull because failed conversions can produce NULL from non-NULL input values.
+    /// For example, ordered Float64 values (1.0, 1.1, 1.2, 1.25, 1.3, 1.5) become
+    /// (1.0, NULL, NULL, 1.25, NULL, 1.5) with accurateCastOrNull(..., 'Float32').
+    /// This can violate monotonicity assumptions used by optimizeReadInOrder/KeyCondition
+    /// and can produce incorrect ORDER BY results.
+    if (cast_type != CastType::accurateOrNull)
+        monotonicity_result_type = removeNullable(monotonicity_result_type);
+
     if (isEnum(arguments.front().type)
-        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(return_type.get(), [&](auto & type)
+        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(monotonicity_result_type.get(), [&](auto & type)
         {
             monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;
@@ -2241,7 +2395,7 @@ FunctionBasePtr createFunctionBaseCast(
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
         DataTypeFloat32, DataTypeFloat64,
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64, DataTypeTime, DataTypeTime64,
-        DataTypeString>(recursiveRemoveLowCardinality(return_type).get(), [&](auto & type)
+        DataTypeString>(monotonicity_result_type.get(), [&](auto & type)
         {
             monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
             return true;

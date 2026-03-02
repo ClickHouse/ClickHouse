@@ -1,6 +1,8 @@
 CREATE TABLE t1 (n UInt64) ENGINE = MergeTree() SETTINGS auto_statistics_types='uniq';
 CREATE TABLE t2 (key1 UInt64, key2 UInt64, key3 UInt64, value UInt64) ENGINE = MergeTree() SETTINGS auto_statistics_types='uniq';
 
+SET materialize_statistics_on_insert = 1;
+
 INSERT INTO t1 SELECT * FROM numbers(5);
 INSERT INTO t2 SELECT number%10 AS key1, number%3 AS key2, number%17 AS key3, number AS value FROM numbers(100);
 
