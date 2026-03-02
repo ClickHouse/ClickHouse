@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnFixedSizeHelper.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/assert_cast.h>
@@ -285,6 +286,11 @@ public:
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
+
+    bool hasOnlyDefaults() const override
+    {
+        return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+    }
 
     bool structureEquals(const IColumn & rhs) const override
     {

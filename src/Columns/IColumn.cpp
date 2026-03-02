@@ -506,6 +506,17 @@ UInt64 IColumnHelper<Derived, Parent>::getNumberOfDefaultRows() const
 }
 
 template <typename Derived, typename Parent>
+bool IColumnHelper<Derived, Parent>::hasOnlyDefaults() const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+    size_t num_rows = self.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        if (!self.isDefaultAt(i))
+            return false;
+    return true;
+}
+
+template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
 {
     const auto & self = static_cast<const Derived &>(*this);

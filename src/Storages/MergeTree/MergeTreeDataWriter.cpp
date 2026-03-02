@@ -898,10 +898,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     bool has_empty_columns = false;
     {
         NameSet empty_columns;
-        const auto rows = block.rows();
         for (const auto & col : block)
         {
-            if (col.column->getNumberOfDefaultRows() == rows)
+            if (col.column->hasOnlyDefaults())
                 empty_columns.insert(col.name);
         }
         if (!empty_columns.empty())

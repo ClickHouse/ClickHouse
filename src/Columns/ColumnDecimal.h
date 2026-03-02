@@ -5,6 +5,7 @@
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 
 namespace DB
@@ -126,6 +127,11 @@ public:
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
+
+    bool hasOnlyDefaults() const override
+    {
+        return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+    }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
     void filter(const IColumn::Filter & filt) override;
