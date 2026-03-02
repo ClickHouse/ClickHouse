@@ -809,7 +809,7 @@ openssl pkeyutl -encrypt \
 """,
             verbose=True,
         )
-        return str + ".rsa"
+        return path + ".rsa"
 
     @classmethod
     def compress_files_gz(cls, files, archive_name):
