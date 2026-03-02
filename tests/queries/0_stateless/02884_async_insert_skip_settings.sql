@@ -42,6 +42,6 @@ SELECT * FROM t_async_insert_skip_settings ORDER BY id;
 SYSTEM FLUSH LOGS asynchronous_insert_log;
 
 SELECT 'flush queries', uniqExact(flush_query_id) FROM system.asynchronous_insert_log
-WHERE database = currentDatabase() AND table = 't_async_insert_skip_settings';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_async_insert_skip_settings';
 
 DROP TABLE t_async_insert_skip_settings SYNC;
