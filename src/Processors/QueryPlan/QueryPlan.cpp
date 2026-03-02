@@ -487,7 +487,7 @@ namespace ExplainPlan
 
 static void buildTreeOffset(const std::deque<ExplainPlan::Frame> & frames, const ExplainPlan::Frame & current, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
 {
-    if (frames.size() == 0)
+    if (frames.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Frames stack for building tree offset cannot be empty");
 
     std::string tree_prefix;
@@ -550,7 +550,7 @@ static void buildTreeOffset(const std::deque<ExplainPlan::Frame> & frames, const
 
 static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
 {
-    settings_format.offset = (frames.size() + indent_offset) * settings_format.base_indent;
+    settings_format.offset = (frames.size() - 1 + indent_offset) * settings_format.base_indent;
     settings_format.step_prefix = std::string(settings_format.offset, settings_format.indent_char);
     settings_format.other_prefix = settings_format.step_prefix;
 }
@@ -570,7 +570,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
     std::deque<ExplainPlan::Frame> stack;
     stack.push_back(ExplainPlan::Frame{.node = root,
-                            .is_last_child = root->children.size() == 0,
+                            .is_last_child = root->children.empty(),
                             });
 
     while (!stack.empty())
