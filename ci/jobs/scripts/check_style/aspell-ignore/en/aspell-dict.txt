@@ -2453,6 +2453,7 @@ memtables
 mergeTreeIndex
 mergeTreePartInfo
 mergeTreeProjection
+mergeTreeTextIndex
 mergeable
 mergetree
 messageID
