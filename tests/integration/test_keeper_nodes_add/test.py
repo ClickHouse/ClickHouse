@@ -49,6 +49,9 @@ def test_nodes_add(started_cluster):
         zk_conn = get_fake_zk(node1)
 
         for i in range(100):
+            # Cleanup existing znodes from previous runs
+            if zk_conn.exists("/test_two_" + str(i)):
+                zk_conn.delete("/test_two_" + str(i))
             zk_conn.create("/test_two_" + str(i), b"somedata")
 
         p = Pool(3)
@@ -77,6 +80,9 @@ def test_nodes_add(started_cluster):
         zk_conn = get_fake_zk(node1)
 
         for i in range(100):
+            # Cleanup existing znodes from previous runs
+            if zk_conn.exists("/test_three_" + str(i)):
+                zk_conn.delete("/test_three_" + str(i))
             zk_conn.create("/test_three_" + str(i), b"somedata")
 
         node3.stop_clickhouse()
@@ -132,7 +138,6 @@ def test_nodes_add_respect_priority(started_cluster):
         node2.stop_clickhouse()
         node3.stop_clickhouse()
 
-        # Clear coordination data on all nodes to reset cluster state
         for node in (node1, node2, node3):
             node.exec_in_container(
                 ["bash", "-c", "rm -rf /var/lib/clickhouse/coordination"]
