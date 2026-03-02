@@ -8,20 +8,24 @@
 --
 -- https://github.com/ClickHouse/ClickHouse/issues/57728
 
-SET join_algorithm = 'full_sorting_merge';
-SET max_rows_in_set_to_optimize_join = 100000;
-SET max_block_size = 10;
-
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
 CREATE TABLE t1 (c UInt64) ENGINE = MergeTree ORDER BY c;
 CREATE TABLE t2 (c UInt64) ENGINE = MergeTree ORDER BY c;
 
-INSERT INTO t1 SELECT number FROM numbers(1000);
-INSERT INTO t2 SELECT number FROM numbers(1000);
+INSERT INTO t1 SELECT * FROM numbers(1000000);
+INSERT INTO t2 SELECT * FROM numbers(1000000);
 
-SELECT count() FROM (SELECT * FROM t1) AS t1 INNER JOIN (SELECT * FROM t2 ORDER BY c ASC LIMIT 5000) AS t2 ON t1.c = t2.c;
+SELECT count()
+FROM (SELECT * FROM t1) AS t1s,
+     (SELECT * FROM t2 ORDER BY c ASC LIMIT 500000) AS t2s
+WHERE t1s.c = t2s.c
+SETTINGS
+    max_rows_in_set_to_optimize_join = 100000000,
+    join_algorithm = 'full_sorting_merge',
+    query_plan_join_swap_table = 0,
+    max_threads = 2;
 
 DROP TABLE t1;
 DROP TABLE t2;
