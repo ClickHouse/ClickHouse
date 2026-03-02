@@ -1,3 +1,7 @@
+-- The FRACTION parameter in the HAVING clause is 0.0001 / SF (spec section 2.4.11.3).
+-- Current value 0.0001 is for SF = 1. For other scale factors, adjust accordingly,
+-- e.g. 0.00001 for SF = 10, 0.000001 for SF = 100.
+
 SELECT
     ps_partkey,
     sum(ps_supplycost * ps_availqty) AS value
