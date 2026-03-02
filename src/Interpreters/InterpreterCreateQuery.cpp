@@ -14,6 +14,7 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
@@ -189,6 +190,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
@@ -1517,6 +1519,7 @@ bool isReplicated(const ASTStorage & storage)
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
     /// Temporary tables are created out of databases.
     if (create.isTemporary() && create.attach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");

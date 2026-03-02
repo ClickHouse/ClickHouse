@@ -1,3 +1,3 @@
 select 1 settings log_queries=1, log_queries_min_type='QUERY_FINISH' format Null;
 system flush logs query_log;
-select client_name from system.query_log where current_database = currentDatabase() and query like 'select 1%' format CSV;
+select client_name from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() and query like 'select 1%' format CSV;

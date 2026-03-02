@@ -1,10 +1,10 @@
-if (SANITIZE OR NOT (
+if ((SANITIZE AND NOT SANITIZE STREQUAL "undefined") OR NOT (
     ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_RISCV64 OR ARCH_S390X OR ARCH_E2K)) OR
     (OS_DARWIN AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers (except UBSan) and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
     endif ()
     set (ENABLE_JEMALLOC OFF)
 else ()

@@ -3,6 +3,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <base/errnoToString.h>
 #include <Common/clibssh.h>
 
 namespace DB

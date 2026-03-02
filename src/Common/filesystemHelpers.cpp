@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 

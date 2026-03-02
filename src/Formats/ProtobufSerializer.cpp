@@ -2851,6 +2851,7 @@ namespace
         void reset() override
         {
             first_call_of_write_row = true;
+            first_call_of_read_row = true;
         }
 
         void startReading() override
