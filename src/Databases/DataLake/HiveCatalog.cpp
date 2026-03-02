@@ -1,5 +1,7 @@
 #include <Databases/DataLake/HiveCatalog.h>
+
 #if USE_AVRO && USE_HIVE
+
 #include <algorithm>
 #include <cctype>
 #include <optional>
