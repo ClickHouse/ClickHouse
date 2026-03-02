@@ -794,7 +794,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(column_name); });
+            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,
@@ -918,7 +918,15 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};
+    query_node->getWindow().getNodes().clear();
+    query_node->getQualify() = {};
     query_node->getOrderBy().getNodes().clear();
+    query_node->getInterpolate() = {};
+    if (query_node->hasLimitByLimit())
+        query_node->getLimitByLimit() = {};
+    if (query_node->hasLimitByOffset())
+        query_node->getLimitByOffset() = {};
+    query_node->getLimitBy().getNodes().clear();
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
