@@ -1,0 +1,17 @@
+Expression
+  Sorting
+    Expression
+      JoinLogical
+        JoinLogical
+          Expression
+            ReadFromMergeTree
+          Expression
+            ReadFromMergeTree
+        JoinLogical
+          Expression
+            ReadFromMergeTree
+          Expression
+            ReadFromMergeTree
+1	AA	odd	1	AA
+2	BB	even	2	BB
+3	CC	odd	3	CC
