@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Common/Exception.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>

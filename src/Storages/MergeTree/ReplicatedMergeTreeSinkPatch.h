@@ -14,6 +14,8 @@ public:
         LightweightUpdateHolderInKeeper update_holder_,
         ContextPtr context_);
 
+    ~ReplicatedMergeTreeSinkPatch() override;
+
     String getName() const override { return "ReplicatedMergeTreeSinkPatch"; }
 
 private:

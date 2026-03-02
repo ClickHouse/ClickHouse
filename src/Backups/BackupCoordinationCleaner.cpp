@@ -31,6 +31,7 @@ void BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Ki
         }
     }
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationCleaner::cleanupImpl");
     try
     {
         LOG_TRACE(log, "Removing nodes from ZooKeeper");

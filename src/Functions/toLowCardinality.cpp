@@ -61,7 +61,7 @@ public:
 REGISTER_FUNCTION(ToLowCardinality)
 {
     /// toLowCardinality documentation
-    FunctionDocumentation::Description toLowCardinality_description = R"(
+    FunctionDocumentation::Description description = R"(
 Converts the input argument to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
 
 :::tip
@@ -69,12 +69,12 @@ To convert from the `LowCardinality` data type to a regular data type, use the [
 For example: `CAST(x AS String)`.
 :::
     )";
-    FunctionDocumentation::Syntax toLowCardinality_syntax = "toLowCardinality(expr)";
-    FunctionDocumentation::Arguments toLowCardinality_arguments = {
+    FunctionDocumentation::Syntax syntax = "toLowCardinality(expr)";
+    FunctionDocumentation::Arguments arguments = {
         {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue toLowCardinality_returned_value = {"Returns the input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
-    FunctionDocumentation::Examples toLowCardinality_examples = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -87,11 +87,11 @@ SELECT toLowCardinality('1')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn toLowCardinality_introduced_in = {18, 12};
-    FunctionDocumentation::Category toLowCardinality_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toLowCardinality_documentation = {toLowCardinality_description, toLowCardinality_syntax, toLowCardinality_arguments, {}, toLowCardinality_returned_value, toLowCardinality_examples, toLowCardinality_introduced_in, toLowCardinality_category};
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToLowCardinality>(toLowCardinality_documentation);
+    factory.registerFunction<FunctionToLowCardinality>(documentation);
 }
 
 }
