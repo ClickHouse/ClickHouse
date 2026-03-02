@@ -83,7 +83,18 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
     auto format_version_value = tryGetAvroMetadataValue("format-version");
     if (!format_version_value.has_value())
         return 1;
-    return std::stoi(format_version_value.value());
+    try
+    {
+        return std::stoi(format_version_value.value());
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+            manifest_file_path,
+            e.what());
+    }
 }
 
 

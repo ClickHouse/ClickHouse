@@ -134,9 +134,6 @@ struct ProcessedManifestFileEntry
     Int64 snapshot_id;
     Int32 schema_id;
 
-    /// Per-column hyperrectangles computed from value bounds
-    std::unordered_map<Int32, DB::Range> hyperrectangles;
-
     String dumpDeletesMatchingInfo() const;
 };
 

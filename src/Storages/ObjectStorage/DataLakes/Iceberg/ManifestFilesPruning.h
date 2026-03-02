@@ -58,7 +58,7 @@ public:
         const ManifestFileIterator & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry) const;
+    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 };
 
 }

@@ -403,19 +403,16 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         }
     }
 
-    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry
-    {
+    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry{
         .parsed_entry = std::move(parsed_entry),
         .common_partition_specification = common_partition_specification,
         .file_path = file_path,
         .added_sequence_number = added_sequence_number,
         .snapshot_id = resolved_snapshot_id,
-        .schema_id = resolved_schema_id,
-        .hyperrectangles = std::move(hyperrectangles),
-    });
+        .schema_id = resolved_schema_id});
 
     const ManifestFilesPruner * current_pruner = filter_dag ? getOrCreatePruner(entry->schema_id) : nullptr;
-    auto pruning_status = current_pruner ? current_pruner->canBePruned(entry) : PruningReturnStatus::NOT_PRUNED;
+    auto pruning_status = current_pruner ? current_pruner->canBePruned(entry, hyperrectangles) : PruningReturnStatus::NOT_PRUNED;
     insertRowToLogTable(
         context,
         manifest_file_deserializer->getContent(row_index),

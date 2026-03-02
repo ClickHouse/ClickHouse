@@ -190,8 +190,16 @@ ManifestFileCacheKeys getManifestList(
                     f_added_snapshot_id);
 
             ManifestFileContentType content_type = ManifestFileContentType::DATA;
-            size_t manifest_length
+            Int64 manifest_length
                 = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_length, TypeIndex::Int64).safeGet<Int64>();
+            if (manifest_length < 0)
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has negative value for field '{}', but it is required",
+                    i,
+                    f_manifest_length);
+            }
             if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number

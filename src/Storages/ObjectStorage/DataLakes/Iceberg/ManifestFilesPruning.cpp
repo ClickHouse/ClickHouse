@@ -136,7 +136,8 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ProcessedManifestFileEntryPtr & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
     if (partition_key_condition.has_value())
     {
@@ -168,8 +169,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ProcessedManifestFile
             continue;
         }
 
-        auto rect_it = entry->hyperrectangles.find(column_id);
-        if (rect_it == entry->hyperrectangles.end())
+        auto rect_it = entry_hyperrectangles.find(column_id);
+        if (rect_it == entry_hyperrectangles.end())
             continue;
 
         auto info_it = entry->parsed_entry->columns_infos.find(column_id);

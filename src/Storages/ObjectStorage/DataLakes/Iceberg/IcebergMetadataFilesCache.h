@@ -32,7 +32,7 @@ namespace DB
 struct ManifestFileCacheKey
 {
     String manifest_file_path;
-    Int64 manifest_file_byte_size;
+    size_t manifest_file_byte_size;
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
