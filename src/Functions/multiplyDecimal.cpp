@@ -104,8 +104,8 @@ While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(documentation);
 }

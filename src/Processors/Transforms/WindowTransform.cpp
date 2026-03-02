@@ -2814,14 +2814,14 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("denseRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, {}, properties});
 
     factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2830,7 +2830,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, {}, properties});
 
     factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2839,56 +2839,56 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionCumeDist>(name, argument_types,
                 parameters);
-        }, properties});
+        }, {}, properties});
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, properties});
+        }, {}, properties});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<false>>(
                 name, argument_types, parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, properties});
+        }, {}, properties});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<true>>(
                 name, argument_types, parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
@@ -2984,7 +2984,7 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
-        }, properties, exponentialTimeDecayedSum_documentation});
+        }, exponentialTimeDecayedSum_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -3080,7 +3080,7 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(
                 name, argument_types, parameters);
-        }, properties, exponentialTimeDecayedMax_documentation});
+        }, exponentialTimeDecayedMax_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the cumulative exponential decay over a time series at the index `t` in time.
@@ -3175,7 +3175,7 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
                 name, argument_types, parameters);
-        }, properties, exponentialTimeDecayedCount_documentation});
+        }, exponentialTimeDecayedCount_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
@@ -3271,13 +3271,13 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
-        }, properties, exponentialTimeDecayedAvg_documentation});
+        }, exponentialTimeDecayedAvg_documentation, properties});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNonNegativeDerivative>(
                 name, argument_types, parameters);
-        }, properties});
+        }, {}, properties});
 }
 }
