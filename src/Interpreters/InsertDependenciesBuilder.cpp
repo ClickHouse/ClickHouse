@@ -235,7 +235,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         patch.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
-    catch (const Exception &)
+    catch (const std::exception &)
     {
         return ptr;
     }
