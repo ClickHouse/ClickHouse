@@ -797,7 +797,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     for (const auto & primary_key_name : primary_key_names)
     {
-        if (metadata.getColumns().hasSubcolumn(primary_key_name))
+        if (metadata.getColumns().hasSubcolumn(GetColumnsOptions::All, primary_key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB doesn't support subcolumns in primary key");
     }
 

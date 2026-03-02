@@ -32,15 +32,27 @@ ASTPtr timeSeriesTimestampToAST(DateTime64 timestamp, const DataTypePtr & timest
     if (isDateTime64(timestamp_data_type))
     {
         auto scale = getDecimalScale(*timestamp_data_type);
-        String str = toString(static_cast<Decimal64>(timestamp), scale);
-        /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to a floating-point number.
-        if (str.find_first_of(".eE") == String::npos)
-            str += ".";
+        if (scale == 0)
+            return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(timestamp.value), timestamp_data_type);
+
+        String str = toString(timestamp, scale);
+        if (0 <= timestamp.value && timestamp.value < DecimalUtils::scaleMultiplier<Decimal64>(scale + 4))
+        {
+            /// For timestamps between 0 and 9999 we need to use expression toDateTime64(toDecimal64('timestamp', <scale>), <scale>)
+            /// because otherwise it can be considered as a year (i.e. for example "1000" can be parsed as "year 1000" instead of
+            /// "1000 seconds after January 1, 1970").
+            /// TODO: Find a more elegant solution.
+            return timeSeriesTimestampASTCast(makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(std::move(str)), make_intrusive<ASTLiteral>(scale)), timestamp_data_type);
+        }
+
         return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(std::move(str)), timestamp_data_type);
     }
     else if (isDecimal(timestamp_data_type))
     {
         auto scale = getDecimalScale(*timestamp_data_type);
+        if (scale == 0)
+            return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(timestamp.value), timestamp_data_type);
+
         String str = toString(timestamp, scale);
         return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(std::move(str)), timestamp_data_type);
     }

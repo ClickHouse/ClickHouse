@@ -681,14 +681,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    n_str Nullable(String),
-    INDEX idx n_str TYPE text(tokenizer = 'splitByNonAlpha')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (
+    id UInt32,
+    n Nullable(Int32),
+    INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab (
+    id UInt32,
+    arr Array(Nullable(Int32)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 SET allow_suspicious_low_cardinality_types = 1;
 
