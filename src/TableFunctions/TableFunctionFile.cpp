@@ -132,7 +132,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>();
+    factory.registerFunction<TableFunctionFile>({});
 }
 
 }
