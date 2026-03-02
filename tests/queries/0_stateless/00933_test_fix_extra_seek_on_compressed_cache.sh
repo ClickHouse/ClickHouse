@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT --query="
     WHERE query_id = 'test-query-uncompressed-cache'
         AND current_database = currentDatabase()
         AND type = 2
-        AND event_date >= yesterday()
+        AND event_date >= yesterday() AND event_time >= now() - 600
     ORDER BY event_time DESC
     LIMIT 1"
 

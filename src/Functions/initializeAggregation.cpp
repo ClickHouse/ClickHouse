@@ -165,18 +165,18 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
 REGISTER_FUNCTION(InitializeAggregation)
 {
-    FunctionDocumentation::Description description_initializeAggregation = R"(
+    FunctionDocumentation::Description description = R"(
 Calculates the result of an aggregate function based on a single value.
 This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#-state).
 You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) or use initialized aggregates as default values.
     )";
-    FunctionDocumentation::Syntax syntax_initializeAggregation = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
-    FunctionDocumentation::Arguments arguments_initializeAggregation = {
+    FunctionDocumentation::Syntax syntax = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments = {
         {"aggregate_function", "Name of the aggregation function to initialize.", {"String"}},
         {"arg1[, arg2, ...]", "Arguments of the aggregate function.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_initializeAggregation = {"Returns the result of aggregation for every row passed to the function. The return type is the same as the return type of the function that `initializeAggregation` takes as a first argument.", {"Any"}};
-    FunctionDocumentation::Examples examples_initializeAggregation = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of aggregation for every row passed to the function. The return type is the same as the return type of the function that `initializeAggregation` takes as a first argument.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Basic usage with uniqState",
         R"(
@@ -204,11 +204,11 @@ SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggr
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_initializeAggregation = {20, 6};
-    FunctionDocumentation::Category category_initializeAggregation = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_initializeAggregation = {description_initializeAggregation, syntax_initializeAggregation, arguments_initializeAggregation, {}, returned_value_initializeAggregation, examples_initializeAggregation, introduced_in_initializeAggregation, category_initializeAggregation};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionInitializeAggregation>(documentation_initializeAggregation);
+    factory.registerFunction<FunctionInitializeAggregation>(documentation);
 }
 
 }
