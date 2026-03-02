@@ -343,6 +343,7 @@ class JobNames:
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
+    SQL_LOGIC_TEST = "SQLLogic test"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"

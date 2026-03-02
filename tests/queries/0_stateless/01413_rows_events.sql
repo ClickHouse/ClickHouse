@@ -24,10 +24,10 @@ SELECT ProfileEvents['InsertedRows'] as value FROM system.query_log WHERE curren
 SELECT * FROM /* test 01413, query 3 */ rows_events_test WHERE v = 2;
 SYSTEM FLUSH LOGS query_log;
 
-SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'SELECT * FROM /* test 01413, query 3 */ rows_events_test%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'SELECT * FROM /* test 01413, query 3 */ rows_events_test%' AND type = 2 AND event_date >= yesterday() AND event_time >= now() - 600 ORDER BY event_time DESC LIMIT 1;
 
 
-SELECT ProfileEvents['SelectedRows'] as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'SELECT * FROM /* test 01413, query 3 */ rows_events_test%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+SELECT ProfileEvents['SelectedRows'] as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'SELECT * FROM /* test 01413, query 3 */ rows_events_test%' AND type = 2 AND event_date >= yesterday() AND event_time >= now() - 600 ORDER BY event_time DESC LIMIT 1;
 
 
 DROP TABLE rows_events_test;
