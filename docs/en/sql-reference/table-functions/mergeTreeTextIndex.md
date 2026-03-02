@@ -4,7 +4,7 @@ description: 'Represents the dictionary of a text index in a MergeTree table.
 sidebar_label: 'mergeTreeTextIndex'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeTextIndex
-title: 'mergeTreeProjection'
+title: 'mergeTreeTextIndex'
 doc_type: 'reference'
 ---
 
