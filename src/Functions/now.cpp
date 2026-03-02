@@ -18,6 +18,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_CLOCK_GETTIME;
 }
 
@@ -101,12 +103,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{};
-        FunctionArgumentDescriptors optional_args{
-            {"timezone", &isStringOrFixedString, nullptr, "String or FixedString"}
-        };
-
-        validateFunctionArguments(getName(), arguments, mandatory_args, optional_args);
+        if (arguments.size() > 1)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+        }
+        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
+                getName());
+        }
 
         if (arguments.size() == 1)
         {
@@ -117,6 +122,15 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
+        if (arguments.size() > 1)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+        }
+        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
+                getName());
+        }
         timespec spec{};
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
