@@ -257,7 +257,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     for (const auto & part_ranges : parts_with_ranges)
     {
-        chassert(part_ranges.ranges.size() == 1);
         chassert(part_ranges.exact_ranges.empty());
 
         const auto & part_name = part_ranges.data_part->name;
