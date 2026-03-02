@@ -267,6 +267,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/docs-builder-mintlify",
+        path="./ci/docker/docs-builder-mintlify",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),    
+    Docker.Config(
         name="clickhouse/install-deb-test",
         path="./ci/docker/install/deb",
         platforms=Docker.Platforms.arm_amd,
@@ -339,6 +345,7 @@ class JobNames:
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
     DOCS = "Docs check"
+    DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"

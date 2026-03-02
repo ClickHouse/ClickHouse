@@ -1,6 +1,0 @@
-The redirects from this file were moved to the Docusaurus configuration file.
-If you need to add a redirect please either open a PR in 
-https://github.com/clickhouse/clickhouse-docs adding the redirect to
-https://github.com/ClickHouse/clickhouse-docs/blob/main/docusaurus.config.js
-or open an issue in the same repo and provide the old URL and new URL to have
-the redirect added.
