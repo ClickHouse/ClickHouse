@@ -2519,8 +2519,19 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    auto predicate_value = value.safeGet<UInt8>();
-    return predicate_value == 0;
+    /// The filter expression may evaluate to any numeric type (not just UInt8),
+    /// e.g. when WHERE uses a Float64 expression like radians(col).
+    /// Check if the value is zero (falsy) in the context of any numeric type.
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() == 0;
+    if (value.getType() == Field::Types::Int64)
+        return value.safeGet<Int64>() == 0;
+    if (value.getType() == Field::Types::Float64)
+        return value.safeGet<Float64>() == 0;
+
+    /// For any other type that canBeUsedInBooleanContext, conservatively assume
+    /// it's not always false (i.e., don't convert the join).
+    return false;
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
