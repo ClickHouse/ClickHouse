@@ -44,7 +44,7 @@ void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & f
 {
     FunctionDocumentation::Description description = R"(
 Cramer's V is a measure of association between two columns in a table.
-The result of the [`cramersV` function](/sql-reference/aggregate-functions/reference/cramersV) ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
+The result of the [`cramersV` function](/sql-reference/aggregate-functions/reference/cramersv) ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other.
 The function can be heavily biased, so this version of Cramer's V uses the [bias correction](https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V#Bias_correction).
     )";
     FunctionDocumentation::Syntax syntax = "cramersVBiasCorrected(column1, column2)";
@@ -88,7 +88,6 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedData>>(argument_types);
         },
-        {},
         documentation
     });
 }

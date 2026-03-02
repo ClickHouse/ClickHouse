@@ -5,6 +5,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <base/scope_guard.h>
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
@@ -24,6 +25,7 @@
 
 #include "delta_kernel_ffi.hpp"
 
+namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; } }
 
 class DeltaKernelTest : public testing::Test
 {
