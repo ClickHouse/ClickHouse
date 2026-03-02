@@ -132,7 +132,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMySQL>();
+    factory.registerFunction<TableFunctionMySQL>({});
 }
 
 }

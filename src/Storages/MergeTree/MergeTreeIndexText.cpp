@@ -1224,7 +1224,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
-    forEachTokenPadded(
+    forEachToken(
         *tokenizer,
         document.data(),
         document.size(),

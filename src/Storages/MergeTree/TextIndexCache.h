@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+
+#include <absl/container/flat_hash_map.h>
 
 namespace ProfileEvents
 {
