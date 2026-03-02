@@ -113,7 +113,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
-    extern const SettingsBool enable_auto_spilling_hash_join;
+    extern const SettingsUInt64 max_bytes_before_external_join;
 }
 
 
@@ -1035,7 +1035,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (settings[Setting::enable_auto_spilling_hash_join] && GraceHashJoin::isSupported(analyzed_join))
+        if (settings[Setting::max_bytes_before_external_join] > 0 && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
@@ -1088,7 +1088,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (settings[Setting::enable_auto_spilling_hash_join] && GraceHashJoin::isSupported(analyzed_join))
+        if (settings[Setting::max_bytes_before_external_join] > 0 && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))

@@ -29,12 +29,9 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
-    , limits(table_join->sizeLimits())
+    , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     hash_join = std::make_shared<HashJoin>(table_join, right_sample_block_);
-
-    if (!limits.hasLimits())
-        limits.max_bytes = table_join->defaultMaxBytes();
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -53,13 +50,10 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
-    , limits(table_join->sizeLimits())
+    , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     concurrent_join = std::make_shared<ConcurrentHashJoin>(table_join, concurrent_slots_, right_sample_block_, stats_collecting_params_);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
-
-    if (!limits.hasLimits())
-        limits.max_bytes = table_join->defaultMaxBytes();
 }
 
 SpillingHashJoin::~SpillingHashJoin() = default;
@@ -125,7 +119,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
         }
 
         /// Check memory limit outside the shared lock.
-        if (!limits.softCheck(concurrent_join->getTotalRowCount(), concurrent_join->getTotalByteCount()))
+        if (concurrent_join->getTotalByteCount() >= max_bytes_before_external_join)
             switchToGraceHashJoin();
 
         return true;
@@ -134,7 +128,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// Single-thread HashJoin path.
     hash_join->addBlockToJoin(block, /*check_limits=*/false);
 
-    if (!limits.softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
+    if (hash_join->getTotalByteCount() >= max_bytes_before_external_join)
         switchToGraceHashJoin();
 
     return true;

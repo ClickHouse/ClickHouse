@@ -69,7 +69,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
-    extern const SettingsBool enable_auto_spilling_hash_join;
+    extern const SettingsUInt64 max_bytes_before_external_join;
 }
 
 namespace ServerSetting
@@ -1163,7 +1163,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.enable_auto_spilling_hash_join
+        if (params.max_bytes_before_external_join > 0
             && GraceHashJoin::isSupported(table_join))
         {
             if (table_join->allowParallelHashJoin())
@@ -1239,7 +1239,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (params.enable_auto_spilling_hash_join
+        if (params.max_bytes_before_external_join > 0
             && GraceHashJoin::isSupported(table_join))
         {
             if (table_join->allowParallelHashJoin())
@@ -1294,7 +1294,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
     max_threads = settings[Setting::max_threads];
 
-    enable_auto_spilling_hash_join = settings[Setting::enable_auto_spilling_hash_join];
+    max_bytes_before_external_join = settings[Setting::max_bytes_before_external_join];
 
     initial_query_id = context.getInitialQueryId();
     lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
@@ -1321,7 +1321,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = max_threads_;
 
-    enable_auto_spilling_hash_join = join_settings.enable_auto_spilling_hash_join;
+    max_bytes_before_external_join = join_settings.max_bytes_before_external_join;
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;

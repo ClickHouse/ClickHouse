@@ -1,6 +1,6 @@
 -- Tags: use-rocksdb
 
-SET enable_auto_spilling_hash_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t2;

@@ -536,7 +536,7 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 {
     return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
         || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
-        || table_join.enableAutoSpillingHashJoin();
+        || table_join.maxBytesBeforeExternalJoin() > 0;
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {

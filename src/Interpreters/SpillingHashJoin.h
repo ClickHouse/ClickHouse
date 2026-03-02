@@ -9,7 +9,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <QueryPipeline/SizeLimits.h>
 #include <Common/SharedMutex.h>
 
 
@@ -28,7 +27,7 @@ class ConcurrentHashJoin;
 ///
 /// Single-thread mode:
 /// Blocks are fed directly into a HashJoin instance during the build phase.
-/// If the data exceeds max_bytes_in_join, the blocks are extracted via releaseJoinedBlocks and drained into a new
+/// If the data exceeds max_bytes_before_external_join, the blocks are extracted via releaseJoinedBlocks and drained into a new
 /// GraceHashJoin.
 /// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
@@ -36,7 +35,7 @@ class ConcurrentHashJoin;
 /// Blocks are fed into a ConcurrentHashJoin from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToGraceHashJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_in_join, a GraceHashJoin is created and ConcurrentHashJoin slots are converted via
+/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and ConcurrentHashJoin slots are converted via
 /// addBlockToJoin calls possibly from multiple threads.
 /// If all blocks fit in memory, the ConcurrentHashJoin is promoted to chosen_join with zero rework.
 ///
@@ -121,7 +120,7 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t initial_num_buckets;
     size_t max_num_buckets;
-    SizeLimits limits;
+    size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_slot_to_convert{0};

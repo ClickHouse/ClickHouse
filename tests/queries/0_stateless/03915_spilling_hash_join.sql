@@ -1,6 +1,6 @@
 -- Test SpillingHashJoin: automatic spilling of hash joins to disk.
 
-SET enable_auto_spilling_hash_join = 1;
+SET max_bytes_before_external_join = 1000000000;
 
 -- Ensure it shows up in query plan nicely
 SELECT trim(explain)
@@ -50,9 +50,9 @@ FULL JOIN (SELECT number + 50 AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_04';
 
--- Test 5: INNER JOIN that exceeds max_bytes_in_join and must spill.
+-- Test 5: INNER JOIN that exceeds max_bytes_before_external_join and must spill.
 SELECT 'inner join spill';
-SET max_bytes_in_join = 100000;
+SET max_bytes_before_external_join = 1000;
 SELECT count(), sum(t2.v)
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 INNER JOIN (SELECT number AS k, number AS v FROM numbers(10000)) AS t2
@@ -103,11 +103,11 @@ FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
 FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_10';
-SET max_bytes_in_join = 0;
 
 -- ====================================================================
 -- Concurrent path: SpillingHashJoin wrapping ConcurrentHashJoin.
 -- ====================================================================
+SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
 
@@ -164,9 +164,9 @@ FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_16';
 
--- Test 17: INNER JOIN that exceeds max_bytes_in_join and must spill (concurrent).
+SET max_bytes_before_external_join = 100000;
+-- Test 17: INNER JOIN that exceeds max_bytes_before_external_join and must spill (concurrent).
 SELECT 'concurrent inner join spill';
-SET max_bytes_in_join = 100000;
 SELECT count(), sum(t2.v)
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 INNER JOIN (SELECT number AS k, number AS v FROM numbers(10000)) AS t2
@@ -217,7 +217,6 @@ FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
 FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_22';
-SET max_bytes_in_join = 0;
 
 -- ====================================================================
 -- Profile event counters for non-joined and delayed blocks.

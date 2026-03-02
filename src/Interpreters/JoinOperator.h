@@ -86,7 +86,7 @@ struct JoinSettings
     UInt64 grace_hash_join_max_buckets;
 
     /* Spilling hash join settings */
-    bool enable_auto_spilling_hash_join;
+    UInt64 max_bytes_before_external_join = 0;
 
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
