@@ -298,6 +298,11 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
+    bool hasOnlyDefaults() const override
+    {
+        return data->isDefaultAt(0);
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         if (!data->isDefaultAt(0))
