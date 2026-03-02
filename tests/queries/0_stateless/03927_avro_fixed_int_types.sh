@@ -7,8 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DATA_DIR=$CUR_DIR/data_avro
-
 ${CLICKHOUSE_LOCAL} <<EOF
   CREATE TABLE test (
     uint8 UInt8,
@@ -21,7 +19,7 @@ ${CLICKHOUSE_LOCAL} <<EOF
     int64 Int64,
   );
 
-  INSERT INTO test FROM INFILE '$DATA_DIR/fixed.avro' FORMAT avro;
+  INSERT INTO test FROM INFILE '${CLICKHOUSE_TMP}/fixed.avro' FORMAT avro;
 
   SELECT * FROM test FORMAT CSV;
 EOF
