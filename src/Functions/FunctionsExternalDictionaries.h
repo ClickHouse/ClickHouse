@@ -721,9 +721,9 @@ private:
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument);
 
-                restoreShortCircuitColumn(result, defaults_column, mask_column, result_type);
+                restoreShortCircuitColumn(result, defaults_column, mask_column, attribute_type);
             }
             else
             {
