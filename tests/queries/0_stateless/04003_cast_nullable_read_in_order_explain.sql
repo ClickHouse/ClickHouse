@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- { echo }
 
 SET optimize_read_in_order = 1;
