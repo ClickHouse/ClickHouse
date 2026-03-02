@@ -935,6 +935,11 @@ static ColumnWithTypeAndName executeActionForPartialResult(
             if (!key.column)
                 break;
 
+            /// arrayJoin changes the number of rows, which would break partial evaluation
+            /// where other columns maintain input_rows_count. Skip it for non-header evaluation.
+            if (input_rows_count > 0)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
