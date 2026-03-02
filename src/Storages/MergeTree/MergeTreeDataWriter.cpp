@@ -895,7 +895,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// (sorting, partition, primary) are also safe to omit: primary.idx and
     /// minmax_*.idx already contain the baked-in values, and the merge reader fills
     /// defaults for missing column data.
+    ///
+    /// Patch parts (created by lightweight UPDATE) are excluded: their metadata
+    /// requires specific system columns (_block_number, _block_offset) to exist
+    /// for secondary min-max indices, so removing them would cause a crash.
     bool has_empty_columns = false;
+    if (!new_data_part->info.isPatch())
     {
         NameSet empty_columns;
         for (const auto & col : block)
