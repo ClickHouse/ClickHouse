@@ -903,10 +903,19 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (col.column->hasOnlyDefaults())
                 empty_columns.insert(col.name);
         }
+        /// At least one column must remain in the part — a part with zero
+        /// data columns would have no marks and trigger assertion failures.
+        /// We check against the `columns` list (metadata-derived), not the
+        /// block, because the block may contain virtual columns like
+        /// _block_number / _block_offset that are not in `columns`.
         if (!empty_columns.empty())
         {
-            columns = columns.eraseNames(empty_columns);
-            has_empty_columns = true;
+            auto filtered = columns.eraseNames(empty_columns);
+            if (!filtered.empty())
+            {
+                columns = std::move(filtered);
+                has_empty_columns = true;
+            }
         }
     }
 
