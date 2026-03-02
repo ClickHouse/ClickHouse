@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
+            {"allow_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistic", false, true, "Statistics are now GA"},
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
             {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
@@ -1065,6 +1069,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
