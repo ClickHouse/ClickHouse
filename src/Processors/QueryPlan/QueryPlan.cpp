@@ -455,17 +455,6 @@ static void explainStep(
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
-
-    if (options.pretty)
-    {
-        while (!settings.other_prefix.empty() && settings.other_prefix.back() == ' ')
-            settings.other_prefix.pop_back();
-        if (!settings.other_prefix.empty())
-        {
-            settings.out << prefix;
-            settings.out.write('\n');
-        }
-    }
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
