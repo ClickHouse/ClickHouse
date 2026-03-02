@@ -470,16 +470,16 @@ EXPLAIN actions = 1, verbose = 0 SELECT sum(number) FROM numbers(10) GROUP BY nu
 ```
 
 ```
-Expression (Project names)
+Expression ((Project names + Projection))
   Aggregating
-  Keys: modulo(number, 4_UInt8)
+  Keys: modulo(__table1.number, 4_UInt8)
   Aggregates:
-      sum(modulo(number, 4_UInt8))
+      sum(__table1.number)
         Function: sum(UInt64) → UInt64
-        Arguments: number
+        Arguments: __table1.number
   Skip merging: 0
-    Expression (Before GROUP BY)
-      ReadFromStorage (SystemNumbers)
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromSystemNumbers
 ```
 
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
