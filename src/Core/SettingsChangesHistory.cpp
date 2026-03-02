@@ -51,6 +51,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
             {"semi_join_compatibility", false, false, "New setting to skip non-preserved side columns in SELECT * for SEMI JOINs"},
             {"anti_join_compatibility", false, false, "New setting to skip non-preserved side columns in SELECT * for ANTI JOINs"},
+            {"semi_join_compatibility", false, true, "New setting to skip non-preserved side columns in SELECT * for SEMI JOINs"},
+            {"anti_join_compatibility", false, true, "New setting to skip non-preserved side columns in SELECT * for ANTI JOINs"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

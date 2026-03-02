@@ -7,6 +7,7 @@ SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
 SET anti_join_compatibility = 1;
+SET semi_join_compatibility = 0;
 
 -- LEFT ANTI JOIN with false condition: all left rows returned, only left columns
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false;
