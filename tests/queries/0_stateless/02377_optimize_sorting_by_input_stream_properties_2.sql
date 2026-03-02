@@ -1,3 +1,5 @@
+set optimize_syntax_fuse_functions = 0;
+
 drop table if exists tab;
 create table tab (x UInt32, y UInt32) engine = MergeTree order by x;
 

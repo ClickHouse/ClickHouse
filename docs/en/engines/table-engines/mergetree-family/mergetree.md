@@ -401,8 +401,8 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`bloom_filter`](#bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index
 - [`tokenbf_v1`](#token-bloom-filter) index
-- [`text`]({#text}) index
-- [`vector_similarity`]({#vector-similarity}) index
+- [`text`](#text) index
+- [`vector_similarity`](#vector-similarity) index
 
 #### MinMax skip index {#minmax}
 

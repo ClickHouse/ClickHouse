@@ -99,7 +99,7 @@ FROM (
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
-        }, {}, documentation});
+        }, documentation});
 }
 
 }

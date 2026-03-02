@@ -1,6 +1,7 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
