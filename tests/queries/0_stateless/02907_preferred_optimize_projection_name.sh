@@ -51,13 +51,13 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_string" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log 
-WHERE initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true
 
 echo "Executing query with setting"
@@ -74,13 +74,13 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1" | grep -o "projection_test_by_string" || true
 
 echo "Executing query with wrong projection"
@@ -97,11 +97,11 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_string" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log 
-WHERE initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true

@@ -188,6 +188,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURL>();
+    factory.registerFunction<TableFunctionURL>({});
 }
 }
