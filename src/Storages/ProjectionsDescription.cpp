@@ -293,21 +293,14 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     bool positional_arguments_for_projections = query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
 
+    /// Force INITIAL_QUERY so that the Analyzer's replaceNodesWithPositionalArguments
+    /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
+    auto mut_context = Context::createCopy(query_context);
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    mut_context->setQueryKindInitial();
+
     bool is_aggregate;
     {
-        /// Create a temporary context for the Analyzer pre-analysis step only.
-        /// We need two modifications:
-        /// 1. Override enable_positional_arguments for projection compatibility.
-        /// 2. Force INITIAL_QUERY so that the Analyzer's replaceNodesWithPositionalArguments
-        ///    works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
-        ///
-        /// This context must NOT be passed to InterpreterSelectQuery because setQueryKindInitial()
-        /// alters ClientInfo fields (initial_user, etc.) which breaks access control checks
-        /// in DatabaseReplicated mode (e.g. privilege checks for subqueries in projections).
-        auto analyzer_context = Context::createCopy(query_context);
-        analyzer_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
-        analyzer_context->setQueryKindInitial();
-
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
         /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
@@ -315,11 +308,11 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// including table-level ALIAS columns by name.
         StoragePtr analyzer_storage = std::make_shared<StorageProjectionSource>(ColumnsDescription(columns.getAll()));
 
-        auto query_tree = buildQueryTree(result.query_ast, analyzer_context);
+        auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, analyzer_context);
+        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
-        QueryTreePassManager query_tree_pass_manager(analyzer_context);
+        QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
         query_tree_pass_manager.runOnlyResolve(query_tree);
 
@@ -337,12 +330,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             projection_order_by->setAlias({});
         }
     }
-
-    /// Use a separate context for InterpreterSelectQuery with only the positional arguments
-    /// setting overridden. This preserves the original query_context's ClientInfo (including
-    /// query_kind and user identity) so that access control works correctly.
-    auto mut_context = Context::createCopy(query_context);
-    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
     InterpreterSelectQuery select(
         result.query_ast,
