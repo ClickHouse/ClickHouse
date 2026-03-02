@@ -365,6 +365,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    String database_namespace;  /// Database namespace prefix for multi-tenant isolation.
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1051,6 +1052,23 @@ public:
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
+
+    /// Database namespace for multi-tenant isolation.
+    /// When set, database names are transparently prefixed with "{database_namespace}__".
+    String getDatabaseNamespace() const;
+    void setDatabaseNamespace(const String & ns);
+    /// Prepend namespace prefix to a database name (skip system databases and already-prefixed names).
+    String applyDatabaseNamespace(const String & database_name) const;
+    /// Strip namespace prefix from a physical database name for user-facing display.
+    String stripDatabaseNamespace(const String & physical_database_name) const;
+    /// Validate that a database name does not conflict with existing database namespaces.
+    /// Throws if a non-namespaced user tries to create a database whose name looks like "ns__xxx"
+    /// where "ns" is an existing user's database namespace.
+    void validateDatabaseNamespaceConflict(const String & database_name) const;
+    /// Validate that setting a database namespace does not conflict with existing databases.
+    /// Throws if any existing database has the prefix "ns__" that wasn't created by a namespaced user.
+    void validateNamespaceAgainstExistingDatabases(const String & ns) const;
+
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;

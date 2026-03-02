@@ -62,7 +62,11 @@ BlockIO InterpreterRenameQuery::execute()
     for (const auto & elem : rename.getElements())
     {
         descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        auto & description = descriptions.back();
+        if (elem.from.database)
+            description.from_database_name = getContext()->applyDatabaseNamespace(description.from_database_name);
+        if (elem.to.database)
+            description.to_database_name = getContext()->applyDatabaseNamespace(description.to_database_name);
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);

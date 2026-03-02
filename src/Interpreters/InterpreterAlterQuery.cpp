@@ -77,7 +77,15 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    auto & alter = query_ptr->as<ASTAlterQuery &>();
+
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = alter.getDatabase();
+        if (!database.empty())
+            alter.setDatabase(getContext()->applyDatabaseNamespace(database));
+    }
+
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);

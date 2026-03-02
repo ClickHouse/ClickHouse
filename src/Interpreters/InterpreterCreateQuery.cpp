@@ -2443,6 +2443,21 @@ BlockIO InterpreterCreateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = create.getDatabase();
+        if (!database.empty())
+        {
+            /// Check for namespace collision before applying the prefix.
+            /// Skip for ATTACH queries — they may come from internal paths
+            /// (e.g. UNDROP, server restart) where the database name is already
+            /// physical and the context has no namespace set.
+            if (!create.attach)
+                getContext()->validateDatabaseNamespaceConflict(database);
+            create.setDatabase(getContext()->applyDatabaseNamespace(database));
+        }
+    }
+
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;

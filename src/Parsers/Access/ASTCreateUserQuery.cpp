@@ -173,6 +173,12 @@ namespace
         ostr << " DEFAULT DATABASE ";
         default_database.format(ostr, settings);
     }
+
+    void formatDatabaseNamespace(const ASTDatabaseOrNone & database_namespace, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " DATABASE NAMESPACE ";
+        database_namespace.format(ostr, settings);
+    }
 }
 
 
@@ -199,6 +205,9 @@ ASTPtr ASTCreateUserQuery::clone() const
 
     if (default_database)
         res->default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+
+    if (database_namespace)
+        res->database_namespace = boost::static_pointer_cast<ASTDatabaseOrNone>(database_namespace->clone());
 
     if (grantees)
         res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
@@ -272,6 +281,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (default_database)
         formatDefaultDatabase(*default_database, ostr, format);
+
+    if (database_namespace)
+        formatDatabaseNamespace(*database_namespace, ostr, format);
 
     if (roles)
         formatRoles(*roles, ostr, format);

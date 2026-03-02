@@ -97,6 +97,13 @@ namespace
             query->default_database = ast;
         }
 
+        if (!user.database_namespace.empty())
+        {
+            auto ast = make_intrusive<ASTDatabaseOrNone>();
+            ast->database_name = user.database_namespace;
+            query->database_namespace = ast;
+        }
+
         return query;
     }
 

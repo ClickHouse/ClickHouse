@@ -1169,6 +1169,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    database_namespace(o.database_namespace),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -1301,7 +1302,7 @@ String Context::resolveDatabase(const String & database_name) const
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
-    return res;
+    return applyDatabaseNamespace(res);
 }
 
 String Context::getPath() const
@@ -1861,6 +1862,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
+    const auto & db_namespace = user->database_namespace;
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -1874,9 +1876,17 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
+    /// Set the database namespace (must be before setCurrentDatabaseWithLock).
+    /// Assign directly since we already hold the lock.
+    if (!db_namespace.empty())
+    {
+        database_namespace = db_namespace;
+        need_recalculate_access = true;
+    }
+
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabaseWithLock(applyDatabaseNamespace(database), lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3195,7 +3205,7 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 void Context::setCurrentDatabase(const String & name)
 {
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
+    setCurrentDatabaseWithLock(applyDatabaseNamespace(name), lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3206,6 +3216,91 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
     std::lock_guard lock(mutex);
     current_database = name;
     need_recalculate_access = true;
+}
+
+String Context::getDatabaseNamespace() const
+{
+    SharedLockGuard lock(mutex);
+    return database_namespace;
+}
+
+void Context::setDatabaseNamespace(const String & ns)
+{
+    std::lock_guard lock(mutex);
+    database_namespace = ns;
+    need_recalculate_access = true;
+}
+
+String Context::applyDatabaseNamespace(const String & database_name) const
+{
+    if (database_namespace.empty())
+        return database_name;
+    if (DatabaseCatalog::isPredefinedDatabase(database_name))
+        return database_name;
+    /// The "default" database is shared across all namespaces.
+    if (database_name == "default")
+        return database_name;
+    /// Already prefixed — don't double-prefix.
+    String prefix = database_namespace + "__";
+    if (database_name.starts_with(prefix))
+        return database_name;
+    return prefix + database_name;
+}
+
+String Context::stripDatabaseNamespace(const String & physical_database_name) const
+{
+    if (database_namespace.empty())
+        return physical_database_name;
+    String prefix = database_namespace + "__";
+    if (physical_database_name.starts_with(prefix))
+        return physical_database_name.substr(prefix.size());
+    return physical_database_name;
+}
+
+void Context::validateDatabaseNamespaceConflict(const String & database_name) const
+{
+    /// Only relevant for non-namespaced users creating databases with "__" in the name.
+    if (!database_namespace.empty())
+        return;
+
+    auto pos = database_name.find("__");
+    if (pos == String::npos || pos == 0)
+        return;
+
+    String potential_namespace = database_name.substr(0, pos);
+
+    /// Check if any existing user has this as their database_namespace.
+    const auto & access_control = getAccessControl();
+    auto user_ids = access_control.findAll<User>();
+    for (const auto & id : user_ids)
+    {
+        auto user = access_control.tryRead<User>(id);
+        if (user && user->database_namespace == potential_namespace)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot create database '{}': the prefix '{}' conflicts with an existing database namespace",
+                database_name, potential_namespace);
+    }
+}
+
+void Context::validateNamespaceAgainstExistingDatabases(const String & ns) const
+{
+    if (ns.empty())
+        return;
+
+    String prefix = ns + "__";
+
+    /// Check if any existing database starts with "ns__".
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{});
+    for (const auto & [db_name, _] : databases)
+    {
+        if (db_name.starts_with(prefix))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot set database namespace '{}': existing database '{}' has the prefix '{}' which would conflict. "
+                "Drop or rename the conflicting database first.",
+                ns, db_name, prefix);
+    }
 }
 
 void Context::setCurrentQueryId(const String & query_id)
@@ -6826,6 +6921,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
     if (!storage_id.database_name.empty())
     {
+        storage_id.database_name = applyDatabaseNamespace(storage_id.database_name);
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)

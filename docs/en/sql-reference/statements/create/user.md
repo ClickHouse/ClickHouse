@@ -21,6 +21,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
+    [DATABASE NAMESPACE namespace]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -209,6 +210,58 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 - `NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
+
+## DATABASE NAMESPACE Clause {#database-namespace-clause}
+
+Assigns a database namespace to the user for multi-tenant database isolation. When a user has a database namespace set, all non-system database references are transparently prefixed with `{namespace}__` (double underscore separator). This allows multiple tenants to use the same logical database names (e.g., `mydb`) while physically operating on separate databases (`tenant1__mydb`, `tenant2__mydb`).
+
+The namespace is a user-level property — users cannot change their own namespace at runtime.
+
+System databases (`system`, `INFORMATION_SCHEMA`, `information_schema`) and the `default` database are never prefixed.
+
+Examples:
+
+Create a user with a database namespace:
+
+```sql
+CREATE USER tenant1_user DATABASE NAMESPACE tenant1;
+```
+
+When `tenant1_user` connects and runs queries, database names are transparently mapped:
+
+```sql
+-- User sees "mydb", physically it's "tenant1__mydb"
+CREATE DATABASE mydb;
+CREATE TABLE mydb.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x;
+INSERT INTO mydb.t1 VALUES (1), (2), (3);
+SELECT * FROM mydb.t1;
+
+-- SHOW DATABASES only shows databases in the user's namespace
+-- (with the prefix stripped) plus system databases
+SHOW DATABASES;
+
+-- SHOW CREATE outputs use the logical name without the prefix
+SHOW CREATE DATABASE mydb;
+-- CREATE DATABASE mydb ENGINE = Atomic
+```
+
+A different tenant can use the same logical names without conflict:
+
+```sql
+CREATE USER tenant2_user DATABASE NAMESPACE tenant2;
+-- tenant2_user's "mydb" is physically "tenant2__mydb", completely separate
+```
+
+The namespace can also be set in `users.xml`:
+
+```xml
+<users>
+    <tenant1_user>
+        <password>...</password>
+        <database_namespace>tenant1</database_namespace>
+    </tenant1_user>
+</users>
+```
 
 ## Examples {#examples-1}
 

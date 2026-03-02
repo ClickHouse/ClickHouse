@@ -101,6 +101,14 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             create.targets->resetInnerUUIDs();
     }
 
+    /// Strip database namespace prefix so the user sees logical names.
+    {
+        auto & create = create_query->as<ASTCreateQuery &>();
+        String db = create.getDatabase();
+        if (!db.empty())
+            create.setDatabase(getContext()->stripDatabaseNamespace(db));
+    }
+
     MutableColumnPtr column = ColumnString::create();
     column->insert(format(
     {

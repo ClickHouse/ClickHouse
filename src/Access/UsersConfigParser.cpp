@@ -452,6 +452,9 @@ namespace
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 
+        String database_namespace = config.getString(user_config + ".database_namespace", "");
+        user->database_namespace = database_namespace;
+
         return user;
     }
 
