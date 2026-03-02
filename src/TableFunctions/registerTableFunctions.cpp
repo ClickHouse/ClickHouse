@@ -36,6 +36,7 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeIndex(factory);
     registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
+    registerTableFunctionMergeTreeTextIndex(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

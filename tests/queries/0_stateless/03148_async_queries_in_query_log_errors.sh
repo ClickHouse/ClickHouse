@@ -22,7 +22,7 @@ function print_flush_query_logs()
               not empty(flush_query_id) as populated_flush_query_id
           FROM system.asynchronous_insert_log
           WHERE
-              event_date >= yesterday()
+              event_date >= yesterday() AND event_time >= now() - 600
           AND query_id = '$1'
           AND database = currentDatabase()
           FORMAT Vertical"
@@ -46,7 +46,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_log
       WHERE
-          event_date >= yesterday()
+          event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
