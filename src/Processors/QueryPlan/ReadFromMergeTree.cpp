@@ -2211,6 +2211,16 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build sets for PREWHERE and row_level_filter synchronously during query analysis.
+        /// This is needed because PREWHERE is evaluated at the storage level during data reading,
+        /// before the pipeline-level CreatingSetsStep has a chance to build them.
+        /// Without this, FutureSetFromSubquery::get() returns nullptr and causes
+        /// "Not-ready Set is passed as the second argument for function 'in'" error.
+        if (query_info.prewhere_info)
+            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+        if (query_info.row_level_filter)
+            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+
         buildIndexes(
             indexes,
             index_filter_dag,
