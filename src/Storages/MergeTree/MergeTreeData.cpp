@@ -267,6 +267,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -294,6 +295,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
+    extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -2331,6 +2333,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// For iteration to be completed
     runner.waitForAllToFinishAndRethrowFirstError();
 
+    /// Check if the table is explicitly marked as readonly via the `table_readonly` setting.
+    const bool is_table_readonly = (*settings)[MergeTreeSetting::table_readonly];
+
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
@@ -2502,8 +2507,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly)
+    /// If all disks are readonly or the table is explicitly marked as readonly,
+    /// it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -2547,7 +2553,9 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-    if (refresh_statistics_seconds && !refresh_stats_task)
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+    if (refresh_statistics_seconds)
     {
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
@@ -2985,37 +2993,33 @@ PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
     return getContext()->getPrimaryIndexCache();
 }
 
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const
+MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_uncompressed_bytes) const
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
-        return nullptr;
+    CachesToPrewarm result;
+    auto settings = getSettings();
 
     /// Do not load data to caches for small parts because
     /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
+    size_t min_bytes_to_prewarm = (*settings)[MergeTreeSetting::min_bytes_to_prewarm_caches];
 
-    return getPrimaryIndexCache();
+    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
+        return result;
+
+    if ((*settings)[MergeTreeSetting::prewarm_primary_key_cache])
+        result.primary_index_cache = getPrimaryIndexCache();
+
+    if ((*settings)[MergeTreeSetting::prewarm_mark_cache])
+    {
+        result.mark_cache = getContext()->getMarkCache();
+        result.index_mark_cache = getContext()->getIndexMarkCache();
+    }
+
+    return result;
 }
 
-MarkCachePtr MergeTreeData::getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const
+void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches)
 {
-    if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return nullptr;
-
-    /// Do not load data to caches for small parts because
-    /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
-
-    return getContext()->getMarkCache();
-}
-
-void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
-{
-    if (!mark_cache && !index_cache)
+    if (!caches.hasAny())
         return;
 
     Stopwatch watch;
@@ -3036,12 +3040,13 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
         return to_tuple(lhs) > to_tuple(rhs);
     });
 
-    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
     double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
+    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
+    double index_mark_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::index_mark_cache_prewarm_ratio];
 
     Names columns_to_prewarm_marks;
 
-    if (mark_cache)
+    if (caches.mark_cache)
     {
         auto metadata_snaphost = getInMemoryMetadataPtr();
         columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
@@ -3061,33 +3066,40 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
     {
         bool added_task = false;
 
-        if (index_cache && !part->isIndexLoaded() && enough_space(index_cache, index_ratio_to_prewarm))
+        if (caches.primary_index_cache && !part->isIndexLoaded() && enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
         {
             /// Capturing by reference here is fine:
             /// enough_space is created before runner and outlives it
-            /// index_cache is passed as argument to the method and outlives the runner
+            /// caches is passed as const-ref to the method and outlives the runner
             /// part belongs to data_parts, which is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&enough_space, &index_cache, index_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part]
             {
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
-                if (enough_space(index_cache, index_ratio_to_prewarm))
-                    part->loadIndexToCache(*index_cache);
+                if (enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
+                    part->loadIndexToCache(*caches.primary_index_cache);
             });
 
             added_task = true;
         }
 
-        if (mark_cache && enough_space(mark_cache, marks_ratio_to_prewarm))
+        if (caches.mark_cache && enough_space(caches.mark_cache, marks_ratio_to_prewarm))
         {
-            /// Same as above, plus:
-            /// mark_cache is passed as argument to the method and outlives the runner
-            runner.enqueueAndKeepTrack([&enough_space, &mark_cache, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
             {
-                /// Check again, because another task may have filled the cache while this task was waiting in the queue.
-                /// The cache still may be filled slightly more than `marks_ratio_to_prewarm`, but it's ok.
-                if (enough_space(mark_cache, marks_ratio_to_prewarm))
-                    part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get());
+                if (enough_space(caches.mark_cache, marks_ratio_to_prewarm))
+                    part->loadMarksToCache(columns_to_prewarm_marks, caches.mark_cache.get());
+            });
+
+            added_task = true;
+        }
+
+        if (caches.index_mark_cache && enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
+        {
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part]
+            {
+                if (enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
+                    part->loadIndexMarksToCache(caches.index_mark_cache.get());
             });
 
             added_task = true;
@@ -4833,6 +4845,9 @@ void MergeTreeData::changeSettings(
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
+        UInt64 has_refresh_statistics_interval_changed
+            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
@@ -4850,6 +4865,11 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
+
+        if (has_refresh_statistics_interval_changed)
+        {
+            startStatisticsCache();
+        }
     }
 }
 
@@ -7641,6 +7661,9 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
+    if (name.empty())
+        throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Empty part name");
+
     if (name.contains('/') || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
