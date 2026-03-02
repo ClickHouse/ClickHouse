@@ -452,8 +452,11 @@ For the `Map` data type, the client can specify if the index should be created f
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 
-> Note: With `text` index generally availability (GA) starting from ClickHouse version 26.2, `ngrambf_v1` index is NOT recommended anymore for full text search.
-> See [here](textindexes.md) for details.
+:::note
+With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
+
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
+:::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
@@ -521,10 +524,11 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 
 #### Token bloom filter {#token-bloom-filter}
 
-> Note: With `text` index generally availability (GA) starting from ClickHouse version 26.2, `tokenbf_v1` index is NOT recommended anymore for full text search.
-> See [here](textindexes.md) for details.
+:::note
+With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
+:::
 
 ```text title="Syntax"
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
