@@ -1,7 +1,8 @@
-SET allow_experimental_statistics=1;
+SET allow_statistics=1;
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=0;
+SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE part
 (
