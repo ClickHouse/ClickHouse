@@ -489,7 +489,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
