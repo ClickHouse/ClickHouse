@@ -267,12 +267,6 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/docs-mintlify",
-        path="./ci/docker/docs-mintlify",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),    
-    Docker.Config(
         name="clickhouse/install-deb-test",
         path="./ci/docker/install/deb",
         platforms=Docker.Platforms.arm_amd,

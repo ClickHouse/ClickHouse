@@ -1129,7 +1129,7 @@ class JobConfigs:
                 "./changelogs/"
             ],
         ),
-        run_in_docker="clickhouse/docs-builder-mintlify"
+        run_in_docker="clickhouse/docs-builder"
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
