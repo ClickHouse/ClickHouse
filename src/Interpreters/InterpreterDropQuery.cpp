@@ -604,10 +604,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 });
             }
 
+            /// Save original values that may be modified by ignore_drop_queries_probability
+            /// inside executeToTableImpl (it may set sync=false and kind=Truncate via non-const reference).
+            const auto original_kind = query_for_table.kind;
+            const auto original_sync = query_for_table.sync;
+
             for (const auto & table : tables_to_drop)
             {
                 query_for_table.setTable(table.first.getTableName());
                 query_for_table.is_dictionary = table.second;
+                query_for_table.kind = original_kind;
+                query_for_table.sync = original_sync;
                 DatabasePtr db;
                 UUID table_to_wait = UUIDHelpers::Nil;
                 /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
