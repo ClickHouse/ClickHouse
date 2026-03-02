@@ -8,7 +8,7 @@ concurrency:
 
 on:
   schedule:
-    - cron: '45 11 * * 2,4'
+    - cron: '45 11 * * *'
   workflow_dispatch:
     inputs:
       dry-run:

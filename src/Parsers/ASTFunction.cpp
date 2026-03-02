@@ -345,18 +345,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
+                /// Also extra parentheses are needed for subqueries with NOT, because NOT (SELECT 1) is ambiguous.
+                /// Note: Tuples no longer need inside_parens for NOT because NOT is now always parsed as a
+                /// unary prefix operator (not a function call), so NOT (1, 2, 3) correctly produces NOT(tuple(1,2,3)).
                 /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
                 bool inside_parens = !has_alias
                     && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                        || (subquery && name == "not") || (is_tuple && name == "not"));
+                        || (subquery && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
