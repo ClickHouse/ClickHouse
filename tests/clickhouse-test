@@ -1313,6 +1313,8 @@ class SettingsRandomizer:
         ):
             # parallel replicas won't actually be used: since `automatic_parallel_replicas_mode` is 2 we will only collect statistics
             random_settings["enable_parallel_replicas"] = 1
+            # seem to throw us over the memory limit in flaky checks with sanitizers
+            random_settings["parallel_distributed_insert_select"] = 0
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
