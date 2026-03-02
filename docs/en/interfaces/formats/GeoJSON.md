@@ -33,7 +33,7 @@ Schema inference returns the fixed schema above, so `DESCRIBE` and `SELECT ... F
 
 ## Example usage {#example-usage}
 
-Given the following GeoJSON file `cities.geojson`:
+Given the following GeoJSON file `berlin.geojson` containing a mix of geometry types:
 
 ```json
 {
@@ -43,71 +43,99 @@ Given the following GeoJSON file `cities.geojson`:
             "type": "Feature",
             "id": "1",
             "geometry": {"type": "Point", "coordinates": [13.4050, 52.5200]},
-            "properties": {"name": "Berlin", "population": 3645000}
+            "properties": {"name": "Berlin", "feature_type": "city", "population": 3645000}
         },
         {
             "type": "Feature",
             "id": "2",
-            "geometry": {"type": "Point", "coordinates": [2.3522, 48.8566]},
-            "properties": {"name": "Paris", "population": 2161000}
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[13.3888, 52.5163], [13.4050, 52.5200], [13.4210, 52.5163]]
+            },
+            "properties": {"name": "Unter den Linden", "feature_type": "boulevard"}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[13.3500, 52.5116], [13.3800, 52.5116], [13.3800, 52.5200], [13.3500, 52.5200], [13.3500, 52.5116]]]
+            },
+            "properties": {"name": "Tiergarten", "feature_type": "park", "area_km2": 2.1}
         }
     ]
 }
 ```
 
-We can query the file like this:
+We can query the file and inspect geometry types:
 
 ```sql title="Query"
-SELECT id, geometry, properties.name AS name
-FROM file('cities.geojson', GeoJSON);
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('berlin.geojson', GeoJSON);
 ```
 
 ```response title="Response"
-┌─id─┬─geometry─────────┬─name───┐
-│ 1  │ (13.405,52.52)   │ Berlin │
-│ 2  │ (2.3522,48.8566) │ Paris  │
-└────┴──────────────────┴────────┘
+┌─id─┬─name─────────────┬─geo_type───┐
+│ 1  │ Berlin           │ Point      │
+│ 2  │ Unter den Linden │ LineString │
+│ 3  │ Tiergarten       │ Polygon    │
+└────┴──────────────────┴────────────┘
 ```
 
-The file extension `geojson` will be automatically read using the `GeoJSON` format, so you can also exclude the `GeoJSON` format:
+The file extension `.geojson` is automatically detected, so the format argument can be omitted:
 
 ```sql title="Query"
-SELECT id, geometry, properties.name AS name
-FROM file('cities.geojson');
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('berlin.geojson');
 ```
 
-This will result in the same output.
+To access the `Point` geometry's coordinates directly, filter on `variantType`:
+
+```sql title="Query"
+SELECT properties.name AS name, geometry
+FROM file('berlin.geojson', GeoJSON)
+WHERE variantType(geometry) = 'Point';
+```
+
+```response title="Response"
+┌─name───┬─geometry───────┐
+│ Berlin │ (13.405,52.52) │
+└────────┴────────────────┘
+```
 
 We can also ingest GeoJSON data into a table:
 
 ```sql title="Query"
-CREATE TABLE cities
+CREATE TABLE berlin
 (
-    id         String,
-    geometry   Geometry,
-    properties JSON,
-    name       String MATERIALIZED properties.name
+    id           String,
+    geometry     Geometry,
+    properties   JSON,
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO cities
+INSERT INTO berlin
 SELECT id, geometry, properties
-FROM file('cities.geojson', GeoJSON);
+FROM file('berlin.geojson', GeoJSON);
 ```
 
-We can then query that table:
+Then query by feature type:
 
-```sql
-SELECT *, name 
-FROM cities;
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM berlin
+ORDER BY id;
 ```
 
 ```response title="Response"
-┌─id─┬─geometry─────────┬─properties─────────────────────────────┬─name───┐
-│ 1  │ (13.405,52.52)   │ {"name":"Berlin","population":3645000} │ Berlin │
-│ 2  │ (2.3522,48.8566) │ {"name":"Paris","population":2161000}  │ Paris  │
-└────┴──────────────────┴────────────────────────────────────────┴────────┘
+┌─name─────────────┬─feature_type─┬─geo_type───┐
+│ Berlin           │ city         │ Point      │
+│ Unter den Linden │ boulevard    │ LineString │
+│ Tiergarten       │ park         │ Polygon    │
+└──────────────────┴──────────────┴────────────┘
 ```
 
 We can also infer the schema of GeoJSON data without a table definition:
