@@ -742,7 +742,7 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	0
+\N
 SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -779,7 +779,7 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	0
+\N
 SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -898,7 +898,7 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	1
+1
 SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -935,7 +935,7 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 ANTI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	1
+1
 SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -1054,7 +1054,7 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	\N
+\N
 SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -1091,7 +1091,7 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	\N
+\N
 SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -1210,7 +1210,7 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	1
+1
 SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
@@ -1247,4 +1247,4 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 ANTI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-\N	1
+1

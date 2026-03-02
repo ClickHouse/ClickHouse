@@ -10,6 +10,9 @@ set query_plan_join_swap_table = 0;
 set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 set parallel_hash_join_threshold = 0;
+-- Disable new compatibility mode to allow referencing right table columns in WHERE clause after SEMI/ANTI JOIN
+set semi_join_compatibility = 0;
+set anti_join_compatibility = 0;
 
 -- { echoOn }
 

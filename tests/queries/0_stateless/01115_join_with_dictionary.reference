@@ -17,12 +17,12 @@ flat: any left
 3	3	3	3
 4	0		0
 flat: semi left
-0	0	0	0
-1	1	1	1
-2	2	2	2
-3	3	3	3
+0
+1
+2
+3
 flat: anti left
-4	0		0
+4
 flat: inner
 0	0	0	0
 1	1	1	1
@@ -50,12 +50,12 @@ hashed: any left
 3	3	3	3
 4	\N	\N	\N
 hashed: semi left
-0	0	0	0
-1	1	1	1
-2	2	2	2
-3	3	3	3
+0
+1
+2
+3
 hashed: anti left
-4	\N	\N	\N
+4
 hashed: inner
 0	0	0	0
 1	1	1	1

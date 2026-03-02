@@ -42,7 +42,7 @@ key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-1	1	1	1	1	1
+1	1	1
 SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 key1	e	5	5	5	key1		0	0	\N
 key2	a2	1	1	1	key2		0	0	\N
@@ -95,7 +95,7 @@ key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-1	1	1	1	1	1
+1	1	1
 SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 		0	0	\N	key3	a3	1	1	1
 SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
@@ -149,7 +149,7 @@ key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-1	1	1	1	1	1
+1	1	1
 SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 key1	e	5	5	5	key1		0	0	\N
 key2	a2	1	1	1	key2		0	0	\N
@@ -202,7 +202,7 @@ key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-1	1	1	1	1	1
+1	1	1
 SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 		0	0	\N	key3	a3	1	1	1
 SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);

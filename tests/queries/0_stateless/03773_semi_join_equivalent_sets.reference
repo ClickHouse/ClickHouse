@@ -6,12 +6,11 @@ Expression ((Project names + (Projection + )))
 Actions: INPUT : 0 -> __table1.uid UInt64 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table2.number UInt64 : 3
+         INPUT :: 3 -> __table2.number UInt64 : 3
          ALIAS __table1.uid :: 0 -> uid UInt64 : 4
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table2.number :: 3 -> number UInt64 : 2
-Positions: 4 0 1 2
+Positions: 4 0 1
   Expression (Post Join Actions)
   Actions: INPUT :: 0 -> __table1.uid UInt64 : 0
            INPUT :: 1 -> __table1.name String : 1
@@ -81,6 +80,6 @@ Positions: 4 0 1 2
 --
     Type: RIGHT
     Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
           ReadType: Default
-            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
         Filter column: equals(__table2.number, 1_UInt8) (removed)

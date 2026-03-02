@@ -73,6 +73,9 @@ SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 0 SETTINGS enable_analyzer = 1;
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 1;
 
+-- Disable new compatibility mode to test legacy behavior where SEMI/ANTI JOIN returns columns from both sides
+SET semi_join_compatibility = 0;
+SET anti_join_compatibility = 0;
 -- { echoOn }
 SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
