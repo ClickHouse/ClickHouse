@@ -116,8 +116,8 @@ public:
         data.resize(column_variant_or_dynamic.size());
         for (size_t i = 0; i < column_variant_or_dynamic.size(); ++i)
         {
-            bool ele_is_null = column_variant_or_dynamic.isNullAt(i);
-            data[i] = is_equal_mode ? ele_is_null : !ele_is_null;
+            bool is_null = column_variant_or_dynamic.isNullAt(i);
+            data[i] = is_equal_mode ? is_null : !is_null;
         }
         return res;
     }
