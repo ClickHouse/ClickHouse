@@ -225,7 +225,7 @@ FROM example_table;
     FunctionDocumentation documentation_uniq = {description_uniq, syntax_uniq, arguments_uniq, {}, returned_value_uniq, examples_uniq, introduced_in_uniq, category_uniq};
 
     factory.registerFunction("uniq",
-        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, properties, documentation_uniq});
+        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, documentation_uniq, properties});
 
     /// uniqHLL12 documentation
     FunctionDocumentation::Description description_uniqHLL12 = R"(
@@ -285,7 +285,7 @@ FROM example_hll;
     FunctionDocumentation documentation_uniqHLL12 = {description_uniqHLL12, syntax_uniqHLL12, arguments_uniqHLL12, {}, returned_value_uniqHLL12, examples_uniqHLL12, introduced_in_uniqHLL12, category_uniqHLL12};
 
     factory.registerFunction("uniqHLL12",
-        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic, false /* is_able_to_parallelize_merge */>, properties, documentation_uniqHLL12});
+        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic, false /* is_able_to_parallelize_merge */>, documentation_uniqHLL12, properties});
 
     auto assign_bool_param = [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
     {
@@ -357,7 +357,7 @@ FROM example_data;
     FunctionDocumentation::Category category_uniqExact = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_uniqExact = {description_uniqExact, syntax_uniqExact, arguments_uniqExact, {}, returned_value_uniqExact, examples_uniqExact, introduced_in_uniqExact, category_uniqExact};
 
-    factory.registerFunction("uniqExact", {assign_bool_param, properties, documentation_uniqExact});
+    factory.registerFunction("uniqExact", {assign_bool_param, documentation_uniqExact, properties});
 
 #if USE_DATASKETCHES
     /// uniqTheta documentation
@@ -412,7 +412,7 @@ FROM example_theta;
     FunctionDocumentation documentation_uniqTheta = {description_uniqTheta, syntax_uniqTheta, arguments_uniqTheta, {}, returned_value_uniqTheta, examples_uniqTheta, introduced_in_uniqTheta, category_uniqTheta};
 
     factory.registerFunction("uniqTheta",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, properties, documentation_uniqTheta});
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, documentation_uniqTheta, properties});
 #endif
 
 }

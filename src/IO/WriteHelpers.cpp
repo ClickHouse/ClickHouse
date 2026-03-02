@@ -100,11 +100,16 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
     static constexpr std::string_view distinct_str = "distinct";
     static constexpr std::string_view all_str = "all";
     static constexpr std::string_view table_str = "table";
+    static constexpr std::string_view select_str = "select";
     if (isValidIdentifier(s)
-        /// This are valid identifiers but are problematic if present unquoted in SQL query.
+        /// These are valid identifiers but are problematic if present unquoted in SQL query.
         && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
         && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
-        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size())))
+        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size()))
+        /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
+        /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
+        /// re-parses as a subquery (SELECT [x]) with a different structure.
+        && !(s.size() == select_str.size() && 0 == strncasecmp(s.data(), "select", s.size())))
     {
         writeString(s, buf);
     }

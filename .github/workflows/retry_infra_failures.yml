@@ -49,6 +49,11 @@ jobs:
             run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
             echo "Checking run $run_url ..."
 
+            should_rerun=false
+
+            # Fetch all job data once (reused for multiple checks below)
+            jobs_raw=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" --paginate)
+
             # Collect per-job verdicts across all pages (runs can have >100 jobs).
             # Each failed job emits "true" (infrastructure) or "false" (real failure).
             # A job is considered an infrastructure failure if:
@@ -60,33 +65,65 @@ jobs:
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
             #   a setup/download issue (e.g. missing S3 credentials) rather than a real
             #   test failure
-            verdicts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
-              --paginate --jq '
-                .jobs[] | select(.conclusion == "failure") |
-                if .name == "Config Workflow" or .name == "Finish Workflow" then empty
-                else
-                  [.steps[] | select(.name == "Run")] |
-                  if length == 0 then true
-                  elif .[0].conclusion == "skipped" then true
-                  elif .[0].conclusion == "failure" then
-                    ((.[0].completed_at | fromdateiso8601) -
-                     (.[0].started_at | fromdateiso8601)) < 120
-                  else false
-                  end
+            verdicts=$(echo "$jobs_raw" | jq -r '
+              .jobs[] | select(.conclusion == "failure") |
+              if .name == "Config Workflow" or .name == "Finish Workflow" then empty
+              else
+                [.steps[] | select(.name == "Run")] |
+                if length == 0 then true
+                elif .[0].conclusion == "skipped" then true
+                elif .[0].conclusion == "failure" then
+                  ((.[0].completed_at | fromdateiso8601) -
+                   (.[0].started_at | fromdateiso8601)) < 120
+                else false
                 end
-              ')
+              end
+            ')
 
             # Infrastructure failure = at least one failed job, and all of them are infra
             if [ -z "$verdicts" ]; then
-              is_infra=false
+              :
             elif echo "$verdicts" | grep -q "false"; then
-              is_infra=false
+              :
             else
-              is_infra=true
+              should_rerun=true
+              echo "  Infrastructure failure detected."
             fi
 
-            if [ "$is_infra" = "true" ]; then
-              echo "  Infrastructure failure detected, rerunning..."
+            # Check if "Config Workflow" failed in its "Run" step (e.g. due to
+            # pr_labels_and_category.py rejecting the changelog category).  If the PR
+            # description was edited after the failure (same HEAD commit, so no new
+            # workflow run was triggered), re-run to pick up the fix.
+            if [ "$should_rerun" = "false" ]; then
+              config_failed_at=$(echo "$jobs_raw" | jq -r '
+                [.jobs[]
+                 | select(.name == "Config Workflow" and .conclusion == "failure")
+                 | .steps[] | select(.name == "Run" and .conclusion == "failure")
+                 | .completed_at
+                ] | first // empty
+              ')
+
+              if [ -n "$config_failed_at" ]; then
+                run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
+                  --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
+                pr_number=$(echo "$run_data" | jq -r '.pr // empty')
+                run_sha=$(echo "$run_data" | jq -r '.sha')
+
+                if [ -n "$pr_number" ]; then
+                  pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
+                    --jq '{sha: .head.sha, updated: .updated_at}')
+                  pr_sha=$(echo "$pr_data" | jq -r '.sha')
+                  pr_updated=$(echo "$pr_data" | jq -r '.updated')
+
+                  if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
+                    should_rerun=true
+                    echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
+                  fi
+                fi
+              fi
+            fi
+
+            if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))
                 echo "  Triggered rerun: $run_url/attempts/2"

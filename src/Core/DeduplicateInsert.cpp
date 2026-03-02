@@ -1,6 +1,7 @@
 #include <Core/DeduplicateInsert.h>
 
 #include <Core/Settings.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>

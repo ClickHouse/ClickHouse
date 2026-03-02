@@ -30,6 +30,6 @@ ${CLICKHOUSE_CLIENT} -nq "
   -- Check that all data was read during PREWHERE
   SELECT sum(ProfileEvents['RowsReadByPrewhereReaders']) = sum(ProfileEvents['SelectedRows'])
     FROM system.query_log
-   WHERE event_date >= yesterday() AND NOT is_initial_query AND initial_query_id = '$query_id' AND type = 'QueryFinish' -- AND current_database = currentDatabase() 
+   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND NOT is_initial_query AND initial_query_id = '$query_id' AND type = 'QueryFinish' -- AND current_database = currentDatabase() 
 "
 

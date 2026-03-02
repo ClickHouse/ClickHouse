@@ -237,6 +237,7 @@
     M(KeeperPacketsSent) \
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
+    M(KeeperRequestTotalWithSubrequests) \
     M(KeeperLatency) \
     M(KeeperTotalElapsedMicroseconds) \
     M(KeeperProcessElapsedMicroseconds) \
