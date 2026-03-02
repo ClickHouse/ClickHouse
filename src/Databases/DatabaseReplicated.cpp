@@ -2407,6 +2407,15 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     }
 }
 
+void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
+{
+    std::lock_guard lock{metadata_mutex};
+    tables_metadata_digest -= getMetadataHash(table_name);
+    LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
+                     "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
+                table_name, tables_metadata_digest);
+}
+
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
     auto db_disk = getDisk();
