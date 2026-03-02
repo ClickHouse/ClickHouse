@@ -5215,11 +5215,7 @@ if __name__ == "__main__":
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
 
-        print('---------')
-        print(os.environ["CLICKHOUSE_CLIENT_OPT"])
-        print(get_additional_client_options(args))
         os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
-        print('---------')
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
