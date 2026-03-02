@@ -7336,12 +7336,12 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
 
 PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
-    if (auto num_asts = asts.size(); num_asts < 3)
+    if (auto num_asts = asts.size(); !num_asts)
+        return PartitionIds { };
+    else if (num_asts == 1)
     {
-        PartitionIds partition_ids;
-        for (const auto & ast : asts)
-            partition_ids.insert(getPartitionIDFromQuery(ast, local_context));
-        return partition_ids;
+        const auto & ast = asts.front();
+        return PartitionIds{getPartitionIDFromQuery(ast, local_context)};
     }
     else
     {   /// add all elements all together to avoid moves inside plain_set
@@ -7357,23 +7357,31 @@ PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextP
 PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
-    PartitionIds affected_partition_ids;
-
-    for (const auto & command : commands)
+    if (auto num_cmds = commands.size(); !num_cmds)
+        return PartitionIds { };
+    else if (num_cmds == 1)
     {
+        const auto & command = commands.front();
         if (!command.partition)
+            return PartitionIds { };
+        else
+            return PartitionIds {getPartitionIDFromQuery(command.partition, query_context)};
+    }
+    else
+    {
+        std::vector<String> area;
+        area.reserve(commands.size());
+
+        for (const auto & command : commands)
         {
-            affected_partition_ids.clear();
-            break;
+            if (!command.partition)
+                return PartitionIds { };
+
+            area.push_back(getPartitionIDFromQuery(command.partition, query_context));
         }
 
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
-        );
+        return PartitionIds {area.begin(), area.end()};
     }
-
-    affected_partition_ids.shrink_to_fit();
-    return affected_partition_ids;
 }
 
 PartitionIds MergeTreeData::getAllPartitionIds() const

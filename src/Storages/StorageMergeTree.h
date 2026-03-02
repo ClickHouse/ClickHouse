@@ -227,6 +227,9 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// Requires currently_processing_in_background_mutex to be held.
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommandsUnlocked(std::lock_guard<std::mutex> & /*lock*/) const;
+
     bool mutationVersionsEquivalent(
         const MergeTreePartInfo & left,
         const MergeTreePartInfo & right,
@@ -249,10 +252,9 @@ private:
     /// Returns a lock for lightweight update according to the update_parallel_mode setting
     std::unique_ptr<PlainLightweightUpdateLock> getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context);
 
-    /// For current mutations queue, returns maximum version of mutation for a part,
+    /// For current mutations queue, returns next version of mutation for a part,
     /// with respect of mutations which would not change it.
     /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
