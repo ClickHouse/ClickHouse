@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Functions/IFunction.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
