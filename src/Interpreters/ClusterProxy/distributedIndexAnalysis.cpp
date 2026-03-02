@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -55,7 +56,8 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DistributedIndexAnalysisMicroseconds;
-    extern const Event DistributedIndexAnalysisFailedReplicas;
+    extern const Event DistributedIndexAnalysisReplicaFallback;
+    extern const Event DistributedIndexAnalysisReplicaUnavailable;
     extern const Event DistributedIndexAnalysisMissingParts;
     extern const Event DistributedIndexAnalysisScheduledReplicas;
 }
@@ -137,7 +139,7 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+                                                     const std::vector<std::string_view> & parts, ConnectionPool::Entry connection)
 {
     std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$'",
         storage_id.uuid,
@@ -170,10 +172,6 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
           })),
           "ranges" },
     });
-
-    const auto & settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-    auto connection = pool->get(timeouts, settings);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(*connection, analyze_index_query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
     remote_query_executor->setLogger(logger);
@@ -236,7 +234,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     const auto & settings = context->getSettingsRef();
     auto logger = getLogger("DistributedIndexAnalysis");
-    LOG_DEBUG(logger, "Distributed index analysis for {}", storage_id.getNameForLogs());
 
     auto cluster = context->getClusterForParallelReplicas();
     const auto & shard = cluster->getShardsInfo().at(0);
@@ -244,6 +241,31 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     size_t local_replica_index = findLocalReplica(connection_pools, shard.local_addresses);
     size_t total_replicas = shard.getAllNodeCount();
     size_t active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
+
+    /// Establish connections to remote replicas upfront, before distributing parts
+    /// with consistent hashing. This lets us detect dead replicas early and avoid
+    /// assigning parts to them (which would require a timeout + local fallback).
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+    std::vector<ConnectionPool::Entry> connections(active_replicas);
+    for (size_t i = 0; i < active_replicas; ++i)
+    {
+        if (i == local_replica_index)
+            continue;
+        try
+        {
+            connections[i] = connection_pools[i]->get(timeouts, settings);
+        }
+        catch (...)
+        {
+            ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
+            const auto & replica_address = connection_pools[i]->getAddress();
+            tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). Its will not be participate in distributed index analysis", replica_address, i), LogsLevel::warning);
+            --active_replicas;
+        }
+    }
+    LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, local replica index: {}, active replicas: {})",
+              storage_id.getNameForLogs(),
+              total_replicas, local_replica_index, active_replicas);
 
     chassert(active_replicas <= connection_pools.size());
 
@@ -312,13 +334,16 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         }
         else
         {
+            if (connections[i].isNull())
+                continue;
+
             /// Passing references here is fine. All of them will outlive the runner
-            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]()
+            runner.enqueueAndKeepTrack([i, replica_address, connection = std::move(connections[i]), &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]() mutable
             {
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, std::move(connection));
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }
@@ -326,13 +351,13 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 {
                     if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
                         throw;
-                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
+                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
                     /// Ignore any exceptions, everything will be analyzed on a local replica
                     tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_address, i), LogsLevel::warning);
                 }
                 catch (...)
                 {
-                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
+                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
                     /// Ignore any exceptions, everything will be analyzed on a local replica
                     tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_address, i), LogsLevel::warning);
                 }

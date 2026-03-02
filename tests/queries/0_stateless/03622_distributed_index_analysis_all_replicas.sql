@@ -30,7 +30,8 @@ select
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0 not_blazingly_fast,
   ProfileEvents['DistributedIndexAnalysisMissingParts'] missing_parts,
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] replicas,
-  ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0 failed_replicas
+  ProfileEvents['DistributedIndexAnalysisReplicaUnavailable'] > 0 replica_unavailable,
+  ProfileEvents['DistributedIndexAnalysisReplicaFallback'] > 0 replica_fallback
 from system.query_log
 where
   current_database = currentDatabase()
