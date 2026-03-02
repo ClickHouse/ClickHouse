@@ -13,7 +13,7 @@ namespace
         {
             return Poco::Net::DNS::thisHost().name();
         }
-        catch (...)
+        catch (...) // Ok: DNS::thisHost may fail, fall back to hostName
         {
             return Poco::Net::DNS::hostName();
         }
