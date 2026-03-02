@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
@@ -88,6 +89,7 @@ void MutatePlainMergeTreeTask::finish()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
     /// Metrics will be saved in the local profile_counters.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
@@ -169,6 +171,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
     if (mutate_task)
         mutate_task->cancel();
 

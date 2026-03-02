@@ -72,13 +72,13 @@ public:
     JoinResultPtr joinBlock(Block block) override;
 
     void setTotals(const Block & block) override;
+    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
-    bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -154,6 +154,8 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    mutable std::mutex totals_mutex;
 };
 
 }
