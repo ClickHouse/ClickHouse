@@ -35,6 +35,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
+    extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level;
 }
 
 namespace ErrorCodes
@@ -1673,6 +1674,23 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// Don't print log message about this, because we can have a lot of fetches,
         /// for example during replica recovery.
         return false;
+    }
+
+    if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+        && !entry.new_part_name.empty())
+    {
+        const auto min_level = (*data.getSettings())[MergeTreeSetting::replicated_fetches_min_part_level];
+        if (min_level > 0)
+        {
+            const auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+            if (part_info.level < min_level)
+            {
+                out_postpone_reason = fmt::format(
+                    "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
+                    entry.new_part_name, part_info.level, min_level);
+                return false;
+            }
+        }
     }
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)

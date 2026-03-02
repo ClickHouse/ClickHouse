@@ -536,6 +536,11 @@ namespace ErrorCodes
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
     Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
     )", 0) \
+    DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
+    Minimum part level to fetch from other replicas. Parts with level below this threshold will not be fetched.
+    Use 1 to skip fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
+    Default: 0 (fetch all parts regardless of level).
+    )", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(
     Do fsync for every inserted part. Significantly decreases performance of
     inserts, not recommended to use with wide parts.
