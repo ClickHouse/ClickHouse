@@ -4,7 +4,7 @@ SELECT '=== Test: Correct Sorting for Numbers Only ===';
 SELECT repeat('2', num) as numStr
 FROM (
          SELECT number + 1 AS num
-         FROM numbers(80)
+         FROM numbers(102)
          ORDER BY cityHash64(num, 102)
      )
 ORDER BY naturalSortKey(numStr);
@@ -14,6 +14,8 @@ SELECT '=== Test: Prefix Generation ===';
 
 SELECT naturalSortKey(repeat('2', number + 1))
 FROM numbers(102);
+
+SELECT naturalSortKey(repeat('2', 1001));
 
 -- Test: Leading Zeros Preservation
 SELECT '=== Test: Leading Zeros ===';

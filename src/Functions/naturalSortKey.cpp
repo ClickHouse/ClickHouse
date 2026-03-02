@@ -1,7 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 
-
 namespace DB
 {
 
@@ -69,7 +68,7 @@ private:
             return;
 
         res_data.reserve(src->getChars().size());
-        res_offsets.reserve(input_rows_count);
+        res_offsets.reserve_exact(input_rows_count);
 
         for (size_t row = 0; row != input_rows_count; ++row)
         {
@@ -93,8 +92,8 @@ private:
         const UInt8 * data_digits_start = data_curr;
         const UInt8 * data_non_digits_start = data_curr;
 
-        size_t digits = 0;
-        UInt8 prev_c = 0;
+        size_t digits = 0; // Length of the current sequence of digits (not counting leading zeros).
+        bool leading_zero = false;
 
         for (; data_curr != data_end; ++data_curr)
         {
@@ -107,36 +106,39 @@ private:
                 {
                     appendNumberToResult(data_digits_start, digits, res_data);
                     digits = 0;
+                    leading_zero = false;
                     data_non_digits_start = data_curr;
                 }
-                else if (prev_c == '0') // End of a sequence of zeros.
+                else if (leading_zero) // End of a sequence of zeros.
                 {
                     appendNumberToResult(data_curr - 1, 1, res_data);
                     data_non_digits_start = data_curr;
+                    leading_zero = false;
                 }
             }
             else
             {
                 if (digits) // Continuation of a sequence of digits.
                     ++digits;
-                else
+                else // Start of a new sequence of digits or zeros.
                 {
+                    if (!leading_zero) // End of a sequence of non-digit characters.
+                        res_data.insert(data_non_digits_start, data_curr);
+
                     if (c != '0') // Start of a new sequence of digits (non-zero).
                     {
                         digits = 1;
                         data_digits_start = data_curr;
                     }
-                    if (prev_c != '0') // End of a sequence of non-digit characters.
-                        res_data.insert(data_non_digits_start, data_curr);
+                    else
+                        leading_zero = true; // Start or continuation of a sequence of zeros.
                 }
             }
-
-            prev_c = c;
         }
 
         if (digits) // String ends with a sequence of digits.
             appendNumberToResult(data_digits_start, digits, res_data);
-        else if (prev_c == '0') // String ends with a sequence of zeros.
+        else if (leading_zero) // String ends with a sequence of zeros.
             appendNumberToResult(data_curr - 1, 1, res_data);
         else // String ends with non-digit characters.
             res_data.insert(data_non_digits_start, data_curr);
@@ -144,7 +146,6 @@ private:
 
     /**
      * Append the encoded number (with its length prefix) to the response.
-     * Returns the updated res_curr pointer.
      */
     static void appendNumberToResult(const UInt8 * num_start, const size_t digits, ColumnString::Chars & res_data)
     {
@@ -154,28 +155,29 @@ private:
 
     /**
      * Encode the length of the digit sequence (max supporter len is 79).
-     * Returns the updated res_curr pointer.
      */
     static void appendNumberPrefixToResult(const size_t digits, ColumnString::Chars & res_data)
     {
+        chassert(digits != 0);
+
         auto p = digits - 1;
 
         if (likely(p < 8))
         {
-            // 1 byte encoding: '0' ... '7' for 1..8 digits
+            // 1 byte encoding: '0' ... '7' for 1..8 digits.
             res_data.push_back(static_cast<UInt8>('0' + p));
         }
         else if (p < 20)
         {
-            // 2 bytes encoding: '80' ... '91' for 9..20 digits
+            // 2 bytes encoding: '80' ... '91' for 9..20 digits.
             p += 72;
 
             res_data.push_back(static_cast<UInt8>('0' + p / 10));
             res_data.push_back(static_cast<UInt8>('0' + p % 10));
         }
-        else if (likely(p < 100))
+        else if (likely(p < 99))
         {
-            // 3 bytes encoding: '920' ... '999' for 21..100 digits
+            // 3 bytes encoding: '920' ... '998' for 21..100 digits.
             p += 900;
 
             res_data.push_back(static_cast<UInt8>('0' + p / 100));
@@ -184,9 +186,27 @@ private:
         }
         else
         {
+            // Encode as '999' + length(to_string(p)) + to_string(p)
+
+            size_t p_len = 3; // Length is at least 3 for p >= 100
+            size_t p_power10 = 100;
+            for (auto t = p / 1000; t > 0; t /= 10)
+            {
+                ++p_len;
+                p_power10 *= 10;
+            }
+
             res_data.push_back(UInt8{'9'});
             res_data.push_back(UInt8{'9'});
             res_data.push_back(UInt8{'9'});
+
+            res_data.push_back(static_cast<UInt8>('0' + p_len % 10)); // Encode 'length(to_string(digits - 1))' as a single digit
+
+            while (p_len-- > 0)
+            {
+                res_data.push_back(static_cast<UInt8>('0' + (p / p_power10) % 10));
+                p_power10 /= 10;
+            }
         }
     }
 };
@@ -216,6 +236,8 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNaturalSortKey>(documentation);
+
+    factory.registerAlias("NATURAL_SORT_KEY", "naturalSortKey", FunctionFactory::Case::Insensitive);
 }
 
 }
