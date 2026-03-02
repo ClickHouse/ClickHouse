@@ -24,4 +24,4 @@ select * from (explain indexes=1, distributed=1
 );
 system flush logs query_log;
 -- SKIP: current_database = currentDatabase()
-select normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and not is_initial_query and type != 'QueryStart' and query_kind = 'Select' order by event_time_microseconds;
+select normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and not is_initial_query and type != 'QueryStart' and query_kind = 'Select' order by event_time_microseconds;

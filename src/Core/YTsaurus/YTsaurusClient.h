@@ -1,6 +1,4 @@
 #pragma once
-#include <unordered_map>
-#include <utility>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -19,6 +17,9 @@
 #include <Poco/JSON/Parser.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -54,16 +55,29 @@ public:
 
     explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
 
+    YTsaurusClient(const YTsaurusClient & other);
+
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    ReadBufferPtr readTable(const String & cypress_path);
+    ReadBufferPtr readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range);
 
     ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
 
     ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
+
     ReadBufferPtr selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
+
+    String startTx(size_t timeout_ms);
+
+    void commitTx(const String & transaction_id);
+
+    String getNodeIdFromLock(const String & lock_id);
+
+    String lock(const String & cypress_path, const String & transaction_id);
+
+    size_t getTableNumberOfRows(const String& table_path);
 
     struct SchemaDescription
     {
@@ -75,9 +89,9 @@ public:
 
     bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable);
 private:
-    Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
+    Poco::JSON::Object::Ptr getNodeMetadata(const String & cypress_path);
 
-    Poco::Dynamic::Var getTableAttribute(const String & cypress_path, const String & attribute_name);
+    Poco::Dynamic::Var getNodeAttribute(const String & cypress_path, const String & attribute_name);
 
     YTsaurusNodeType getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr & json_ptr);
 
@@ -94,9 +108,28 @@ private:
     const ConnectionInfo connection_info;
     LoggerPtr log;
     size_t recently_used_url_index = 0;
+    constexpr static String LOCKS_STORAGE_CYPRESS_PATH = "//sys/locks";
 };
 
 using YTsaurusClientPtr = std::shared_ptr<YTsaurusClient>;
+
+class YTsaurusTableLock
+{
+public:
+    YTsaurusTableLock(YTsaurusClientPtr client_, const String& cypress_path_, size_t transaction_timeout_ms);
+    String getNodePath() const
+    {
+        return node_cypress_path;
+    }
+    ~YTsaurusTableLock();
+private:
+    YTsaurusClientPtr client;
+    String transaction_id;
+    String lock_id;
+    String node_cypress_path;
+};
+
+using YTsaurusTableLockPtr = std::shared_ptr<YTsaurusTableLock>;
 
 }
 

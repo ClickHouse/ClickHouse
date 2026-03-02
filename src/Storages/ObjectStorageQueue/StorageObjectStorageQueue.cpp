@@ -34,6 +34,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 
@@ -290,6 +291,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , keep_data_in_keeper(keep_data_in_keeper_)
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
     {
@@ -396,6 +398,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
+    max_files_override_per_task.resize(task_count, 0);
 }
 
 void StorageObjectStorageQueue::startup()
@@ -406,6 +409,7 @@ void StorageObjectStorageQueue::startup()
         return;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::startup");
     /// Create metadata in keeper if it does not exits yet.
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
@@ -460,6 +464,8 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::shutdown");
 
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
@@ -665,7 +671,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
-    bool commit_once_processed)
+    bool commit_once_processed,
+    size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
@@ -676,6 +683,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
+    if (max_processed_files_override)
+        commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -734,6 +743,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (shutdown_called)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::threadFunc");
 
     const auto storage_id = getStorageID();
 
@@ -861,6 +872,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
+    size_t & effective_max_files = max_files_override_per_task[streaming_tasks_index];
+
     while (!shutdown_called && !file_iterator->isFinished())
     {
         /// FIXME:
@@ -906,7 +919,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                /*commit_once_processed=*/false);
+                /*commit_once_processed=*/false,
+                effective_max_files);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
@@ -943,6 +957,19 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
+
+                /// Halve the batch size so that on the next iteration the bad file
+                /// ends up in a smaller batch, eventually alone (batch size 1),
+                /// and only then its retry count will be reduced.
+                size_t current_max = effective_max_files;
+                if (!current_max)
+                {
+                    std::lock_guard lock(mutex);
+                    current_max = commit_settings.max_processed_files_before_commit;
+                }
+                if (!current_max)
+                    current_max = processing_progress->processed_files.load();
+                effective_max_files = std::max<size_t>(current_max / 2, 1);
             }
             catch (Exception & e)
             {
@@ -958,6 +985,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
+        effective_max_files = 0;
         total_rows += rows;
     }
 
@@ -1308,6 +1336,7 @@ void StorageObjectStorageQueue::alter(
     ContextPtr local_context,
     AlterLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::alter");
     if (commands.isSettingsAlter())
     {
         auto table_id = getStorageID();
