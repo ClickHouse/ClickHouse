@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -94,7 +93,7 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t size = captured_columns.size();
 
@@ -105,20 +104,15 @@ DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & n
         else
             name_buf << "tuple(";
     }
-    DataTypes element_types;
-    element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
         if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
-        const auto & type = captured_columns[i].column->getValueNameAndTypeImpl(name_buf, n, options);
-        element_types.push_back(type);
+        captured_columns[i].column->getValueNameImpl(name_buf, n, options);
     }
     if (options.notFull(name_buf))
         name_buf << ")";
-
-    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 
