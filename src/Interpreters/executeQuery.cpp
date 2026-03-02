@@ -2062,6 +2062,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         }
         catch (...)
         {
+            /// Mark the exception as logged to prevent ForcedCriticalErrorsLogger
+            /// from logging LOGICAL_ERROR exceptions at ERROR level in server logs.
+            try { throw; }
+            catch (Exception & e) { e.markAsLogged(); }
+            catch (...) {} // NOLINT(bugprone-empty-catch)
+
             /// Reset transactions before context destruction to prevent std::terminate.
             /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
             /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2159,6 +2165,12 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     }
                     catch (...)
                     {
+                        /// Mark the exception as logged to prevent ForcedCriticalErrorsLogger
+                        /// from logging LOGICAL_ERROR exceptions at ERROR level in server logs.
+                        try { throw; }
+                        catch (Exception & e) { e.markAsLogged(); }
+                        catch (...) {} // NOLINT(bugprone-empty-catch)
+
                         /// Log only the exception code, not the full message, to avoid
                         /// triggering stress test error pattern checks in server logs.
                         LOG_DEBUG(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
@@ -2459,6 +2471,12 @@ void executeQuery(
                 }
                 catch (...)
                 {
+                    /// Mark the exception as logged to prevent ForcedCriticalErrorsLogger
+                    /// from logging LOGICAL_ERROR exceptions at ERROR level in server logs.
+                    try { throw; }
+                    catch (Exception & e) { e.markAsLogged(); }
+                    catch (...) {} // NOLINT(bugprone-empty-catch)
+
                     /// Log only the exception code, not the full message, to avoid
                     /// triggering stress test error pattern checks in server logs.
                     LOG_DEBUG(getLogger("ASTFuzzer"), "AST fuzzer failed with exception code {}", getCurrentExceptionCode());
