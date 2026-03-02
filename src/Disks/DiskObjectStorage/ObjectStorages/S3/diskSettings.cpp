@@ -205,17 +205,33 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
     String session_token = auth_settings[S3AuthSetting::session_token];
+    auto headers = auth_settings.getHeaders();
 
     if (refresh_credentials_callback)
     {
         auto updated_credentials = (*refresh_credentials_callback)();
         if (updated_credentials)
         {
-            auto s3_updated_credentials = std::static_pointer_cast<DataLake::S3Credentials>(updated_credentials);
-            access_key_id = s3_updated_credentials->getAccessKeyId();
-            secret_access_key = s3_updated_credentials->getSecretAccessKey();
-            session_token = s3_updated_credentials->getSessionToken();
-            LOG_DEBUG(getLogger("getClient"), "Got new access tokens {} {} {}", access_key_id, secret_access_key, session_token);
+            if (auto gcs_creds = std::dynamic_pointer_cast<DataLake::GCSCredentials>(updated_credentials))
+            {
+                /// GCS Bearer token: replace the Authorization header with the refreshed token.
+                /// no_sign_request is already set from the initial configuration.
+                for (auto & header : headers)
+                {
+                    if (header.name == "Authorization")
+                    {
+                        header.value = "Bearer " + gcs_creds->getToken();
+                        break;
+                    }
+                }
+            }
+            else if (auto s3_creds = std::dynamic_pointer_cast<DataLake::S3Credentials>(updated_credentials))
+            {
+                access_key_id = s3_creds->getAccessKeyId();
+                secret_access_key = s3_creds->getSecretAccessKey();
+                session_token = s3_creds->getSessionToken();
+                LOG_DEBUG(getLogger("getClient"), "Got new S3 access tokens");
+            }
         }
     }
     return S3::ClientFactory::instance().create(
@@ -225,7 +241,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         secret_access_key,
         auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
-        auth_settings.getHeaders(),
+        headers,
         credentials_configuration,
         session_token);
 }
