@@ -128,10 +128,72 @@
     <!-- 11. Grouped aggregation with correct_geometry=0 -->
     <query>SELECT grp, groupPolygonIntersection(polygon, 0) FROM perf_poly_grouped GROUP BY grp FORMAT Null</query>
 
+    <!-- ================================================================== -->
+    <!-- Geometry (Variant) input benchmarks                                  -->
+    <!-- ================================================================== -->
+
+    <!-- Mixed Geometry table — 100K rows with Ring, Polygon, MultiPolygon -->
+    <create_query>CREATE TABLE perf_geometry_intersection (g Geometry) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_geometry_intersection
+        SELECT
+            multiIf(
+                number % 3 = 0, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))::Ring::Geometry,
+                number % 3 = 1, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry
+            )
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <!-- Mixed Geometry with GROUP BY — 100K rows, 1000 groups -->
+    <create_query>CREATE TABLE perf_geometry_intersection_grouped (grp UInt32, g Geometry) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO perf_geometry_intersection_grouped
+        SELECT
+            number % 1000 AS grp,
+            multiIf(
+                number % 3 = 0, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))::Ring::Geometry,
+                number % 3 = 1, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry
+            )
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </fill_query>
+
+    <!-- 12: Geometry Variant — mixed Ring/Polygon/MultiPolygon -->
+    <query>SELECT groupPolygonIntersection(g) FROM perf_geometry_intersection FORMAT Null</query>
+
+    <!-- 13: Geometry Variant with correct_geometry=0 -->
+    <query>SELECT groupPolygonIntersection(g, 0) FROM perf_geometry_intersection FORMAT Null</query>
+
+    <!-- 14: Geometry Variant — GROUP BY with 1000 groups -->
+    <query>SELECT grp, groupPolygonIntersection(g) FROM perf_geometry_intersection_grouped GROUP BY grp FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS perf_poly_simple</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_complex</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_disjoint</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_ring</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_mpoly</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_grouped</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_geometry_intersection</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_geometry_intersection_grouped</drop_query>
 </test>

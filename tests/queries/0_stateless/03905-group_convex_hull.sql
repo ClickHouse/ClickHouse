@@ -290,3 +290,77 @@ WITH
     ) AS expected
 SELECT grp, polygonsEqualsCartesian([actual], expected) FROM geo GROUP BY grp ORDER BY grp;
 DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Points
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((0, 0)::Point::Geometry);
+INSERT INTO geo VALUES ((10, 0)::Point::Geometry);
+INSERT INTO geo VALUES ((10, 10)::Point::Geometry);
+INSERT INTO geo VALUES ((0, 10)::Point::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))') AS expected
+SELECT 'Geometry Points:', polygonsEqualsCartesian([actual], expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Point and Ring
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((0, 0)::Point::Geometry);
+INSERT INTO geo VALUES ([(10, 0), (10, 10), (0, 10), (0, 0)]::Ring::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))') AS expected
+SELECT 'Geometry Point+Ring:', polygonsEqualsCartesian([actual], expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Point and Polygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((5, 5)::Point::Geometry);
+INSERT INTO geo VALUES ([[(0, 0), (0, 10), (10, 10), (10, 0), (0, 0)]]::Polygon::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    readWKTPolygon('POLYGON((0 0,0 10,10 10,10 0,0 0))') AS expected
+SELECT 'Geometry Point+Polygon:', polygonsEqualsCartesian([actual], expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Point, Ring, Polygon, MultiPolygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((0, 0)::Point::Geometry);
+INSERT INTO geo VALUES ([(5, 0), (5, 5)]::Ring::Geometry);
+INSERT INTO geo VALUES ([[(10, 0), (10, 10), (0, 10), (0, 0)]]::Polygon::Geometry);
+INSERT INTO geo VALUES ([[[(20, 0), (20, 20), (0, 20), (0, 0)]]]::MultiPolygon::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    readWKTPolygon('POLYGON((0 0,0 20,20 20,20 0,0 0))') AS expected
+SELECT 'Geometry all types:', polygonsEqualsCartesian([actual], expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: with NULLs
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((0, 0)::Point::Geometry);
+INSERT INTO geo VALUES ((10, 0)::Point::Geometry);
+INSERT INTO geo VALUES ((10, 10)::Point::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    readWKTPolygon('POLYGON((0 0,10 0,10 10,0 0))') AS expected
+SELECT 'Geometry with NULLs:', polygonsEqualsCartesian([actual], expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: GROUP BY
+CREATE TABLE geo (grp Int32, g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES (1, (0, 0)::Point::Geometry);
+INSERT INTO geo VALUES (1, (10, 0)::Point::Geometry);
+INSERT INTO geo VALUES (1, (10, 10)::Point::Geometry);
+INSERT INTO geo VALUES (2, [[(0, 0), (0, 20), (20, 20), (20, 0), (0, 0)]]::Polygon::Geometry);
+INSERT INTO geo VALUES (2, (5, 5)::Point::Geometry);
+WITH
+    groupConvexHull(g) AS actual,
+    multiIf(
+        grp = 1,
+        readWKTPolygon('POLYGON((0 0,10 0,10 10,0 0))'),
+        grp = 2,
+        readWKTPolygon('POLYGON((0 0,0 20,20 20,20 0,0 0))'),
+        readWKTPolygon('POLYGON()')
+    ) AS expected
+SELECT grp, polygonsEqualsCartesian([actual], expected) FROM geo GROUP BY grp ORDER BY grp;
+DROP TABLE geo;

@@ -119,6 +119,7 @@ WITH
 SELECT 'correct_geometry mixed:', polygonsEqualsCartesian(actual, expected) FROM geo;
 DROP TABLE geo;
 
+
 -- GROUP BY with correct_geometry parameter
 CREATE TABLE geo (grp Int32, polygon Polygon, should_correct UInt8) ENGINE = Memory();
 INSERT INTO geo VALUES (1, [[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]], 1);
@@ -159,3 +160,26 @@ WITH
     readWKTMultiPolygon('MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))') AS expected
 SELECT 'MultiPolygon with correct_geometry:', polygonsEqualsCartesian(actual, expected) FROM geo;
 DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Ring and Polygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ([(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]::Ring::Geometry);
+INSERT INTO geo VALUES ([[(3, 3), (3, 8), (8, 8), (8, 3), (3, 3)]]::Polygon::Geometry);
+WITH
+    groupPolygonUnion(g) AS actual,
+    readWKTMultiPolygon('MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))') AS expected
+SELECT 'Geometry Ring+Polygon union:', polygonsEqualsCartesian(actual, expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Polygon and MultiPolygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ([[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]::Polygon::Geometry);
+INSERT INTO geo VALUES ([[[(3, 3), (3, 8), (8, 8), (8, 3), (3, 3)]]]::MultiPolygon::Geometry);
+WITH
+    groupPolygonUnion(g) AS actual,
+    readWKTMultiPolygon('MULTIPOLYGON(((3 5,3 8,8 8,8 3,5 3,5 0,0 0,0 5,3 5)))') AS expected
+SELECT 'Geometry Polygon+MultiPolygon union:', polygonsEqualsCartesian(actual, expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: unsupported Point variant should fail
+SELECT groupPolygonUnion(g) FROM (SELECT (0.,0.)::Point::Geometry AS g); -- { serverError BAD_ARGUMENTS }

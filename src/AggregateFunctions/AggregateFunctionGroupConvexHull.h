@@ -5,21 +5,26 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnVariant.h>
 
+#include <Common/WKB.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <Functions/geometryConverters.h>
+#include <Functions/geometry.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/io/wkt/wkt.hpp>
 
+#include <magic_enum.hpp>
 #include <sstream>
 
 namespace DB
@@ -37,15 +42,9 @@ struct AggregateFunctionGroupConvexHullData
     bool has_value = false;
 };
 
-enum class ConvexHullInputType : uint8_t
-{
-    Point,
-    Ring,
-    Polygon,
-    MultiPolygon,
-    LineString,
-    MultiLineString,
-};
+/// WKBGeometry extension constants for types not in the WKB standard.
+static constexpr WKBGeometry WKB_RING = static_cast<WKBGeometry>(100);
+static constexpr WKBGeometry WKB_GEOMETRY = static_cast<WKBGeometry>(101);
 
 template <typename Point>
 class AggregateFunctionGroupConvexHull final
@@ -53,37 +52,41 @@ class AggregateFunctionGroupConvexHull final
 {
 private:
     using Data = AggregateFunctionGroupConvexHullData<Point>;
-    ConvexHullInputType input_type;
+    WKBGeometry input_type;
     bool correct_geometry = true;
 
-    static ConvexHullInputType resolveInputType(const DataTypePtr & type)
+    static WKBGeometry resolveInputType(const DataTypePtr & type)
     {
         const auto & factory = DataTypeFactory::instance();
 
-        if (factory.get("Point")->equals(*type))
-            return ConvexHullInputType::Point;
+        if (factory.get(WKBPointTransform::name)->equals(*type))
+            return WKBGeometry::Point;
 
         /// LineString and Ring share the same underlying structure Array(Tuple(Float64, Float64)).
         /// Disambiguate by checking the custom type name.
-        if (factory.get("LineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "LineString")
-            return ConvexHullInputType::LineString;
+        if (factory.get(WKBLineStringTransform::name)->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == WKBLineStringTransform::name)
+            return WKBGeometry::LineString;
 
         /// MultiLineString and Polygon share the same underlying structure Array(Array(Tuple(Float64, Float64))).
         /// Disambiguate by checking the custom type name.
-        if (factory.get("MultiLineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiLineString")
-            return ConvexHullInputType::MultiLineString;
+        if (factory.get(WKBMultiLineStringTransform::name)->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
+            return WKBGeometry::MultiLineString;
 
-        if (factory.get("Ring")->equals(*type))
-            return ConvexHullInputType::Ring;
+        static const DataTypePtr RING = factory.get("Ring");
+        if (RING->equals(*type))
+            return WKB_RING;
 
-        if (factory.get("Polygon")->equals(*type))
-            return ConvexHullInputType::Polygon;
+        if (factory.get(WKBPolygonTransform::name)->equals(*type))
+            return WKBGeometry::Polygon;
 
-        if (factory.get("MultiPolygon")->equals(*type))
-            return ConvexHullInputType::MultiPolygon;
+        if (factory.get(WKBMultiPolygonTransform::name)->equals(*type))
+            return WKBGeometry::MultiPolygon;
+
+        if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+            return WKB_GEOMETRY;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported geometry type for {}: {}. Expected Point, Ring, Polygon, MultiPolygon, LineString, or MultiLineString",
+            "Unsupported geometry type for {}: {}. Expected Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString, or Geometry",
             "groupConvexHull", type->getName());
     }
 
@@ -98,6 +101,72 @@ public:
     String getName() const override { return "groupConvexHull"; }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Accumulation helpers — shared by the main switch and the Geometry variant switch.
+    static void accumulatePoint(Data & state, Point && point, bool should_correct)
+    {
+        Polygon<Point> polygon;
+        polygon.outer().push_back(std::move(point));
+        if (should_correct)
+            boost::geometry::correct(polygon);
+        state.accumulated.emplace_back(std::move(polygon));
+        state.has_value = true;
+    }
+
+    static void accumulateRing(Data & state, Ring<Point> && ring, bool should_correct)
+    {
+        Polygon<Point> polygon;
+        polygon.outer() = std::move(ring);
+        if (should_correct)
+            boost::geometry::correct(polygon);
+        state.accumulated.emplace_back(std::move(polygon));
+        state.has_value = true;
+    }
+
+    static void accumulatePolygon(Data & state, Polygon<Point> && poly, bool should_correct)
+    {
+        /// Only take the outer ring; holes don't affect convex hull.
+        Polygon<Point> polygon;
+        polygon.outer() = std::move(poly.outer());
+        if (should_correct)
+            boost::geometry::correct(polygon);
+        state.accumulated.emplace_back(std::move(polygon));
+        state.has_value = true;
+    }
+
+    static void accumulateMultiPolygon(Data & state, MultiPolygon<Point> && mpoly, bool should_correct)
+    {
+        for (auto & poly : mpoly)
+        {
+            if (should_correct)
+                boost::geometry::correct(poly);
+            state.accumulated.emplace_back(std::move(poly));
+        }
+        state.has_value = true;
+    }
+
+    static void accumulateLineString(Data & state, LineString<Point> && ls, bool should_correct)
+    {
+        Polygon<Point> polygon;
+        polygon.outer().assign(ls.begin(), ls.end());
+        if (should_correct)
+            boost::geometry::correct(polygon);
+        state.accumulated.emplace_back(std::move(polygon));
+        state.has_value = true;
+    }
+
+    static void accumulateMultiLineString(Data & state, MultiLineString<Point> && mls, bool should_correct)
+    {
+        for (auto & ls : mls)
+        {
+            Polygon<Point> polygon;
+            polygon.outer().assign(ls.begin(), ls.end());
+            if (should_correct)
+                boost::geometry::correct(polygon);
+            state.accumulated.emplace_back(std::move(polygon));
+        }
+        state.has_value = true;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -116,92 +185,87 @@ public:
 
         switch (input_type)
         {
-            case ConvexHullInputType::Point:
+            case WKBGeometry::Point:
             {
                 auto points = ColumnToPointsConverter<Point>::convert(single_row_col);
-                if (points.empty())
-                    return;
-                /// A point becomes a degenerate polygon with a single-vertex outer ring.
-                Polygon<Point> polygon;
-                polygon.outer().push_back(std::move(points[0]));
-                if (should_correct)
-                    boost::geometry::correct(polygon);
-                state.accumulated.emplace_back(std::move(polygon));
-                state.has_value = true;
+                if (!points.empty())
+                    accumulatePoint(state, std::move(points[0]), should_correct);
                 break;
             }
-            case ConvexHullInputType::Ring:
+            case WKB_RING:
             {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
-                if (rings.empty())
-                    return;
-                /// Ring becomes a polygon's outer ring.
-                Polygon<Point> polygon;
-                polygon.outer() = std::move(rings[0]);
-                if (should_correct)
-                    boost::geometry::correct(polygon);
-                state.accumulated.emplace_back(std::move(polygon));
-                state.has_value = true;
+                if (!rings.empty())
+                    accumulateRing(state, std::move(rings[0]), should_correct);
                 break;
             }
-            case ConvexHullInputType::Polygon:
+            case WKBGeometry::Polygon:
             {
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
-                if (polygons.empty())
-                    return;
-                /// Only take the outer ring, discard holes.
-                Polygon<Point> polygon;
-                polygon.outer() = std::move(polygons[0].outer());
-                if (should_correct)
-                    boost::geometry::correct(polygon);
-                state.accumulated.emplace_back(std::move(polygon));
-                state.has_value = true;
+                if (!polygons.empty())
+                    accumulatePolygon(state, std::move(polygons[0]), should_correct);
                 break;
             }
-            case ConvexHullInputType::MultiPolygon:
+            case WKBGeometry::MultiPolygon:
             {
                 auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
-                if (multi_polygons.empty())
-                    return;
-                /// Move each polygon directly; holes don't affect convex hull computation.
-                for (auto & poly : multi_polygons[0])
-                {
-                    if (should_correct)
-                        boost::geometry::correct(poly);
-                    state.accumulated.emplace_back(std::move(poly));
-                }
-                state.has_value = true;
+                if (!multi_polygons.empty())
+                    accumulateMultiPolygon(state, std::move(multi_polygons[0]), should_correct);
                 break;
             }
-            case ConvexHullInputType::LineString:
+            case WKBGeometry::LineString:
             {
                 auto linestrings = ColumnToLineStringsConverter<Point>::convert(single_row_col);
-                if (linestrings.empty())
-                    return;
-                /// Treat the linestring's points as a polygon's outer ring.
-                Polygon<Point> polygon;
-                polygon.outer().assign(linestrings[0].begin(), linestrings[0].end());
-                if (should_correct)
-                    boost::geometry::correct(polygon);
-                state.accumulated.emplace_back(std::move(polygon));
-                state.has_value = true;
+                if (!linestrings.empty())
+                    accumulateLineString(state, std::move(linestrings[0]), should_correct);
                 break;
             }
-            case ConvexHullInputType::MultiLineString:
+            case WKBGeometry::MultiLineString:
             {
                 auto multi_linestrings = ColumnToMultiLineStringsConverter<Point>::convert(single_row_col);
-                if (multi_linestrings.empty())
+                if (!multi_linestrings.empty())
+                    accumulateMultiLineString(state, std::move(multi_linestrings[0]), should_correct);
+                break;
+            }
+            case WKB_GEOMETRY:
+            {
+                const auto & variant_col = assert_cast<const ColumnVariant &>(*columns[0]);
+
+                auto local_discr = variant_col.localDiscriminatorAt(row_num);
+                if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                    return; /// NULL row, skip
+
+                Field field;
+                variant_col.get(row_num, field);
+
+                auto geo_type = magic_enum::enum_cast<GeometryColumnType>(
+                    static_cast<int>(variant_col.globalDiscriminatorAt(row_num)));
+                if (!geo_type)
                     return;
-                /// Each linestring becomes one polygon.
-                for (auto & ls : multi_linestrings[0])
+
+                switch (*geo_type)
                 {
-                    Polygon<Point> polygon;
-                    polygon.outer().assign(ls.begin(), ls.end());
-                    if (should_correct)
-                        boost::geometry::correct(polygon);
-                    state.accumulated.emplace_back(std::move(polygon));
+                    case GeometryColumnType::Point:
+                        accumulatePoint(state, getPointFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::Ring:
+                        accumulateRing(state, getRingFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::Polygon:
+                        accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::MultiPolygon:
+                        accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::Linestring:
+                        accumulateLineString(state, getLineStringFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::MultiLinestring:
+                        accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
+                        break;
+                    case GeometryColumnType::Null:
+                        break;
                 }
-                state.has_value = true;
                 break;
             }
         }

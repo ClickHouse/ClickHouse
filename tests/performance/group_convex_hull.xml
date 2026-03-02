@@ -231,6 +231,92 @@
     >SELECT grp, groupConvexHull(p, 0) FROM perf_ch_point_grouped_10 GROUP BY grp FORMAT Null</query>
 
     <!-- ================================================================== -->
+    <!-- Geometry (Variant) input benchmarks                                  -->
+    <!-- ================================================================== -->
+
+    <!-- Mixed Geometry table — 120K rows with all 6 types: Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString -->
+    <create_query>CREATE TABLE perf_ch_geometry (g Geometry) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_geometry
+        SELECT
+            multiIf(
+                number % 6 = 0, (sin(number) * 1000, cos(number) * 1000)::Point::Geometry,
+                number % 6 = 1, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 2.5, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 0][i + 1]
+                ), range(4))::Ring::Geometry,
+                number % 6 = 2, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                number % 6 = 3, [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry,
+                number % 6 = 4, arrayMap(i -> (
+                    toFloat64(number % 1000) + i * 2,
+                    toFloat64(intDiv(number, 1000)) + i * 3
+                ), range(3))::LineString::Geometry,
+                [arrayMap(i -> (
+                    toFloat64(number % 1000) + i * 2,
+                    toFloat64(intDiv(number, 1000)) + i * 3
+                ), range(3)),
+                arrayMap(i -> (
+                    toFloat64(number % 1000) + 10 + i * 2,
+                    toFloat64(intDiv(number, 1000)) + 10 + i * 3
+                ), range(3))]::MultiLineString::Geometry
+            )
+        FROM numbers_mt(120000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Mixed Geometry with GROUP BY — 120K rows, 1000 groups, all 6 types -->
+    <create_query>CREATE TABLE perf_ch_geometry_grouped (grp UInt32, g Geometry) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_ch_geometry_grouped
+        SELECT
+            number % 1000 AS grp,
+            multiIf(
+                number % 6 = 0, (sin(number) * 1000, cos(number) * 1000)::Point::Geometry,
+                number % 6 = 1, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 2.5, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 0][i + 1]
+                ), range(4))::Ring::Geometry,
+                number % 6 = 2, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                number % 6 = 3, [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry,
+                number % 6 = 4, arrayMap(i -> (
+                    toFloat64(number % 1000) + i * 2,
+                    toFloat64(intDiv(number, 1000)) + i * 3
+                ), range(3))::LineString::Geometry,
+                [arrayMap(i -> (
+                    toFloat64(number % 1000) + i * 2,
+                    toFloat64(intDiv(number, 1000)) + i * 3
+                ), range(3)),
+                arrayMap(i -> (
+                    toFloat64(number % 1000) + 10 + i * 2,
+                    toFloat64(intDiv(number, 1000)) + 10 + i * 3
+                ), range(3))]::MultiLineString::Geometry
+            )
+        FROM numbers_mt(120000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Q19: Geometry Variant — mixed types -->
+    <query>SELECT groupConvexHull(g) FROM perf_ch_geometry FORMAT Null</query>
+
+    <!-- Q20: Geometry Variant with correct_geometry=0 -->
+    <query>SELECT groupConvexHull(g, 0) FROM perf_ch_geometry FORMAT Null</query>
+
+    <!-- Q21: Geometry Variant — GROUP BY with 1000 groups -->
+    <query>SELECT grp, groupConvexHull(g) FROM perf_ch_geometry_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
     <!-- Teardown                                                            -->
     <!-- ================================================================== -->
 
@@ -244,4 +330,6 @@
     <drop_query>DROP TABLE IF EXISTS perf_ch_point_grouped</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_ch_poly_grouped</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_ch_point_grouped_10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_geometry</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_ch_geometry_grouped</drop_query>
 </test>

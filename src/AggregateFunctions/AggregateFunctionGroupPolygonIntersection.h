@@ -4,16 +4,21 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <Common/WKB.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Functions/geometry.h>
 #include <Functions/geometryConverters.h>
 
 #include <boost/geometry.hpp>
@@ -21,13 +26,14 @@
 #include <boost/geometry/io/wkt/wkt.hpp>
 
 #include <sstream>
+#include <magic_enum.hpp>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 template <typename Point>
@@ -37,13 +43,6 @@ struct AggregateFunctionGroupPolygonIntersectionData
     bool has_value = false;
 };
 
-enum class InputGeometryType : uint8_t
-{
-    Ring,
-    Polygon,
-    MultiPolygon,
-};
-
 template <typename Point>
 class AggregateFunctionGroupPolygonIntersection final : public IAggregateFunctionDataHelper<
                                                             AggregateFunctionGroupPolygonIntersectionData<Point>,
@@ -51,21 +50,27 @@ class AggregateFunctionGroupPolygonIntersection final : public IAggregateFunctio
 {
 private:
     using Data = AggregateFunctionGroupPolygonIntersectionData<Point>;
-    InputGeometryType input_type;
+    WKBGeometry input_type;
     bool correct_geometry = true;
 
-    static InputGeometryType resolveInputType(const DataTypePtr & type)
+    static constexpr WKBGeometry WKB_RING = static_cast<WKBGeometry>(100);
+    static constexpr WKBGeometry WKB_GEOMETRY = static_cast<WKBGeometry>(101);
+
+    static WKBGeometry resolveInputType(const DataTypePtr & type)
     {
         const auto & factory = DataTypeFactory::instance();
-        if (factory.get("Ring")->equals(*type))
-            return InputGeometryType::Ring;
-        if (factory.get("Polygon")->equals(*type))
-            return InputGeometryType::Polygon;
-        if (factory.get("MultiPolygon")->equals(*type))
-            return InputGeometryType::MultiPolygon;
+        static const DataTypePtr RING = factory.get("Ring");
+        if (RING->equals(*type))
+            return WKB_RING;
+        if (factory.get(WKBPolygonTransform::name)->equals(*type))
+            return WKBGeometry::Polygon;
+        if (factory.get(WKBMultiPolygonTransform::name)->equals(*type))
+            return WKBGeometry::MultiPolygon;
+        if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+            return WKB_GEOMETRY;
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported geometry type for {}: {}. Expected Ring, Polygon, or MultiPolygon",
+            "Unsupported geometry type for {}: {}. Expected Ring, Polygon, MultiPolygon, or Geometry",
             "groupPolygonIntersection",
             type->getName());
     }
@@ -107,7 +112,7 @@ public:
 
         switch (input_type)
         {
-            case InputGeometryType::Ring: {
+            case WKB_RING: {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
                 if (rings.empty())
                     return;
@@ -118,7 +123,7 @@ public:
                 current_multi_polygon.emplace_back(std::move(polygon));
                 break;
             }
-            case InputGeometryType::Polygon: {
+            case WKBGeometry::Polygon: {
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
                     return;
@@ -127,13 +132,68 @@ public:
                 current_multi_polygon.emplace_back(std::move(polygons[0]));
                 break;
             }
-            case InputGeometryType::MultiPolygon: {
+            case WKBGeometry::MultiPolygon: {
                 auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
                 if (multi_polygons.empty())
                     return;
                 current_multi_polygon = std::move(multi_polygons[0]);
                 if (should_correct)
                     boost::geometry::correct(current_multi_polygon);
+                break;
+            }
+            case WKBGeometry::Point:
+            case WKBGeometry::LineString:
+            case WKBGeometry::MultiLineString:
+                break;
+            case WKB_GEOMETRY: {
+                const auto & variant_col = assert_cast<const ColumnVariant &>(*columns[0]);
+
+                auto local_discr = variant_col.localDiscriminatorAt(row_num);
+                if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                    return;
+
+                Field field;
+                variant_col.get(row_num, field);
+
+                auto geo_type = magic_enum::enum_cast<GeometryColumnType>(static_cast<int>(variant_col.globalDiscriminatorAt(row_num)));
+                if (!geo_type)
+                    return;
+
+                switch (*geo_type)
+                {
+                    case GeometryColumnType::Ring: {
+                        auto ring = getRingFromField<Point>(field);
+                        Polygon<Point> polygon;
+                        polygon.outer() = std::move(ring);
+                        if (should_correct)
+                            boost::geometry::correct(polygon);
+                        current_multi_polygon.emplace_back(std::move(polygon));
+                        break;
+                    }
+                    case GeometryColumnType::Polygon: {
+                        auto poly = getPolygonFromField<Point>(field);
+                        if (should_correct)
+                            boost::geometry::correct(poly);
+                        current_multi_polygon.emplace_back(std::move(poly));
+                        break;
+                    }
+                    case GeometryColumnType::MultiPolygon: {
+                        auto mpoly = getMultiPolygonFromField<Point>(field);
+                        current_multi_polygon = std::move(mpoly);
+                        if (should_correct)
+                            boost::geometry::correct(current_multi_polygon);
+                        break;
+                    }
+                    case GeometryColumnType::Point:
+                    case GeometryColumnType::Linestring:
+                    case GeometryColumnType::MultiLinestring:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported geometry variant for groupPolygonIntersection: Point, LineString, or MultiLineString. "
+                            "Expected Ring, Polygon, or MultiPolygon within Geometry");
+                    case GeometryColumnType::Null:
+                        break;
+                }
                 break;
             }
         }

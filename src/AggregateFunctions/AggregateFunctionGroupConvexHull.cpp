@@ -36,7 +36,7 @@ See also:
     FunctionDocumentation::Arguments arguments
         = {{"geometry",
             "Column to compute the convex hull of.",
-            {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString"}},
+            {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}},
            {"correct_geometry",
             "Optional. A [UInt8](/sql-reference/data-types/int-uint) value that controls whether `boost::geometry::correct` is applied to "
             "input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.",

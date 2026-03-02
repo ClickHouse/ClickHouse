@@ -18,3 +18,5 @@ correct_geometry mixed:	1
 2	1
 Ring with correct_geometry:	1
 MultiPolygon with correct_geometry:	1
+Geometry Ring+Polygon union:	1
+Geometry Polygon+MultiPolygon union:	1

@@ -188,3 +188,24 @@ WITH readWKTMultiPolygon('MULTIPOLYGON(((2 5,5 5,5 2,2 2,2 5)))') AS expected,
      groupPolygonIntersection(mpoly, should_correct) AS actual
 SELECT 'MultiPolygon with correct_geometry:', polygonsEqualsCartesian(actual, expected) FROM geo;
 DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Ring and Polygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ([(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]::Ring::Geometry);
+INSERT INTO geo VALUES ([[(2, 2), (2, 7), (7, 7), (7, 2), (2, 2)]]::Polygon::Geometry);
+WITH readWKTMultiPolygon('MULTIPOLYGON(((2 5,5 5,5 2,2 2,2 5)))') AS expected,
+     groupPolygonIntersection(g) AS actual
+SELECT 'Geometry Ring+Polygon intersection:', polygonsEqualsCartesian(actual, expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: mixed Polygon and MultiPolygon
+CREATE TABLE geo (g Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ([[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]::Polygon::Geometry);
+INSERT INTO geo VALUES ([[[(2, 2), (2, 7), (7, 7), (7, 2), (2, 2)]]]::MultiPolygon::Geometry);
+WITH readWKTMultiPolygon('MULTIPOLYGON(((2 5,5 5,5 2,2 2,2 5)))') AS expected,
+     groupPolygonIntersection(g) AS actual
+SELECT 'Geometry Polygon+MultiPolygon intersection:', polygonsEqualsCartesian(actual, expected) FROM geo;
+DROP TABLE geo;
+
+-- Geometry (Variant) input: unsupported Point variant should fail
+SELECT groupPolygonIntersection(g) FROM (SELECT (0.,0.)::Point::Geometry AS g); -- { serverError BAD_ARGUMENTS }

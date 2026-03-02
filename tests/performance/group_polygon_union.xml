@@ -193,6 +193,66 @@
     <query>SELECT grp, groupPolygonUnion(polygon, 0) FROM perf_poly_grouped_large GROUP BY grp FORMAT Null</query>
 
     <!-- ================================================================== -->
+    <!-- Geometry (Variant) input benchmarks                                  -->
+    <!-- ================================================================== -->
+
+    <!-- Mixed Geometry table — 100K rows with Ring, Polygon, MultiPolygon -->
+    <create_query>CREATE TABLE perf_geometry_union (g Geometry) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_geometry_union
+        SELECT
+            multiIf(
+                number % 3 = 0, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))::Ring::Geometry,
+                number % 3 = 1, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry
+            )
+        FROM numbers_mt(180000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Mixed Geometry with GROUP BY — 100K rows, 1000 groups -->
+    <create_query>CREATE TABLE perf_geometry_union_grouped (grp UInt32, g Geometry) ENGINE = Memory</create_query>
+    <create_query>
+        INSERT INTO perf_geometry_union_grouped
+        SELECT
+            number % 1000 AS grp,
+            multiIf(
+                number % 3 = 0, arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))::Ring::Geometry,
+                number % 3 = 1, [arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]::Polygon::Geometry,
+                [[arrayMap(i -> (
+                    toFloat64(number % 1000) + [0, 5, 5, 0, 0][i + 1],
+                    toFloat64(intDiv(number, 1000)) + [0, 0, 5, 5, 0][i + 1]
+                ), range(5))]]::MultiPolygon::Geometry
+            )
+        FROM numbers_mt(100000)
+        SETTINGS max_insert_threads = 2
+    </create_query>
+
+    <!-- Q13: Geometry Variant — mixed Ring/Polygon/MultiPolygon -->
+    <query>SELECT groupPolygonUnion(g) FROM perf_geometry_union FORMAT Null</query>
+
+    <!-- Q14: Geometry Variant with correct_geometry=0 -->
+    <query>SELECT groupPolygonUnion(g, 0) FROM perf_geometry_union FORMAT Null</query>
+
+    <!-- Q15: Geometry Variant — GROUP BY with 1000 groups -->
+    <query>SELECT grp, groupPolygonUnion(g) FROM perf_geometry_union_grouped GROUP BY grp FORMAT Null</query>
+
+    <!-- ================================================================== -->
     <!-- Teardown                                                             -->
     <!-- ================================================================== -->
 
@@ -206,4 +266,6 @@
     <drop_query>DROP TABLE IF EXISTS perf_ring_large</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_mpoly_large</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_poly_grouped_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_geometry_union</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_geometry_union_grouped</drop_query>
 </test>
