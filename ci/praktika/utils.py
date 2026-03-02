@@ -962,10 +962,6 @@ openssl pkeyutl -encrypt \
         return res
 
     @classmethod
-    def encrypt
-
-
-    @classmethod
     def add_to_PATH(cls, path):
         path_cur = os.getenv("PATH", "")
         if path_cur:
