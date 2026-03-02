@@ -37,7 +37,9 @@ if (ENABLE_PRQL)
     # Skip in sanitizer builds where instrumentation adds special symbols (e.g.,
     # ___asan_globals_registered) that the partial link + strip process breaks.
     # Skip on Darwin where objects are Mach-O (ld.lld -r only handles ELF).
-    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN)
+    # Skip on ppc64le where ld.lld -r produces broken .eh_frame relocations.
+    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
+        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
         # Use ld.lld for partial linking — it's a cross-linker that handles all ELF architectures,
         # unlike the host ld which may not support the target architecture.
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
