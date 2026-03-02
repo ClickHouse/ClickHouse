@@ -82,7 +82,7 @@ SELECT
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
-    event_date >= yesterday() AND
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     query LIKE '-- Verify that the transaction_id column is populated correctly%'
 GROUP BY transaction_id
 FORMAT JSONEachRow;
@@ -94,7 +94,7 @@ SELECT
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
-    event_date >= yesterday() AND
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     query LIKE '-- Verify that the transaction_id column is NOT populated without transaction%'
 GROUP BY transaction_id
 FORMAT JSONEachRow;

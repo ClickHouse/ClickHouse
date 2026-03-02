@@ -8,23 +8,24 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_21"];
+    n6[label="ApplySquashingTransform_22"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
     n10[label="MergeTreeSink_9"];
-    n11[label="Copy_18"];
-    n12[label="BeginingViewsTransform_10"];
-    n13[label="ExecutingInnerQueryFromView_13"];
-    n14[label="CountingTransform_12"];
-    n15[label="PlanSquashingTransform_20"];
-    n16[label="ApplySquashingTransform_11"];
-    n17[label="RemovingReplicatedColumnsTransform_14"];
-    n18[label="NestedElementsValidationTransform_15"];
-    n19[label="RemovingSparseTransform_16"];
-    n20[label="SetOrJoinSink_17"];
-    n21[label="FinalizingViewsTransform_19"];
-    n22[label="EmptySink_22"];
+    n11[label="RedefineDeduplicationInfoWithDataHashTransform_10"];
+    n12[label="Copy_19"];
+    n13[label="BeginingViewsTransform_11"];
+    n14[label="ExecutingInnerQueryFromView_14"];
+    n15[label="CountingTransform_13"];
+    n16[label="PlanSquashingTransform_21"];
+    n17[label="ApplySquashingTransform_12"];
+    n18[label="RemovingReplicatedColumnsTransform_15"];
+    n19[label="NestedElementsValidationTransform_16"];
+    n20[label="RemovingSparseTransform_17"];
+    n21[label="SetOrJoinSink_18"];
+    n22[label="FinalizingViewsTransform_20"];
+    n23[label="EmptySink_23"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -48,4 +49,5 @@ digraph
   n19 -> n20;
   n20 -> n21;
   n21 -> n22;
+  n22 -> n23;
 }
