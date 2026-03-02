@@ -399,8 +399,8 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
-- [`ngrambf_v1`](#n-gram-bloom-filter) index
-- [`tokenbf_v1`](#token-bloom-filter) index
+- [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
+- [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
 - [`vector_similarity`](#vector-similarity) index
 
@@ -450,7 +450,11 @@ The following data types are supported:
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
 :::
 
-#### N-gram bloom filter {#n-gram-bloom-filter}
+#### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
+
+> Note: With `text` index generally availability (GA) starting from ClickHouse version 26.2, `ngrambf_v1` index is NOT recommended anymore for full text search.
+> See [here](textindexes.md) for details.
+
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
@@ -517,6 +521,9 @@ Of course, you can also use those functions to estimate parameters for other con
 The functions above refer to the bloom filter calculator [here](https://hur.st/bloomfilter).
 
 #### Token bloom filter {#token-bloom-filter}
+
+> Note: With `text` index generally availability (GA) starting from ClickHouse version 26.2, `tokenbf_v1` index is NOT recommended anymore for full text search.
+> See [here](textindexes.md) for details.
 
 The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
 
