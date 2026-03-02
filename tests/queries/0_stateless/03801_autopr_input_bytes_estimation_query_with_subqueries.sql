@@ -9,6 +9,11 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_rep
 -- External aggregation is not supported as of now
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
+-- The test compares `ReadCompressedBytes` between the subquery run standalone vs. embedded.
+-- With the uncompressed cache, the embedded subquery may read from cache (no compressed reads),
+-- while the standalone run reads from disk, making the subtraction invalid.
+SET use_uncompressed_cache=0;
+
 SET use_query_condition_cache=0;
 
 create table t(a UInt64) engine=MergeTree order by a;
