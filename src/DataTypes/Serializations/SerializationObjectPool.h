@@ -24,7 +24,7 @@ public:
     static SerializationObjectPool & instance()
     {
         static SerializationObjectPool pool;
-        return pool;
+        return pool; 
     }
 
     SerializationPtr getOrCreate(UInt128 key, SerializationPtr && serialization)

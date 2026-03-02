@@ -19,7 +19,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }

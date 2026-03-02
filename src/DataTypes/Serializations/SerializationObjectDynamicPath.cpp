@@ -48,7 +48,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
 UInt128 SerializationObjectDynamicPath::getHash() const
 {
     SipHash hash;
-    hash.update("SerializationObjectDynamicPath");
+    hash.update("ObjectDynamicPath");
     hash.update(nested_serialization->getHash());
     hash.update(path);
     hash.update(path_subcolumn);

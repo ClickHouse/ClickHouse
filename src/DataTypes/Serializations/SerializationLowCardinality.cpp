@@ -47,7 +47,6 @@ SerializationPtr SerializationLowCardinality::create(const DataTypePtr & diction
     return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
 }
 
-
 UInt128 SerializationLowCardinality::getHash() const
 {
     SipHash hash;

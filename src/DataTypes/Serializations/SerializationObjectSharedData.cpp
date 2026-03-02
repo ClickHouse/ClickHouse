@@ -38,7 +38,6 @@ SerializationPtr SerializationObjectSharedData::create(SerializationVersion seri
     return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
 }
 
-
 UInt128 SerializationObjectSharedData::getHash() const
 {
     SipHash hash;

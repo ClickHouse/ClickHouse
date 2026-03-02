@@ -28,7 +28,6 @@ UInt128 SerializationBool::getHash() const
     return hash.get128();
 }
 
-
 namespace
 {
 

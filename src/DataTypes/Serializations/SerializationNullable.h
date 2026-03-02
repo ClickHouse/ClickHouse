@@ -28,7 +28,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     const SerializationPtr & getNested() const { return nested; }
@@ -121,7 +120,6 @@ public:
     static bool tryDeserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-
 
     static void serializeNullEscaped(WriteBuffer & ostr, const FormatSettings & settings);
     static bool tryDeserializeNullEscaped(ReadBuffer & istr, const FormatSettings & settings);

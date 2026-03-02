@@ -20,7 +20,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -51,7 +50,6 @@ public:
         auto ptr = SerializationPtr(new SerializationTime(time_type));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
-
 
     UInt128 getHash() const override;
 

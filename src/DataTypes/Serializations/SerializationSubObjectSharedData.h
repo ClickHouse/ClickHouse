@@ -5,7 +5,6 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
-
 namespace DB
 {
 
@@ -22,7 +21,6 @@ private:
 
 public:
     static SerializationPtr create(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
-
 
     UInt128 getHash() const override;
 

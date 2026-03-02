@@ -28,14 +28,12 @@ UInt128 SerializationDateTime::getHash() const
     return hash.get128();
 }
 
-
 UInt128 SerializationTime::getHash() const
 {
     SipHash hash;
     hash.update("Time");
     return hash.get128();
 }
-
 
 namespace
 {

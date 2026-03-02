@@ -6,7 +6,6 @@
 
 #include <Core/Field.h>
 
-
 namespace DB
 {
 
@@ -46,7 +45,6 @@ private:
     template <typename Func>
     void dispatchByElementSize(Func && func) const;
 
-
     SerializationQBit(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
         : nested(nested_)
         , element_size(element_size_)
@@ -60,7 +58,6 @@ public:
         auto ptr = SerializationPtr(new SerializationQBit(nested_, element_size_, dimension_));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
-
 
     UInt128 getHash() const override;
 

@@ -5,7 +5,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 
-
 namespace DB
 {
 

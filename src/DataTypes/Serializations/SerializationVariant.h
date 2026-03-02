@@ -8,7 +8,6 @@
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -78,7 +77,6 @@ private:
 
 public:
     static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
-
 
     UInt128 getHash() const override;
 

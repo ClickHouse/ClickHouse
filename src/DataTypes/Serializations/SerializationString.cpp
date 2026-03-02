@@ -38,7 +38,6 @@ UInt128 SerializationString::getHash() const
     return hash.get128();
 }
 
-
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();

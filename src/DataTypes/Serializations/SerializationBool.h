@@ -20,7 +20,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

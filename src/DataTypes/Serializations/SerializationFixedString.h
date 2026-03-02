@@ -21,7 +21,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     size_t getN() const { return n; }

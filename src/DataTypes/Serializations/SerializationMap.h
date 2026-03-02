@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 
-
 namespace DB
 {
 
@@ -24,7 +23,6 @@ public:
         auto ptr = SerializationPtr(new SerializationMap(key_type_, value_type_, nested_));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
-
 
     UInt128 getHash() const override;
 

@@ -7,7 +7,6 @@
 #include <Formats/FormatSettings.h>
 #include <Common/IntervalKind.h>
 
-
 namespace DB
 {
 

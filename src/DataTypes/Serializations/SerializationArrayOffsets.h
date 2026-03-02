@@ -19,7 +19,6 @@ public:
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
-
     UInt128 getHash() const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
@@ -30,6 +29,5 @@ public:
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const override;
 };
-
 
 }

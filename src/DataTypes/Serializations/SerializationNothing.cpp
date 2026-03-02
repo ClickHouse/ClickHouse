@@ -20,7 +20,6 @@ UInt128 SerializationNothing::getHash() const
     return hash.get128();
 }
 
-
 void SerializationNothing::throwNoSerialization()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for type Nothing");

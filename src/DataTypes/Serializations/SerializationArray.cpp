@@ -38,7 +38,6 @@ UInt128 SerializationArray::getHash() const
     return hash.get128();
 }
 
-
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 

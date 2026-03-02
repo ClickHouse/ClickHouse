@@ -36,7 +36,6 @@ UInt128 SerializationMap::getHash() const
     return hash.get128();
 }
 
-
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
     : key(key_), value(value_), nested(nested_)
 {

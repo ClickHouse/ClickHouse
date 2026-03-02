@@ -32,7 +32,6 @@ UInt128 SerializationSparse::getHash() const
     return hash.get128();
 }
 
-
 UInt128 SerializationSparseNullMap::getHash() const
 {
     SipHash hash;

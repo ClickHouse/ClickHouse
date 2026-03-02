@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
@@ -19,7 +18,7 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_)
     {
-        auto ptr=  SerializationPtr(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_));
+        auto ptr = SerializationPtr(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
 

@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 /// Serialization for Dynamic element when we read it as a subcolumn.
 class SerializationDynamicElement final : public SerializationWrapper
 {
@@ -32,7 +31,6 @@ public:
         auto ptr = SerializationPtr(new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_));
         return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
     }
-
 
     UInt128 getHash() const override
     {

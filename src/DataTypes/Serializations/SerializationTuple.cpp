@@ -48,7 +48,6 @@ UInt128 SerializationTuple::getHash() const
     return hash.get128();
 }
 
-
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & tuple = field.safeGet<Tuple>();

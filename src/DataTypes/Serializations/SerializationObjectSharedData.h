@@ -73,13 +73,11 @@ public:
         explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
-
 private:
     SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
 
 public:
     static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
-
 
     UInt128 getHash() const override;
 
