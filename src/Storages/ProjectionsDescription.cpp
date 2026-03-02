@@ -350,7 +350,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
