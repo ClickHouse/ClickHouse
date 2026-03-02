@@ -2,15 +2,18 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/ITokenizer.h>
@@ -102,9 +105,10 @@ size_t DictionarySparseIndex::memoryUsageBytes() const
     return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
 }
 
-DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_)
+DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : DictionaryBlockBase(std::move(tokens_))
     , token_infos(std::move(token_infos_))
+    , tokens_format(tokens_format_)
 {
 }
 
@@ -327,7 +331,7 @@ void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & str
     };
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
     sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
@@ -363,7 +367,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec));
         };
 
-        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
+        auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getDiskName(), state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
         return condition_text.dictionaryBlockCache()->getOrSet(hash, load_dictionary_block);
     };
 
@@ -408,7 +412,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(state.part.getDataPartStorage().getDiskName(), data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
@@ -898,7 +902,8 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     for (size_t i = 0; i < num_tokens; ++i)
         token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_codec));
 
-    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
+    DictionaryBlock result{std::move(tokens_column), std::move(token_infos), tokens_format};
+    return result;
 }
 
 template <typename Stream>
@@ -1054,7 +1059,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
-    forEachTokenPadded(
+    forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
@@ -1158,14 +1163,20 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (isArray(index_column.type))
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
-        const auto & column_data = column_array.getData();
+
+        const IColumn & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
+
+        const bool data_is_nullable = column_data.isNullable();
 
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                std::string_view ref = column_data.getDataAt(element_idx);
+                if (data_is_nullable && column_data.isNullAt(element_idx))
+                    continue;
+
+                const std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
             granule_builder.incrementCurrentRow();
@@ -1173,10 +1184,15 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else
     {
-        for (size_t i = 0; i < rows_read; ++i)
+        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
+
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            std::string_view ref = preprocessed_column->getDataAt(offset + i);
-            granule_builder.addDocument(ref);
+            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
+            {
+                const std::string_view ref = preprocessed_column->getDataAt(i);
+                granule_builder.addDocument(ref);
+            }
             granule_builder.incrementCurrentRow();
         }
     }
@@ -1209,8 +1225,9 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (checksums.files.contains(path_prefix + ".idx"))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
         return {1, getSubstreams()};
+
     return {0, {}};
 }
 
@@ -1376,23 +1393,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    WhichDataType data_type(index.data_types[0]);
-    if (data_type.isArray())
+    DataTypePtr nested_type = index.data_types[0];
+    while (true)
     {
-        const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
-        data_type = WhichDataType(array_type.getNestedType());
-    }
-    else if (data_type.isLowCardinality())
-    {
-        const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
-        data_type = WhichDataType(low_cardinality.getDictionaryType());
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
+            nested_type = array_type->getNestedType();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+            nested_type = nullable_type->getNestedType();
+        else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            nested_type = lc_type->getDictionaryType();
+        else
+            break;
     }
 
+    WhichDataType data_type(nested_type);
     if (!data_type.isString() && !data_type.isFixedString())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+            "Text index must be created on columns of type `String` or `FixedString`");
     }
 
     /// Create the preprocessor for validation.

@@ -128,6 +128,7 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
 namespace ProfileEvents
 {
+    extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
     extern const Event SelectedRanges;
@@ -184,6 +185,7 @@ namespace Setting
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1884,6 +1886,30 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+namespace
+{
+
+/// Check if all columns of all useful skip indexes are also part of the primary key.
+/// When true, skip indexes cannot cause incorrect FINAL results (since PK-based filtering cannot drop parts with overlapping key ranges),
+/// so the `findPKRangesForFinalAfterSkipIndex` recovery pass can be skipped.
+bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (!primary_key_columns_set.contains(column))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -1893,7 +1919,8 @@ void ReadFromMergeTree::buildIndexes(
     [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
     const ContextPtr & query_context,
     const SelectQueryInfo & query_info_,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_)
 {
     indexes.reset();
 
@@ -1923,8 +1950,16 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
+        /// pass empty filter when skipping partition pruning so the objects exist but useless
+        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
+        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
+        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(
+            metadata_snapshot,
+            effective_filter,
+            query_context,
+            false /* strict */,
+            !settings[Setting::use_partition_pruning] /* skip_analysis */);
     }
 
     indexes->part_values
@@ -1958,8 +1993,6 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     UsefulSkipIndexes skip_indexes;
-    using Key = std::pair<String, size_t>;
-    std::map<Key, size_t> merged;
 
     for (const auto & index : all_indexes)
     {
@@ -1967,20 +2000,6 @@ void ReadFromMergeTree::buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (index_helper->isMergeable())
-        {
-            auto [it, inserted]
-                = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
-            if (inserted)
-            {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info_, metadata_snapshot);
-            }
-
-            skip_indexes.merged_indices[it->second].addIndex(index_helper);
-            continue;
-        }
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -2020,13 +2039,13 @@ void ReadFromMergeTree::buildIndexes(
 
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
-                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
+                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions()
+                                                    && indexes->key_condition_rpn_template->getRPN().size() <= MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
-                                                        && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes,
-                                                                indexes->key_condition_rpn_template->hasOnlyConjunctions());
+                                                        && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes);
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2045,7 +2064,13 @@ void ReadFromMergeTree::buildIndexes(
                 auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
 
                 for (const auto & substream : format.substreams)
-                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// Check for both original and hashed filenames
+                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
+                    if (actual_stream_name)
+                        index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                }
 
                 index_sizes.emplace_back(index_size);
             }
@@ -2086,11 +2111,62 @@ void ReadFromMergeTree::buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
+void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
+{
+    if (!isQueryWithFinal())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    bool defer_row_policy = settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
+    bool defer_prewhere = settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
+
+    /// row policy must run before prewhere. If row policy touches non-sorting-key columns, defer prewhere too
+    if (defer_row_policy && query_info.prewhere_info)
+    {
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+        auto required = query_info.row_level_filter->actions.getRequiredColumnsNames();
+        bool all_in_sorting_key = std::all_of(
+            required.begin(), required.end(),
+            [&](const auto & col) { return sorting_key_columns_set.contains(col); });
+        if (!all_in_sorting_key)
+            defer_prewhere = true;
+    }
+
+    if (defer_row_policy)
+        deferred_row_level_filter = query_info.row_level_filter;
+    if (defer_prewhere)
+        deferred_prewhere_info = query_info.prewhere_info;
+
+    /// don't prune partitions unless the partition key is determined by the sorting key
+    /// matters when FINAL merges across partitions
+    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
+    {
+        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+        const auto & partition_expr_names = partition_key.column_names;
+        bool exprs_match = std::all_of(
+            partition_expr_names.begin(), partition_expr_names.end(),
+            [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+
+        auto partition_required_columns = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        bool columns_match = std::all_of(
+            partition_required_columns.begin(), partition_required_columns.end(),
+            [&](const auto & col) { return sorting_key_set.contains(col); });
+
+        skip_partition_pruning = !exprs_match && !columns_match;
+    }
+}
+
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     if (!indexes)
     {
-        auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
+        auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
+        auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input);
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 
         /// NOTE: Currently we store two DAGs for analysis:
@@ -2100,16 +2176,52 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (filter_actions_dag)
             query_info.filter_actions_dag = filter_actions_dag;
 
+        /// don't let deferred filters participate in index analysis
+        /// otherwise partition pruning / skip indexes could drop data that FINAL still needs
+        const ActionsDAG * index_filter_dag = query_info.filter_actions_dag.get();
+        std::shared_ptr<const ActionsDAG> index_filter_dag_without_deferred;
+
+        deferFiltersAfterFinalIfNeeded();
+        if (deferred_row_level_filter || deferred_prewhere_info)
+        {
+            /// build a separate DAG for index analysis, without the deferred filter nodes
+            NameSet deferred_column_names;
+            if (deferred_row_level_filter)
+                deferred_column_names.insert(deferred_row_level_filter->column_name);
+            if (deferred_prewhere_info)
+                deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
+
+            std::vector<const ActionsDAG::Node *> index_nodes;
+            for (const auto * node : added_filter_nodes.nodes)
+            {
+                if (!deferred_column_names.contains(node->result_name))
+                    index_nodes.push_back(node);
+            }
+
+            auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
+            if (idx_dag)
+                index_filter_dag_without_deferred = std::make_shared<const ActionsDAG>(std::move(*idx_dag));
+            /// nullptr is fine here: all filters are deferred, nothing left for indexes
+            index_filter_dag = index_filter_dag_without_deferred.get();
+
+            LOG_DEBUG(
+                log,
+                "Excluding deferred filters from index analysis: row_policy={}, prewhere={}",
+                deferred_row_level_filter != nullptr,
+                deferred_prewhere_info != nullptr);
+        }
+
         buildIndexes(
             indexes,
-            query_info.filter_actions_dag.get(),
+            index_filter_dag,
             data,
             getParts(),
             vector_search_parameters,
             top_k_filter_info,
             context,
             query_info,
-            storage_snapshot->metadata);
+            storage_snapshot->metadata,
+            skip_partition_pruning);
     }
 }
 
@@ -2167,6 +2279,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool allow_query_condition_cache_,
     bool supports_skip_indexes_on_data_read)
 {
+    ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
+
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
@@ -2197,6 +2311,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             context_,
             query_info_,
             metadata_snapshot);
+
+    NameSet indexes_column_names(primary_key_column_names.begin(), primary_key_column_names.end());
+    for (const auto & skip_index : indexes->skip_indexes.useful_indices)
+    {
+        const auto & skip_index_required_columns = skip_index.index->getColumnsRequiredForIndexCalc();
+        indexes_column_names.insert(skip_index_required_columns.begin(), skip_index_required_columns.end());
+    }
 
     indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
@@ -2341,7 +2462,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };
 
-            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), primary_key_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, context_);
+            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), indexes_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, context_);
             IndexAnalysisPartsRanges analyzed_parts_ranges;
 
             /// Index stats
@@ -3044,98 +3165,57 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
     }
 
-    const auto & local_settings = context->getSettingsRef();
-
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading
     /// (for correct behavior with ReplacingMergeTree where row policy should not affect which row "wins" during deduplication)
     /// also PREWHERE must always be executed after row policy, so if row policy is deferred, prewhere must be too
-    FilterDAGInfoPtr deferred_row_level_filter;
-    PrewhereInfoPtr deferred_prewhere_info;
-
-    if (isQueryWithFinal())
+    if (deferred_row_level_filter || deferred_prewhere_info)
     {
-        bool defer_row_policy = local_settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
-        bool defer_prewhere = local_settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
+        if (deferred_row_level_filter)
+            query_info.row_level_filter = nullptr;
+        if (deferred_prewhere_info)
+            query_info.prewhere_info = nullptr;
 
-        /// If row policy is deferred and uses non-sorting-key columns, prewhere must also be deferred
-        /// to maintain correct execution order (row policy before prewhere).
-        if (defer_row_policy && query_info.prewhere_info)
+
+        /// Ensure columns required by deferred filters are included in the columns to read
+        /// Without this, SELECT x would fail if row policy uses column y
+        NameSet columns_to_read_set(result.column_names_to_read.begin(), result.column_names_to_read.end());
+        NameSet all_columns_set(all_column_names.begin(), all_column_names.end());
+
+        auto add_required_columns = [&](const Names & required_columns)
         {
-            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-            NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
-
-            auto filter_required_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
-            bool all_columns_in_sorting_key = true;
-            for (const auto & col : filter_required_columns)
+            for (const auto & col : required_columns)
             {
-                if (!sorting_key_columns_set.contains(col))
+                if (!columns_to_read_set.contains(col))
                 {
-                    all_columns_in_sorting_key = false;
-                    break;
+                    result.column_names_to_read.push_back(col);
+                    columns_to_read_set.insert(col);
+                }
+                if (!all_columns_set.contains(col))
+                {
+                    all_column_names.push_back(col);
+                    all_columns_set.insert(col);
                 }
             }
+        };
 
-            /// If row policy uses non-sorting-key columns, we must defer prewhere too
-            if (!all_columns_in_sorting_key)
-                defer_prewhere = true;
-        }
+        if (deferred_row_level_filter)
+            add_required_columns(deferred_row_level_filter->actions.getRequiredColumnsNames());
 
-        if (defer_row_policy || defer_prewhere)
-        {
-            /// Save the filters and clear them from query_info so they won't be applied during reading
-            if (defer_row_policy)
-            {
-                deferred_row_level_filter = query_info.row_level_filter;
-                query_info.row_level_filter = nullptr;
-            }
+        if (deferred_prewhere_info)
+            add_required_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
 
-            if (defer_prewhere)
-            {
-                deferred_prewhere_info = query_info.prewhere_info;
-                query_info.prewhere_info = nullptr;
-            }
+        /// Recreate output_header without the deferred filters since they will be applied after FINAL
+        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            query_info.row_level_filter,
+            query_info.prewhere_info));
 
-            /// Ensure columns required by deferred filters are included in the columns to read.
-            /// Without this, SELECT x would fail if row policy uses column y.
-            NameSet columns_to_read_set(result.column_names_to_read.begin(), result.column_names_to_read.end());
-            NameSet all_columns_set(all_column_names.begin(), all_column_names.end());
-
-            auto add_required_columns = [&](const Names & required_columns)
-            {
-                for (const auto & col : required_columns)
-                {
-                    if (!columns_to_read_set.contains(col))
-                    {
-                        result.column_names_to_read.push_back(col);
-                        columns_to_read_set.insert(col);
-                    }
-                    if (!all_columns_set.contains(col))
-                    {
-                        all_column_names.push_back(col);
-                        all_columns_set.insert(col);
-                    }
-                }
-            };
-
-            if (deferred_row_level_filter)
-                add_required_columns(deferred_row_level_filter->actions.getRequiredColumnsNames());
-
-            if (deferred_prewhere_info)
-                add_required_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
-
-            /// Recreate output_header without the deferred filters since they will be applied after FINAL
-            output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-                storage_snapshot->getSampleBlockForColumns(all_column_names),
-                defer_row_policy ? nullptr : query_info.row_level_filter,
-                defer_prewhere ? nullptr : query_info.prewhere_info));
-
-            LOG_DEBUG(
-                log,
-                "Deferring filters to after FINAL: row_policy={}, prewhere={}. columns_to_read={}",
-                defer_row_policy,
-                defer_prewhere,
-                fmt::join(result.column_names_to_read, ","));
-        }
+        LOG_DEBUG(
+            log,
+            "Deferring filters to after FINAL: row_policy={}, prewhere={}. columns_to_read={}",
+            deferred_row_level_filter != nullptr,
+            deferred_prewhere_info != nullptr,
+            fmt::join(result.column_names_to_read, ","));
     }
 
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
@@ -3335,49 +3415,32 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
 
     /// apply row policy after FINAL if needed (must be applied before prewhere)
-    if (deferred_row_level_filter)
+    auto add_deferred_filter = [&pipe](ActionsDAG filter_dag, const String & column_name, bool remove_column)
     {
-        /// Clone the filter DAG and add all inputs to outputs to preserve them
-        auto filter_dag = deferred_row_level_filter->actions.clone();
-
-        /// Get all input column names and add them to outputs
         NameSet input_names;
         for (const auto * input : filter_dag.getInputs())
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
-        auto row_level_filter_actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&](const SharedHeader & header)
+        auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
+        pipe.addSimpleTransform([&, actions](const SharedHeader & header)
         {
-            return std::make_shared<FilterTransform>(
-                header,
-                row_level_filter_actions,
-                deferred_row_level_filter->column_name,
-                deferred_row_level_filter->do_remove_column);
+            return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
         });
-    }
+    };
+
+    if (deferred_row_level_filter)
+        add_deferred_filter(
+            deferred_row_level_filter->actions.clone(),
+            deferred_row_level_filter->column_name,
+            deferred_row_level_filter->do_remove_column);
 
     /// apply deferred PREWHERE after row policy
     if (deferred_prewhere_info)
-    {
-        /// Clone the prewhere DAG and add all inputs to outputs to preserve them
-        auto prewhere_dag = deferred_prewhere_info->prewhere_actions.clone();
-
-        NameSet input_names;
-        for (const auto * input : prewhere_dag.getInputs())
-            input_names.insert(input->result_name);
-        restoreDAGInputs(prewhere_dag, input_names);
-
-        auto prewhere_actions = std::make_shared<ExpressionActions>(std::move(prewhere_dag));
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<FilterTransform>(
-                header,
-                prewhere_actions,
-                deferred_prewhere_info->prewhere_column_name,
-                deferred_prewhere_info->remove_prewhere_column);
-        });
-    }
+        add_deferred_filter(
+            deferred_prewhere_info->prewhere_actions.clone(),
+            deferred_prewhere_info->prewhere_column_name,
+            deferred_prewhere_info->remove_prewhere_column);
 
     Block cur_header = pipe.getHeader();
 
@@ -3523,6 +3586,15 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         expression->describeActions(format_settings.out, prefix);
     }
 
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        format_settings.out << prefix << "Deferred filters (applied after FINAL)" << '\n';
+        if (deferred_row_level_filter)
+            format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
+        if (deferred_prewhere_info)
+            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
+    }
+
     if (virtual_row_conversion)
     {
         format_settings.out << prefix << "Virtual row conversions" << '\n';
@@ -3570,6 +3642,16 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (prewhere_info_map)
         map.add("Prewhere info", std::move(prewhere_info_map));
+
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        auto deferred_map = std::make_unique<JSONBuilder::JSONMap>();
+        if (deferred_row_level_filter)
+            deferred_map->add("Deferred row level filter column", deferred_row_level_filter->column_name);
+        if (deferred_prewhere_info)
+            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
+        map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
+    }
 
     if (virtual_row_conversion)
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
@@ -3945,24 +4027,6 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
-/// Check if any/all columns with the given skip indexes are also part of the primary key
-bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
-{
-    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
-
-    for (const auto & skip_index : skip_indexes.useful_indices)
-    {
-        for (const auto & column : skip_index.index->index.column_names)
-        {
-            if (primary_key_columns_set.contains(column) && any_one)
-                return true;
-            else if (!primary_key_columns_set.contains(column) && !any_one)
-                return false;
-        }
-    }
-
-    return !any_one;
-}
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {

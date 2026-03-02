@@ -38,10 +38,10 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
     Case case_sensitiveness)
 {
-    if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
+    if (!functions.emplace(name, FunctionFactoryData{creator, documentation}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
 
     String function_name_lowercase = Poco::toLower(name);
@@ -51,7 +51,7 @@ void FunctionFactory::registerFunction(
 
     if (case_sensitiveness == Case::Insensitive)
     {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
+        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, documentation}).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
                 name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
@@ -61,13 +61,13 @@ void FunctionFactory::registerFunction(
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionSimpleCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
     Case case_sensitiveness)
 {
     registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
     {
         return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
-    }, std::move(doc), std::move(case_sensitiveness));
+    }, std::move(documentation), std::move(case_sensitiveness));
 }
 
 

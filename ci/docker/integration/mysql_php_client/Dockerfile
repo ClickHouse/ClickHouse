@@ -1,7 +1,7 @@
 # docker build -t clickhouse/mysql-php-client .
 # MySQL PHP client docker container
 
-FROM php:8-cli-alpine
+FROM php:8.4-cli-alpine
 
 COPY ./client.crt client.crt
 COPY ./client.key client.key

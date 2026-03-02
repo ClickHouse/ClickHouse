@@ -147,6 +147,10 @@ Float64 IStatistics::estimateRange(const Range & /*range*/) const
 
 Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
+    /// Comparisons with NaN are always false, so `x < NaN` has zero selectivity.
+    if (val.isNaN())
+        return 0;
+
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     if (stats.contains(StatisticsType::MinMax))
@@ -156,11 +160,19 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
 {
+    /// Comparisons with NaN are always false, so `x > NaN` has zero selectivity.
+    if (val.isNaN())
+        return 0;
+
     return static_cast<Float64>(rows) - estimateLess(val);
 }
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
+    /// Comparisons with NaN are always false, so `x = NaN` has zero selectivity.
+    if (val.isNaN())
+        return 0;
+
     if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.

@@ -127,13 +127,13 @@ BlockIO ClickHouseDictionarySource::loadUpdatedAll()
     return createStreamForQuery(load_update_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
-BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);

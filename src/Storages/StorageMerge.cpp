@@ -372,14 +372,20 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    /// In case of JOIN the first stage (which includes JOIN)
+    /// In case of JOIN or ARRAY JOIN the first stage (which includes JOIN/ARRAY JOIN)
     /// should be done on the initiator always.
     ///
     /// Since in case of JOIN query on shards will receive query without JOIN (and their columns).
     /// (see removeJoin())
     ///
+    /// ARRAY JOIN also requires FetchColumns because `buildQueryPlanForArrayJoinNode` expects
+    /// the child plan to be at FetchColumns stage. If we return a later stage here,
+    /// the ARRAY JOIN processing is skipped entirely in `buildJoinTreeQueryPlan`
+    /// (see the early return when stage != FetchColumns), leading to missing chunk info
+    /// in MergingAggregatedTransform.
+    ///
     /// And for this we need to return FetchColumns.
-    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && (hasJoin(*select) || hasArrayJoin(*select)))
         return QueryProcessingStage::FetchColumns;
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
@@ -721,7 +727,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 database_name,
                 table_name,
                 RowPolicyFilterType::SELECT_FILTER);
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->empty())
+            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
@@ -788,7 +794,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(column_name); });
+            std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,
@@ -859,7 +865,18 @@ public:
                 node = std::move(column_expression);
             }
             else
+            {
+                /// Do not replace column source for lambda arguments.
+                /// Lambda argument columns reference the LambdaNode as their source,
+                /// and replacing it with the table expression would cause toAST()
+                /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
+                /// which is invalid for lambda argument identifiers.
+                auto column_source = column->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    return;
+
                 column->setColumnSource(replacement_table_expression);
+            }
         }
     }
 private:
@@ -901,7 +918,15 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};
+    query_node->getWindow().getNodes().clear();
+    query_node->getQualify() = {};
     query_node->getOrderBy().getNodes().clear();
+    query_node->getInterpolate() = {};
+    if (query_node->hasLimitByLimit())
+        query_node->getLimitByLimit() = {};
+    if (query_node->hasLimitByOffset())
+        query_node->getLimitByOffset() = {};
+    query_node->getLimitBy().getNodes().clear();
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
@@ -1377,9 +1402,10 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     std::function<bool(const String&,const String&)> table_filter;
     if (filter_actions_dag && (filter_by_database_virtual_column || filter_by_table_virtual_column))
     {
+        auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
-            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_database"),
-            ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
+            ColumnWithTypeAndName(lc_string_type, "_database"),
+            ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
         auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
@@ -1387,15 +1413,15 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
             auto filter_column_name = filter_expression->getActionsDAG().getOutputs().at(0)->result_name;
-            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name)] (const auto& database_name, const auto& table_name)
+            table_filter = [filter=std::move(filter_expression), column_name=std::move(filter_column_name), lc_string_type] (const auto& database_name, const auto& table_name)
             {
-                MutableColumnPtr database_column = ColumnString::create();
-                MutableColumnPtr table_column = ColumnString::create();
+                MutableColumnPtr database_column = lc_string_type->createColumn();
+                MutableColumnPtr table_column = lc_string_type->createColumn();
                 database_column->insert(database_name);
                 table_column->insert(table_name);
                 Block block{
-                    ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "_database"),
-                    ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "_table")
+                    ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
+                    ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
                 };
                 filter->execute(block);
                 // Valid only when block has exactly one row.

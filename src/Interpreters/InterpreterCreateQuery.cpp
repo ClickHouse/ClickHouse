@@ -14,6 +14,7 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
@@ -111,7 +112,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsBool allow_experimental_statistics;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -189,6 +190,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
@@ -686,9 +688,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
         {
-            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
+            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_statistics])
                 throw Exception(
-                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
+                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is disabled. Turn on allow_statistics");
 
             column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(statistics_desc, column.name, column.type);
         }
@@ -784,13 +786,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
-            for (auto & projection_ast : create.columns_list->projections->children)
+            for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
-                /// Replace the original AST with the normalized one (e.g., positional GROUP BY arguments
-                /// like `GROUP BY 1, 2` are rewritten to use actual column names). This ensures that
-                /// the stored table metadata uses resolved names and can be loaded on server restart.
-                projection_ast = projection.definition_ast;
                 properties.projections.add(std::move(projection));
             }
 
@@ -892,19 +890,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
-        {
-            // For parameterized views, extract columns if explicitly declared
-            if (create.columns_list && create.columns_list->columns)
-            {
-                properties.columns = getColumnsDescription(
-                    *create.columns_list->columns,
-                    getContext(),
-                    mode,
-                    is_restore_from_backup
-                );
-            }
             return properties;
-        }
 
         if (create.aliases_list)
         {
@@ -1533,6 +1519,7 @@ bool isReplicated(const ASTStorage & storage)
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
     /// Temporary tables are created out of databases.
     if (create.isTemporary() && create.attach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");

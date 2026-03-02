@@ -17,11 +17,8 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit);
+[[noreturn]] void throwUnsupportedIndexesColumnType(const std::string & name);
 
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
@@ -118,8 +115,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         limit = indexes.size();
 
     if (indexes.size() < limit)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
+        throwIndexesSizeTooSmall(indexes.size(), limit);
 
     if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
@@ -130,7 +126,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}", indexes.getName());
+    throwUnsupportedIndexesColumnType(indexes.getName());
 }
 
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);

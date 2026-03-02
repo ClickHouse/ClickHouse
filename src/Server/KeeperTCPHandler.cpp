@@ -1,4 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
+#include <Common/ErrnoException.h>
 
 #if USE_NURAFT
 
@@ -826,10 +827,18 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 request->toString(/*short_format=*/true));
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        uint64_t subrequest_count = 1;
+        if (request)
+        {
+            auto op_num = request->getOpNum();
+            if (op_num == Coordination::OpNum::Multi || op_num == Coordination::OpNum::MultiRead)
+                subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
+        }
+
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

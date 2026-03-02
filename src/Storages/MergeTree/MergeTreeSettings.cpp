@@ -1460,6 +1460,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
+    How often replicas will try to update replica set in background.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1781,7 +1784,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
@@ -1935,7 +1938,7 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
@@ -2076,6 +2079,9 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
     Batch size for ZooKeeper multi-create get-part requests when cloning replica.
+    )", 0) \
+    DECLARE(Bool, table_readonly, false, R"(
+    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2550,6 +2556,10 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, disallowed_values, writability);
+
+        /// Certain merge tree settings are unconditionally read-only
+        if (isReadonlySetting(setting_name))
+            writability = SettingConstraintWritability::CONST;
 
         /// These two columns can accept strings only.
         if (!min.isNull())

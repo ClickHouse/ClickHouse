@@ -18,6 +18,8 @@ extern const int CANNOT_READ_ALL_DATA;
 extern const int UNSUPPORTED_METHOD;
 }
 
+/// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
+/// The callback catches exceptions and stores them for later re-throwing in C++ code.
 class LibArchiveReader::StreamInfo
 {
 public:
@@ -26,12 +28,32 @@ public:
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
     {
         auto * read_stream = reinterpret_cast<StreamInfo *>(client_data);
-        *buff = reinterpret_cast<void *>(read_stream->buf);
-        return read_stream->read_buffer->read(read_stream->buf, DBMS_DEFAULT_BUFFER_SIZE);
+        try
+        {
+            *buff = reinterpret_cast<void *>(read_stream->buf);
+            return read_stream->read_buffer->read(read_stream->buf, DBMS_DEFAULT_BUFFER_SIZE);
+        }
+        catch (...)
+        {
+            if (!read_stream->stored_exception)
+                read_stream->stored_exception = std::current_exception();
+            return -1;
+        }
+    }
+
+    void rethrowIfNeeded()
+    {
+        if (stored_exception)
+        {
+            auto ex = stored_exception;
+            stored_exception = nullptr;
+            std::rethrow_exception(ex);
+        }
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     char buf[DBMS_DEFAULT_BUFFER_SIZE];
+    std::exception_ptr stored_exception;
 };
 
 class LibArchiveReader::Handle
@@ -121,7 +143,7 @@ public:
         Entry entry = nullptr;
 
         std::vector<std::string> files;
-        int error = readNextHeader(archive, &entry);
+        int error = readNextHeader(archive, &entry, rs.get());
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             chassert(entry != nullptr);
@@ -129,7 +151,7 @@ public:
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
-            error = readNextHeader(archive, &entry);
+            error = readNextHeader(archive, &entry, rs.get());
         }
 
         checkError(error);
@@ -164,9 +186,21 @@ public:
         return *file_info;
     }
 
-    la_ssize_t readData(void * buf, size_t len) { return archive_read_data(current_archive, buf, len); }
+    la_ssize_t readData(void * buf, size_t len)
+    {
+        auto result = archive_read_data(current_archive, buf, len);
+        rethrowStreamException();
+        return result;
+    }
 
     const char * getArchiveError() { return archive_error_string(current_archive); }
+
+    /// Re-throws a stored exception from the stream's C callback, if any.
+    void rethrowStreamException()
+    {
+        if (read_stream)
+            read_stream->rethrowIfNeeded();
+    }
 
 private:
     using Archive = struct archive *;
@@ -205,11 +239,14 @@ private:
             archive_read_support_format_zip(archive);
 
             if (archive_read_open(archive, read_stream_, nullptr, StreamInfo::read, nullptr) != ARCHIVE_OK)
+            {
+                read_stream_->rethrowIfNeeded();
                 throw Exception(
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
                     archive_error_string(archive));
+            }
         }
         catch (...)
         {
@@ -261,13 +298,18 @@ private:
         }
     }
 
-    int readNextHeader(struct archive * archive, struct archive_entry ** entry) const
+    int readNextHeader(struct archive * archive, struct archive_entry ** entry, StreamInfo * stream_to_check = nullptr)
     {
         std::unique_lock lock(Handle::read_lock, std::defer_lock);
         if (lock_on_reading)
             lock.lock();
 
-        return archive_read_next_header(archive, entry);
+        int result = archive_read_next_header(archive, entry);
+        if (stream_to_check)
+            stream_to_check->rethrowIfNeeded();
+        else
+            rethrowStreamException();
+        return result;
     }
 
     String path_to_archive;

@@ -1,0 +1,64 @@
+-- 1. All selected fields
+all_1_1_0	apple	front_coded	500	1	0	0	0
+all_1_1_0	banana	front_coded	500	1	0	0	0
+all_2_2_0	cherry	front_coded	500	1	0	0	0
+all_2_2_0	date	front_coded	500	1	0	0	0
+-- 2. Aggregation over token: count distinct tokens per part
+all_1_1_0	2
+all_2_2_0	2
+-- 3. Aggregation: total cardinality per token across all parts
+apple	500
+banana	500
+cherry	500
+date	500
+-- 4. Filtering by part_name: only read tokens from one part
+apple
+banana
+-- 5. KeyCondition filtering: equality on token
+apple	500
+-- 6. KeyCondition filtering: range on token
+banana	500
+-- 7. KeyCondition filtering: token IN (...)
+apple	500
+cherry	500
+-- 8. KeyCondition filtering: prefix match with LIKE
+date	500
+-- 9. KeyCondition filters to a single block out of 7
+1
+-- 10. Range filter matching exactly one block
+e
+f
+g
+h
+-- 11. Range filter matching two blocks
+8
+-- 12. Large table: count tokens
+10003
+-- 13. Large table: uniqExact tokens
+10003
+-- 14. Large table: aggregation over token (top tokens by cardinality)
+common	100000	2
+medium	1000	1
+rare	1	1
+-- 15. Large table: filter on equality
+1
+-- 16. Large table: range filter on token
+2
+-- 17. Large table: LIKE filter on token
+1	1000
+-- 18. All tokens from all parts
+all_1_1_0	alpha
+all_1_1_0	beta
+all_1_1_0	gamma
+all_2_2_0	delta
+all_2_2_0	epsilon
+all_2_2_0	zeta
+all_3_3_0	eta
+all_3_3_0	iota
+all_3_3_0	theta
+-- 19. Combined part_name and token filter
+alpha	100
+-- 20. All tokens from one specific part
+alpha
+beta
+gamma

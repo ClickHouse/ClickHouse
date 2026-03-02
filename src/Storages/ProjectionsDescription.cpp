@@ -270,20 +270,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.loadSettings(projection_definition->with_settings->changes);
 
     fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
-
-    /// When positional arguments were enabled and resolved (e.g., GROUP BY 1, 2 -> GROUP BY b, a),
-    /// update definition_ast to store the resolved column names instead of positional references.
-    /// This ensures the table can be re-attached on server restart even with the default setting
-    /// (enable_positional_arguments_for_projections = false).
-    if (query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections])
-    {
-        if (auto resolved_group_by = result.query_ast->as<ASTSelectQuery &>().groupBy())
-        {
-            auto & proj_query = result.definition_ast->as<ASTProjectionDeclaration &>().query->as<ASTProjectionSelectQuery &>();
-            proj_query.setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, resolved_group_by->clone());
-        }
-    }
-
     return result;
 }
 
@@ -398,7 +384,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
 
         /// Subcolumns can be used in projection only when the original column is used.
-        if (columns.hasSubcolumn(column_with_type_name.name))
+        if (columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
             if (!block.has(subcolumn.getNameInStorage()))
@@ -535,6 +521,12 @@ Block ProjectionDescription::calculate(
 Block ProjectionDescription::calculateByQuery(
     const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
+    /// Nothing to project from an empty block. This can happen when TTL deletes all rows during merge.
+    /// Aggregate projections with constant GROUP BY keys (e.g., GROUP BY 0.674) would produce 1 row
+    /// from 0 input rows, violating the ProjectionDataSink row count invariant.
+    if (block.rows() == 0)
+        return sample_block.cloneEmpty();
+
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.

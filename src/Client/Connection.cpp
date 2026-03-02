@@ -1037,7 +1037,18 @@ void Connection::sendQuery(
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
-    query_plan.serialize(*out, server_query_plan_serialization_version);
+
+    if (query_plan.isSerialized())
+    {
+        // Use cached serialization
+        auto serialized_data = query_plan.getSerializedData();
+        out->write(serialized_data.data(), serialized_data.size());
+    }
+    else
+    {
+        // Fallback: serialize on-the-fly
+        query_plan.serialize(*out, server_query_plan_serialization_version);
+    }
 }
 
 void Connection::sendCancel()

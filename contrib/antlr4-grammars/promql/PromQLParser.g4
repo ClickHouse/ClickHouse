@@ -44,8 +44,8 @@ expression
 // Unary operations have the same precedence as multiplications
 
 vectorOperation
-    : <assoc = right> vectorOperation powOp vectorOperation
-    | <assoc = right> vectorOperation subqueryOp
+    : <assoc = right> vectorOperation subqueryOp
+    | <assoc = right> vectorOperation powOp vectorOperation
     | unaryOp vectorOperation
     | vectorOperation multOp vectorOperation
     | vectorOperation addOp vectorOperation

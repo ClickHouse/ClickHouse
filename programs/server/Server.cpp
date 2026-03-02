@@ -82,8 +82,8 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -267,6 +267,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -416,6 +417,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 keeper_server_socket_send_timeout_sec;
     extern const ServerSettingsString hdfs_libhdfs3_conf;
     extern const ServerSettingsString config_file;
+    extern const ServerSettingsString users_to_ignore_early_memory_limit_check;
 }
 
 namespace ErrorCodes
@@ -689,10 +691,9 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
-        std::string app_name = (commandName() == "clickhouse-server") ? "clickhouse-server" : "clickhouse server";
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      app_name);
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -1228,11 +1229,12 @@ try
     MainThreadStatus::getInstance();
 
 #if USE_JEMALLOC
-    Jemalloc::setup(
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
+        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
@@ -2107,6 +2109,7 @@ try
             extra_paths.emplace_back(key_path);
     }
 
+    DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
     /// context is destroyed.
@@ -2122,7 +2125,6 @@ try
     else
     {
         DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
@@ -2239,6 +2241,8 @@ try
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+            global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
+            global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
@@ -2843,14 +2847,9 @@ try
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
-        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
-            " neither clickhouse-server process has CAP_NET_ADMIN capability."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location."
             " 'taskstats' performance statistics will be disabled."
-            " It could happen due to incorrect ClickHouse package installation."
-            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep {}'."
-            " Note that it will not work on 'nosuid' mounted filesystems."
-            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
-            executable_path);
+            " It could happen due to incorrect ClickHouse package installation.");
     }
     else
     {
@@ -2951,6 +2950,7 @@ try
                     global_context,
                     &config(),
                     "distributed_ddl",
+                    "default",
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),
@@ -3174,9 +3174,16 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
 #endif
         if (type == "http")
+        {
+            /// Allow custom http_handlers configuration for this protocol endpoint.
+            /// E.g. <protocols><my_http><type>http</type><handlers>http_handlers_alt</handlers></my_http></protocols>
+            String handlers_config_key;
+            if (config.has(conf_name + ".handlers"))
+                handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
+        }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
@@ -3743,6 +3750,7 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            String handlers_key = "http_handlers";
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
@@ -3759,6 +3767,8 @@ void Server::updateServers(
                         if (type == "http")
                         {
                             is_http = true;
+                            if (config.has(conf_name + ".handlers"))
+                                handlers_key = config.getString(conf_name + ".handlers");
                             break;
                         }
                     }
@@ -3784,9 +3794,9 @@ void Server::updateServers(
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
             if (force_restart)
-                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server->getDescription());
+                LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {

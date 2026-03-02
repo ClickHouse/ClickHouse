@@ -299,6 +299,8 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
             ```)",
+            .syntax = "extractKeyValuePairs(input)",
+            .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
     );
@@ -330,6 +332,8 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
             ```)",
+            .syntax = "extractKeyValuePairsWithEscaping(input)",
+            .introduced_in = {23, 4},
             .category = FunctionDocumentation::Category::Map
         }
     );

@@ -126,6 +126,9 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        JobConfigs.sqllogic_test_master_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
@@ -170,7 +173,9 @@ workflow = Workflow.Config(
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
+        "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
 )
