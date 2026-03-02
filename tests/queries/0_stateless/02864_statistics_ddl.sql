@@ -7,11 +7,11 @@ SET mutations_sync = 1;
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_statistics = 0;
--- Error case: Can't create statistics when allow_experimental_statistics = 0
+SET allow_statistics = 0;
+-- Error case: Can't create statistics when allow_statistics = 0
 CREATE TABLE tab (col Float64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }

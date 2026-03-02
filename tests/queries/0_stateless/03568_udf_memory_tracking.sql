@@ -10,7 +10,7 @@ SELECT
     min(memory_usage) < 20000000 AS min_less_then_20mb,
     max(memory_usage) < 20000000 AS max_less_then_20mb
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query_kind = 'Select'
   AND query LIKE '%test_function(number, 0)%'
