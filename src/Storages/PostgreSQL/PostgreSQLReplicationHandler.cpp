@@ -811,11 +811,14 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
+        /// Do not use fault injection during cleanup: leaked replication slots
+        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
+        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -824,7 +827,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

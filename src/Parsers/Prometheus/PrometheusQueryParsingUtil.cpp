@@ -67,7 +67,7 @@ namespace
                 case 'r':  res_string.push_back(0x0D); pos += 2; break;  /// \r  U+000D carriage return
                 case 't':  res_string.push_back(0x09); pos += 2; break;  /// \t  U+0009 horizontal tab
                 case 'v':  res_string.push_back(0x0B); pos += 2; break;  /// \v  U+000B vertical tab
-                case '\\': res_string.push_back('\''); pos += 2; break;  /// \\  U+005C backslash
+                case '\\': res_string.push_back('\\'); pos += 2; break;  /// \\  U+005C backslash
                 case '\'': res_string.push_back('\''); pos += 2; break;  /// \'  U+0027 single quote
                 case '"':  res_string.push_back('"');  pos += 2; break;  /// \"  U+0022 double quote
                 case 'x':
@@ -80,7 +80,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char byte;
+                    UInt8 byte;
                     if (!tryParseIntInBase<16>(byte, input.substr(pos + 2, 2)))
                     {
                         setErrorMessage(error_message,

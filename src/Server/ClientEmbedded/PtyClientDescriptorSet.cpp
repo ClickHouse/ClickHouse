@@ -2,6 +2,7 @@
 
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 
 #include <base/openpty.h>
 #include <unistd.h>

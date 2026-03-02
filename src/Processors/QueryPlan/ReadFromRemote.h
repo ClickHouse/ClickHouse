@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>

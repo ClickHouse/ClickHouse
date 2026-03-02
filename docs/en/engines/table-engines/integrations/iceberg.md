@@ -75,7 +75,8 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 Table engine `Iceberg` is an alias to `IcebergS3` now.
 
 ## Schema evolution {#schema-evolution}
-At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
+ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
+
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P. 
@@ -94,10 +95,12 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
-Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+ClickHouse supports reading Iceberg tables that use the following deletion methods:
 
-The following deletion methods are **not supported**:
-- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+- [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+
+The following deletion method is **not supported**:
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
