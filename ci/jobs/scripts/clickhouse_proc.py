@@ -82,6 +82,8 @@ class ClickHouseProc:
         self.pid_file_replica_2 = (
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
+        Shell.run("echo test >test.txt") #REMOVEMVE
+        Utils.encode("test.txt")
         self.pid_0 = 0
         self.pid_1 = 0
         self.pid_2 = 0
@@ -806,7 +808,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        return [Utils.compress_zst(f) for f in Path(temp_dir).glob("run_r*/core.*")]
+        return [Utils.encode(Utils.compress_zst(f)) for f in Path(temp_dir).glob("run_r*/core.*")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):

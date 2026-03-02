@@ -785,6 +785,33 @@ class Utils:
         return path_out
 
     @classmethod
+    def encode(cls, path: str) -> str:
+        Shell.run(
+            f"""
+cat <<'EOF' >public.pem
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1UbfE9ncXjxKpDaFwbzw
+GL4m+3BmNx+PSIGbjkOxO5OZzgM9Qhlod2fKf8/R0b3e7+kM2eJTCWgZUCKvW1Un
+cfwE2uVAggzVX+vZV8j5tZlHtxALvoYbZQhJ4+3Yx/x4ugt8QoZAKbSPhgNT9H+G
+tzNqFlrEiWni1xlV1mfE95GFKwpAekvKkAMQbaZz9hfBIlOnflVloKA9/LqXd+4j
+9+ErD2/oTj2/EhWAdaAkAhj+eZtoJ3sCmUlJVXGgPhrrZBxlN/U35Ncjv1DemzQ3
+WLB5nUj/cihbdG2cDfaXmwalhlGfwdF28vIYcvnQzjXOS8F7JL25PkGXnEZOmBG3
+TQIDAQAB
+-----END PUBLIC KEY-----
+'EOF'
+
+openssl pkeyutl -encrypt \
+  -pubin -inkey public.pem \
+  -in {path} \
+  -out {path}.rsa \
+  -pkeyopt rsa_padding_mode:oaep \
+  -pkeyopt rsa_oaep_md:sha256
+""",
+            verbose=True,
+        )
+        return str + ".rsa"
+
+    @classmethod
     def compress_files_gz(cls, files, archive_name):
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
@@ -933,6 +960,10 @@ class Utils:
             Shell.check(f"rm -f {quote(path)}", verbose=True)
 
         return res
+
+    @classmethod
+    def encrypt
+
 
     @classmethod
     def add_to_PATH(cls, path):
