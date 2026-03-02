@@ -74,6 +74,11 @@ struct EquivalenceClasses
         return it->second;
     }
 
+    const std::unordered_map<T, ClassPtr, Hash> & getMemberToClassMap() const
+    {
+        return member_to_class;
+    }
+
 private:
     void mergeFromTo(ClassPtr class_from, ClassPtr class_to)
     {

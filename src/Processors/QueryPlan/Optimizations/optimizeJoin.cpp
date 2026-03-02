@@ -833,6 +833,16 @@ static void addTransitivePredicates(QueryGraph & query_graph, JoinExpressionActi
         }
     };
 
+    using ColumnEdge = std::pair<RelColumn, RelColumn>;
+    struct ColumnEdgeHash
+    {
+        RelColumnHash rc_hash;
+        size_t operator()(const ColumnEdge & edge) const
+        {
+            return rc_hash(edge.first) ^ (rc_hash(edge.second) * 0x517cc1b727220a95ULL);
+        }
+    };
+
     auto is_inner_relation = [&](size_t rel_id) -> bool
     {
         auto it = query_graph.join_kinds.find(rel_id);
@@ -843,7 +853,8 @@ static void addTransitivePredicates(QueryGraph & query_graph, JoinExpressionActi
 
     /// Single pass: extract qualifying equality edges and build equivalence classes.
     EquivalenceClasses<RelColumn, RelColumnHash> equivalent_column_sets;
-    std::vector<std::pair<RelColumn, RelColumn>> equality_edges;
+    /// Track which column equalities already exist so we don't generate duplicates.
+    std::unordered_set<ColumnEdge, ColumnEdgeHash> existing_equalities;
 
     for (const auto & edge : query_graph.edges)
     {
@@ -876,74 +887,56 @@ static void addTransitivePredicates(QueryGraph & query_graph, JoinExpressionActi
         RelColumn lhs_rc{*lhs_rel, lhs_node->result_name};
         RelColumn rhs_rc{*rhs_rel, rhs_node->result_name};
         equivalent_column_sets.add(lhs_rc, rhs_rc);
-        equality_edges.emplace_back(std::move(lhs_rc), std::move(rhs_rc));
-    }
 
-    /// Track which table pairs already have edges.
-    std::set<std::pair<size_t, size_t>> connected_relations;
-    for (const auto & edge : query_graph.edges)
-    {
-        if (!edge)
-            continue;
-        const auto & sources = edge.getSourceRelations();
-        if (sources.count() != 2)
-            continue;
-        auto it = sources.begin();
-        size_t first = *it;
-        ++it;
-        size_t second = *it;
-        connected_relations.emplace(std::min(first, second), std::max(first, second));
+        auto normalized = (lhs_rc < rhs_rc)
+            ? ColumnEdge{lhs_rc, rhs_rc}
+            : ColumnEdge{rhs_rc, lhs_rc};
+        existing_equalities.insert(std::move(normalized));
     }
 
     /// Generate synthetic edges for transitively-connected pairs.
     /// For each equivalence class with 3+ members, enumerate all pairs of members from
-    /// different relations that aren't already connected.
+    /// different relations that don't already have a direct equality on those columns.
     using ConstClassPtr = typename EquivalenceClasses<RelColumn, RelColumnHash>::ConstClassPtr;
-    std::set<ConstClassPtr> visited_classes;
+    std::unordered_set<ConstClassPtr> visited_classes;
     size_t added_count = 0;
 
-    for (const auto & [lhs_rc, rhs_rc] : equality_edges)
+    for (const auto & [_, equivalent_columns] : equivalent_column_sets.getMemberToClassMap())
     {
-        for (const auto & rc : {lhs_rc, rhs_rc})
+        if (equivalent_columns->size() <= 2)
+            continue;
+
+        visited_classes.insert(equivalent_columns);
+
+        for (auto lhs_it = equivalent_columns->begin(); lhs_it != equivalent_columns->end(); ++lhs_it)
         {
-            auto equivalent_columns = equivalent_column_sets.getClass(rc);
-            if (!equivalent_columns || equivalent_columns->size() <= 2)
-                continue;
-            if (!visited_classes.insert(equivalent_columns).second)
-                continue;
-
-            /// Members are already (relation_id, column_name) pairs — no decoding needed.
-            std::vector<RelColumn> members(equivalent_columns->begin(), equivalent_columns->end());
-
-            for (size_t i = 0; i < members.size(); ++i)
+            for (auto rhs_it = std::next(lhs_it); rhs_it != equivalent_columns->end(); ++rhs_it)
             {
-                for (size_t j = i + 1; j < members.size(); ++j)
-                {
-                    const auto & [rel_i, col_i] = members[i];
-                    const auto & [rel_j, col_j] = members[j];
+                const auto & [rel_i, col_i] = *lhs_it;
+                const auto & [rel_j, col_j] = *rhs_it;
 
-                    if (rel_i == rel_j)
-                        continue;
+                if (rel_i == rel_j)
+                    continue;
 
-                    auto relations_pair = std::make_pair(std::min(rel_i, rel_j), std::max(rel_i, rel_j));
-                    if (connected_relations.contains(relations_pair))
-                        continue;
+                auto normalized = (*lhs_it < *rhs_it)
+                    ? ColumnEdge{*lhs_it, *rhs_it}
+                    : ColumnEdge{*rhs_it, *lhs_it};
+                if (!existing_equalities.insert(std::move(normalized)).second)
+                    continue;
 
-                    auto lhs_ref = global_expression_actions.findNode(col_i, /* is_input= */ true, /* throw_if_not_found= */ false);
-                    auto rhs_ref = global_expression_actions.findNode(col_j, /* is_input= */ true, /* throw_if_not_found= */ false);
-                    if (!lhs_ref || !rhs_ref)
-                        continue;
+                auto lhs_ref = global_expression_actions.findNode(col_i, /* is_input= */ true, /* throw_if_not_found= */ false);
+                auto rhs_ref = global_expression_actions.findNode(col_j, /* is_input= */ true, /* throw_if_not_found= */ false);
+                if (!lhs_ref || !rhs_ref)
+                    continue;
 
-                    query_graph.edges.push_back(JoinActionRef::transform(
-                        {lhs_ref, rhs_ref},
-                        JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
-                    connected_relations.insert(relations_pair);
-                    ++added_count;
+                query_graph.edges.push_back(JoinActionRef::transform(
+                    {lhs_ref, rhs_ref},
+                    JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+                ++added_count;
 
-                    LOG_TEST(&Poco::Logger::get("JoinOrderOptimizer"),
-                        "Added transitive predicate: relation {} `{}` = relation {} `{}`",
-                        rel_i, col_i, rel_j, col_j);
-                }
+                LOG_TEST(&Poco::Logger::get("JoinOrderOptimizer"),
+                    "Added transitive predicate: relation {} `{}` = relation {} `{}`",
+                    rel_i, col_i, rel_j, col_j);
             }
         }
     }
