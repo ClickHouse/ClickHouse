@@ -18,34 +18,22 @@ set(ARROW_FLIGHT_PROTO_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/format)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight)
 set(ARROW_FLIGHT_SQL_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight/sql)
 
-add_custom_command(
-    OUTPUT
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.h"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc"
-        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.h"
-    COMMAND ${PROTOBUF_EXECUTABLE}
-    -I ${ARROW_FLIGHT_PROTO_DIR}
-    -I "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src"
-    --cpp_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
-    --grpc_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
-    --plugin=protoc-gen-grpc="${GRPC_EXECUTABLE}"
-    "${ARROW_FLIGHT_PROTO_DIR}/Flight.proto"
+set(PROTOBUF_IMPORT_DIRS ${ARROW_FLIGHT_PROTO_DIR} ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src)
+
+PROTOBUF_GENERATE_GRPC_CPP(
+    flight_sources
+    flight_headers
+    APPEND_PATH
+    PROTOC_OUT_DIR ${ARROW_FLIGHT_GENERATED_SRC_DIR}
+    ${ARROW_FLIGHT_PROTO_DIR}/Flight.proto
 )
 
-add_custom_command(
-    OUTPUT
-        "${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.grpc.pb.cc"
-        "${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.grpc.pb.h"
-        "${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.cc"
-        "${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.h"
-    COMMAND ${PROTOBUF_EXECUTABLE}
-    -I ${ARROW_FLIGHT_PROTO_DIR}
-    -I "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src"
-    --cpp_out="${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}"
-    --grpc_out="${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}"
-    --plugin=protoc-gen-grpc="${GRPC_EXECUTABLE}"
-    "${ARROW_FLIGHT_PROTO_DIR}/FlightSql.proto"
+PROTOBUF_GENERATE_GRPC_CPP(
+    flight_sql_sources
+    flight_sql_headers
+    APPEND_PATH
+    PROTOC_OUT_DIR ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}
+    ${ARROW_FLIGHT_PROTO_DIR}/FlightSql.proto
 )
 
 # NOTE: we do not compile the ${ARROW_FLIGHT_GENERATED_SRCS} directly, instead
@@ -53,8 +41,8 @@ add_custom_command(
 # overrides to enable Flight-specific optimizations. See comments in
 # protobuf-internal.cc
 set(ARROW_FLIGHT_SRCS
-        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
-        ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.cc
+        ${flight_sources}
+        ${flight_sql_sources}
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
