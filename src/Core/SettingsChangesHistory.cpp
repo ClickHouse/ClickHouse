@@ -47,6 +47,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"paimon_target_snapshot_id", -1, -1, "New setting."},
+            {"max_consume_snapshots", 0, 0, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -67,8 +69,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
-            {"paimon_target_snapshot_id", -1, -1, "New setting."},
-            {"max_consume_snapshots", 0, 0, "New setting."},
             {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
