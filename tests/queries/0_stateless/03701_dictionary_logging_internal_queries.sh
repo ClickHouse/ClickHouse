@@ -108,6 +108,6 @@ SELECT
     countIf(query LIKE '%DIRECT()-%' AND type = 'QueryFinish'),
     countIf(query LIKE '%DIRECT()-%' AND type = 'ExceptionWhileProcessing')
 FROM system.query_log
-WHERE is_internal = 1
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_internal = 1
     AND query LIKE '%$RUN_ID%'
     AND current_database IN ['default', currentDatabase()]"

@@ -164,6 +164,60 @@ Additional endpoints can be defined by referencing any module and omitting the
 </protocols>
 ```
 
+### Custom HTTP handlers per endpoint {#custom-http-handlers-per-endpoint}
+
+By default, all `type=http` protocol entries share the same `<http_handlers>`
+configuration. You can override this by adding a `<handlers>` tag that points
+to a different configuration section. This allows each HTTP port to serve a
+different set of HTTP routing rules.
+
+For example, to run an alternative HTTP API on port 8124 with its own handlers:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- Default handlers used by plain_http (port 8123) -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- Alternative handlers used by alt_http (port 8124) -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+In this example, requests to port 8123 use the standard `<http_handlers>` rules,
+while requests to port 8124 use the `<http_handlers_alt>` rules. If `<handlers>`
+is omitted, the endpoint falls back to the default `<http_handlers>`.
+
+The custom handlers section follows the same format as
+[`<http_handlers>`](/docs/en/operations/server-configuration-parameters/settings#http_handlers).
+Changes to the custom handlers section are detected during config reload, and the
+corresponding endpoint is automatically restarted.
+
 ### Specifying additional layer parameters {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 Some modules can contain additional layer parameters. For example, the TLS layer
