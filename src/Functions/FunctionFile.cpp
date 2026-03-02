@@ -33,13 +33,6 @@ bool isStringOrFixedStringOrNull(const IDataType & type)
     return isStringOrFixedString(type) || type.onlyNull();
 }
 
-DataTypePtr makeNullableIfNeeded(const ColumnWithTypeAndName & arg)
-{
-    if (arg.type->onlyNull())
-        return makeNullable(arg.type);
-    return arg.type;
-}
-
 }
 
 /// A function to read file as a string.
@@ -66,7 +59,11 @@ public:
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-        return arguments.size() == 2 ?  makeNullableIfNeeded(arguments[1]) : std::make_shared<DataTypeString>();
+
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
