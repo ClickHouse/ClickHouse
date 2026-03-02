@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: DETACH/ATTACH interferes with in-progress mutations
+
 CREATE TABLE test (
     `c_id` String,
     `p_id` String,
