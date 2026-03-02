@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -1576,12 +1578,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         const auto & default_expression = column.default_desc.expression;
                         if (default_expression)
                         {
-                            ASTPtr query = default_expression->clone();
-                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                            const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                            const auto required_columns = actions->getRequiredColumns();
-
-                            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+                            auto expression = buildQueryTree(default_expression->clone(), context);
+                            if (collectIdentifiersFullNames(expression).contains(command.column_name))
                                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
                                         backQuote(command.column_name), backQuote(column.name));
                         }
