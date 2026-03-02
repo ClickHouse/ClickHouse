@@ -20,6 +20,7 @@
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/msg_type.hxx>
 #include <libnuraft/ptr.hxx>
+#include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -341,6 +342,35 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void setServingRequest(bool value)
     {
         serving_req_ = value;
+    }
+
+    /// Returns the number of alive (responding) followers.
+    size_t getRespondingFollowerCount()
+    {
+        size_t responding = 0;
+        int32_t expiry = get_current_params().heart_beat_interval_ * raft_server::raft_limits_.response_limit_;
+        for_each_voting_members([&](const nuraft::ptr<nuraft::peer> & /* peer */, int32_t resp_elapsed_ms)
+        {
+            if (resp_elapsed_ms <= expiry)
+                ++responding;
+        });
+        return responding;
+    }
+
+    /// Returns the number of alive followers that are also in sync (not lagging by more than `stale_log_gap`).
+    size_t getRespondingSyncedFollowerCount()
+    {
+        size_t count = 0;
+        auto params = get_current_params();
+        int32_t expiry = params.heart_beat_interval_ * raft_server::raft_limits_.response_limit_;
+        uint64_t stale_gap = params.stale_log_gap_;
+        uint64_t last_log = get_last_log_idx();
+        for_each_voting_members([&](const nuraft::ptr<nuraft::peer> & peer, int32_t resp_elapsed_ms)
+        {
+            if (resp_elapsed_ms <= expiry && !(last_log > peer->get_last_accepted_log_idx() + stale_gap))
+                ++count;
+        });
+        return count;
     }
 
     using nuraft::raft_server::raft_server;
@@ -705,26 +735,14 @@ bool KeeperServer::isExceedingMemorySoftLimit() const
     return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
-/// TODO test whether taking failed peer in count
 uint64_t KeeperServer::getFollowerCount() const
 {
-    return raft_instance->get_peer_info_all().size();
+    return raft_instance->getRespondingFollowerCount();
 }
 
 uint64_t KeeperServer::getSyncedFollowerCount() const
 {
-    uint64_t last_log_idx = raft_instance->get_last_log_idx();
-    const auto followers = raft_instance->get_peer_info_all();
-
-    uint64_t stale_followers = 0;
-
-    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
-    for (const auto & fl : followers)
-    {
-        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
-            stale_followers++;
-    }
-    return followers.size() - stale_followers;
+    return raft_instance->getRespondingSyncedFollowerCount();
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
