@@ -23,8 +23,8 @@ private:
 public:
     static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type)
     {
-        auto ptr = SerializationPtr(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

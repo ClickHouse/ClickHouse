@@ -35,6 +35,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
+using SerializationUniquePtr = std::unique_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;

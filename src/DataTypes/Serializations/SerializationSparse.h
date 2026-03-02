@@ -32,8 +32,8 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & nested_)
     {
-        auto ptr = SerializationPtr(new SerializationSparse(nested_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationSparse(nested_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;
@@ -151,8 +151,8 @@ public:
 
     static SerializationPtr create()
     {
-        auto ptr = SerializationPtr(new SerializationSparseNullMap());
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationSparseNullMap());
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

@@ -18,8 +18,8 @@ private:
 public:
     static SerializationPtr create()
     {
-        auto ptr = SerializationPtr(new SerializationIP<IPv>());
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationIP<IPv>());
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override

@@ -18,8 +18,8 @@ public:
 
     static SerializationPtr create(UInt32 precision_, UInt32 scale_)
     {
-        auto ptr = SerializationPtr(new SerializationDecimal(precision_, scale_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationDecimal(precision_, scale_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

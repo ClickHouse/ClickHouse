@@ -55,8 +55,8 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
     {
-        auto ptr = SerializationPtr(new SerializationQBit(nested_, element_size_, dimension_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

@@ -22,8 +22,8 @@ private:
 public:
     static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_)
     {
-        auto ptr = SerializationPtr(new SerializationTuple(std::move(elems_), has_explicit_names_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationTuple(std::move(elems_), has_explicit_names_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

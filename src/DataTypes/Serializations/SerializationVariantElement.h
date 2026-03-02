@@ -32,8 +32,8 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
     {
-        auto ptr = SerializationPtr(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override

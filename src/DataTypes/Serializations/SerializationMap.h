@@ -20,8 +20,8 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_)
     {
-        auto ptr = SerializationPtr(new SerializationMap(key_type_, value_type_, nested_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationMap(key_type_, value_type_, nested_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

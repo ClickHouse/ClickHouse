@@ -43,8 +43,8 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 
 SerializationPtr SerializationLowCardinality::create(const DataTypePtr & dictionary_type_)
 {
-    auto ptr = SerializationPtr(new SerializationLowCardinality(dictionary_type_));
-    return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+    auto ptr = std::unique_ptr<ISerialization>(new SerializationLowCardinality(dictionary_type_));
+    return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
 }
 
 UInt128 SerializationLowCardinality::getHash() const

@@ -15,8 +15,8 @@ private:
 public:
     static SerializationPtr create(const DateLUTImpl & time_zone_ = DateLUT::instance())
     {
-        auto ptr = SerializationPtr(new SerializationDate(time_zone_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationDate(time_zone_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

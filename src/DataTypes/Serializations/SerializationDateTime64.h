@@ -15,8 +15,8 @@ private:
 public:
     static SerializationPtr create(UInt32 scale_, const TimezoneMixin & time_zone_)
     {
-        auto ptr = SerializationPtr(new SerializationDateTime64(scale_, time_zone_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationDateTime64(scale_, time_zone_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

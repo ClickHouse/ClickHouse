@@ -16,8 +16,8 @@ private:
 public:
     static SerializationPtr create(MergeTreeStringSerializationVersion version_)
     {
-        auto ptr = SerializationPtr(new SerializationStringSize(version_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationStringSize(version_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

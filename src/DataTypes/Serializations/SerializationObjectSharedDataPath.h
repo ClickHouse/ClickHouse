@@ -17,8 +17,8 @@ private:
 public:
     static SerializationPtr create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket)
     {
-        auto ptr = SerializationPtr(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override

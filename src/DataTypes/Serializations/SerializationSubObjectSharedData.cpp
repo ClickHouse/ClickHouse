@@ -34,8 +34,8 @@ SerializationPtr SerializationSubObjectSharedData::create(
     const String & paths_prefix_,
     const DataTypePtr & dynamic_type_)
 {
-    auto ptr = SerializationPtr(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_));
-    return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+    auto ptr = std::unique_ptr<ISerialization>(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_));
+    return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
 }
 
 UInt128 SerializationSubObjectSharedData::getHash() const

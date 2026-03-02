@@ -18,8 +18,8 @@ private:
 public:
     static SerializationPtr create(IntervalKind kind_)
     {
-        auto ptr = SerializationPtr(new SerializationInterval(kind_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationInterval(kind_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;

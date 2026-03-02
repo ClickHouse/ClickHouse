@@ -17,8 +17,8 @@ private:
 public:
     static SerializationPtr create(size_t n_)
     {
-        auto ptr = SerializationPtr(new SerializationFixedString(n_));
-        return SerializationObjectPool::instance().getOrCreate(ptr->getHash(), std::move(ptr));
+        auto ptr = std::unique_ptr<ISerialization>(new SerializationFixedString(n_));
+        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
     }
 
     UInt128 getHash() const override;
