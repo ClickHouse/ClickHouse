@@ -83,7 +83,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -138,7 +138,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr compress(bool force_compression) const override;
 
-    void getExtremes(Field & min, Field & max) const override { tuple->getExtremes(min, max); }
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { tuple->getExtremes(min, max, start, end); }
     void getPermutation(
         PermutationSortDirection direction,
         PermutationSortStability stability,

@@ -385,8 +385,7 @@ public:
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
-            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
-                lambda_result.column = const_column->removeLowCardinality();
+            lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
             if (Impl::needBoolean())
             {

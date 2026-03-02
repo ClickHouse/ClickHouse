@@ -74,6 +74,37 @@ const std::unordered_set<std::string> & getObfuscateKeywords()
                 instance.insert(token);
         }
 
+        /// Additional words used in SYSTEM commands, dictionary definitions, special SQL
+        /// constructs, and substitution syntax that are not registered as standalone keywords.
+        const std::vector<std::string> additional_keywords =
+        {
+            /// SYSTEM command words
+            "FLUSH", "LOGS", "UNCOMPRESSED", "RELOAD", "FETCHES", "MOVES", "SENDS", "REPLICATION",
+            "DISTRIBUTED", "COMPILED", "DNS", "MARK", "MMAP", "COVERAGE", "FAILPOINT", "JEMALLOC",
+            "PURGE", "PULLING", "REPLICAS", "PREWARM", "QUEUES", "CONFIG", "USERS", "EMBEDDED",
+            "ASYNCHRONOUS", "MODELS", "PAGE", "CONDITION", "QUEUE", "VIEWS", "FUZZER", "VIRTUAL",
+            "REDUCE", "BLOCKING", "RECONNECT", "ZOOKEEPER", "INSTRUMENT", "READY", "UNREADY",
+            "TRANSACTIONS", "DELTA", "KERNEL", "TRACING", "SNAPSHOT", "CACHE", "SCHEMA",
+            "STOP", "RESTART", "SHUTDOWN", "LISTEN", "REPLICA", "CANCEL", "CATALOG", "WAIT",
+            "LOADING", "ENABLE", "DISABLE", "NOTIFY", "QUERIES", "SIMILARITY", "VECTOR",
+            "POSTINGS", "HEADER", "METADATA", "ALLOCATE", "FREE", "LOAD", "UNLOAD", "UNKNOWN",
+            "CLIENT", "MODEL",
+            /// Dictionary layout/source keywords
+            "FLAT", "HASHED", "IP_TRIE", "REGEXP_TREE", "DIRECT", "CLICKHOUSE", "EXECUTABLE",
+            "LIBRARY",
+            /// Special SQL functions/types parsed by special rules
+            "EXTRACT", "TRIM", "DECIMAL",
+            /// Multi-word data type constituents not registered as standalone keywords
+            "NATIONAL", "LARGE", "OBJECT", "NCHAR", "BINARY",
+            /// Special numeric literals
+            "INF", "NAN",
+            /// Substitution syntax type (uppercase because keyword lookup uses toUpper)
+            "IDENTIFIER",
+        };
+
+        for (const auto & kw : additional_keywords)
+            instance.insert(kw);
+
         return instance;
     };
 
@@ -752,10 +783,125 @@ void obfuscateLiteral(
     const char * src_pos = src.data();
     const char * src_end = src_pos + src.size();
 
+    /// Preserve hex (0x/0X) and binary (0b/0B) number prefixes and structure.
+    if (src_pos + 2 <= src_end
+        && src_pos[0] == '0'
+        && (src_pos[1] == 'x' || src_pos[1] == 'X' || src_pos[1] == 'b' || src_pos[1] == 'B'))
+    {
+        bool is_hex = (src_pos[1] == 'x' || src_pos[1] == 'X');
+        result.write(src_pos[0]);
+        result.write(src_pos[1]);
+        src_pos += 2;
+
+        auto obfuscate_hex_digits = [&]()
+        {
+            while (src_pos < src_end && isHexDigit(*src_pos))
+            {
+                hash_func.update(*src_pos);
+                pcg64 rng(hash_func.get64());
+                static constexpr char hex_digits[] = "0123456789ABCDEF";
+                result.write(hex_digits[rng() % 16]);
+                ++src_pos;
+            }
+        };
+
+        if (is_hex)
+        {
+            /// Integer part hex digits.
+            obfuscate_hex_digits();
+
+            /// Fractional part: .hexdigits
+            if (src_pos < src_end && *src_pos == '.')
+            {
+                result.write('.');
+                ++src_pos;
+                obfuscate_hex_digits();
+            }
+
+            /// Binary exponent: p/P followed by optional sign and decimal digits.
+            if (src_pos < src_end && (*src_pos == 'p' || *src_pos == 'P'))
+            {
+                result.write(*src_pos);
+                ++src_pos;
+
+                if (src_pos < src_end && (*src_pos == '+' || *src_pos == '-'))
+                {
+                    result.write(*src_pos);
+                    ++src_pos;
+                }
+
+                /// Decimal exponent digits — keep structure but obfuscate values.
+                while (src_pos < src_end && isNumericASCII(*src_pos))
+                {
+                    hash_func.update(*src_pos);
+                    pcg64 rng(hash_func.get64());
+                    result.write('0' + rng() % 10);
+                    ++src_pos;
+                }
+            }
+        }
+        else
+        {
+            /// Binary literal digits.
+            while (src_pos < src_end && (*src_pos == '0' || *src_pos == '1'))
+            {
+                hash_func.update(*src_pos);
+                pcg64 rng(hash_func.get64());
+                result.write('0' + rng() % 2);
+                ++src_pos;
+            }
+        }
+    }
+
+    /// Helper: check if a range contains only hex digits.
+    auto isHexRange = [](const char * begin, const char * end) -> bool
+    {
+        for (const char * p = begin; p < end; ++p)
+            if (!isHexDigit(*p))
+                return false;
+        return begin < end;
+    };
+
     while (src_pos < src_end)
     {
+        /// UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (8-4-4-4-12 hex digits with dashes).
+        if (src_pos + 36 <= src_end
+            && isHexRange(src_pos, src_pos + 8)
+            && src_pos[8] == '-'
+            && isHexRange(src_pos + 9, src_pos + 13)
+            && src_pos[13] == '-'
+            && isHexRange(src_pos + 14, src_pos + 18)
+            && src_pos[18] == '-'
+            && isHexRange(src_pos + 19, src_pos + 23)
+            && src_pos[23] == '-'
+            && isHexRange(src_pos + 24, src_pos + 36))
+        {
+            /// Obfuscate each hex digit while preserving dashes and case.
+            SipHash hash_func_uuid = hash_func;
+            hash_func_uuid.update(src_pos, 36);
+            pcg64 rng(hash_func_uuid.get64());
+
+            for (size_t i = 0; i < 36; ++i)
+            {
+                if (src_pos[i] == '-')
+                {
+                    result.write('-');
+                }
+                else
+                {
+                    auto random = rng();
+                    if (src_pos[i] >= 'A' && src_pos[i] <= 'F')
+                        result.write("ABCDEF"[random % 6]);
+                    else if (src_pos[i] >= 'a' && src_pos[i] <= 'f')
+                        result.write("abcdef"[random % 6]);
+                    else
+                        result.write("0123456789"[random % 10]);
+                }
+            }
+            src_pos += 36;
+        }
         /// Date
-        if (src_pos + strlen("0000-00-00") <= src_end
+        else if (src_pos + strlen("0000-00-00") <= src_end
             && isNumericASCII(src_pos[0])
             && isNumericASCII(src_pos[1])
             && isNumericASCII(src_pos[2])
@@ -817,29 +963,101 @@ void obfuscateLiteral(
         }
         else if (isNumericASCII(src_pos[0]))
         {
-            /// Number
-            if (src_pos[0] == '0' || src_pos[0] == '1')
+            /// Try to match IPv4: N.N.N.N where each octet is 1-3 digits, value 0-255.
+            bool matched_ipv4 = false;
             {
-                /// Keep zero and one as is.
-                result.write(src_pos[0]);
-                ++src_pos;
+                const char * p = src_pos;
+                uint32_t octets[4] = {};
+                bool is_ipv4 = true;
+
+                for (int i = 0; i < 4 && is_ipv4; ++i)
+                {
+                    const char * octet_start = p;
+                    uint32_t val = 0;
+
+                    while (p < src_end && isNumericASCII(*p) && (p - octet_start) < 3)
+                    {
+                        val = val * 10 + (*p - '0');
+                        ++p;
+                    }
+
+                    if (p == octet_start || val > 255)
+                    {
+                        is_ipv4 = false;
+                        break;
+                    }
+
+                    octets[i] = val;
+
+                    if (i < 3)
+                    {
+                        if (p < src_end && *p == '.')
+                            ++p;
+                        else
+                            is_ipv4 = false;
+                    }
+                }
+
+                /// Must not be followed by more digits or dots (to avoid matching version numbers, etc).
+                if (is_ipv4 && p < src_end && (isNumericASCII(*p) || *p == '.'))
+                    is_ipv4 = false;
+
+                if (is_ipv4)
+                {
+                    matched_ipv4 = true;
+
+                    SipHash hash_func_ip = hash_func;
+                    hash_func_ip.update(src_pos, p - src_pos);
+                    pcg64 rng(hash_func_ip.get64());
+
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        if (i > 0)
+                            result.write('.');
+
+                        /// Obfuscate each octet while keeping it in valid range 0-255.
+                        /// Preserve 0, 1, and 255 as-is (common special values).
+                        uint32_t val = octets[i];
+                        if (val == 0 || val == 1 || val == 255)
+                        {
+                            writeIntText(val, result);
+                        }
+                        else
+                        {
+                            uint32_t obfuscated = 2 + rng() % 254; /// 2..255
+                            writeIntText(obfuscated, result);
+                        }
+                    }
+                    src_pos = p;
+                }
             }
-            else
+
+            if (!matched_ipv4)
             {
-                ReadBufferFromMemory in(src_pos, src_end - src_pos);
-                uint64_t num;
-                readIntText(num, in);
-                SipHash hash_func_num = hash_func;
-                hash_func_num.update(src_pos, in.count());
-                src_pos += in.count();
+                /// Number
+                if (src_pos[0] == '0' || src_pos[0] == '1')
+                {
+                    /// Keep zero and one as is.
+                    result.write(src_pos[0]);
+                    ++src_pos;
+                }
+                else
+                {
+                    ReadBufferFromMemory in(src_pos, src_end - src_pos);
+                    uint64_t num;
+                    readIntText(num, in);
+                    SipHash hash_func_num = hash_func;
+                    hash_func_num.update(src_pos, in.count());
+                    src_pos += in.count();
 
-                /// Obfuscate number but keep it within same power of two range.
+                    /// Obfuscate number but keep it within same power of two range.
 
-                uint64_t obfuscated = hash_func_num.get64();
-                uint64_t log2 = bitScanReverse(num);
+                    uint64_t obfuscated = hash_func_num.get64();
+                    uint64_t log2 = bitScanReverse(num);
 
-                obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
-                writeIntText(obfuscated, result);
+                    obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
+                    writeIntText(obfuscated, result);
+                }
             }
         }
         else if (src_pos + 1 < src_end
@@ -946,6 +1164,23 @@ void obfuscateQueries(
     SipHash hash_func,
     KnownIdentifierFunc known_identifier_func)
 {
+    /// State machine for preserving settings values after `=`.
+    enum class SettingsState : uint8_t { None, ExpectName, AfterName, ExpectValue, AfterValue };
+    SettingsState settings_state = SettingsState::None;
+    bool settings_is_param = false; /// True when current setting name starts with `param_` (query parameter, not a real setting).
+
+    /// INSERT context tracking: data after VALUES or FORMAT <name> should be fully obfuscated
+    /// (no keyword/known-identifier preservation, since it is user data, not SQL).
+    bool in_insert_context = false;
+    bool in_insert_data = false;
+    bool expect_format_name = false;
+
+    /// After INTERVAL keyword, preserve the next string literal as-is
+    /// (it contains interval units like '2 years' that must stay valid).
+    bool after_interval = false;
+
+    auto always_false_func = [](std::string_view) { return false; };
+
     Lexer lexer(src.data(), src.data() + src.size());
     while (true)
     {
@@ -955,9 +1190,188 @@ void obfuscateQueries(
         if (token.isEnd())
             break;
 
+        /// Whitespace is always written as-is; comments are always skipped.
+        /// Neither affects the state machine.
+        if (token.type == TokenType::Whitespace)
+        {
+            result.write(token.begin, token.size());
+            continue;
+        }
+        if (token.type == TokenType::Comment)
+        {
+            /// Replace comments with a space to avoid merging adjacent tokens
+            /// (e.g. ORDER/* ... */BY must not become ORDERBY).
+            result.write(' ');
+            continue;
+        }
+
+        /// Semicolons always reset all state.
+        if (token.type == TokenType::Semicolon)
+        {
+            settings_state = SettingsState::None;
+            in_insert_context = false;
+            in_insert_data = false;
+            expect_format_name = false;
+            after_interval = false;
+            result.write(token.begin, token.size());
+            continue;
+        }
+
+        /// ---- INSERT data mode: everything is user data, obfuscate uniformly. ----
+        if (in_insert_data)
+        {
+            if (token.type == TokenType::BareWord)
+            {
+                /// Always obfuscate bare words in data context (no keyword preservation).
+                obfuscateIdentifier(whole_token, result, obfuscate_map, used_nouns, hash_func);
+            }
+            else if (token.type == TokenType::Number)
+            {
+                obfuscateLiteral(whole_token, result, hash_func, always_false_func);
+            }
+            else if (token.type == TokenType::StringLiteral)
+            {
+                assert(token.size() >= 2);
+                result.write(*token.begin);
+                obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, always_false_func);
+                result.write(token.end[-1]);
+            }
+            else if (token.type == TokenType::QuotedIdentifier)
+            {
+                assert(token.size() >= 2);
+                result.write(*token.begin);
+                if (token.size() > 32)
+                    writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
+                else
+                    obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
+                result.write(token.end[-1]);
+            }
+            else
+            {
+                result.write(token.begin, token.size());
+            }
+            continue;
+        }
+
+        /// ---- FORMAT name after INSERT ... FORMAT: preserve the format name, then enter data mode. ----
+        if (expect_format_name && token.type == TokenType::BareWord)
+        {
+            expect_format_name = false;
+            in_insert_data = true;
+            result.write(token.begin, token.size());
+            continue;
+        }
+        expect_format_name = false;
+
+        /// ---- INTERVAL string literal: preserve as-is (contains units like '2 years'). ----
+        if (after_interval)
+        {
+            after_interval = false;
+            if (token.type == TokenType::StringLiteral)
+            {
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// Not a string literal — fall through to normal processing.
+        }
+
+        /// ---- Settings state machine: preserve values of settings. ----
+        if (settings_state == SettingsState::ExpectValue)
+        {
+            settings_state = SettingsState::AfterValue;
+            if (!settings_is_param)
+            {
+                /// Write the value token as-is (number, string, bare word, etc.).
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// For `param_*` query parameters, fall through to normal obfuscation.
+        }
+        if (settings_state == SettingsState::AfterValue)
+        {
+            if (token.type == TokenType::Comma)
+            {
+                settings_state = SettingsState::ExpectName;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            settings_state = SettingsState::None;
+            /// Fall through to normal processing for this token.
+        }
+        if (settings_state == SettingsState::AfterName)
+        {
+            if (token.type == TokenType::Equals)
+            {
+                settings_state = SettingsState::ExpectValue;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            if (token.type == TokenType::Comma)
+            {
+                settings_state = SettingsState::ExpectName;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            settings_state = SettingsState::None;
+            /// Fall through.
+        }
+        if (settings_state == SettingsState::ExpectName && token.type == TokenType::BareWord)
+        {
+            auto upper = Poco::toUpper(toString(whole_token));
+            if (getObfuscateKeywords().contains(upper))
+            {
+                /// This is a keyword, not a setting name — leave settings context.
+                settings_state = SettingsState::None;
+                /// Fall through to normal processing.
+            }
+            else
+            {
+                settings_state = SettingsState::AfterName;
+                settings_is_param = whole_token.starts_with("param_");
+                /// Fall through to normal BareWord processing (the name will be preserved
+                /// if it is a known identifier, or obfuscated otherwise — both are fine).
+            }
+        }
+
+        /// ---- Normal token processing. ----
+
         if (token.type == TokenType::BareWord)
         {
             auto whole_token_uppercase = Poco::toUpper(toString(whole_token));
+
+            /// Track INSERT context.
+            if (whole_token_uppercase == "INSERT")
+            {
+                in_insert_context = true;
+            }
+            else if (in_insert_context && whole_token_uppercase == "VALUES")
+            {
+                /// VALUES (...) contains SQL expressions parsed by the parser, not raw data.
+                /// Do not enter data mode here — keep normal SQL processing for the parenthesized content.
+                in_insert_context = false;
+            }
+            else if (in_insert_context && whole_token_uppercase == "FORMAT")
+            {
+                expect_format_name = true;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            else if (in_insert_context && (whole_token_uppercase == "SELECT" || whole_token_uppercase == "WITH"))
+            {
+                in_insert_context = false;
+            }
+
+            /// Track SETTINGS/SET context.
+            if (whole_token_uppercase == "SET" || whole_token_uppercase == "SETTINGS")
+            {
+                settings_state = SettingsState::ExpectName;
+            }
+
+            /// INTERVAL may be followed by a string literal like '2 years'.
+            if (whole_token_uppercase == "INTERVAL")
+            {
+                after_interval = true;
+            }
 
             if (getObfuscateKeywords().contains(whole_token_uppercase) || known_identifier_func(whole_token))
             {
@@ -993,13 +1407,44 @@ void obfuscateQueries(
         {
             assert(token.size() >= 2);
 
-            result.write(*token.begin);
-            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
-            result.write(token.end[-1]);
-        }
-        else if (token.type == TokenType::Comment)
-        {
-            /// Skip comments - they may contain confidential info.
+            /// Hex string literals like x'ABCD' or binary string literals like b'1010'.
+            if (token.size() >= 3
+                && (*token.begin == 'x' || *token.begin == 'X' || *token.begin == 'b' || *token.begin == 'B')
+                && token.begin[1] == '\'')
+            {
+                bool is_hex = (*token.begin == 'x' || *token.begin == 'X');
+                result.write(*token.begin);   /// x or b prefix
+                result.write('\'');            /// opening quote
+
+                /// Obfuscate content while preserving hex/binary validity.
+                const char * content_begin = token.begin + 2;
+                const char * content_end = token.end - 1;
+
+                SipHash content_hash = hash_func;
+                for (const char * p = content_begin; p < content_end; ++p)
+                {
+                    content_hash.update(*p);
+                    pcg64 rng(content_hash.get64());
+
+                    if (is_hex)
+                    {
+                        static constexpr char hex_digits[] = "0123456789ABCDEF";
+                        result.write(hex_digits[rng() % 16]);
+                    }
+                    else
+                    {
+                        result.write('0' + rng() % 2);
+                    }
+                }
+
+                result.write('\'');            /// closing quote
+            }
+            else
+            {
+                result.write(*token.begin);
+                obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
+                result.write(token.end[-1]);
+            }
         }
         else
         {

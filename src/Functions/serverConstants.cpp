@@ -306,7 +306,7 @@ REGISTER_FUNCTION(ServerTimezone)
 Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
-    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
+    FunctionDocumentation::Syntax syntax = "serverTimezone()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {
