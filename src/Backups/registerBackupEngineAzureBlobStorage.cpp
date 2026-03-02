@@ -111,7 +111,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 connection_params.endpoint.account_key = account_key;
 
                 connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(account_name, account_key);
-                connection_params.client_options = AzureBlobStorage::getClientOptions(params.context, params.context->getSettingsRef(), *request_settings, /*for_disk=*/ true);
                 connection_params = getAzureConnectionParams(
                     connection_url, container_name, account_name, account_key, std::nullopt, std::nullopt, params.context);
             }
