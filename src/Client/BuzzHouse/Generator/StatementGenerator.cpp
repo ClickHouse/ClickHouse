@@ -631,8 +631,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
-        const bool has_to
-            = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
+        const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
         if (!has_to)
         {
@@ -719,6 +718,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     setClusterInfo(rg, next);
     setClusterClause(rg, next.cluster, cv->mutable_cluster());
     sparen->set_paren(rg.nextSmallNumber() < 9);
+    /// ~30% chance to chain MV source from an existing view (MV-to-MV pattern)
+    this->chain_views = next.is_materialized && rg.nextSmallNumber() < 4;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
     generateSelect(
@@ -730,6 +731,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
+    this->chain_views = false; /// Safety clear: in case no view was available in FROM
     this->allow_in_expression_alias = true;
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;

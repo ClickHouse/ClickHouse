@@ -181,6 +181,7 @@ private:
     bool allow_subqueries = true;
     bool enforce_final = false;
     bool allow_engine_udf = true;
+    bool chain_views = false; ///< When set, next joinedTableOrFunction call picks a view (for MV chaining)
 
     uint32_t depth = 0;
     uint32_t width = 0;

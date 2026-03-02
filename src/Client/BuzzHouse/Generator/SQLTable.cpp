@@ -654,16 +654,13 @@ static const std::vector<SQLFunc> datesHash
        SQLFunc::FUNCtoWeek,
        SQLFunc::FUNCtoYearWeek,
        SQLFunc::FUNCtoDaysSinceYearZero,
-       SQLFunc::FUNCtoday,
-       SQLFunc::FUNCyesterday,
        SQLFunc::FUNCtimeSlot,
        SQLFunc::FUNCtoYYYYMM,
        SQLFunc::FUNCtoYYYYMMDD,
        SQLFunc::FUNCtoYYYYMMDDhhmmss,
        SQLFunc::FUNCmonthName,
        SQLFunc::FUNCtoModifiedJulianDay,
-       SQLFunc::FUNCtoModifiedJulianDayOrNull,
-       SQLFunc::FUNCtoUTCTimestamp};
+       SQLFunc::FUNCtoModifiedJulianDayOrNull};
 
 static const std::vector<SQLFunc> arithmeticFuncs
     = {SQLFunc::FUNCplus,
@@ -1019,14 +1016,10 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         }
         if (!this->filtered_entries.empty())
         {
+            /// only 1 column can be in sample by
             TableKey * tkey = te->mutable_sample_by();
-            const size_t ncols = (rg.nextLargeNumber() % std::min<size_t>(this->filtered_entries.size(), UINT32_C(3))) + 1;
 
-            std::shuffle(this->filtered_entries.begin(), this->filtered_entries.end(), rg.generator);
-            for (size_t i = 0; i < ncols; i++)
-            {
-                columnPathRef(this->filtered_entries[i].get(), tkey->add_exprs()->mutable_expr());
-            }
+            columnPathRef(rg.pickRandomly(this->filtered_entries).get(), tkey->add_exprs()->mutable_expr());
             this->filtered_entries.clear();
         }
     }
@@ -1621,11 +1614,11 @@ void StatementGenerator::addTableColumnInternal(
             cd->set_nullable(rg.nextBool());
             col.nullable = std::optional<bool>(cd->nullable());
         }
-        if (rg.nextSmallNumber() < 2)
+        if (rg.nextMediumNumber() < 16)
         {
             generateNextStatistics(rg, cd->mutable_stats());
         }
-        if (rg.nextMediumNumber() < 6)
+        if (rg.nextMediumNumber() < 16)
         {
             DefaultModifier * def_value = cd->mutable_defaultv();
             std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
@@ -2360,9 +2353,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_is_deleted = 0;
         const uint32_t to_addcols = rg.randomInt<uint32_t>(1, fc.max_columns);
         const uint32_t to_addidxs
-            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 7);
+            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 8);
         const uint32_t to_addprojs
-            = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 7);
+            = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 8);
         const uint32_t to_addconsts = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_ttl_expr = static_cast<uint32_t>(has_ttl && rg.nextBool());
         const uint32_t to_add_id_cols
@@ -2458,7 +2451,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 }
             }
         }
-        if (rg.nextSmallNumber() < 2)
+        if (rg.nextSmallNumber() < 4)
         {
             CreateTableSelect * cts = ct->mutable_as_select_stmt();
 
@@ -2529,6 +2522,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
+    if (rg.nextSmallNumber() < 3)
+    {
+        ct->set_comment(nextComment(rg));
+    }
     chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
 }
@@ -2547,6 +2544,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const uint64_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+    /// At most one hierarchical column per dictionary (must be integer type)
+    bool has_hierarchical = false;
 
     SQLBase::setDeterministic(fc, rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
@@ -2587,7 +2586,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
     const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
-    const uint32_t null_src = 2;
+    const uint32_t null_src = 5;
     const uint32_t prob_space = dict_table + dict_system_table + dict_view + dict_dict + null_src;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -2725,9 +2724,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->allow_in_expression_alias = prev_allow_in_expression_alias;
         this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
-        if (rg.nextSmallNumber() < 9)
+        if (!has_hierarchical && rg.nextSmallNumber() < 8)
         {
-            dc->set_hierarchical(rg.nextBool());
+            /// Hierarchical is only valid once, on an integer-type value column
+            const SQLType * eff_tp = next.cols[ncname].tp;
+
+            if (eff_tp && eff_tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype;
+            dc->set_hierarchical((eff_tp && eff_tp->getTypeClass() == SQLTypeClass::INT) || rg.nextSmallNumber() < 2);
+            has_hierarchical |= dc->hierarchical();
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
