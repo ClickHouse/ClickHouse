@@ -98,7 +98,7 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
         {
             access_flags = AccessFlags{str};
         }
-        catch (...) // Ok: unrecognized access type string
+        catch (const Exception &)
         {
             return false;
         }

@@ -166,7 +166,7 @@ Cluster::Address::Address(
             parsed_host_port = parseAddress(info.hostname, 0);
             can_be_local = false;
         }
-        catch (...) // Ok: parseAddress may fail if no port is embedded, use default
+        catch (const Exception &)
         {
             parsed_host_port = parseAddress(info.hostname, params.clickhouse_port);
         }

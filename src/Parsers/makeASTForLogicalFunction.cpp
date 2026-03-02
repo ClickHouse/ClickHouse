@@ -81,7 +81,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         }
         return false;
     }
-    catch (...) // Ok: literal cannot be converted to bool
+    catch (const Exception &)
     {
         return false;
     }

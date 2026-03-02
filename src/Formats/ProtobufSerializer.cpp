@@ -288,7 +288,7 @@ namespace
                 readText(result, buf);
                 return result;
             }
-            catch (...) // Ok: cannotConvertValue always throws a more specific exception
+            catch (const Exception &)
             {
                 cannotConvertValue(str, "String", TypeName<DestType>);
             }

@@ -302,7 +302,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
             else
                 return false;
         }
-        catch (...) // Ok: setting is not a Bool type, parsing fails
+        catch (const Exception &)
         {
             return false;
         }

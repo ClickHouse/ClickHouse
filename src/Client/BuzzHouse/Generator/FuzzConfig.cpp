@@ -485,7 +485,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         }
         res &= this->cb->processTextAsSingleQuery(query);
     }
-    catch (...) // Ok: fuzzer expects query failures
+    catch (const std::exception &)
     {
         res = false;
     }

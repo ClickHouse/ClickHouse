@@ -810,7 +810,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
                 PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -822,7 +822,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
                 PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -834,7 +834,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -846,7 +846,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_PID_TOO_LOW,
                PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -858,7 +858,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
                 PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -873,7 +873,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -892,7 +892,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
                 PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -903,7 +903,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
                 PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 
@@ -918,7 +918,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
         }
     }
-    catch (...) // Ok: non-essential system check, may be unavailable
+    catch (const std::exception &)
     {
     }
 

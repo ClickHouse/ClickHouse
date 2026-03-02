@@ -346,7 +346,7 @@ try
 
                         break;
                     }
-                    catch (...) // Ok: schema inference failed for this format, try next
+                    catch (const std::exception &)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -383,7 +383,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (...) // Ok: schema inference failed for this format, try next
+                        catch (const std::exception &)
                         {
                             /// Try next format.
                         }

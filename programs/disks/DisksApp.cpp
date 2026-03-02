@@ -138,7 +138,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (...) // Ok: command not found, return partial completion
+        catch (const std::exception &)
         {
             return {arguments.back()};
         }
@@ -156,7 +156,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (...) // Ok: command not found, return partial completion
+    catch (const std::exception &)
     {
         return {last_token};
     }

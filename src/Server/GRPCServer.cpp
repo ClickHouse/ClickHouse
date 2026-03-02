@@ -1445,7 +1445,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // Ok: best-effort error response, connection may be broken
+            catch (const std::exception &)
             {
             }
         }

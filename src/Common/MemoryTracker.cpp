@@ -247,7 +247,7 @@ void incrementAllocationWithoutCheck(Int64 size)
                 .memory_blocked_context = memory_blocked_context,
             });
         }
-        catch (...) // Ok: non-critical profiling, ignore failures
+        catch (const std::exception &)
         {
             /// Ignore failures, we have ProfileEvents anyway
         }

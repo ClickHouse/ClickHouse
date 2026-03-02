@@ -579,7 +579,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (...) // Ok: exception handled by starter->onException
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -1005,7 +1005,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (...) // Ok: exception handled by starter->onException
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }

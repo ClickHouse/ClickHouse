@@ -246,7 +246,7 @@ Poco::Timestamp JWTProvider::getJwtExpiry(const std::string & token)
         auto decoded_token = jwt::decode(token);
         return Poco::Timestamp::fromEpochTime(decoded_token.get_payload_claim("exp").as_integer());
     }
-    catch (...) // Ok: return 0 (expired) if token cannot be decoded
+    catch (const std::exception &)
     {
         return 0;
     }

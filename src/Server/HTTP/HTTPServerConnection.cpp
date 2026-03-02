@@ -144,7 +144,7 @@ void HTTPServerConnection::run()
                         {
                             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                         }
-                        catch (...) // Ok: best-effort error response, connection may be broken
+                        catch (const std::exception &)
                         {
                         }
                     }

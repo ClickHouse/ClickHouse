@@ -36,7 +36,7 @@ Int64 getCurrentProcessFDCount()
             readIntText(result, command->out);
             command->wait();
         }
-        catch (...) // Ok: lsof parsing is best-effort
+        catch (const std::exception &)
         {
         }
     }

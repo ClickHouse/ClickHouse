@@ -4903,7 +4903,7 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
         /// Our server doesn't depend on our Keeper cluster
         return true;
     }
-    catch (...) // Ok: return false if ZooKeeper check fails
+    catch (const std::exception &)
     {
         return false;
     }

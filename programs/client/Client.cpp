@@ -135,7 +135,7 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (...) // Ok: server warnings are non-essential
+    catch (const std::exception &)
     {
     }
 }
