@@ -349,6 +349,19 @@ Features:
 
 [ClickLens Source Code](https://github.com/ntk148v/clicklens)
 
+### CHouse UI {#chouse-ui}
+
+[CHouse UI](https://chouse-ui.com) is an open-source ClickHouse web interface built specifically for **teams** and **secure data access**. Unlike traditional clients that require direct database credentials, CHouse UI implements a powerful **Role-Based Access Control (RBAC)** layer, allowing administrators to grant granular permissions without exposing underlying secrets.
+
+Key differentiators include:
+
+- **Enterprise-Grade Security** - Server-side credential encryption, detailed audit logging, and access rules.
+- **Team Collaboration** - Define custom roles (e.g., specific table access for Analysts) and share queries securely.
+- **AI-Powered Insights** - Integrated LLM support for query optimization and visual explanation.
+- **complete Toolkit** - Features a robust SQL editor, monitoring dashboard, schema explorer, and seamless data import/export.
+
+[CHouse UI Source Code](https://github.com/daun-gatal/chouse-ui)
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}

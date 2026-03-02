@@ -71,6 +71,7 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 
 class DiskObjectStorage;
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
+using DiskObjectStorageConstPtr = std::shared_ptr<const DiskObjectStorage>;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
@@ -546,17 +547,6 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-
-    /// Create disk object storage according to disk type.
-    /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
-    /// for DiskObjectStorage create just a copy.
-    virtual DiskObjectStoragePtr createDiskObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 

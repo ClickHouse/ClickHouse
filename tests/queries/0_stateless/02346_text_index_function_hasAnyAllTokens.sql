@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas, long
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
@@ -23,9 +22,9 @@ INSERT INTO tab VALUES (1, 'b', 'b', ['c']), (2, 'c', 'c', ['c']), (3, '', '', [
 
 -- Must accept two arguments
 SELECT id FROM tab WHERE hasAnyTokens(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT id FROM tab WHERE hasAnyTokens('a', 'b', 'c'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT id FROM tab WHERE hasAnyTokens('a', 'b', 'c'); -- { serverError BAD_ARGUMENTS }
 SELECT id FROM tab WHERE hasAllTokens(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT id FROM tab WHERE hasAllTokens('a', 'b', 'c'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT id FROM tab WHERE hasAllTokens('a', 'b', 'c'); -- { serverError BAD_ARGUMENTS }
 -- 1st arg must be String or FixedString
 SELECT id FROM tab WHERE hasAnyTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT id FROM tab WHERE hasAllTokens(1, ['a']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

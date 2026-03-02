@@ -65,7 +65,7 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));
 }
 
-std::unique_ptr<IQueryPlanStep> BlocksMarshallingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
     chassert(ctx.input_headers.size() == 1);
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());

@@ -72,8 +72,7 @@ public:
     void unlock();
 
     /// Adds actions equivalent to `unlock()` to the list.
-    /// Returns index of the action that removes
-    void getUnlockOp(Coordination::Requests & ops);
+    void getUnlockOp(Coordination::Requests & ops) const;
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
     ///  because the nodes will be already deleted.
@@ -136,6 +135,8 @@ public:
     const std::vector<LockInfo> & getLocks() const { return locks; }
 
     void unlock();
+    void assumeUnlocked();
+    void getUnlockOps(Coordination::Requests & ops) const;
 
     ~EphemeralLocksInAllPartitions();
 
@@ -174,6 +175,8 @@ public:
     {
     }
 
+    void assumeUnlocked();
+    void getUnlockOps(Coordination::Requests & ops) const;
     const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 
     void reset()

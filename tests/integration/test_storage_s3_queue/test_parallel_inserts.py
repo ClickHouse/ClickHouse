@@ -19,7 +19,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/insert_deduplication.xml",
+                ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -159,7 +162,7 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
             "keeper_path": keeper_path,
             "parallel_inserts": parallel_inserts,
             "s3queue_processing_threads_num": 16,
-            "s3queue_loading_retries": 20,
+            "s3queue_loading_retries": 100,
             "s3queue_max_processed_files_before_commit": max_processed_files_before_commit,
         },
     )

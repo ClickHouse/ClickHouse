@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 
 
 namespace DB
@@ -42,7 +42,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
         const Names & index_columns_,
         const String & index_name_,
         const BloomFilterParameters & params_,
-        TokenExtractorPtr token_extractor_);
+        TokenizerPtr tokenizer_);
 
     ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
@@ -54,7 +54,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
 };
@@ -68,7 +68,7 @@ public:
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
-            TokenExtractorPtr token_extactor_);
+            TokenizerPtr token_extactor_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -142,12 +142,12 @@ private:
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
-        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);
+        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
     RPN rpn;
 };
 
@@ -157,10 +157,10 @@ public:
     MergeTreeIndexBloomFilterText(
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
-        std::unique_ptr<ITokenExtractor> && token_extractor_)
+        std::unique_ptr<ITokenizer> && tokenizer_)
         : IMergeTreeIndex(index_)
         , params(params_)
-        , token_extractor(std::move(token_extractor_)) {}
+        , tokenizer(std::move(tokenizer_)) {}
 
     ~MergeTreeIndexBloomFilterText() override = default;
 
@@ -172,7 +172,7 @@ public:
 
     BloomFilterParameters params;
     /// Function for selecting next token.
-    std::unique_ptr<ITokenExtractor> token_extractor;
+    std::unique_ptr<ITokenizer> tokenizer;
 };
 
 }

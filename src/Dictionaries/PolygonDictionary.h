@@ -124,7 +124,7 @@ protected:
      */
     virtual bool find(const Point & point, size_t & polygon_index) const = 0;
 
-    std::vector<Polygon> polygons;
+    VectorWithMemoryTracking<Polygon> polygons;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -148,14 +148,14 @@ private:
     /** Helper function for retrieving the value of an attribute by key. */
     template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
         ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, typename ValueGetter, typename ValueSetter>
     void getItemsShortCircuitImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        const VectorWithMemoryTracking<IPolygonDictionary::Point> & requested_key_points,
         ValueGetter && get_value,
         ValueSetter && set_value,
         IColumn::Filter & default_mask) const;
@@ -171,7 +171,7 @@ private:
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.
      */
-    std::vector<size_t> polygon_index_to_attribute_value_index;
+    VectorWithMemoryTracking<size_t> polygon_index_to_attribute_value_index;
 
     /** Extracts a list of polygons from a column according to input_type and point_type.
      *  The polygons are appended to the dictionary with the corresponding ids.
@@ -179,7 +179,7 @@ private:
     void extractPolygons(const ColumnPtr & column);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
-    static std::vector<Point> extractPoints(const Columns &key_columns);
+    static VectorWithMemoryTracking<Point> extractPoints(const Columns &key_columns);
 };
 
 }

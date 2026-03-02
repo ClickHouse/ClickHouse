@@ -241,7 +241,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
     FunctionDocumentation::Category category_simpleLinearRegression = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_simpleLinearRegression = {description_simpleLinearRegression, syntax_simpleLinearRegression, arguments_simpleLinearRegression, parameters_simpleLinearRegression, returned_value_simpleLinearRegression, examples_simpleLinearRegression, introduced_in_simpleLinearRegression, category_simpleLinearRegression};
 
-    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, {}, documentation_simpleLinearRegression});
+    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, documentation_simpleLinearRegression});
 }
 
 }

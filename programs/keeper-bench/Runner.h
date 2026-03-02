@@ -66,7 +66,7 @@ public:
         std::cerr << "Requests executed: " << num << ".\n";
     }
 
-    bool tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener);
+    bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
@@ -93,7 +93,7 @@ private:
 
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
 
     std::string input_request_log;
     std::string setup_nodes_snapshot_path;
@@ -106,6 +106,7 @@ private:
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
+    bool enable_tracing = false;
     size_t max_iterations = 0;
 
     std::atomic<size_t> requests_executed = 0;
@@ -121,7 +122,7 @@ private:
 
     std::mutex mutex;
 
-    using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
+    using Queue = ConcurrentBoundedQueue<ZooKeeperRequestWithCallbacks>;
     std::optional<Queue> queue;
 
     std::mutex connection_mutex;
