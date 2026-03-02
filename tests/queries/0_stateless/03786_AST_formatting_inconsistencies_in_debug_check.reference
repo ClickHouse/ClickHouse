@@ -74,3 +74,11 @@ Original:          SELECT [['hello']].1;
 format(original):  SELECT [['hello']].1
 format(formatted): SELECT [['hello']].1
 
+Original:          (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1
+format(original):  (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1
+format(formatted): (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1
+
+Original:          EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null
+format(original):  EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT `Null`
+format(formatted): EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT `Null`
+
