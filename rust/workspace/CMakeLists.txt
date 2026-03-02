@@ -33,16 +33,19 @@ if (ENABLE_PRQL)
     # Strip internal symbols from the PRQL static library after it is built.
     # Only the C FFI functions need to remain visible; all other symbols (67K+)
     # from the chumsky parser combinator are internal and produce enormous names.
-    set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
-    add_custom_target(strip_prql_symbols
-        COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-            "${_prql_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${CMAKE_LINKER}"
-            prql_to_sql prql_free_pointer
-        DEPENDS cargo-build__ch_rust_prql
-        COMMENT "Stripping internal symbols from PRQL library"
-        VERBATIM
-    )
-    add_dependencies(_ch_rust_prql strip_prql_symbols)
+    # Skip in tidy builds where CMAKE_AR is a dummy script that doesn't extract archives.
+    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker")
+        set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
+        add_custom_target(strip_prql_symbols
+            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                "${_prql_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${CMAKE_LINKER}"
+                prql_to_sql prql_free_pointer
+            DEPENDS cargo-build__ch_rust_prql
+            COMMENT "Stripping internal symbols from PRQL library"
+            VERBATIM
+        )
+        add_dependencies(_ch_rust_prql strip_prql_symbols)
+    endif ()
 endif()
 
 if (ENABLE_SKIM)
