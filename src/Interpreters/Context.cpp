@@ -1493,7 +1493,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
     }
     if ((*settings)[Setting::ast_fuzzer_runs] > 0)
         common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
-            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). Queries will run slowly.",
+            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). This is intended for testing only and is not suitable for production.",
             (*settings)[Setting::ast_fuzzer_runs].value);
 
     /// Make setting's name ordered
