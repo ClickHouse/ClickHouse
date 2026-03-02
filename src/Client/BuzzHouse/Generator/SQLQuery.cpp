@@ -1359,13 +1359,27 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
     }
 }
 
-void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr, SQLType * tp)
+void StatementGenerator::addWhereSide(
+    RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, const ColumnSpecial special, Expr * expr)
 {
-    if (rg.nextSmallNumber() < 3)
+    /// For special engine columns, ~70% of the time constrain the value to the valid semantic domain
+    const uint32_t nopt = rg.nextSmallNumber();
+
+    if (nopt < 3)
     {
         refColumn(rg, rg.pickRandomly(available_cols), expr);
     }
-    else if (tp && rg.nextSmallNumber() < 8)
+    else if (special == ColumnSpecial::SIGN && nopt < 8)
+    {
+        /// CollapsingMergeTree: only valid values are 1 (state row) and -1 (cancel row)
+        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
+    }
+    else if (special == ColumnSpecial::IS_DELETED && nopt < 8)
+    {
+        /// ReplacingMergeTree: 0 = live row, 1 = deleted row
+        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
+    }
+    else if (tp && nopt < 8)
     {
         expr->mutable_lit_val()->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
     }
@@ -1411,11 +1425,11 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             if (rg.nextSmallNumber() < 9)
             {
                 refColumn(rg, gcol, lexpr);
-                addWhereSide(rg, available_cols, rexpr, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), rexpr);
             }
             else
             {
-                addWhereSide(rg, available_cols, lexpr, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), lexpr);
                 refColumn(rg, gcol, rexpr);
             }
         }
@@ -1433,19 +1447,19 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             if (noption2 < 34)
             {
                 refColumn(rg, gcol, expr1);
-                addWhereSide(rg, available_cols, expr2, gcol.getType());
-                addWhereSide(rg, available_cols, expr3, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr2);
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr3);
             }
             else if (noption2 < 68)
             {
-                addWhereSide(rg, available_cols, expr1, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr1);
                 refColumn(rg, gcol, expr2);
-                addWhereSide(rg, available_cols, expr3, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr3);
             }
             else
             {
-                addWhereSide(rg, available_cols, expr1, gcol.getType());
-                addWhereSide(rg, available_cols, expr2, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr1);
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr2);
                 refColumn(rg, gcol, expr3);
             }
         }
@@ -1507,7 +1521,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             }
             else
             {
-                addWhereSide(rg, available_cols, expr2, gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr2);
             }
         }
         break;
@@ -1534,12 +1548,17 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                     for (uint32_t i = 0; i < nclauses; i++)
                     {
-                        addWhereSide(rg, available_cols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs(), gcol.getType());
+                        addWhereSide(
+                            rg,
+                            available_cols,
+                            gcol.getType(),
+                            gcol.getSpecial(),
+                            i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
                     }
                 }
                 else
                 {
-                    addWhereSide(rg, available_cols, ein->mutable_single_expr(), gcol.getType());
+                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), ein->mutable_single_expr());
                 }
             }
             else
@@ -1550,7 +1569,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
-                addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr(), gcol.getType());
+                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), sfc->add_args()->mutable_expr());
             }
             refColumn(rg, gcol, expr1);
         }

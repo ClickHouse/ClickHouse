@@ -226,7 +226,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType()));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType(), entry.special));
     }
     this->table_entries.clear();
     if (allow_internal_cols && (rel.cols.empty() || (rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))))
