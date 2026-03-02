@@ -42,7 +42,7 @@ select
   anyIf(ProfileEvents['ParallelReplicasUsedCount'] > 0, is_initial_query) read_with_parallel_replicas
 from system.query_log
 where
-  event_date >= yesterday()
+  event_date >= yesterday() AND event_time >= now() - 600
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and Settings['distributed_index_analysis'] = '1'

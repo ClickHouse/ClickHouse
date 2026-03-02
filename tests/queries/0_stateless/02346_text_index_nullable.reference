@@ -1,0 +1,155 @@
+Basic Nullable(String) expressions.
+-- hasToken: rows 1 and 5 have "hello"; NULL rows 2 and 4 must not appear
+1
+5
+-- hasToken: rows 3 and 5 have "foo"
+3
+5
+-- hasAllTokens: only row 1 contains both "hello" and "world"
+1
+-- hasAnyTokens: row 1 has "world", row 3 has "bar"
+1
+3
+-- hasToken combined with IS NULL: intersection of token match and IS NULL is always empty
+0
+-- hasToken on absent token returns no rows
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Nullable(String) consisting entirely of NULLs.
+-- all-NULL part: hasToken must return 0
+0
+-- all-NULL part: hasAnyTokens must return 0
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Nullable(String) consisting multiple granules where one granule is entirely NULL.
+-- "hello" appears in granules 0 and 2; granule 1 (all NULL) is skipped
+1
+10
+-- "baz" only in granule 2
+9
+10
+-- all-NULL granule (rows 5-8) must not match "hello"
+0
+-- "world" appears in granules 0 and 2
+1
+12
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Nullable(FixedString)
+-- Nullable(FixedString): only row 1 has "hello"
+1
+-- Nullable(FixedString): only row 3 has "foo"
+3
+-- NULL row must not match
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Array(Nullable(String))
+-- Array(Nullable): row 1 has "hello"
+1
+-- Array(Nullable): row 2 has "foo" (NULL element is skipped)
+2
+-- Array(Nullable): row 4 has "bar"
+4
+-- Row 3 (all NULLs) must not match any token
+0
+-- Row 5 (empty array) must not match any token
+0
+-- hasAnyTokens: rows 2 ("foo") and 4 ("bar") match, so count is 2
+2
+-- hasAllTokens: only row 1 has both "hello" and "world"
+1
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+LowCardinality(Nullable(String))
+-- LowCardinality(Nullable): row 1 has "hello"
+1
+-- LowCardinality(Nullable): row 3 has "foo"
+3
+-- LowCardinality(Nullable): NULL row 2 must not match
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Nullable(String) with preprocessor = lower(str)
+-- Preprocessor + Nullable: row 1 has "hello"
+1
+-- Preprocessor + Nullable: row 3 has "foo"
+3
+-- Preprocessor + Nullable: NULL row 2 is not indexed and must not appear
+0
+-- Preprocessor + Nullable: absent token returns no rows
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Array(Nullable(String)) with preprocessor = lower(arr)
+-- Array preprocessor + Nullable: row 1 has "hello"
+1
+-- Array preprocessor + Nullable: row 2 has "foo" (NULL element still skipped after lower)
+2
+-- Array preprocessor + Nullable: row 3 (all NULLs) must not match
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+Map(String, Nullable(String))
+-- Map values: row 1 has "hello"
+1
+-- Map values: row 2 has "bar" (NULL value is skipped)
+2
+-- Map values: row 3 (all NULL values) must not match
+0
+-- Map values: row 4 (empty map) must not match
+0
+-- hasAnyTokens on map values: rows 1 ("foo") and 2 ("bar") match
+2
+-- hasAllTokens on map values: only row 1 has both "hello" and "world"
+1
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+LowCardinality(String)
+-- LowCardinality(String): rows 1 and 4 have "hello"
+1
+4
+-- LowCardinality(String): hasAnyTokens "bar" or "baz": rows 2 and 3
+2
+3
+-- LowCardinality(String): hasAllTokens "hello" and "world": only row 1
+1
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
+LowCardinality(Nullable(String))
+-- LowCardinality(Nullable): rows 1 and 5 have "hello"
+1
+5
+-- LowCardinality(Nullable): hasAnyTokens: row 1 ("world") and row 3 ("bar")
+1
+3
+-- LowCardinality(Nullable): hasAllTokens: only row 1 has both "hello" and "world"
+1
+-- LowCardinality(Nullable): NULL rows must not match any token
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0

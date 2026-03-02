@@ -1,9 +1,9 @@
 ---
 name: test
 description: Run ClickHouse stateless or integration tests. Use when the user wants to run or execute tests.
-argument-hint: [test-name] [--flags]
+argument-hint: "[test-name] [--flags]"
 disable-model-invocation: false
-allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(./build*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(mktemp:*), Bash(export:*), Bash(ls:*), Bash(test:*)
+allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(./build*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(export:*), Bash(ls:*), Bash(test:*)
 ---
 
 # ClickHouse Test Runner Skill
@@ -125,23 +125,20 @@ The **build directory** is the path up to and including the parent of `programs/
 
 3. **Create log file and run the stateless test:**
 
-   **Step 3a: Create temporary log file first:**
-   ```bash
-   mktemp /tmp/test_clickhouse_XXXXXX.log
-   ```
-   - This will print the log file path
+   **Step 3a: Determine log file path:**
+   - Use `[build_directory]/test_output.log` as the log file path
    - **IMMEDIATELY report to the user:**
-     - "Test logs will be written to: [log file path]"
+     - "Test logs will be written to: `[build_directory]/test_output.log`"
      - Then display in a copyable code block:
        ```bash
-       tail -f [log file path]
+       tail -f [build_directory]/test_output.log
        ```
      - Example: "You can monitor the test progress in real-time with:" followed by the tail command in a code block
 
    **Step 3b: Start the stateless test:**
    ```bash
    # Add clickhouse binary to PATH using auto-detected build directory
-   export PATH="./[build_directory]/programs:$PATH" && ./tests/clickhouse-test <test_name> [flags] > [log file path] 2>&1
+   export PATH="./[build_directory]/programs:$PATH" && ./tests/clickhouse-test <test_name> [flags] > [build_directory]/test_output.log 2>&1
    ```
    Where `[build_directory]` is the path found during auto-detection.
 
@@ -173,22 +170,19 @@ The **build directory** is the path up to and including the parent of `programs/
 
 2. **Create log file and run the integration test:**
 
-   **Step 2a: Create temporary log file first:**
-   ```bash
-   mktemp /tmp/test_clickhouse_XXXXXX.log
-   ```
-   - This will print the log file path
+   **Step 2a: Determine log file path:**
+   - Use `[build_directory]/test_output.log` as the log file path
    - **IMMEDIATELY report to the user:**
-     - "Test logs will be written to: [log file path]"
+     - "Test logs will be written to: `[build_directory]/test_output.log`"
      - Then display in a copyable code block:
        ```bash
-       tail -f [log file path]
+       tail -f [build_directory]/test_output.log
        ```
      - Example: "You can monitor the test progress in real-time with:" followed by the tail command in a code block
 
    **Step 2b: Start the integration test with praktika:**
    ```bash
-   python -u -m ci.praktika run "integration" --test <test_name> [--path <absolute_binary_path>] > [log file path] 2>&1
+   python -u -m ci.praktika run "integration" --test <test_name> [--path <absolute_binary_path>] > [build_directory]/test_output.log 2>&1
    ```
 
    **Important:**
@@ -220,7 +214,7 @@ The **build directory** is the path up to and including the parent of `programs/
    **ALWAYS use Task tool to analyze results** (both pass and fail):
    - Use Task tool with `subagent_type=general-purpose` to analyze the test output
    - **Pass the log file path from step 3a** to the Task agent - let it read the file directly
-   - Example Task prompt: "Read and analyze the test output from: /tmp/test_clickhouse_abc123.log"
+   - Example Task prompt: "Read and analyze the test output from: [build_directory]/test_output.log"
    - The Task agent should read the file and provide:
 
      **If tests passed:**
@@ -273,7 +267,7 @@ The **build directory** is the path up to and including the parent of `programs/
    **ALWAYS use Task tool to analyze results** (both pass and fail):
    - Use Task tool with `subagent_type=general-purpose` to analyze the test output
    - **Pass the log file path from step 2a** to the Task agent - let it read the file directly
-   - Example Task prompt: "Read and analyze the test output from: /tmp/test_clickhouse_abc123.log"
+   - Example Task prompt: "Read and analyze the test output from: [build_directory]/test_output.log"
    - The Task agent should read the file and provide:
 
      **If tests passed:**
@@ -360,7 +354,7 @@ The test runner automatically detects and sets the necessary environment variabl
 - Test type is automatically detected based on name pattern or file location
 - **MANDATORY:** ALL test output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
 - **MANDATORY:** For test failures, MUST prompt user if they want deeper analysis and use Task subagent if requested
-- **CRITICAL:** Test output is redirected to a unique log file created with `mktemp`. The log file path is reported to the user in a copyable format BEFORE starting the test, allowing real-time monitoring with `tail -f`. The log file path is saved and passed to the Task agent for analysis. This keeps large test logs out of the main context.
+- **CRITICAL:** Test output is redirected to `test_output.log` inside the build directory. The log file path is reported to the user in a copyable format BEFORE starting the test, allowing real-time monitoring with `tail -f`. The log file path is saved and passed to the Task agent for analysis. This keeps large test logs out of the main context.
 - **Subagents available:** Task tool is used to analyze all test output (by reading from log file) and provide concise summaries. Additional agents (Explore or general-purpose) are used for deeper investigation of test failures when user requests it
 
 ### Stateless Tests
