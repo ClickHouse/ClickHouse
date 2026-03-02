@@ -24,25 +24,30 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
 {
     if (rg.nextMediumNumber() < nested_prob)
     {
-        const uint32_t noption = rg.nextMediumNumber();
-        FieldAccess * fa = expr->mutable_field();
+        const uint32_t nfields = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4)), UINT32_C(1));
 
         this->depth++;
-        if (noption < 41)
+        for (uint32_t i = 0 ; i < nfields; i++)
         {
-            fa->set_array_index(rg.randomInt<int32_t>(-4, 4));
-        }
-        else if (noption < 71)
-        {
-            fa->set_tuple_index(rg.randomInt<int32_t>(-4, 4));
-        }
-        else if (this->depth >= this->fc.max_depth || noption < 81)
-        {
-            fa->mutable_array_key()->set_column(rg.nextJSONCol());
-        }
-        else
-        {
-            this->generateExpression(rg, fa->mutable_array_expr());
+            FieldAccess * fa = expr->add_fields();
+            const uint32_t noption = rg.nextMediumNumber();
+
+            if (noption < 41)
+            {
+                fa->set_array_index(rg.randomInt<int32_t>(-4, 4));
+            }
+            else if (noption < 71)
+            {
+                fa->set_tuple_index(rg.randomInt<int32_t>(-4, 4));
+            }
+            else if (this->depth >= this->fc.max_depth || noption < 81)
+            {
+                fa->mutable_array_key()->set_column(rg.nextJSONCol());
+            }
+            else
+            {
+                this->generateExpression(rg, fa->mutable_array_expr());
+            }
         }
         this->depth--;
     }
@@ -50,7 +55,6 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
 
 void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob)
 {
-    const uint32_t nsuboption = rg.nextLargeNumber();
     const String & last_col
         = expr->path().sub_cols_size() ? expr->path().sub_cols(expr->path().sub_cols_size() - 1).column() : expr->path().col().column();
     const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || startsWith(last_col, "size");
@@ -58,6 +62,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
     if (!has_nested)
     {
         ColumnPath & cp = *expr->mutable_path();
+        const uint32_t nsuboption = rg.nextLargeNumber();
 
         this->depth++;
         if (rg.nextMediumNumber() < nested_prob)
@@ -78,7 +83,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 }
                 else if (noption2 < 61)
                 {
-                    jcol->set_jarray(0);
+                    jcol->set_jarray(rg.randomInt<uint32_t>(0, 3));
                 }
                 jcol->mutable_col()->set_column(rg.nextJSONCol());
                 this->width++;
