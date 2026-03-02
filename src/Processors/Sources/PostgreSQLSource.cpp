@@ -125,7 +125,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
-    LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chuck from stream");
+    LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chunk from stream");
 
     /// Check if source was cancelled or completed
     if (is_completed.load() || isCancelled())
