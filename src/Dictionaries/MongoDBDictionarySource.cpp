@@ -52,7 +52,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                validateNamedCollection(*named_collection, {"collection"}, {});
+                validateNamedCollection(*named_collection, {"uri", "collection"}, {"options"});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
