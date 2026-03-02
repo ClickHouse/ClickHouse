@@ -10,8 +10,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <absl/container/flat_hash_map.h>
-
 #include <algorithm>
 #include <climits>
 
@@ -327,41 +325,55 @@ struct BlockMyersEditDistance
     {
         static constexpr size_t W = sizeof(Word) * 8;
         UInt32 num_blocks = 0;
-        std::array<std::vector<Word>, 256> tbl; // tbl[c][k] = bitmask of positions of char c in block k of the needle
+        std::vector<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
 
         void build(const UInt8 * needle, UInt32 m)
         {
-            num_blocks = (m + W - 1) / W; // ceil(m / W)
-            for (auto & v : tbl)
-                v.assign(num_blocks, Word(0));
+            num_blocks = (m + W - 1) / W;
+            tbl.assign(256 * num_blocks, Word(0));
             for (UInt32 i = 0; i < m; ++i)
-                tbl[needle[i]][i / W] |= Word(1) << (i % W);
+                tbl[needle[i] * num_blocks + i / W] |= Word(1) << (i % W);
         }
 
-        // Returns pointer to the beginning of the block array for character c, or pointer to empty array if c does not appear in the needle.
-        const Word * operator[](UInt8 c) const { return tbl[c].data(); }
+        const Word * operator[](UInt8 c) const { return tbl.data() + c * num_blocks; }
     };
 
     struct PatternMasksUTF8
     {
         static constexpr size_t W = sizeof(Word) * 8;
         UInt32 num_blocks = 0;
-        absl::flat_hash_map<UInt32, std::vector<Word>> tbl;
+        using Map = HashMapWithStackMemory<UInt32, UInt32, DefaultHash<UInt32>, 6>;
+        Map offset_map;
+        std::vector<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
 
         void build(const UInt32 * needle, UInt32 m)
         {
             num_blocks = (m + W - 1) / W;
+
+            // Pass 1: count unique codepoints and assign offsets
+            UInt32 num_unique = 0;
             for (UInt32 i = 0; i < m; ++i)
             {
-                auto [it, inserted] = tbl.try_emplace(needle[i], num_blocks, Word(0));
-                it->second[i / W] |= Word(1) << (i % W);
+                Map::LookupResult it;
+                bool inserted;
+                offset_map.emplace(needle[i], it, inserted);
+                if (inserted)
+                {
+                    it->getMapped() = num_unique++ * num_blocks;
+                }
             }
+
+            arena.assign(num_unique * num_blocks, Word(0));
+
+            // Pass 2: fill masks
+            for (UInt32 i = 0; i < m; ++i)
+                arena[offset_map[needle[i]] + i / W] |= Word(1) << (i % W);
         }
 
         const Word * operator[](UInt32 c) const
         {
-            auto it = tbl.find(c);
-            return (it == std::cend(tbl)) ? nullptr : it->second.data();
+            auto it = offset_map.find(c);
+            return (it == offset_map.end()) ? nullptr : arena.data() + it->getMapped();
         }
     };
 
@@ -395,6 +407,16 @@ struct BlockMyersEditDistance
         std::vector<Word> VN(num_blocks, Word(0));
         UInt32 score = needle_len;
 
+        // 3 * 128 * sizeof(Word) bytes of stack (3 KB for Word=UInt64).
+        // Covers needles up to 128*64 = 8192 chars
+        constexpr size_t stack_limit = 128;
+
+        std::vector<Word> hp_heap, hn_heap, d0_heap;
+        if (num_blocks > stack_limit)
+        {
+            hp_heap.resize(num_blocks); hn_heap.resize(num_blocks); d0_heap.resize(num_blocks);
+        }
+
         for (UInt32 col = 0; col < haystack_len; ++col)
         {
             const SymbolT ch = haystack[col];
@@ -408,13 +430,12 @@ struct BlockMyersEditDistance
             // Store HP and HN in temporary arrays for now.
             // We cannot overwrite VP/VN yet because we still need their old values.
             // Small needle - use stack scratch:
-            Word hp_scratch[64], hn_scratch[64], d0_scratch[64]; // max ~4096-bit needle
+            Word hp_scratch[stack_limit], hn_scratch[stack_limit], d0_scratch[stack_limit]; // max 128 x block_size needle
             // Large needle - use vector if needed
-            std::vector<Word> hp_heap, hn_heap, d0_heap;
+
             Word *hp_arr = hp_scratch, *hn_arr = hn_scratch, *d0_arr = d0_scratch;
-            if (num_blocks > 64)
+            if (num_blocks > stack_limit)
             {
-                hp_heap.resize(num_blocks); hn_heap.resize(num_blocks); d0_heap.resize(num_blocks);
                 hp_arr = hp_heap.data(); hn_arr = hn_heap.data(); d0_arr = d0_heap.data();
             }
 
@@ -834,6 +855,8 @@ struct ByteJaroWinklerSimilarityImpl
     }
 };
 
+#ifndef STRING_SIMILARITY_GTEST_UNIT_TEST
+
 struct NameByteHammingDistance
 {
     static constexpr auto name = "byteHammingDistance";
@@ -1085,4 +1108,6 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(documentation_jaro_winkler);
 }
+
+#endif // STRING_SIMILARITY_GTEST_UNIT_TEST
 }

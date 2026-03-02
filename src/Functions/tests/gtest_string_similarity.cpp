@@ -312,7 +312,7 @@ TEST(StringSimilarity, EditDistanceStress_ASCII)
     std::uniform_int_distribution<size_t> len_dist(1, 8193);
     std::uniform_int_distribution<int> char_dist(0, 255);
 
-    constexpr size_t iterations = 100;
+    constexpr size_t iterations = 200;
 
     for (size_t it = 0; it < iterations; ++it)
     {
@@ -348,7 +348,7 @@ TEST(StringSimilarity, EditDistanceStress_UTF8)
     std::uniform_int_distribution<size_t> len_dist(1, 8193);
     std::uniform_int_distribution<UInt32> cp_dist(0, 0x10FFFF);
 
-    constexpr size_t iterations = 100;
+    constexpr size_t iterations = 200;
 
     auto randomCodePoint = [&](void)
     {
