@@ -95,9 +95,9 @@ public:
     [[nodiscard]] Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-        return string_column->getValueNameAndTypeImpl(name_buf, n, options);
+        string_column->getValueNameImpl(name_buf, n, options);
     }
 
     [[nodiscard]] std::string_view getDataAt(size_t) const override { throwNotSupported(); }
@@ -182,7 +182,7 @@ public:
     const std::vector<BatchDsc> & getDecoders() const { return decoders; }
     const std::vector<UInt64> & getLengths() const { return origin_lengths; }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void append(const CompressedField & x);
     void appendNewBatch(const CompressedField & x, std::shared_ptr<fsst_decoder_t> decoder);

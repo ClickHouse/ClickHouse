@@ -1,7 +1,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationString.h>
-#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <DataTypes/Serializations/SerializationStringFSST.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/Operators.h>

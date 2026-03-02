@@ -242,17 +242,17 @@ void ColumnFSST::updatePermutation(
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), eq_cmp, DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnFSST::getExtremes(Field & min, Field & max) const
+void ColumnFSST::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = 0; i < size(); ++i)
+    for (size_t i = start; i < end; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;

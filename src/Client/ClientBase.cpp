@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/Logger.h>
 
 #if USE_CLIENT_AI

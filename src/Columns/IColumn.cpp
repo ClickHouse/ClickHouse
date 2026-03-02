@@ -29,6 +29,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/RowRefs.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
