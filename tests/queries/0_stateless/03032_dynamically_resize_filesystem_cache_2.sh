@@ -21,7 +21,7 @@ min_expected_size=2000
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log;"
 
-written_cache=$($CLICKHOUSE_CLIENT --query "SELECT ProfileEvents['CachedWriteBufferCacheWriteBytes'] FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'")
+written_cache=$($CLICKHOUSE_CLIENT --query "SELECT ProfileEvents['CachedWriteBufferCacheWriteBytes'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'")
 
 $CLICKHOUSE_CLIENT --query "SELECT if($written_cache > $min_expected_size, 'written cache is bigger than $min_expected_size', 'written_cache: $written_cache') FORMAT TabSeparated"
 $CLICKHOUSE_CLIENT --query "SELECT if(current_size > $min_expected_size, 'current size after insert is bigger than $min_expected_size', concat('current_size: ', current_size)) FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-flaky-check
 
 set -ue
 
@@ -19,7 +19,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_start_time
     from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+    where finish_date >= yesterday() AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by start_time_us
     ;
@@ -30,7 +30,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_finish_time
     from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+    where finish_date >= yesterday() AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by finish_time_us
     ;
@@ -42,7 +42,7 @@ select count(*) "'"'"total spans"'"'",
         uniqExactIf(parent_span_id, parent_span_id != 0)
             "'"'"unique non-zero parent spans"'"'"
     from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+    where finish_date >= yesterday() AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     ;
 
@@ -51,11 +51,11 @@ select count(*) "'"'"total spans"'"'",
 -- the 2nd span should be the 'query' span
 select count(*) "'"'"initial query spans with proper parent"'"'"
     from system.opentelemetry_span_log
-    where
+    where finish_date >= yesterday() AND
         trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
         and parent_span_id in (
-           select span_id from system.opentelemetry_span_log where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
+           select span_id from system.opentelemetry_span_log where finish_date >= yesterday() AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
         )
     ;
 
@@ -64,7 +64,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
 select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
         array join mapKeys(attribute) as name,  mapValues(attribute) as value
-    where
+    where finish_date >= yesterday() AND
         trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
         and name = 'clickhouse.tracestate'
@@ -131,7 +131,7 @@ ${CLICKHOUSE_CLIENT} -q "
     -- if there are 10k tests run 1k times per day, that's a false positive every 3.7 years
     select if(2 <= count() and count() <= 38, 'OK', 'Fail')
     from system.opentelemetry_span_log
-    where operation_name = 'query'
+    where finish_date >= yesterday() AND operation_name = 'query'
         and attribute['clickhouse.query_id'] like '$query_id-%'
     ;
 "
