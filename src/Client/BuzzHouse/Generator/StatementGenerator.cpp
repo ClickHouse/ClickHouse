@@ -1223,13 +1223,11 @@ void StatementGenerator::generateInsertToTable(
                 {
                     buf += "DEFAULT";
                 }
-                else if (entry.special == ColumnSpecial::SIGN)
+                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    buf += rg.nextBool() ? "1" : "-1";
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    buf += rg.nextBool() ? "1" : "0";
+                    static const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
+
+                    buf += rg.nextBool() ? "1" : second;
                 }
                 else if (entry.path.size() > 1)
                 {
@@ -1260,13 +1258,11 @@ void StatementGenerator::generateInsertToTable(
             {
                 Expr * expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
 
-                if (entry.special == ColumnSpecial::SIGN)
+                if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
+                    const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : second);
                 }
                 else
                 {
@@ -1337,9 +1333,22 @@ void StatementGenerator::generateInsertToTable(
 
             for (const auto & entry : this->entries)
             {
-                const String nval = entry.getBottomType()->insertNumberEntry(
-                    rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
+                String nval;
 
+                if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                {
+                    const uint32_t modulo = rg.randomInt<uint32_t>(2, 31);
+                    const bool swap = rg.nextBool();
+                    const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                    nval = rg.nextBool() ? fmt::format("if(number % {} = 0, {}, {})", modulo, swap ? second : 1, swap ? 1 : second)
+                                         : (rg.nextBool() ? "1" : std::to_string(second));
+                }
+                else
+                {
+                    nval = entry.getBottomType()->insertNumberEntry(
+                        rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
+                }
                 buf += fmt::format(
                     "{}{}{}{}",
                     first ? "" : ", ",
@@ -1460,13 +1469,11 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
                 {
                     buf = "DEFAULT";
                 }
-                else if (entry.special == ColumnSpecial::SIGN)
+                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    buf = rg.nextBool() ? "1" : "-1";
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    buf = rg.nextBool() ? "1" : "0";
+                    static const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
+
+                    buf += rg.nextBool() ? "1" : second;
                 }
                 else
                 {

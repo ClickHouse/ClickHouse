@@ -1369,15 +1369,13 @@ void StatementGenerator::addWhereSide(
     {
         refColumn(rg, rg.pickRandomly(available_cols), expr);
     }
-    else if (special == ColumnSpecial::SIGN && nopt < 8)
+    else if ((special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED) && nopt < 8)
     {
         /// CollapsingMergeTree: only valid values are 1 (state row) and -1 (cancel row)
-        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
-    }
-    else if (special == ColumnSpecial::IS_DELETED && nopt < 8)
-    {
         /// ReplacingMergeTree: 0 = live row, 1 = deleted row
-        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
+        const int32_t second = special == ColumnSpecial::SIGN ? -1 : 0;
+
+        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : second);
     }
     else if (tp && nopt < 8)
     {
