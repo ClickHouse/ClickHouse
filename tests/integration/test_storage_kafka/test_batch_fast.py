@@ -859,6 +859,43 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
     k.kafka_check_result(result, True)
 
 
+def test_kafka_protobuflist(kafka_cluster):
+    """Test ProtobufList format with Kafka engine.
+    https://github.com/ClickHouse/ClickHouse/issues/78746
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    topic = f"pb_list_{suffix}"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    with k.kafka_topic(admin_client, topic):
+        # Produce 3 separate Kafka messages, each a ProtobufList envelope
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 0, 20)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 20, 1)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 21, 29)
+
+        instance.query(f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value String)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic}',
+                         kafka_group_name = '{topic}',
+                         kafka_format = 'ProtobufList',
+                         kafka_commit_on_select = 1,
+                         kafka_schema = 'kafka_protobuflist.proto:KeyValuePair';
+        """)
+
+        result = ""
+        while True:
+            result += instance.query(
+                f"SELECT * FROM test.{kafka_table}", ignore_error=True
+            )
+            if k.kafka_check_result(result):
+                break
+
+        k.kafka_check_result(result, True)
+
+
 def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
