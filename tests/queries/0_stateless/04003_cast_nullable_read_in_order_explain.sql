@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- EXPLAIN output may differ
+
 -- { echo }
 -- Tags: no-parallel-replicas
 
