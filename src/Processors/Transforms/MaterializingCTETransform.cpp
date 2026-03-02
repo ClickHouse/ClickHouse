@@ -1,5 +1,7 @@
 #include <Processors/Transforms/MaterializingCTETransform.h>
 
+#include <Common/logger_useful.h>
+#include <Common/Logger.h>
 #include <Processors/Port.h>
 #include <Storages/IStorage.h>
 
@@ -27,6 +29,21 @@ MaterializingCTETransform::MaterializingCTETransform(
     executor->start();
 }
 
+MaterializingCTETransform::~MaterializingCTETransform()
+{
+    if (executor)
+    {
+        try
+        {
+            executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("MaterializingCTETransform"), "Failed to cancel PushingPipelineExecutor");
+        }
+    }
+}
+
 void MaterializingCTETransform::consume(Chunk chunk)
 {
     executor->push(std::move(chunk));
@@ -37,6 +54,8 @@ Chunk MaterializingCTETransform::generate()
     executor->finish();
     executor.reset();
     table_out.reset();
+
+    LOG_DEBUG(getLogger("MaterializingCTETransform"), "Finished materializing CTE with name '{}'", materialized_cte->cte_name);
 
     if (materialized_cte->is_built.exchange(true))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CTE is already built");

@@ -38,3 +38,12 @@ ORDER BY key, value;
 
 DROP TABLE IF EXISTS fact_local;
 DROP TABLE IF EXISTS fact_dist;
+
+EXPLAIN ESTIMATE
+WITH t AS MATERIALIZED (
+    SELECT DISTINCT number AS x FROM numbers(isNotNull(assumeNotNull(19)), 7)
+)
+SELECT DISTINCT *
+FROM cluster(test_cluster_two_shards, numbers(10))
+WHERE (number GLOBAL IN (SELECT DISTINCT * FROM t WHERE materialize(5) < x)) OR (number IN (SELECT * FROM t WHERE 5 > x GROUP BY 1 WITH ROLLUP))
+ORDER BY ALL ASC;

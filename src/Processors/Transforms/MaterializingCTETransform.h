@@ -16,6 +16,8 @@ public:
         const SharedHeader & output_header_,
         MaterializedCTEPtr materialized_cte_);
 
+    ~MaterializingCTETransform() override;
+
     String getName() const override { return "MaterializingCTETransform"; }
 
     void consume(Chunk chunk) override;
