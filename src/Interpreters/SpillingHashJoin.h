@@ -83,7 +83,6 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
-    bool supportTotals() const override { return true; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool canProcessNonJoinedBlocksInParallel() const override;
 

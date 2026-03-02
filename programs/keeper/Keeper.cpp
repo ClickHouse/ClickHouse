@@ -160,13 +160,12 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        std::string app_name = (commandName() == "clickhouse-keeper") ? "clickhouse-keeper" : "clickhouse keeper";
         auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      app_name);
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -325,7 +324,7 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 #if USE_JEMALLOC
-    Jemalloc::setup(
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
