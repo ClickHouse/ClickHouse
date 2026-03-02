@@ -34,6 +34,6 @@ SYSTEM FLUSH LOGS query_log;
 -- Before the fix, in this particular case we made ~ 70 requests, now it should be well under 15.
 SELECT throwIf(ProfileEvents['ParallelReplicasNumRequests'] > 15)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = 'parallel_replicas_task_size_82982938' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment = 'parallel_replicas_task_size_82982938' AND type = 'QueryFinish'
 SETTINGS enable_parallel_replicas = 0
 FORMAT Null;

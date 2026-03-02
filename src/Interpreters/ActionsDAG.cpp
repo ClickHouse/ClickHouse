@@ -932,6 +932,9 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+            if (!key.column)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
@@ -1722,6 +1725,26 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
     return addAlias(func, node.result_name);
 }
 
+void ActionsDAG::removeTrivialWrappers()
+{
+    auto is_trivial_wrapper = [](const Node * node)
+    {
+        return node->type == ActionType::FUNCTION && node->children.size() == 1
+            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
+    };
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            while (is_trivial_wrapper(child))
+                child = child->children[0];
+
+    for (auto *& output : outputs)
+        while (is_trivial_wrapper(output))
+            output = output->children[0];
+
+    removeUnusedActions();
+}
+
 ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
@@ -2460,7 +2483,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         if (input->column)
             continue;
 
-        auto constant_column = input->result_type->createColumnConst(0, input->result_type->getDefault());
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
         input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
     }
@@ -2479,13 +2502,15 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         return false;
     }
 
+    if (!filter_with_default_value_inputs)
+        return false;
+
     const auto * filter_with_default_value_inputs_filter_node = filter_with_default_value_inputs->getOutputs()[0];
     if (!filter_with_default_value_inputs_filter_node->column || !isColumnConst(*filter_with_default_value_inputs_filter_node->column))
         return false;
 
     const auto & constant_type = filter_with_default_value_inputs_filter_node->result_type;
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+    if (!constant_type->canBeUsedInBooleanContext())
         return false;
 
     Field value;

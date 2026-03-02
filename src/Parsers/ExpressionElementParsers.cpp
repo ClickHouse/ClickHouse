@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>

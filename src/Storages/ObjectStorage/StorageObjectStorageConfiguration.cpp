@@ -62,9 +62,20 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+    return std::nullopt;
+}
+
+std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot &, ContextPtr) const
+{
+    return nullptr;
+}
+
+bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return false;
 }
 
 

@@ -61,17 +61,17 @@ bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
     return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
 }
 
-std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
+String IColumn::getValueName(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
+    getValueNameImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return {name_buf.str(), type};
+        return name_buf.str();
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), type};
+    return fmt::format("{}_{}", p.high64, p.low64);
 }
 
 String IColumn::dumpStructure() const

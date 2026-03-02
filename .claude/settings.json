@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh search:*)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
