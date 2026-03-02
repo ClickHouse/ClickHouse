@@ -44,6 +44,11 @@ struct ListNode
         uint64_t version : 62;
     } node_metadata{false, false, 0};
 
+    ListNode copyFromSnapshotNode()
+    {
+        return {key, value.copyFromSnapshotNode(), node_metadata};
+    }
+
     void setInactiveInMap()
     {
         node_metadata.active_in_map = false;
@@ -227,18 +232,19 @@ public:
         min_node_count_for_auto_optimize = context->getCoordinationSettings()[CoordinationSetting::min_node_count_for_auto_optimize];
     }
 
-    std::pair<typename IndexMap::const_iterator, bool> insert(const std::string & key, const V & value)
+    std::pair<typename IndexMap::const_iterator, bool> insert(const std::string & key, V value)
     {
         if (auto it = map.find(key); it != map.end())
             return std::make_pair(it, false);
 
-        ListElem elem{copyStringInArena(arena, key), value};
+        auto value_size = value.sizeInBytes();
+        ListElem elem{copyStringInArena(arena, key), std::move(value)};
         elem.setVersion(current_version);
         auto itr = list.insert(list.end(), std::move(elem));
         auto [it, inserted] = map.emplace(itr->key, itr);
         chassert(inserted);
         itr->setActiveInMap();
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), 0);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
         return std::make_pair(it, true);
     }
 
@@ -296,7 +302,6 @@ public:
             list.erase(list_itr);
         }
 
-        optimizeIfNeeded();
         updateDataSize(ERASE, key.size(), 0, old_data_size, !snapshot_mode);
         return true;
     }
@@ -325,7 +330,8 @@ public:
             /// snapshot and we don't need to copy it.
             if (list_itr->getVersion() <= snapshot_up_to_version)
             {
-                auto elem_copy = *(list_itr);
+                auto elem_copy = list_itr->copyFromSnapshotNode();
+                updateDataSize(UPDATE, key.size(), list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
                 list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);

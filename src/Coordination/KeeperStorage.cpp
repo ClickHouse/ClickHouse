@@ -1416,7 +1416,7 @@ bool KeeperStorage<Container>::createNode(
     }
     else
     {
-        auto [map_it, _] = container.insert(path, created_node);
+        auto [map_it, _] = container.insert(path, std::move(created_node));
         /// Take child path from key owned by map.
         auto child_path = Coordination::getBaseNodeName(map_it->first);
         container.updateValue(
