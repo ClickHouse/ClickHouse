@@ -21,5 +21,5 @@ RUN mkdir /sqlancer && \
     find /sqlancer -type d -exec chmod 777 {} \; && \
     find /sqlancer -type f -exec chmod 666 {} \; && \
 	cd /sqlancer/sqlancer-main && \
-	mvn --no-transfer-progress package -DskipTests && \
+	mvn --no-transfer-progress package -Dmaven.test.skip=true && \
 	rm -r /root/.m2
