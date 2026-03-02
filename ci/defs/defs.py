@@ -267,8 +267,8 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/docs-builder-mintlify",
-        path="./ci/docker/docs-builder-mintlify",
+        name="clickhouse/docs-mintlify",
+        path="./ci/docker/docs-mintlify",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),    
