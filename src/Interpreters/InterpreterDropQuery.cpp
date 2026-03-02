@@ -23,6 +23,7 @@
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Common/FailPoint.h>
+#include <base/scope_guard.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -172,6 +173,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
+
+        /// Save and restore kind/sync so modifications by ignore_drop_queries_probability
+        /// don't bleed into the next iteration when called in a loop (executeToDatabaseImpl).
+        const ASTDropQuery::Kind saved_kind = ast_drop_query.kind;
+        const bool saved_sync = ast_drop_query.sync;
+        SCOPE_EXIT({
+            ast_drop_query.kind = saved_kind;
+            ast_drop_query.sync = saved_sync;
+        });
 
         if (ast_drop_query.is_view && !table->isView())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
