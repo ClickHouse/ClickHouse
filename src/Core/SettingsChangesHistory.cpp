@@ -104,6 +104,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
         });
+        addSettingsChanges(settings_changes_history, "26.1.3.20001.altinityantalya",
+        {
+            {"iceberg_partition_timezone", "", "", "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"use_statistics", true, true, "Enable this optimization by default."},
