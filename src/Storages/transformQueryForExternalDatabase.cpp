@@ -202,11 +202,15 @@ bool isCompatible(ASTPtr & node)
         /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
         /// as two separate scalar values instead of one tuple.
         ///
-        /// We only do this when the LHS of IN is a multi-column tuple
-        /// (i.e. `ASTFunction("tuple")`). For scalar IN like `id IN (1, 2)`,
-        /// the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must
-        /// NOT be wrapped — otherwise MySQL would see `id IN ((1, 2))`
-        /// which is a single tuple, not a list of scalars.
+        /// We only do this when:
+        /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`).
+        ///    For scalar IN like `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})`
+        ///    is a flat list of values and must NOT be wrapped.
+        /// 2. The tuple literal represents a single row (its elements are
+        ///    plain values, not nested tuples). For multi-row sets like
+        ///    `(id, name) IN ((1, 'a'), (2, 'b'))` the literal is
+        ///    `Tuple{Tuple{1, 'a'}, Tuple{2, 'b'}}` which already formats
+        ///    with the correct nested parentheses.
         if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
         {
             const auto & lhs = function->arguments->children[0];
@@ -220,7 +224,11 @@ bool isCompatible(ASTPtr & node)
                 {
                     if (rhs_literal->value.getType() == Field::Types::Tuple)
                     {
-                        rhs = makeASTFunction("", rhs);
+                        const auto & tup = rhs_literal->value.safeGet<Tuple>();
+                        bool is_single_row = !tup.empty()
+                            && tup[0].getType() != Field::Types::Tuple;
+                        if (is_single_row)
+                            rhs = makeASTFunction("", rhs);
                     }
                 }
             }
