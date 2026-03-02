@@ -340,6 +340,9 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
         index_id_for_caches = fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index.getFileName());
     }
 
+    is_empty = false;
+    remaining_tokens.clear();
+
     analyzeDictionary(*index_stream, *dictionary_stream, state);
     readPostingsForRareTokens(*postings_stream, state);
 }
@@ -349,9 +352,6 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state)
 {
-    is_empty = false;
-    remaining_tokens.clear();
-
     auto tokens_to_read = fillTokensFromCache(state);
     if (tokens_to_read.empty())
         return;
