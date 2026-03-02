@@ -50,7 +50,7 @@ select
     ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] + ProfileEvents['WriteBufferFromHTTPRequestsSent'] as HTTPRequests,
     ProfileEvents['StorageConnectionsCreated'] + ProfileEvents['StorageConnectionsReused'] as HTTPConnections
 from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
     type = 'QueryFinish' and
     query_kind = 'Insert'

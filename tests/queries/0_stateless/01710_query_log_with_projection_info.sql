@@ -47,7 +47,7 @@ SELECT
 FROM
     system.query_log
 WHERE
-    current_database=currentDatabase() and query = 'SELECT * FROM t WHERE id2 = 3 FORMAT Null;';
+    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT * FROM t WHERE id2 = 3 FORMAT Null;';
 
 SELECT
     --Remove the prefix string which is a mutable database name.
@@ -55,7 +55,7 @@ SELECT
 FROM
     system.query_log
 WHERE
-    current_database=currentDatabase() and query = 'SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;';
+    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;';
 
 SELECT
     --Remove the prefix string which is a mutable database name.
@@ -63,6 +63,6 @@ SELECT
 FROM
     system.query_log
 WHERE
-    current_database=currentDatabase() and query = 'SELECT min(id) FROM t FORMAT Null;';
+    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and query = 'SELECT min(id) FROM t FORMAT Null;';
 
 DROP TABLE t;

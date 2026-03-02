@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --ignore-error --query "select * from data_02572; select * 
 
 ${CLICKHOUSE_CLIENT} --query="system flush logs query_views_log;"
 ${CLICKHOUSE_CLIENT} --query="select count() > 0, lower(status::String), errorCodeToName(exception_code)
-    from system.query_views_log where
+    from system.query_views_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     view_name = concatWithSeparator('.', currentDatabase(), 'mv_02572') and
     view_target = concatWithSeparator('.', currentDatabase(), 'copy_02572')
     group by 2, 3;"

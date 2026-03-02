@@ -35,6 +35,6 @@ for read_method in "${read_methods[@]}"; do
             ProfileEvents['QueryLocalReadThrottlerBytes'] > 8e6,
             ProfileEvents['QueryLocalReadThrottlerSleepMicroseconds'] > 7e6*0.5
         FROM system.query_log
-        WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'
     "
 done

@@ -2,6 +2,26 @@
 
 #include "config.h"
 
+#include <cstddef>
+
+namespace DB::Jemalloc
+{
+
+constexpr bool default_enable_global_profiler = false;
+constexpr bool default_enable_background_threads = true;
+constexpr size_t default_max_background_threads_num = 0;
+constexpr bool default_collect_global_profile_samples_in_trace_log = false;
+constexpr size_t default_profiler_sampling_rate = 19;
+
+/// Config key names used in both `BaseDaemon::initialize` and `ServerSettings` DECLARE macros.
+constexpr auto config_enable_global_profiler = "jemalloc_enable_global_profiler";
+constexpr auto config_enable_background_threads = "jemalloc_enable_background_threads";
+constexpr auto config_max_background_threads_num = "jemalloc_max_background_threads_num";
+constexpr auto config_collect_global_profile_samples_in_trace_log = "jemalloc_collect_global_profile_samples_in_trace_log";
+constexpr auto config_profiler_sampling_rate = "jemalloc_profiler_sampling_rate";
+
+}
+
 #if USE_JEMALLOC
 
 #include <string_view>
@@ -19,8 +39,6 @@ namespace Jemalloc
 void purgeArenas();
 
 void checkProfilingEnabled();
-
-void setProfileActive(bool value);
 
 std::string_view flushProfile(const char * file_prefix);
 
@@ -46,6 +64,16 @@ T getValue(const char * name)
 }
 
 void setup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate);
+
+/// Verify that the current jemalloc settings match the expected values.
+/// Called from Server/Keeper after `setup` was already called in `BaseDaemon::initialize`
+/// (and re-applied after the watchdog fork). Fires `chassert` on mismatch.
+void verifySetup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,

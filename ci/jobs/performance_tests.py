@@ -452,10 +452,25 @@ def main():
             cidb = CIDBCluster(
                 url="https://play.clickhouse.com?user=play", user="", pwd=""
             )
-            assert cidb.is_ready()
+            if not cidb.is_ready():
+                print(
+                    "WARNING: CIDB is not ready, will proceed without historical thresholds"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
             )
+            if result is None:
+                print(
+                    "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             with open(
                 f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
             ) as f:
