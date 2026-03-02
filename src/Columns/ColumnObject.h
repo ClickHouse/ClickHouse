@@ -122,7 +122,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;

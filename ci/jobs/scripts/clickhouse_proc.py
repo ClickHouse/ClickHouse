@@ -407,10 +407,6 @@ profiles:
         )
 
     def start(self, replica_num=0):
-        if replica_num == 0:
-            # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
-            Shell.check("dmesg --clear", verbose=True)
-
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1

@@ -279,8 +279,7 @@ def run_func_test(
                 "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
-                "DATABASE_REPLICATION_FAILED",
-                "QUERY_WAS_CANCELLED",
+                "QUERY_WAS_CANCELLED"
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(

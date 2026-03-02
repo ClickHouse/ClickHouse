@@ -103,11 +103,10 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = c.tp;
-        c.tp = nullptr;
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
+        this->nullable = std::optional<bool>(c.nullable);
+        this->dmod = std::optional<DModifier>(c.dmod);
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
@@ -413,6 +412,7 @@ public:
     uint32_t idx_counter = 0;
     uint32_t proj_counter = 0;
     uint32_t constr_counter = 0;
+    uint32_t freeze_counter = 0;
     std::unordered_map<uint32_t, SQLColumn> cols;
     std::unordered_map<uint32_t, SQLColumn> staged_cols;
     std::unordered_map<uint32_t, SQLIndex> idxs;

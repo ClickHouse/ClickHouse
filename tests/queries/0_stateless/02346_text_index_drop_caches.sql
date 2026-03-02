@@ -36,7 +36,7 @@ SELECT
     ProfileEvents['TextIndexDictionaryBlockCacheMisses'] > 0,
     ProfileEvents['TextIndexPostingsCacheMisses'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE '%SELECT count() FROM tab%' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query LIKE '%SELECT count() FROM tab%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE IF EXISTS tab;

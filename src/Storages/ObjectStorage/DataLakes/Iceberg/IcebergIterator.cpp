@@ -210,11 +210,11 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 case PruningReturnStatus::NOT_PRUNED:
                     return manifest_file_entry;
                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
-                    ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles, 1);
+                    ++min_max_index_pruned_files;
                     break;
                 }
                 case PruningReturnStatus::PARTITION_PRUNED: {
-                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, 1);
+                    ++partition_pruned_files;
                     break;
                 }
             }
@@ -228,6 +228,14 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
     }
 
     return std::nullopt;
+}
+
+SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
+{
+    if (partition_pruned_files > 0)
+        ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, partition_pruned_files);
+    if (min_max_index_pruned_files > 0)
+        ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles, min_max_index_pruned_files);
 }
 
 SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
@@ -322,9 +330,8 @@ IcebergIterator::IcebergIterator(
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
     producer_task.emplace(
-        [this, thread_group = CurrentThread::getGroup()]()
+        [this]()
         {
-            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
             while (!blocking_queue.isFinished())
             {
                 std::optional<ManifestFileEntryPtr> entry;

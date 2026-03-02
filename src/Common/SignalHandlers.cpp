@@ -572,8 +572,6 @@ try
             exception_trace, exception_trace_size);
     }
 
-    if (daemon)
-         daemon->flushTextLogs();
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)

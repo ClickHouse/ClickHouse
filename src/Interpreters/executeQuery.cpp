@@ -2026,11 +2026,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto fuzz_session_context = Context::createCopy(context);
-            fuzz_session_context->makeSessionContext();
-
-            auto fuzz_context = Context::createCopy(fuzz_session_context);
-            fuzz_context->makeQueryContext();
+            auto fuzz_context = Context::createCopy(context);
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2038,20 +2034,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
+                if (result.second.pipeline.pulling())
                 {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
+                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
                 }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
-                }
+                CompletedPipelineExecutor executor(result.second.pipeline);
+                executor.execute();
             }
 
             base_ast = fuzzed_ast;

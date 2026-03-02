@@ -122,7 +122,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
+        /// (NetlinkMetricsProvider has about 500K RPS).
         Stopwatch watch(CLOCK_MONOTONIC);
 
         SCOPE_EXIT({

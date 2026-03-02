@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
-extern const int NETWORK_ERROR;
 }
 }
 
@@ -21,7 +20,18 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
+    = {"None",
+       "LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV"};
 
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
@@ -130,8 +140,8 @@ static PerformanceMetric
 loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t default_threshold, const uint32_t default_minimum)
 {
     bool enabled = false;
-    uint32_t threshold = default_threshold;
-    uint32_t minimum = default_minimum;
+    uint32_t threshold = default_minimum;
+    uint32_t minimum = default_threshold;
 
     const SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
@@ -330,7 +340,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value)
          {
              server_file_path = std::filesystem::path(String(value.getString()));
-             fuzz_server_out = server_file_path / "fuzz.data";
+             fuzz_server_out = client_file_path / "fuzz.data";
          }},
         {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
@@ -494,7 +504,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         fmt::print(stderr, "Error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
         {
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
         }
     }
     return res;
@@ -513,7 +523,18 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
-            out.push_back(buf);
+            if constexpr (std::is_same_v<T, Tokenizer>)
+            {
+                const size_t pos = buf.find('\t');
+                const String nname = buf.substr(0, pos);
+                const String ntype = buf.substr(pos + 1);
+
+                out.emplace_back(Tokenizer(nname, ntype));
+            }
+            else
+            {
+                out.push_back(buf);
+            }
             buf.resize(0);
             found++;
         }
@@ -540,7 +561,7 @@ void FuzzConfig::loadServerConfigurations()
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
-    loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    loadServerSettings<Tokenizer>(this->tokenizers, "tokenizers", R"(SELECT "name", "type" FROM "system"."tokenizers")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -594,12 +615,6 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             }
             next_cols.emplace_back(ncol);
             buf.resize(0);
-        }
-        /// Emit the last table group that was never flushed by the loop
-        if (!next_cols.empty() && current_table != "stack_trace"
-            && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
-        {
-            tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
         }
     }
 }

@@ -16,7 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
-#include <Common/logger_useful.h>
 #include <base/range.h>
 
 namespace DB
@@ -203,8 +202,6 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
-    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
-
     if (all_read)
         return {};
 
@@ -214,9 +211,6 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
-        if (isCancelled())
-            break;
-
         for (auto idx : collections::range(0, size))
         {
             auto & sample_column = sample_block.getByPosition(idx);

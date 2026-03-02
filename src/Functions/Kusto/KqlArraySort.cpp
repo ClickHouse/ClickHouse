@@ -154,7 +154,6 @@ public:
                                         .get("tupleElement", context)
                                         ->build(untuple_args)
                                         ->execute(untuple_args, result_type, input_rows_count, /* dry_run = */ false);
-                tuple_coulmn = tuple_coulmn->convertToFullColumnIfConst();
 
                 auto out_tmp = ColumnArray::create(nested_types[i]->createColumn());
 

@@ -265,11 +265,7 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    ///
-    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
-    /// These are expression arguments, not table expressions, so they cannot be correlated.
-    auto source_type = column_source->getNodeType();
-    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
+    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
     bool is_correlated = false;

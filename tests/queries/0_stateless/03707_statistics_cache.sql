@@ -56,7 +56,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'nouse-agg'
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'nouse-agg'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -89,7 +89,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'cm-lc-load'
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'cm-lc-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -129,6 +129,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;

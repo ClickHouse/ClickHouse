@@ -133,9 +133,7 @@ client_compwords_positive = [
     "CHANGEABLE_IN_READONLY",
     # FIXME: one may add separate case for suggestion_limit
     # system.databases
-    # NOTE: Do not use "system" here because the prefix "sys" (3 chars) is too
-    # short and matches many completions, causing timeouts under TSan.
-    "information_schema",
+    "system",
     # system.tables
     "aggregate_function_combinators",
     # system.columns
