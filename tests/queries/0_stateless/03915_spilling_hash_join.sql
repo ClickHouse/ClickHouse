@@ -1,6 +1,7 @@
 -- Test SpillingHashJoin: automatic spilling of hash joins to disk.
 
 SET max_bytes_before_external_join = 1000000000;
+SET grace_hash_join_initial_buckets = 1;
 
 -- Ensure it shows up in query plan nicely
 SELECT trim(explain)
@@ -165,6 +166,8 @@ ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_16';
 
 SET max_bytes_before_external_join = 100000;
+-- Increase initial bucket size to ensure delayed blocks are handled
+SET grace_hash_join_initial_buckets = 2;
 -- Test 17: INNER JOIN that exceeds max_bytes_before_external_join and must spill (concurrent).
 SELECT 'concurrent inner join spill';
 SELECT count(), sum(t2.v)
