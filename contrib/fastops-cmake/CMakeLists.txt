@@ -21,6 +21,9 @@ if(ARCH_AMD64)
     set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
 elseif(ARCH_AARCH64)
     set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/neon/ops_neon.cpp")
+
+    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/sve/ops_sve.cpp")
+    set_source_files_properties("${LIBRARY_DIR}/fastops/sve/ops_sve.cpp" PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 endif()
 
 if(ARCH_AMD64)
