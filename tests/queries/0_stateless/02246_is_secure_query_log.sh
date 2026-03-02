@@ -19,7 +19,7 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 
-${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where query_id = '2246_${CLICKHOUSE_DATABASE}_client_nonsecure' and type = 'QueryFinish' and current_database = currentDatabase()"
-${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where query_id = '2246_${CLICKHOUSE_DATABASE}_client_secure' and type = 'QueryFinish' and current_database = currentDatabase()"
-${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where query_id = '2246_${CLICKHOUSE_DATABASE}_http_nonsecure' and type = 'QueryFinish' and current_database = currentDatabase()"
-${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where query_id = '2246_${CLICKHOUSE_DATABASE}_http_secure' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '2246_${CLICKHOUSE_DATABASE}_client_nonsecure' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '2246_${CLICKHOUSE_DATABASE}_client_secure' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '2246_${CLICKHOUSE_DATABASE}_http_nonsecure' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select interface, is_secure from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '2246_${CLICKHOUSE_DATABASE}_http_secure' and type = 'QueryFinish' and current_database = currentDatabase()"
