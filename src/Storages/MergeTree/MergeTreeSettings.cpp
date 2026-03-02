@@ -1784,7 +1784,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "", R"(
+    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
@@ -2079,6 +2079,9 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
     Batch size for ZooKeeper multi-create get-part requests when cloning replica.
+    )", 0) \
+    DECLARE(Bool, table_readonly, false, R"(
+    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

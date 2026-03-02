@@ -11,7 +11,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${CLICKHOUSE_DATABASE}"
-SHARD=$($CLICKHOUSE_CLIENT --query "Select getMacro('shard')")
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS elog;"
 
@@ -32,34 +31,46 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 3, 'h
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 3 rows
 
-count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-while [[ $count != 2 ]]
-do
-    sleep 1
-    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-done
+# Get the resolved ZK table path (with macros expanded) to query both directories.
+zk_path=$($CLICKHOUSE_CLIENT --query="SELECT replica_path FROM system.replicas WHERE database = currentDatabase() AND table = 'elog'" | sed 's|/replicas/.*||')
+
+# Wait for BOTH blocks/ and deduplication_hashes/ directories to be cleaned up to window size.
+# With COMPATIBLE_DOUBLE_HASHES (default), each insert creates entries in both directories.
+# We must wait for both to be cleaned, because the cleanup thread processes them sequentially
+# and an insert between the two cleanups can cause them to have different entry counts.
+wait_for_cleanup() {
+    local dir=$1
+    local expected=$2
+    local count
+    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper WHERE path = '$zk_path/$dir'")
+    local i=0
+    while [[ $count != "$expected" ]] && [[ $i -lt 60 ]]; do
+        sleep 1
+        count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper WHERE path = '$zk_path/$dir'")
+        i=$((i + 1))
+    done
+    if [[ $count != "$expected" ]]; then
+        echo "Timeout waiting for $dir to reach $expected entries (got $count)" >&2
+        return 1
+    fi
+}
+
+wait_for_cleanup "blocks" 2
+wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 1, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 4 rows
 
-count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-while [[ $count != 2 ]]
-do
-    sleep 1
-    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-done
+wait_for_cleanup "blocks" 2
+wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 5 rows
 
-count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-while [[ $count != 2 ]]
-do
-    sleep 1
-    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/elog/$SHARD/blocks'")
-done
+wait_for_cleanup "blocks" 2
+wait_for_cleanup "deduplication_hashes" 2
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
 

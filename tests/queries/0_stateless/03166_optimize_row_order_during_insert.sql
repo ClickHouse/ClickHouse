@@ -3,6 +3,9 @@
 
 -- Below SELECTs intentionally only ORDER BY the table primary key and rely on read-in-order optimization
 SET optimize_read_in_order = 1;
+-- The "Cardinalities test" relies on physical row order (no ORDER BY in SELECT),
+-- so we must use a single insert thread to get deterministic results.
+SET max_insert_threads = 1;
 
 -- Just simple check, that optimization works correctly for table with 2 columns and 2 equivalence classes.
 SELECT 'Simple test';
