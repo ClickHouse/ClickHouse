@@ -25,14 +25,14 @@ public:
             ProfileEvents::Event event_sleep_us_ = ProfileEvents::end())
         : max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst)), parent(parent_)
         , event_amount(event_amount_), event_sleep_us(event_sleep_us_)
-    {}
+    { logCreation(); }
 
     Throttler(size_t max_speed_, size_t max_burst_,
             ProfileEvents::Event event_amount_ = ProfileEvents::end(),
             ProfileEvents::Event event_sleep_us_ = ProfileEvents::end())
         : max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst))
         , event_amount(event_amount_), event_sleep_us(event_sleep_us_)
-    {}
+    { logCreation(); }
 
     explicit Throttler(size_t max_speed_, const ThrottlerPtr & parent_ = nullptr,
         ProfileEvents::Event event_amount_ = ProfileEvents::end(),
@@ -44,7 +44,7 @@ public:
 
     Throttler(size_t max_speed_, size_t max_burst_, size_t limit_, const char * limit_exceeded_exception_message_,
               const ThrottlerPtr & parent_ = nullptr)
-        : max_speed(max_speed_), max_burst(max_burst_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), tokens(static_cast<double>(max_burst)), parent(parent_) {}
+        : max_speed(max_speed_), max_burst(max_burst_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), tokens(static_cast<double>(max_burst)), parent(parent_) { logCreation(); }
 
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const ThrottlerPtr & parent_ = nullptr);
@@ -72,6 +72,7 @@ public:
     void setMaxSpeed(size_t max_speed_);
 
 private:
+    void logCreation();
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
 

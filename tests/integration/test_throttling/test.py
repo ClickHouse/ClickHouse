@@ -35,7 +35,7 @@ def elapsed(node, query, **kwargs):
     # Flush logs to ensure the query appears in system.query_log
     node.query("SYSTEM FLUSH LOGS query_log")
 
-    # Get the server-side query duration from system.query_log using the query_id
+    # Get the server-side query duration and throttling profile events from system.query_log
     duration_result = node.query(
         f"""
         SELECT query_duration_ms / 1000.0 as duration
@@ -45,6 +45,28 @@ def elapsed(node, query, **kwargs):
         LIMIT 1
         """
     )
+
+    # Log throttling-related ProfileEvents for diagnosis
+    throttle_info = node.query(
+        f"""
+        SELECT
+            ProfileEvents['LocalWriteThrottlerBytes'] AS write_throttled_bytes,
+            ProfileEvents['LocalWriteThrottlerSleepMicroseconds'] AS write_sleep_us,
+            ProfileEvents['LocalReadThrottlerBytes'] AS read_throttled_bytes,
+            ProfileEvents['LocalReadThrottlerSleepMicroseconds'] AS read_sleep_us,
+            ProfileEvents['RemoteWriteThrottlerBytes'] AS remote_write_throttled_bytes,
+            ProfileEvents['RemoteWriteThrottlerSleepMicroseconds'] AS remote_write_sleep_us,
+            ProfileEvents['RemoteReadThrottlerBytes'] AS remote_read_throttled_bytes,
+            ProfileEvents['RemoteReadThrottlerSleepMicroseconds'] AS remote_read_sleep_us
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND query_id = '{query_id}'
+        LIMIT 1
+        """
+    )
+    print(f"Query: {query[:80]}...")
+    print(f"  Throttle profile events: {throttle_info.strip()}")
+
     duration = float(duration_result.strip())
     return ret, duration
 

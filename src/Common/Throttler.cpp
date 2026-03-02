@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -26,6 +27,19 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
+static auto & getLogger()
+{
+    static auto logger = ::getLogger("Throttler");
+    return logger;
+}
+
+void Throttler::logCreation()
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(getLogger(), "Create throttler: this={}, speed={}, burst={}, limit={}, parent={}",
+        fmt::ptr(this), max_speed, max_burst, limit, fmt::ptr(parent.get()));
+}
+
 Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_)
@@ -36,13 +50,16 @@ Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
     , parent(parent_)
     , event_amount(event_amount_)
     , event_sleep_us(event_sleep_us_)
-{}
+{
+    logCreation();
+}
 
 Throttler::Throttler(size_t max_speed_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_)
     : Throttler(max_speed_, nullptr, event_amount_, event_sleep_us_)
-{}
+{
+}
 
 Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_, const ThrottlerPtr & parent_)
     : max_speed(max_speed_)
@@ -51,7 +68,9 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , limit_exceeded_exception_message(limit_exceeded_exception_message_)
     , tokens(static_cast<double>(max_burst))
     , parent(parent_)
-{}
+{
+    logCreation();
+}
 
 bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
@@ -90,8 +109,18 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             ? std::numeric_limits<UInt64>::max()
             : static_cast<UInt64>(block_ns_double);
 
+        UInt64 sleep_ns = std::min<UInt64>(max_block_ns, block_ns);
+
+        LOG_TRACE(getLogger(), "Throttle sleep: this={}, amount={}, tokens={:.0f}, count={}, speed={}, burst={}, sleep={:.3f}ms",
+            fmt::ptr(this), amount, tokens_value, count_value, max_speed_value, max_speed_value * default_burst_seconds, static_cast<double>(sleep_ns) / 1e6);
+
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
+        sleepForNanoseconds(sleep_ns);
+    }
+    else if (max_speed_value > 0)
+    {
+        LOG_TEST(getLogger(), "Throttle pass: this={}, amount={}, tokens={:.0f}, count={}, speed={}",
+            fmt::ptr(this), amount, tokens_value, count_value, max_speed_value);
     }
 
     bool parent_block = false;
@@ -164,6 +193,9 @@ UInt64 Throttler::getMaxBurst() const
 void Throttler::setMaxSpeed(size_t max_speed_)
 {
     std::lock_guard lock(mutex);
+
+    LOG_TRACE(getLogger(), "Set max speed: this={}, old_speed={}, new_speed={}, tokens={:.0f}, count={}",
+        fmt::ptr(this), max_speed, max_speed_, tokens, count);
 
     max_speed = max_speed_;
     max_burst = max_speed_ * default_burst_seconds;
