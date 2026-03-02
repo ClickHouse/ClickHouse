@@ -34,7 +34,9 @@ if (ENABLE_PRQL)
     # Only the C FFI functions need to remain visible; all other symbols (67K+)
     # from the chumsky parser combinator are internal and produce enormous names.
     # Skip in tidy builds where CMAKE_AR is a dummy script that doesn't extract archives.
-    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker")
+    # Skip in sanitizer builds where instrumentation adds special symbols (e.g.,
+    # ___asan_globals_registered) that the partial link + strip process breaks.
+    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE)
         set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
         add_custom_target(strip_prql_symbols
             COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
