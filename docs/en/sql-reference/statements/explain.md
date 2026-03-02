@@ -466,7 +466,7 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 With `actions` = 1 and `verbose` = 0, the `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
 
 ```sql
-EXPLAIN actions = 1, verbose = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN actions = 1, verbose = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
 ```
 
 ```
@@ -529,7 +529,7 @@ In both examples, the query plan shows the complete execution flow including loc
 With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation:
 
 ```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
 ```
 
 ```
