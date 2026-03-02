@@ -33,7 +33,7 @@ Schema inference returns the fixed schema above, so `DESCRIBE` and `SELECT ... F
 
 ## Example usage {#example-usage}
 
-Given the following GeoJSON file `berlin.geojson` containing a mix of geometry types:
+Given the following GeoJSON file `london.geojson` containing a mix of geometry types:
 
 ```json
 {
@@ -42,26 +42,26 @@ Given the following GeoJSON file `berlin.geojson` containing a mix of geometry t
         {
             "type": "Feature",
             "id": "1",
-            "geometry": {"type": "Point", "coordinates": [13.4050, 52.5200]},
-            "properties": {"name": "Berlin", "feature_type": "city", "population": 3645000}
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
         },
         {
             "type": "Feature",
             "id": "2",
             "geometry": {
                 "type": "LineString",
-                "coordinates": [[13.3888, 52.5163], [13.4050, 52.5200], [13.4210, 52.5163]]
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
             },
-            "properties": {"name": "Unter den Linden", "feature_type": "boulevard"}
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
         },
         {
             "type": "Feature",
             "id": "3",
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [[[13.3500, 52.5116], [13.3800, 52.5116], [13.3800, 52.5200], [13.3500, 52.5200], [13.3500, 52.5116]]]
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
             },
-            "properties": {"name": "Tiergarten", "feature_type": "park", "area_km2": 2.1}
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
         }
     ]
 }
@@ -71,42 +71,42 @@ We can query the file and inspect geometry types:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
-FROM file('berlin.geojson', GeoJSON);
+FROM file('london.geojson', GeoJSON);
 ```
 
 ```response title="Response"
-┌─id─┬─name─────────────┬─geo_type───┐
-│ 1  │ Berlin           │ Point      │
-│ 2  │ Unter den Linden │ LineString │
-│ 3  │ Tiergarten       │ Polygon    │
-└────┴──────────────────┴────────────┘
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
 ```
 
 The file extension `.geojson` is automatically detected, so the format argument can be omitted:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
-FROM file('berlin.geojson');
+FROM file('london.geojson');
 ```
 
 To access the `Point` geometry's coordinates directly, filter on `variantType`:
 
 ```sql title="Query"
 SELECT properties.name AS name, geometry
-FROM file('berlin.geojson', GeoJSON)
+FROM file('london.geojson', GeoJSON)
 WHERE variantType(geometry) = 'Point';
 ```
 
 ```response title="Response"
-┌─name───┬─geometry───────┐
-│ Berlin │ (13.405,52.52) │
-└────────┴────────────────┘
+┌─name────────────┬─geometry──────────┐
+│ Tower of London │ (-0.0761,51.5081) │
+└─────────────────┴───────────────────┘
 ```
 
 We can also ingest GeoJSON data into a table:
 
 ```sql title="Query"
-CREATE TABLE berlin
+CREATE TABLE london
 (
     id           String,
     geometry     Geometry,
@@ -117,25 +117,25 @@ CREATE TABLE berlin
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO berlin
+INSERT INTO london
 SELECT id, geometry, properties
-FROM file('berlin.geojson', GeoJSON);
+FROM file('london.geojson', GeoJSON);
 ```
 
 Then query by feature type:
 
 ```sql title="Query"
 SELECT name, feature_type, variantType(geometry) AS geo_type
-FROM berlin
+FROM london
 ORDER BY id;
 ```
 
 ```response title="Response"
-┌─name─────────────┬─feature_type─┬─geo_type───┐
-│ Berlin           │ city         │ Point      │
-│ Unter den Linden │ boulevard    │ LineString │
-│ Tiergarten       │ park         │ Polygon    │
-└──────────────────┴──────────────┴────────────┘
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
 ```
 
 We can also infer the schema of GeoJSON data without a table definition:
