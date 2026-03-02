@@ -55,6 +55,7 @@ workflow = Workflow.Config(
         *JobConfigs.clickbench_master_jobs,
         *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
+        JobConfigs.sqllogic_test_master_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
