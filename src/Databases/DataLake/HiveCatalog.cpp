@@ -1,18 +1,18 @@
-#include <algorithm>
-#include <cctype>
 #include <Databases/DataLake/HiveCatalog.h>
 #if USE_AVRO && USE_HIVE
-#    include <optional>
-#    include <Core/Names.h>
-#    include <Databases/DataLake/ICatalog.h>
-#    include <Common/Exception.h>
+#include <algorithm>
+#include <cctype>
+#include <optional>
+#include <Common/Exception.h>
+#include <Core/Names.h>
+#include <Databases/DataLake/ICatalog.h>
 
-#    include <Databases/DataLake/Common.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/Credentials.h>
-#    include <IO/S3Settings.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#    include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Databases/DataLake/Common.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3Settings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DB::ErrorCodes
 {

@@ -2,18 +2,17 @@
 #include "config.h"
 
 #if USE_AVRO && USE_HIVE
-#    include <filesystem>
-#    include <Databases/DataLake/ICatalog.h>
-#    include <IO/HTTPHeaderEntries.h>
-#    include <IO/ReadWriteBufferFromHTTP.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/Net/HTTPBasicCredentials.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Interpreters/Context_fwd.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
-#    include <ThriftHiveMetastore.h>
-#    include <thrift/protocol/TBinaryProtocol.h>
-#    include <thrift/transport/TSocket.h>
-#    include <thrift/transport/TTransportUtils.h>
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TSocket.h>
+#include <thrift/transport/TTransportUtils.h>
+#include <ThriftHiveMetastore.h>
 
 
 namespace DB
