@@ -69,5 +69,5 @@ explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m)
 $CLICKHOUSE_CLIENT -q "
 system flush logs query_log;
 -- SKIP: current_database = $CLICKHOUSE_DATABASE
-select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
+select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
 "

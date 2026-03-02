@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -1195,16 +1196,6 @@ public:
         {
             if (has_distinct)
                 function_name += "Distinct";
-
-            /// When NOT is followed by '(' the parser creates a function call not(...).
-            /// If there are multiple comma-separated arguments like NOT (1, 2, 3), this
-            /// produces not(1, 2, 3) which is semantically wrong — NOT is unary.
-            /// Wrap multiple arguments into a tuple: not(tuple(1, 2, 3)).
-            if (function_name == "not" && elements.size() > 1)
-            {
-                auto tuple_node = makeASTFunction("tuple", std::move(elements));
-                elements = {std::move(tuple_node)};
-            }
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
@@ -2712,16 +2703,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 
