@@ -1,5 +1,6 @@
--- Tags: no-parallel-replicas
--- ^ The test checks EXPLAIN output for ReadType which is absent when parallel replicas changes the query plan
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- EXPLAIN output may differ
+
 -- { echo }
 
 SET optimize_read_in_order = 1;
