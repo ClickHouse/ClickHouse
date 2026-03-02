@@ -62,12 +62,12 @@ TEST_P(SplitByNonAlphaTokenizerTest, next)
     for (const auto & expected_token : param.tokens)
     {
         SCOPED_TRACE(++i);
-        ASSERT_TRUE(tokenizer.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len));
+        ASSERT_TRUE(tokenizer.nextInString(data->data(), data->size(), pos, token_start, token_len));
 
         EXPECT_EQ(expected_token, std::string_view(data->data() + token_start, token_len))
                 << " token_start:" << token_start << " token_len: " << token_len;
     }
-    ASSERT_FALSE(tokenizer.nextInStringPadded(data->data(), data->size(), pos, token_start, token_len))
+    ASSERT_FALSE(tokenizer.nextInString(data->data(), data->size(), pos, token_start, token_len))
             << "\n\t=> \"" << param.source.substr(token_start, token_len) << "\""
             << "\n\t" << token_start << ", " << token_len << ", " << pos << ", " << data->size();
 }

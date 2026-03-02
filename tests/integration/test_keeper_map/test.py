@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -139,6 +141,13 @@ def test_keeper_drop_after_update(started_cluster):
     )
 
     run_query("DROP TABLE test_keeper_drop_after_update SYNC")
+
+    # The data might not be immediately visible as removed by an external client
+    # connected to a different Keeper node due to replication lag in the 3-node cluster.
+    for _ in range(10):
+        if zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data") is None:
+            break
+        time.sleep(0.5)
 
     assert (
         zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data")
