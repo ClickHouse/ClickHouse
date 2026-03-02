@@ -103,7 +103,12 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     files_path = f"{table_name}_data"
 
     for node in [node1, node2]:
-        node.query("DROP DATABASE IF EXISTS r")
+        node.query("DROP DATABASE IF EXISTS r SYNC")
+
+    # Clean up the ZK path in case DROP DATABASE on an older binary didn't fully remove it
+    zk_client = started_cluster.get_kazoo_client("zoo1")
+    if zk_client.exists("/clickhouse/databases/replicateddb3"):
+        zk_client.delete("/clickhouse/databases/replicateddb3", recursive=True)
 
     node1.query(
         "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node1')"
@@ -304,3 +309,6 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     assert buckets_num == metadata["buckets"]
 
     node.query(f"DROP TABLE r.{table_name} SYNC")
+
+    for node in [node1, node2]:
+        node.query("DROP DATABASE IF EXISTS r SYNC")

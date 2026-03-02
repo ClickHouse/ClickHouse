@@ -13,7 +13,7 @@ import TabItem from '@theme/TabItem';
 Executable pool allows loading data from a pool of processes.
 This source does not work with dictionary layouts that need to load all data from source.
 
-Executable pool works if the dictionary [is stored](../layouts/#ways-to-store-dictionaries-in-memory) using one of the following layouts:
+Executable pool works if the dictionary [is stored](../layouts/#storing-dictionaries-in-memory) using one of the following layouts:
 - `cache`
 - `complex_key_cache`
 - `ssd_cache`
