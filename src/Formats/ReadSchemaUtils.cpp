@@ -383,7 +383,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (const std::exception &)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }

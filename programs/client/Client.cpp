@@ -135,7 +135,7 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (const std::exception &)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 }

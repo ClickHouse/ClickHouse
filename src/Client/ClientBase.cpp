@@ -1895,7 +1895,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             if (sendCancel(std::current_exception()))
                 receiveEndOfQueryForInsert();
         }
-        catch (const std::exception &)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
         }
         throw;
