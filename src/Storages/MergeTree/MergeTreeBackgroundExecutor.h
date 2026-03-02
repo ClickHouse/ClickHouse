@@ -40,6 +40,7 @@ struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
         : task(std::move(task_))
+        , storage_id(task->getStorageID())
         , metric(metric_)
         , events(events_)
     {
@@ -82,6 +83,9 @@ struct TaskRuntimeData
     }
 
     ExecutableTaskPtr task;
+    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
+    /// even after resetTask() has nullified the task pointer.
+    StorageID storage_id;
     CurrentMetrics::Metric metric;
     TaskProfileEvents events;
     /// Guarded by MergeTreeBackgroundExecutor<>::mutex
@@ -121,12 +125,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->storage_id == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -166,11 +170,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }

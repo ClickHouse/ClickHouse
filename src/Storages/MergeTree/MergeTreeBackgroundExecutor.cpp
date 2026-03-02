@@ -216,7 +216,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         tasks_to_wait.reserve(active.size());
         for (auto & item : active)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
             {
                 item->is_currently_deleting = true;
                 tasks_to_wait.push_back(item);
@@ -251,16 +251,14 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         active.erase(std::remove(active.begin(), active.end(), item_), active.end());
     };
 
-    auto release_task = [this] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
+    /// Destroys the task (resets the task pointer) outside the lock and logs slow destruction.
+    /// After this call the task pointer is null, but storage_id is still valid for matching.
+    /// removeTasksCorrespondingToStorage uses storage_id to find items in active,
+    /// so it works correctly even after resetTask() has nullified the task pointer.
+    auto destroy_task = [this] (TaskRuntimeDataPtr & item_)
     {
-        /// We have to call reset() under a lock, otherwise a race is possible.
-        /// Imagine, that task is finally completed (last execution returned false),
-        /// we removed the task from both queues, but still have pointer.
-        /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
-        /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         std::optional<String> captured_storage_id;
         std::optional<String> captured_query_id;
-        bool captured_was_deleting = item_->is_currently_deleting;
 
         Stopwatch destruction_watch;
 
@@ -273,8 +271,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
             item_->resetTask();
         });
-        item_->is_done.set();
-        item_.reset();
 
 #if defined(SANITIZER) || !defined(NDEBUG)
         static constexpr auto THRESHOLD_MILLISECONDS = 10 * 1000ULL;
@@ -288,18 +284,17 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             if (elapsed_ms > THRESHOLD_MILLISECONDS)
             {
                 LOG_WARNING(log,
-                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}, deleting={}",
+                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}",
                     elapsed_ms,
                     name,
                     captured_storage_id.value_or("unknown"),
-                    captured_query_id.value_or("unknown"),
-                    captured_was_deleting);
+                    captured_query_id.value_or("unknown"));
             }
         });
     };
 
     /// No TSA because of unique_lock
-    auto restart_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_) TSA_NO_THREAD_SAFETY_ANALYSIS
+    auto restart_task = [this, &erase_from_active, &destroy_task] (TaskRuntimeDataPtr && item_) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         {
             LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
@@ -317,25 +312,30 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
         }
 
-        /// No lock here.
+        /// No lock here. The storage is being deleted, do the heavy work outside the lock.
+        /// removeTasksCorrespondingToStorage has already found this item and is waiting on is_done,
+        /// so the storage won't be destroyed until we signal completion below.
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
             item_->cancel();
         }
+        destroy_task(item_);
 
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-        release_task(std::move(item_));
+        /// Signal completion under the lock.
+        {
+            LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+            item_->is_done.set();
+            item_.reset();
+        }
     };
 
     String query_id;
 
-    auto complete_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_)
+    auto complete_task = [this, &erase_from_active, &destroy_task] (TaskRuntimeDataPtr && item_) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-
-        erase_from_active(item_);
-        has_tasks.notify_one();
-
+        /// Call onCompleted() outside the lock.
+        /// The task is still in `active`, so removeTasksCorrespondingToStorage
+        /// can find it (via storage_id) and wait for completion.
         {
             Stopwatch watch_on_completed;
             ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -346,12 +346,22 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             if (watch_on_completed.elapsedMilliseconds() > 1000)
             {
-                LOG_WARNING(log, "Execution of callback took {} ms in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                LOG_WARNING(log, "Execution of callback onCompleted took {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
                     watch_on_completed.elapsedMilliseconds(), __PRETTY_FUNCTION__, StackTrace().toString());
             }
         }
 
-        release_task(std::move(item_));
+        /// Destroy the task outside the lock.
+        destroy_task(item_);
+
+        /// Fast cleanup under the lock: erase from active and signal completion.
+        {
+            LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+            erase_from_active(item_);
+            has_tasks.notify_one();
+            item_->is_done.set();
+            item_.reset();
+        }
     };
 
     bool need_execute_again = false;
@@ -387,11 +397,17 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
 
         /// Release the task with exception context.
-        /// An exception context is needed to proper delete write buffers without finalization
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-        erase_from_active(item);
-        has_tasks.notify_one();
-        release_task(std::move(item));
+        /// An exception context is needed to proper delete write buffers without finalization.
+        destroy_task(item);
+
+        /// Signal completion under the lock.
+        {
+            LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+            erase_from_active(item);
+            has_tasks.notify_one();
+            item->is_done.set();
+            item.reset();
+        }
         return;
     }
 
