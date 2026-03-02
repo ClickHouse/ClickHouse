@@ -26,29 +26,18 @@ class TSA_SCOPED_LOCKABLE SharedLockGuard
 {
 public:
     explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : shared_lock(mutex_) {}
-    ~SharedLockGuard() TSA_RELEASE() = default;
-
-    static std::optional<SharedLockGuard> tryLockShared(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_)
+    explicit SharedLockGuard(Mutex & mutex_, std::defer_lock_t)
+        : shared_lock(mutex_, std::defer_lock)
+        , locked(false)
     {
-        if (!mutex_.try_lock_shared())
-            return std::nullopt;
-        return SharedLockGuard(mutex_);
     }
+    ~SharedLockGuard() TSA_RELEASE() = default;
 
     SharedLockGuard(SharedLockGuard && shared_lock_guard_) noexcept
         : shared_lock(std::move(shared_lock_guard_.shared_lock))
         , locked(shared_lock_guard_.locked)
     {
         shared_lock_guard_.locked = false;
-    }
-
-    static std::optional<SharedLockGuard> tryLock(Mutex & mutex_) TSA_TRY_ACQUIRE_SHARED(true, mutex_)
-    {
-        std::shared_lock<Mutex> lock(mutex_, std::defer_lock);
-        bool locked = lock.try_lock();
-        if (locked)
-            return SharedLockGuard(std::move(lock));
-        return std::nullopt;
     }
 
     void lock() TSA_ACQUIRE_SHARED()
@@ -58,6 +47,14 @@ public:
 
         shared_lock.lock();
         locked = true;
+    }
+
+    bool tryLock() TSA_TRY_ACQUIRE_SHARED(true)
+    {
+        if (locked)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't lock twice the same mutex");
+        locked = shared_lock.try_lock();
+        return locked;
     }
 
     void unlock() TSA_RELEASE()

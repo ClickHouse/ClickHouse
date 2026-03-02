@@ -23,6 +23,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <Common/SharedLockGuard.h>
+
 #include <Common/logger_useful.h>
 
 
@@ -127,9 +129,6 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
     if (!fully_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
-    auto shared_lock = SharedLockGuard<SharedMutex>::tryLock(files_mutex);
-    if (!shared_lock)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
     const std::vector<ProcessedManifestFileEntryPtr> * ptr;
     if (content_type == FileContentType::DATA)
         ptr = &data_files_without_deleted;
@@ -137,7 +136,11 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         ptr = &position_deletes_files_without_deleted;
     else
         ptr = &equality_deletes_files;
-    return ManifestFileEntriesHandle{ptr, std::move(shared_lock.value())};
+    auto handle = ManifestFileEntriesHandle{ptr, SharedLockGuard<SharedMutex>(files_mutex, std::defer_lock)};
+    bool locked = handle.lock.tryLock();
+    if (!locked)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
+    return handle;
 }
 
 using namespace DB;

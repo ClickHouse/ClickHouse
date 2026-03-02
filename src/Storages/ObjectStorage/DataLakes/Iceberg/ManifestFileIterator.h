@@ -49,9 +49,10 @@ class ManifestFileIterator : public boost::noncopyable
 public:
     struct ManifestFileEntriesHandle
     {
+        friend class ManifestFileIterator;
         const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted() const { return *files; }
 
-        ManifestFileEntriesHandle(const std::vector<ProcessedManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> shared_lock_)
+        ManifestFileEntriesHandle(const std::vector<ProcessedManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> && shared_lock_)
             : files(files_)
             , lock(std::move(shared_lock_))
         {
@@ -79,7 +80,7 @@ public:
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
 
-    ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const;
+    ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
