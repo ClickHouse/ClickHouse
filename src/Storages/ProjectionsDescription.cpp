@@ -320,7 +320,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, analyzer_context);
 
         QueryTreePassManager query_tree_pass_manager(analyzer_context);
-        addQueryTreePasses(query_tree_pass_manager);
+        addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
         query_tree_pass_manager.runOnlyResolve(query_tree);
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
