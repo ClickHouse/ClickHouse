@@ -520,6 +520,23 @@ namespace
         });
     }
 
+    bool parseDatabaseNamespace(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTDatabaseOrNone> & database_namespace)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::DATABASE_NAMESPACE}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            ParserDatabaseOrNone database_p;
+            if (!database_p.parse(pos, ast, expected))
+                return false;
+
+            database_namespace = boost::static_pointer_cast<ASTDatabaseOrNone>(ast);
+            return true;
+        });
+    }
+
     bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -593,6 +610,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
     boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
+    boost::intrusive_ptr<ASTDatabaseOrNone> database_namespace;
     ASTPtr global_valid_until;
     String cluster;
     String storage_name;
@@ -677,6 +695,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!default_database && parseDefaultDatabase(pos, expected, default_database))
             continue;
 
+        if (!database_namespace && parseDatabaseNamespace(pos, expected, database_namespace))
+            continue;
+
         if (alter)
         {
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
@@ -748,6 +769,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->alter_settings = std::move(alter_settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->database_namespace = std::move(database_namespace);
     query->global_valid_until = std::move(global_valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;

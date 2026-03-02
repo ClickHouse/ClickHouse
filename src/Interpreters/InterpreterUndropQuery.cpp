@@ -54,6 +54,12 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         table_id.database_name = context->getCurrentDatabase();
         query.setDatabase(table_id.database_name);
     }
+    else
+    {
+        /// Apply database namespace prefix for multi-tenant isolation.
+        table_id.database_name = context->applyDatabaseNamespace(table_id.database_name);
+        query.setDatabase(table_id.database_name);
+    }
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 

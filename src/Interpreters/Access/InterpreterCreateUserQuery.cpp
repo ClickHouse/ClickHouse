@@ -186,6 +186,9 @@ namespace
         if (query.default_database)
             user.default_database = query.default_database->database_name;
 
+        if (query.database_namespace)
+            user.database_namespace = query.database_namespace->database_name;
+
         if (override_settings)
             user.settings.applyChanges(*override_settings);
         else if (query.alter_settings)
@@ -262,6 +265,10 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+
+    /// Validate namespace doesn't conflict with existing databases.
+    if (query.database_namespace && !query.database_namespace->database_name.empty())
+        getContext()->validateNamespaceAgainstExistingDatabases(query.database_namespace->database_name);
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
