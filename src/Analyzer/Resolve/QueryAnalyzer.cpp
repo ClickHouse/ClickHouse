@@ -2968,20 +2968,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             break;
         }
-        case QueryTreeNodeType::TABLE_FUNCTION:
-        {
-            if (!allow_table_expression)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function {} is not allowed in expression context. In scope {}",
-                    node->formatASTForErrorMessage(),
-                    scope.scope_node->formatASTForErrorMessage());
-
-            auto & table_function_node = node->as<TableFunctionNode &>();
-            if (result_projection_names.empty())
-                result_projection_names.push_back(table_function_node.getTableFunctionName());
-
-            break;
-        }
         case QueryTreeNodeType::TRANSFORMER:
             [[fallthrough]];
         case QueryTreeNodeType::SORT:
@@ -2989,6 +2975,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         case QueryTreeNodeType::INTERPOLATE:
             [[fallthrough]];
         case QueryTreeNodeType::WINDOW:
+            [[fallthrough]];
+        case QueryTreeNodeType::TABLE_FUNCTION:
             [[fallthrough]];
         case QueryTreeNodeType::ARRAY_JOIN:
             [[fallthrough]];
