@@ -45,7 +45,7 @@ SELECT
     rows,
     ProfileEvents['ReadTasksWithAppliedPatches'],
     ProfileEvents['PatchesReadRows']
-FROM system.part_log WHERE database = currentDatabase() AND table = 't_lwu_deletes_vertical' AND event_type = 'MergeParts'
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_lwu_deletes_vertical' AND event_type = 'MergeParts'
 ORDER BY event_time_microseconds;
 
 DROP TABLE IF EXISTS t_lwu_deletes_vertical;
