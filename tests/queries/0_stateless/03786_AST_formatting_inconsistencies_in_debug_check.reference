@@ -35,8 +35,8 @@ format(original):  SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0
 format(formatted): SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
 
 Original:          SELECT NOT ((1, 1, 1))
-format(original):  SELECT NOT ((1, 1, 1))
-format(formatted): SELECT NOT ((1, 1, 1))
+format(original):  SELECT NOT tuple((1, 1, 1))
+format(formatted): SELECT NOT tuple((1, 1, 1))
 
 Original:          select (((1), (2)))
 format(original):  SELECT (1, 2)

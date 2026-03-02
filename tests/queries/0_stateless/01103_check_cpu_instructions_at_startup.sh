@@ -10,12 +10,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Don't even try to do that. This test should be disabled for sanitizer builds.
 ${CLICKHOUSE_LOCAL} --query "SELECT max(value LIKE '%sanitize%') FROM system.build_options" | grep -q '1' && echo '@@SKIP@@: Sanitizer build' && exit
 
-command=$(command -v ${CLICKHOUSE_LOCAL})
+if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" == "1" ]; then
+    echo "@@SKIP@@: FIPS build"
+    exit 0
+fi
 
 if ! hash qemu-x86_64-static 2>/dev/null; then
     echo "@@SKIP@@: No qemu-x86_64-static"
     exit 0
 fi
+
+command=$(command -v ${CLICKHOUSE_LOCAL})
 
 function run_with_cpu()
 {

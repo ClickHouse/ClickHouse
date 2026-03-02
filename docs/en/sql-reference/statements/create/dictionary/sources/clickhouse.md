@@ -63,7 +63,7 @@ Setting fields:
 | `db` | Name of the database. |
 | `table` | Name of the table. |
 | `where` | The selection criteria. Optional. |
-| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md#refreshing-dictionary-data-using-lifetime). |
+| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md). |
 | `secure` | Use SSL for connection. |
 | `query` | The custom query. Optional. |
 

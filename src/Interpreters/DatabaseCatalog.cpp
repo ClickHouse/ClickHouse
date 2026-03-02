@@ -28,6 +28,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <algorithm>
 #include <mutex>
@@ -619,6 +620,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::detachDatabase");
     if (database_name == TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
     assert(!database_name.empty());
@@ -991,6 +993,7 @@ DatabaseCatalog & DatabaseCatalog::instance()
 
 void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 {
+    auto compoment_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
@@ -1115,6 +1118,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
@@ -1523,6 +1527,7 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
     auto db_disk = table.db_disk;
 
     if (table.table)
