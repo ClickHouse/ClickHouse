@@ -60,7 +60,7 @@ INSERT INTO source_table (id, data) SETTINGS async_insert=0 VALUES (7, 'test7'),
 
 SYSTEM FLUSH LOGS query_log;
 SELECT count() FROM system.query_log
-WHERE query_kind = 'Insert' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Insert' AND type = 'QueryFinish'
   AND user IN ('${SYNC_USER}', '${ASYNC_USER}')
 --  AND current_database = currentDatabase() -- to silent strange style check warning
   AND tables = [currentDatabase() || '.target_table']

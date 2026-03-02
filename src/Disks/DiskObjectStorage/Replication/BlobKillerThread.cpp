@@ -226,6 +226,7 @@ BlobKillerThread::BlobKillerThread(
 
 void BlobKillerThread::run()
 {
+    auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
     LOG_TEST(log, "Starting cleanup");
 
     executeBlobsCleanup(metadata_request_batch.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
@@ -248,6 +249,7 @@ void BlobKillerThread::startup()
 
 void BlobKillerThread::shutdown()
 {
+    auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::shutdown");
     LOG_INFO(log, "Shutting down Blob Killer thread");
 
     task->deactivate();
