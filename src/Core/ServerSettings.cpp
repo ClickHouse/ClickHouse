@@ -1,5 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/Jemalloc.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -567,6 +568,7 @@ namespace
     :::
     )", 0) \
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
     DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache policy name.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
@@ -1235,14 +1237,14 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
-    DECLARE(Bool, jemalloc_enable_global_profiler, 0, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
+    DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
     See [Allocation Profiling](/operations/allocation-profiling))", 0) \
-    DECLARE(Bool, jemalloc_collect_global_profile_samples_in_trace_log, 0, R"(Store jemalloc's sampled allocations in system.trace_log)", 0) \
-    DECLARE(Bool, jemalloc_enable_background_threads, 1, R"(Enable jemalloc background threads. Jemalloc uses background threads to cleanup unused memory pages. Disabling it could lead to performance degradation.)", 0) \
-    DECLARE(UInt64, jemalloc_max_background_threads_num, 0, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
-    DECLARE(UInt64, jemalloc_profiler_sampling_rate, 19, R"(
+    DECLARE(Bool, jemalloc_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log, R"(Store jemalloc's sampled allocations in system.trace_log)", 0) \
+    DECLARE(Bool, jemalloc_enable_background_threads, Jemalloc::default_enable_background_threads, R"(Enable jemalloc background threads. Jemalloc uses background threads to cleanup unused memory pages. Disabling it could lead to performance degradation.)", 0) \
+    DECLARE(UInt64, jemalloc_max_background_threads_num, Jemalloc::default_max_background_threads_num, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
+    DECLARE(UInt64, jemalloc_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate, R"(
     Controls jemalloc's `lg_prof_sample` — the base-2 logarithm of the average interval (in bytes) between allocation samples.
     The default value of 19 corresponds to 512 KiB. Setting it to a smaller value increases sampling frequency (more overhead, more detail), and a larger value decreases it.
     Changing this value calls `prof.reset` which resets all accumulated profiling statistics. Requires profiling to be enabled (`MALLOC_CONF=prof:true`).
