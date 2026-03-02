@@ -79,7 +79,7 @@ for i in "${!queries_without_preallocation[@]}"; do
     -- the old analyzer is not supported
     SELECT if(sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1)) == 1, '1', 'Error: ' || any(query_id))
       FROM system.query_log
-     WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
 done
 
@@ -88,6 +88,6 @@ for i in "${!queries_with_preallocation[@]}"; do
     -- the old analyzer is not supported
     SELECT if(sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1)) == 1, '1', 'Error: ' || any(query_id))
       FROM system.query_log
-     WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
 done

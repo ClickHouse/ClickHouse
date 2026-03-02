@@ -92,7 +92,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>();
+    factory.registerFunction<TableFunctionDictionary>({});
 }
 
 }

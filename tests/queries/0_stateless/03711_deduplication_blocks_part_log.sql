@@ -84,7 +84,7 @@ SELECT table, name, argMax(part_type, event_time_microseconds) AS part_type,
     length(argMax(deduplication_block_ids, event_time_microseconds)) AS num_dedup_ids,
     argMax(deduplication_block_ids, event_time_microseconds)[1] LIKE 'all_%' AS has_correct_prefix
 FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     table IN ['03711_join_with', '03711_table', '03711_mv_table_1', '03711_mv_table_2']
     AND database = '03710_database'
 group BY database, table, name
