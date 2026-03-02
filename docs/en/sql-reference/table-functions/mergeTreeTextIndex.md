@@ -50,6 +50,8 @@ INSERT INTO tab SELECT 500 + number, concatWithSeparator(' ', 'cherry', 'date') 
 SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 ```
 
+Result:
+
 ```text
    ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
 1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
@@ -58,4 +60,3 @@ SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
    └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
 ```
-
