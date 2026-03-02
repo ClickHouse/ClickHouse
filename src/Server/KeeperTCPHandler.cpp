@@ -512,6 +512,14 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
+
+            if (keeper_dispatcher->isShuttingDown())
+            {
+                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
+                keeper_dispatcher->finishSession(session_id);
+                break;
+            }
+
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
