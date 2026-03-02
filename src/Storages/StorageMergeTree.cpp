@@ -2258,12 +2258,9 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
                     = renameTempPartAndReplaceUnlocked(part, part_lock, transaction, /*rename_in_transaction=*/true);
 
                 if (covered_parts_by_one_part.size() > 1)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Part {} expected to cover not more than 1 part. "
-                        "{} covered parts have been found. This is a bug.",
-                        part->name,
-                        covered_parts_by_one_part.size());
+                    LOG_INFO(log, "Part {} covers {} parts instead of the expected 1."
+                        " This is possible if a concurrent merge was rolled back after stopMergesAndWait returned.",
+                        part->name, covered_parts_by_one_part.size());
 
                 std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
                 ++next_part_index;
