@@ -339,7 +339,7 @@ public:
         {
             WriteBufferFromOwnString name_buf;
             IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            col_const->getValueNameImpl(name_buf, 0, options);
             if (options.notFull(name_buf))
                 return;
         }

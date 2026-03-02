@@ -165,6 +165,12 @@ void DDLWorker::shutdown()
             cleanup_thread->join();
         worker_pool.reset();
     }
+
+    /// Explicitly clear active node holders with the component guard set,
+    /// because EphemeralNodeHolder destructor calls tryRemove on ZooKeeper
+    /// which requires a component to be set when enforce_keeper_component_tracking is enabled.
+    auto component_guard = Coordination::setCurrentComponent("DDLWorker");
+    active_node_holders.clear();
 }
 
 DDLWorker::~DDLWorker()

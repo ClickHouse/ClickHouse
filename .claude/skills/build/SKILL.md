@@ -3,7 +3,7 @@ name: build
 description: Build ClickHouse with various configurations (Release, Debug, ASAN, TSAN, etc.). Use when the user wants to compile ClickHouse.
 argument-hint: "[build-type] [target] [options]"
 disable-model-invocation: false
-allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*), Bash(mktemp:*), Bash(sleep:*)
+allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*), Bash(sleep:*)
 ---
 
 # ClickHouse Build Skill
@@ -77,22 +77,19 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 
 2. **Create log file and start the build:**
 
-   **Step 2a: Create temporary log file first:**
-   ```bash
-   mktemp /tmp/build_clickhouse_XXXXXX.log
-   ```
-   - This will print the log file path
+   **Step 2a: Determine log file path:**
+   - Use `[build_directory]/build_output.log` as the log file path
    - **IMMEDIATELY report to the user:**
-     - "Build logs will be written to: [log file path]"
+     - "Build logs will be written to: `[build_directory]/build_output.log`"
      - Then display in a copyable code block:
        ```bash
-       tail -f [log file path]
+       tail -f [build_directory]/build_output.log
        ```
      - Example: "You can monitor the build in real-time with:" followed by the tail command in a code block
 
    **Step 2b: Start the ninja build:**
    ```bash
-   cd [build_directory] && ninja [target] > [log file path] 2>&1
+   cd [build_directory] && ninja [target] > build_output.log 2>&1
    ```
    Where `[build_directory]` is the path found in step 1a.
 
@@ -116,7 +113,7 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
    **ALWAYS use Task tool to analyze results** (both success and failure):
    - Use Task tool with `subagent_type=general-purpose` to analyze the build output
    - **Pass the log file path from step 2a** to the Task agent - let it read the file directly
-   - Example Task prompt: "Read and analyze the build output from: /tmp/build_clickhouse_abc123.log"
+   - Example Task prompt: "Read and analyze the build output from: [build_directory]/build_output.log"
    - The Task agent should read the file and provide:
 
      **If build succeeds:**
@@ -246,5 +243,5 @@ Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build
 - **MANDATORY:** After successful builds, this skill MUST check for running ClickHouse servers and ask the user if they want to stop them to use the new build
 - **MANDATORY:** ALL build output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
 - **MANDATORY:** ALWAYS provide a final summary to the user at the end of the skill execution (step 6)
-- **CRITICAL:** Build output is redirected to a unique log file created with `mktemp`. The log file path is reported to the user in a copyable format BEFORE starting the build, allowing real-time monitoring with `tail -f`. The log file path is saved from step 2a and passed to the Task agent for analysis. This keeps large build logs out of the main context.
+- **CRITICAL:** Build output is redirected to `build_output.log` inside the build directory. The log file path is reported to the user in a copyable format BEFORE starting the build, allowing real-time monitoring with `tail -f`. The log file path is saved from step 2a and passed to the Task agent for analysis. This keeps large build logs out of the main context.
 - **Subagents available:** Task tool is used to analyze all build output (by reading from output file) and provide concise summaries. Additional agents (Explore or general-purpose) can be used for deeper investigation of complex build errors

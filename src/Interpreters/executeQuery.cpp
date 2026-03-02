@@ -2026,9 +2026,11 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto fuzz_context = Context::createCopy(context);
+            auto fuzz_session_context = Context::createCopy(context);
+            fuzz_session_context->makeSessionContext();
+
+            auto fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
-            fuzz_context->makeSessionContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
