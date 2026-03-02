@@ -131,13 +131,14 @@ private:
     const Int32 format_version;
     const String common_path;
     const String table_location;
-    IcebergSchemaProcessor * const schema_processor_ptr;
+    // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::optional<DB::KeyDescription> partition_key_description;
+    const Int32 table_snapshot_schema_id;
 
     /// Iteration state
     const size_t total_rows;
@@ -152,9 +153,7 @@ private:
 
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
-    const Int32 table_snapshot_schema_id;
-    std::atomic<std::size_t> partition_pruned_files{0};
-    std::atomic<std::size_t> min_max_index_pruned_files{0};
+    IcebergSchemaProcessor * const schema_processor_ptr;
 
     /// Cache of pruners by schema_id to avoid recreation on each row
     mutable std::mutex pruners_mutex;

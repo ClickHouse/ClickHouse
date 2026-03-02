@@ -129,7 +129,7 @@ struct ProcessedManifestFileEntry
     /// Computed file path for Object Storage (resolved from parsed_entry->file_path_key)
     String file_path;
 
-    /// Inherited or resolved from manifest list level
+    // Always zero in case of format version 1
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Int32 schema_id;

@@ -124,10 +124,10 @@ namespace
 
 ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle(FileContentType content_type) const
 {
-    SharedLockGuard<SharedMutex> shared_lock{files_mutex};
     if (!fully_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
+    SharedLockGuard<SharedMutex> shared_lock{files_mutex};
     const std::vector<ProcessedManifestFileEntryPtr> * ptr;
     if (content_type == FileContentType::DATA)
         ptr = &data_files_without_deleted;
@@ -376,40 +376,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         }
     }
 
-    /// Compute per-column hyperrectangles for DATA files
-    std::unordered_map<Int32, DB::Range> hyperrectangles;
-    if (parsed_entry->content_type == FileContentType::DATA)
-    {
-        for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
-        {
-            auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
-            /// If we don't have column characteristics, bounds don't have any sense.
-            /// This happens if the subfield is inside map or array, because we don't support
-            /// name generation for such subfields (we support names of nested subfields in structs only).
-            if (!field_characteristics)
-                continue;
-
-            const auto & name_and_type = *field_characteristics;
-
-            String left_str;
-            String right_str;
-            /// lower_bound and upper_bound may be NULL.
-            if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
-                continue;
-
-            if (const auto type_id = name_and_type.type->getTypeId();
-                type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
-                continue;
-
-            auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
-            auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
-            if (!left || !right)
-                continue;
-
-            hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
-        }
-    }
-
     auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry{
         .parsed_entry = std::move(parsed_entry),
         .common_partition_specification = common_partition_specification,
@@ -418,8 +384,47 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         .added_snapshot_id = resolved_snapshot_id,
         .schema_id = resolved_schema_id});
 
-    const ManifestFilesPruner * current_pruner = filter_dag ? getOrCreatePruner(entry->schema_id) : nullptr;
-    auto pruning_status = current_pruner ? current_pruner->canBePruned(entry, hyperrectangles) : PruningReturnStatus::NOT_PRUNED;
+
+    PruningReturnStatus pruning_status;
+    if (filter_dag)
+    {
+        /// Compute per-column hyperrectangles for DATA files
+        std::unordered_map<Int32, DB::Range> hyperrectangles;
+        if (parsed_entry->content_type == FileContentType::DATA)
+        {
+            for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
+            {
+                auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
+                /// If we don't have column characteristics, bounds don't have any sense.
+                /// This happens if the subfield is inside map or array, because we don't support
+                /// name generation for such subfields (we support names of nested subfields in structs only).
+                if (!field_characteristics)
+                    continue;
+
+                const auto & name_and_type = *field_characteristics;
+
+                String left_str;
+                String right_str;
+                /// lower_bound and upper_bound may be NULL.
+                if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+                    continue;
+
+                if (const auto type_id = name_and_type.type->getTypeId();
+                    type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array)
+                    continue;
+
+                auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
+                auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
+                if (!left || !right)
+                    continue;
+
+                hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
+            }
+        }
+
+        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->schema_id);
+        pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
+    }
     insertRowToLogTable(
         context,
         manifest_file_deserializer->getContent(row_index),
