@@ -127,7 +127,9 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
     if (!fully_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
-    SharedLockGuard<SharedMutex> shared_lock{files_mutex};
+    auto shared_lock = SharedLockGuard<SharedMutex>::tryLock(files_mutex);
+    if (!shared_lock)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
     const std::vector<ProcessedManifestFileEntryPtr> * ptr;
     if (content_type == FileContentType::DATA)
         ptr = &data_files_without_deleted;
@@ -135,7 +137,7 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         ptr = &position_deletes_files_without_deleted;
     else
         ptr = &equality_deletes_files;
-    return ManifestFileEntriesHandle{ptr, std::move(shared_lock)};
+    return ManifestFileEntriesHandle{ptr, std::move(shared_lock.value())};
 }
 
 using namespace DB;
@@ -279,16 +281,16 @@ ManifestFileIterator::ManifestFileIterator(
     , format_version(format_version_)
     , common_path(common_path_)
     , table_location(table_location_)
-    , schema_processor_ptr(&schema_processor)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(std::move(partition_key_description_))
+    , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
     , filter_dag(std::move(filter_dag_))
-    , table_snapshot_schema_id(table_snapshot_schema_id_)
+    , schema_processor_ptr(&schema_processor)
 {
 }
 
@@ -376,13 +378,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         }
     }
 
-    auto entry = std::make_shared<ProcessedManifestFileEntry>(ProcessedManifestFileEntry{
-        .parsed_entry = std::move(parsed_entry),
-        .common_partition_specification = common_partition_specification,
-        .file_path = file_path,
-        .added_sequence_number = resolved_sequence_number,
-        .added_snapshot_id = resolved_snapshot_id,
-        .schema_id = resolved_schema_id});
+    auto entry = std::make_shared<ProcessedManifestFileEntry>(
+        parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_snapshot_id, resolved_schema_id);
 
 
     PruningReturnStatus pruning_status;

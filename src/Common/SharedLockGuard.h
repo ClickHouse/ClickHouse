@@ -42,6 +42,15 @@ public:
         shared_lock_guard_.locked = false;
     }
 
+    static std::optional<SharedLockGuard> tryLock(Mutex & mutex_) TSA_TRY_ACQUIRE_SHARED(true, mutex_)
+    {
+        std::shared_lock<Mutex> temp_lock;
+        bool locked = temp_lock.try_shared_lock(mutex_);
+        if (locked)
+            return SharedLockGuard(std::move(temp_lock));
+        return std::nullopt;
+    }
+
     void lock() TSA_ACQUIRE_SHARED()
     {
         if (locked)
