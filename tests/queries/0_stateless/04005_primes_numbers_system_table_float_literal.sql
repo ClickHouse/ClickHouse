@@ -56,6 +56,7 @@ SELECT number FROM numbers() WHERE number > 1e15 LIMIT 1;
 SELECT number
 FROM numbers()
 WHERE number >= 1e15
+  AND number < 1e15 + 65537
   AND number % 65537 = 1
 LIMIT 1;
 
