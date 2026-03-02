@@ -15,10 +15,6 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-:::note
-This format is experimental. To use it, set [`allow_experimental_geojson_format`](/operations/settings/settings-formats.md/#allow_experimental_geojson_format) to `1`.
-:::
-
 Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produces one row per feature. Each row has the following fixed schema:
 
 | Column       | Type     | Description                                                                                 |
@@ -27,7 +23,7 @@ Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produce
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
 | `properties` | `JSON`            | The feature's `properties` object, stored as a semi-structured `JSON` column.              |
 
-The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` when the feature's geometry is `null` or when the geometry type cannot be mapped to a supported variant (e.g. `GeometryCollection` — see [format settings](#format-settings) below).
+The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` when the feature's geometry is `null` or when the geometry type cannot be mapped to a supported variant (e.g. `GeometryCollection` — see [Handling GeometryCollection objects](#geometry-collection) below).
 
 Extra keys in the `FeatureCollection` object (such as `name` or `crs`) and extra keys inside each `Feature` object (such as `type` or `bbox`) are ignored.
 
@@ -59,12 +55,11 @@ Given the following GeoJSON file `cities.geojson`:
 }
 ```
 
-Read its contents directly:
+We can query the file like this:
 
 ```sql title="Query"
-SELECT id, geometry, JSONExtractString(properties, 'name') AS name
-FROM file('cities.geojson', GeoJSON)
-SETTINGS allow_experimental_geojson_format = 1
+SELECT id, geometry, properties.name AS name
+FROM file('cities.geojson', GeoJSON);
 ```
 
 ```response title="Response"
@@ -74,7 +69,16 @@ SETTINGS allow_experimental_geojson_format = 1
 └────┴──────────────────┴────────┘
 ```
 
-Insert features into a table:
+The file extension `geojson` will be automatically read using the `GeoJSON` format, so you can also exclude the `GeoJSON` format:
+
+```sql title="Query"
+SELECT id, geometry, properties.name AS name
+FROM file('cities.geojson');
+```
+
+This will result in the same output.
+
+We can also ingest GeoJSON data into a table:
 
 ```sql title="Query"
 CREATE TABLE cities
@@ -82,22 +86,34 @@ CREATE TABLE cities
     id         String,
     geometry   Geometry,
     properties JSON,
-    name       String MATERIALIZED JSONExtractString(properties, 'name')
+    name       String MATERIALIZED properties.name
 )
 ENGINE = MergeTree
 ORDER BY id;
 
 INSERT INTO cities
 SELECT id, geometry, properties
-FROM file('cities.geojson', GeoJSON)
-SETTINGS allow_experimental_geojson_format = 1;
+FROM file('cities.geojson', GeoJSON);
 ```
 
-Check the schema inferred automatically:
+We can then query that table:
+
+```sql
+SELECT *, name 
+FROM cities;
+```
+
+```response title="Response"
+┌─id─┬─geometry─────────┬─properties─────────────────────────────┬─name───┐
+│ 1  │ (13.405,52.52)   │ {"name":"Berlin","population":3645000} │ Berlin │
+│ 2  │ (2.3522,48.8566) │ {"name":"Paris","population":2161000}  │ Paris  │
+└────┴──────────────────┴────────────────────────────────────────┴────────┘
+```
+
+We can also infer the schema of GeoJSON data without a table definition:
 
 ```sql title="Query"
-DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}')
-SETTINGS allow_experimental_geojson_format = 1
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 ```
 
 ```response title="Response"
@@ -108,9 +124,9 @@ SETTINGS allow_experimental_geojson_format = 1
 └────────────┴──────────┘
 ```
 
-## Format settings {#format-settings}
+## Handling GeometryCollection objects {#geometry-collection}
 
-| Setting                                                    | Description                                                                                                                                                    | Default   |
-|------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
-| `allow_experimental_geojson_format`                        | Enable the `GeoJSON` input format. Must be set to `1` to use this format.                                                                                      | `0`       |
-| `input_format_geojson_geometry_collection_handling`        | Controls what happens when a `GeometryCollection` geometry type is encountered. `GeometryCollection` cannot be represented in ClickHouse's `Geometry` type. Possible values: `'throw'` — throw an exception; `'null'` — insert a `NULL` value for the `geometry` column and continue parsing. | `'throw'` |
+One of the GeoJSON objects is `GeometryCollection`, which can't be represented by ClickHouse's `Geometry` type.  You can control what happens if `GeometryCollection` is encountered using the `input_format_geojson_geometry_collection_handling` setting. Possible values are:
+
+* `'throw'` — throw an exception (default)
+* `'null'` — insert a `NULL` value for the `geometry` column and continue parsing
