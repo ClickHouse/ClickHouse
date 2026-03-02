@@ -438,7 +438,7 @@ These codecs are designed to make compression more effective by exploiting speci
 `T64` accepts two optional parameters:
 
 - Transposition variant: `'byte'` (default) for byte-level (8-bit granularity) transposition, or `'bit'` for full bit-level transposition. Bit-level transposition uses more CPU but may achieve better compression when combined with `ZSTD`.
-- Frame of reference: a boolean (default `false`). When `true`, each value is stored as its distance from the block minimum, so values that are large but close together compress as if they were small. For example, timestamps ranging from `1,700,000,000` to `1,700,000,100` need many bits normally, but as distances from their minimum they become `0` to `100`, needing only 7 bits. Requires `allow_frame_of_reference_in_t64` to be enabled.
+- Frame of reference: a boolean (default `false`). When `true`, each value is stored as its distance from the block minimum, so values that are large but close together compress as if they were small. For example, timestamps ranging from `1,699,999,999` to `1,700,000,100` need many bits normally, but as distances from their minimum they become `0` to `101`, needing only 7 bits. Requires `allow_frame_of_reference_in_t64` to be enabled.
 
 Examples: `T64`, `T64('bit')`, `T64(true)`, `T64('bit', true)`.
 
