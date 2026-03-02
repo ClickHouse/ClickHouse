@@ -423,7 +423,7 @@ namespace
                     return {};
                 return literal->value.safeGet<String>();
             }
-            catch (...)
+            catch (...) // Ok: return empty if expression cannot be evaluated
             {
                 return {};
             }

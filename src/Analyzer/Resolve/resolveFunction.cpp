@@ -495,7 +495,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
             }
-            catch (...)
+            catch (...) // Ok: if resolution fails, apply constant-if optimization
             {
                 apply_constant_if_optimization = true;
             }

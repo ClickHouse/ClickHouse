@@ -131,7 +131,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
         auto exception = Exception(Exception::CreateFromSTDTag{}, e);
         return on_error(result_columns, checkpoints, exception);
     }
-    catch (...)
+    catch (...) // Ok: wrap unknown exception and pass to on_error callback
     {
         format->resetParser();
         auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while executing StreamingFormatExecutor with format {}", format->getName());

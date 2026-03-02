@@ -86,7 +86,7 @@ std::optional<T> tryGetLiteralArgument(const ASTPtr & arg, const String & arg_na
             {
                 return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
             }
-            catch (...)
+            catch (...) // Ok: return nullopt if argument cannot be converted
             {
                 return std::nullopt;
             }

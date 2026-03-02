@@ -135,9 +135,8 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) // Ok: server warnings are non-essential
     {
-        /// Ignore exception
     }
 }
 

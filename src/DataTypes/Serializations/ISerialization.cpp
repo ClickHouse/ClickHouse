@@ -541,7 +541,7 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
         deserialize(column);
         return true;
     }
-    catch (...)
+    catch (...) // Ok: tryDeserializeText is a try-pattern
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);

@@ -2247,7 +2247,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (...)
+        catch (...) // Ok: secondary exception, original is already being propagated
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,

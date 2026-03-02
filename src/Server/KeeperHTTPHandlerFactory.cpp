@@ -307,7 +307,7 @@ try
         uri = Poco::URI(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (...)
+    catch (...) // Ok: respond with HTTP 400 for malformed request
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         *response.send() << "Could not parse request path.\n";

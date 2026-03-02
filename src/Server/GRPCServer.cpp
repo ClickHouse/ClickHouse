@@ -1445,7 +1445,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...) // Ok: best-effort error response, connection may be broken
             {
             }
         }

@@ -331,11 +331,18 @@ def _find_enclosing_function_lines(lines, catch_line_idx):
                 if j < i and (lines[j].strip() == "" or "}" in lines[j]):
                     break
                 sig.append(lines[j])
-            return sig
+
+            # If the signature has no parentheses, it is likely a
+            # namespace/class scope rather than a function.  In that case
+            # fall through to the function-try-block scan below.
+            if any("(" in l for l in sig):
+                return sig
+            break
 
     # Handle function-try blocks: "Type func(...) try { ... } catch (...) { ... }"
     # In this pattern there is no separate function opening brace, so the loop
-    # above never reaches depth < 0.  Re-scan for a bare ``try`` at depth 0.
+    # above never reaches depth < 0 within the function, or it reaches
+    # a namespace/class scope.  Re-scan for a bare ``try`` at depth 0.
     depth = 0
     for i in range(catch_line_idx - 1, -1, -1):
         line = lines[i]
@@ -420,6 +427,17 @@ def check_catch_all(files) -> str:
         re.compile(r"\babort\s*\("),
         re.compile(r"\bexit\s*\("),
         re.compile(r"\bcurrent_exception\b"),
+        re.compile(r"\bgetCurrentExceptionMessage\b"),
+        re.compile(r"\bgetCurrentExceptionCode\b"),
+        re.compile(r"\bgetCurrentExceptionMessageAndPattern\b"),
+        re.compile(r"\bExecutionStatus::fromCurrentException\b"),
+        re.compile(r"\bonBackgroundException\b"),
+        re.compile(r"\bstoreException\b"),
+        re.compile(r"\bSTDERR_FILENO\b"),
+        re.compile(r"\bwriteRetry\b"),
+        re.compile(r"\bhandle_exception\b"),
+        re.compile(r"\bhandleException\b"),
+        re.compile(r"\bfinishWithException\b"),
     ]
 
     for file_path in files:

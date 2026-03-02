@@ -53,7 +53,7 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     {
         return parse<int32_t>(version_param->second);
     }
-    catch (...)
+    catch (...) // Ok: return nullopt if version is not a valid integer
     {
         return std::nullopt;
     }
@@ -307,7 +307,7 @@ try
         Poco::URI uri(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (...)
+    catch (...) // Ok: respond with HTTP 400 for malformed request
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         *response.send() << "Could not parse request path. Check if special symbols are used.\n";

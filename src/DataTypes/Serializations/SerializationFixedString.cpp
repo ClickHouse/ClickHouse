@@ -183,7 +183,7 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     {
         return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
     }
-    catch (...)
+    catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
         return false;

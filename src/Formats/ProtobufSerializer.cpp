@@ -288,7 +288,7 @@ namespace
                 readText(result, buf);
                 return result;
             }
-            catch (...)
+            catch (...) // Ok: cannotConvertValue always throws a more specific exception
             {
                 cannotConvertValue(str, "String", TypeName<DestType>);
             }

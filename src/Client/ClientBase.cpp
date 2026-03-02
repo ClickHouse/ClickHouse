@@ -1895,7 +1895,9 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             if (sendCancel(std::current_exception()))
                 receiveEndOfQueryForInsert();
         }
-        catch (...) {} // NOLINT
+        catch (...) // Ok: ignore cleanup errors, rethrow original exception below
+        {
+        }
         throw;
     }
 }
@@ -3231,7 +3233,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             }
         }
     }
-    catch (...)
+    catch (...) // Ok: return empty string if AI provider check fails
     {
         return "";
     }

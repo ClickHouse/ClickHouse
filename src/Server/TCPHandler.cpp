@@ -897,7 +897,7 @@ void TCPHandler::runImpl()
             {
                 exception->rethrow();
             }
-            catch (...)
+            catch (...) // Ok: exception was saved above, rethrow for onException callback
             {
                 query_state->io.onException(exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
             }

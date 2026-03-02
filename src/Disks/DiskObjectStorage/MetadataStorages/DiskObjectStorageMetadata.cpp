@@ -108,7 +108,7 @@ try
     deserialize(buf);
     return true;
 }
-catch (...)
+catch (...) // Ok: tryDeserializeFromString is a try-pattern
 {
     return false;
 }

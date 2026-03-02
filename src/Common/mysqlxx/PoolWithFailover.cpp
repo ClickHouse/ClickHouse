@@ -40,7 +40,7 @@ auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
             }
-            catch (...)
+            catch (...) // Ok: log reconnection failure and continue
             {
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");

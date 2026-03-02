@@ -159,7 +159,7 @@ try
     }
     return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<unsigned>(core_entries.size());
 }
-catch (...)
+catch (...) // Ok: fall back to hardware_concurrency on parse error
 {
     return std::thread::hardware_concurrency(); /// parsing error
 }
