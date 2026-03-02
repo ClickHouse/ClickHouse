@@ -89,19 +89,66 @@ SELECT id, properties.name AS name, variantType(geometry) AS geo_type
 FROM file('london.geojson');
 ```
 
-To access the `Point` geometry's coordinates directly, filter on `variantType`:
+We can use `variantType` to check the underlying type of each Geometry object:
 
 ```sql title="Query"
-SELECT properties.name AS name, geometry
-FROM file('london.geojson', GeoJSON)
-WHERE variantType(geometry) = 'Point';
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
 ```
 
 ```response title="Response"
-┌─name────────────┬─geometry──────────┐
-│ Tower of London │ (-0.0761,51.5081) │
-└─────────────────┴───────────────────┘
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18000000000000002,51.49),(-0.12000000000000001,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.15330000000000002,51.5074),(-0.15330000000000002,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
 ```
+
+And we can extract the underlying data like this:
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry) geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        ᴺᵁᴸᴸ
+geometry.LineString:   [(-0.25,51.47),(-0.18000000000000002,51.49),(-0.12000000000000001,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        ᴺᵁᴸᴸ
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.15330000000000002,51.5074),(-0.15330000000000002,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
 
 We can also ingest GeoJSON data into a table:
 
