@@ -792,18 +792,108 @@ void expireSnapshots(
 
         Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-        std::set<Int64> ref_snapshot_ids;
+        auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+
+        std::optional<Int32> table_min_snapshots_to_keep;
+        std::optional<Int64> table_max_snapshot_age_ms;
+        std::optional<Int64> table_max_ref_age_ms;
+        if (metadata->has(Iceberg::f_properties))
+        {
+            auto props = metadata->getObject(Iceberg::f_properties);
+            if (props->has(Iceberg::f_min_snapshots_to_keep))
+                table_min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
+            if (props->has(Iceberg::f_max_snapshot_age_ms))
+                table_max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
+            if (props->has(Iceberg::f_max_ref_age_ms))
+                table_max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
+        }
+
+        std::unordered_map<Int64, Int64> parent_chain;
+        std::unordered_map<Int64, Int64> snapshot_timestamps;
+        for (UInt32 i = 0; i < snapshots->size(); ++i)
+        {
+            auto snapshot = snapshots->getObject(i);
+            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            snapshot_timestamps[snap_id] = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+            if (snapshot->has(Iceberg::f_parent_snapshot_id) && !snapshot->isNull(Iceberg::f_parent_snapshot_id))
+                parent_chain[snap_id] = snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        }
+
+        auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+        auto walk_branch_ancestors = [&](Int64 head_id, Int32 min_keep, std::optional<Int64> max_age_ms, std::set<Int64> & retained)
+        {
+            Int64 walk_id = head_id;
+            Int32 count = 0;
+            while (snapshot_timestamps.contains(walk_id))
+            {
+                bool within_min_keep = (count < min_keep);
+                bool within_max_age = max_age_ms.has_value() && (now_ms - snapshot_timestamps[walk_id] < *max_age_ms);
+                if (!within_min_keep && !within_max_age)
+                    break;
+                retained.insert(walk_id);
+                ++count;
+                auto it = parent_chain.find(walk_id);
+                if (it == parent_chain.end())
+                    break;
+                walk_id = it->second;
+            }
+        };
+
+        std::set<Int64> retention_retained_ids;
+        retention_retained_ids.insert(current_snapshot_id);
+
+        Int32 main_min_keep = table_min_snapshots_to_keep.value_or(1);
+        walk_branch_ancestors(current_snapshot_id, main_min_keep, table_max_snapshot_age_ms, retention_retained_ids);
+
+        Strings expired_ref_names;
         if (metadata->has(Iceberg::f_refs))
         {
             auto refs = metadata->getObject(Iceberg::f_refs);
             for (const auto & ref_name : refs->getNames())
             {
                 auto ref_obj = refs->getObject(ref_name);
-                ref_snapshot_ids.insert(ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
+                Int64 ref_snap_id = ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                String ref_type = ref_obj->getValue<String>("type");
+
+                std::optional<Int64> ref_max_ref_age;
+                if (ref_obj->has(Iceberg::f_max_ref_age_ms))
+                    ref_max_ref_age = ref_obj->getValue<Int64>(Iceberg::f_max_ref_age_ms);
+                else
+                    ref_max_ref_age = table_max_ref_age_ms;
+
+                bool is_main = (ref_name == "main");
+                bool ref_expired = false;
+                if (!is_main && ref_max_ref_age && snapshot_timestamps.contains(ref_snap_id)
+                    && (now_ms - snapshot_timestamps[ref_snap_id]) >= *ref_max_ref_age)
+                {
+                    ref_expired = true;
+                    expired_ref_names.push_back(ref_name);
+                }
+
+                if (ref_type == "branch" && !ref_expired)
+                {
+                    Int32 min_keep = ref_obj->has(Iceberg::f_min_snapshots_to_keep)
+                        ? ref_obj->getValue<Int32>(Iceberg::f_min_snapshots_to_keep)
+                        : main_min_keep;
+                    std::optional<Int64> max_age = ref_obj->has(Iceberg::f_max_snapshot_age_ms)
+                        ? std::optional<Int64>(ref_obj->getValue<Int64>(Iceberg::f_max_snapshot_age_ms))
+                        : table_max_snapshot_age_ms;
+                    walk_branch_ancestors(ref_snap_id, min_keep, max_age, retention_retained_ids);
+                }
+                else if (ref_type == "tag" && !ref_expired)
+                {
+                    retention_retained_ids.insert(ref_snap_id);
+                }
             }
         }
 
-        auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        for (const auto & ref_name : expired_ref_names)
+        {
+            auto refs = metadata->getObject(Iceberg::f_refs);
+            refs->remove(ref_name);
+        }
+
         Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
         std::set<Int64> expired_snapshot_ids;
         std::vector<String> expired_manifest_list_paths;
@@ -814,11 +904,10 @@ void expireSnapshots(
             Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
             Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
 
-            bool is_current = (snap_id == current_snapshot_id);
-            bool is_ref = ref_snapshot_ids.contains(snap_id);
+            bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
             bool is_newer = (snap_ts >= expire_before_ms);
 
-            if (is_current || is_ref || is_newer)
+            if (is_retained_by_policy || is_newer)
             {
                 retained_snapshots->add(snapshot);
             }
