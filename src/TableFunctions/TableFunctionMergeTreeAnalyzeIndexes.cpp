@@ -231,28 +231,22 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
-        TableFunctionProperties{
-            .documentation =
-            {
-                .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, 'parts_regexp'])", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
-            .allow_readonly = true,
-        }
+        {
+            .description = "Internal function for index analysis",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, 'parts_regexp'])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true}
     });
 
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ true), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
-        TableFunctionProperties{
-            .documentation =
-            {
-                .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, 'parts_regexp'])", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
-            .allow_readonly = true,
-        }
+        {
+            .description = "Internal function for index analysis",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, 'parts_regexp'])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true}
     });
 }
 

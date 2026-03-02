@@ -1270,7 +1270,13 @@ ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const No
                         {
                             bool should_rename = new_input->result_name != rename->result_name;
                             const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
-                            mapped_input = &dag.addInput(input_name, new_input->result_type);
+                            /// Use the projection node's type for the INPUT since the actual data
+                            /// comes from the projection and has projection types. Using the query
+                            /// node's type would create a mismatch between the header and the data.
+                            /// For example, removeTrivialWrappers may strip materialize() from the
+                            /// query, causing a match with a projection column that has different
+                            /// LowCardinality wrapping.
+                            mapped_input = &dag.addInput(input_name, rename->result_type);
                             if (should_rename)
                                 mapped_input = &dag.addAlias(*mapped_input, new_input->result_name);
                         }
