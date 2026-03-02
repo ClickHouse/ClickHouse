@@ -611,7 +611,7 @@ private:
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
-    void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
+    void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
     void generateDerivedTable(
         RandomGenerator & rg,
         SQLRelation & rel,

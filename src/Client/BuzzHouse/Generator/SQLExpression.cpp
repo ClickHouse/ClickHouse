@@ -27,7 +27,7 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         const uint32_t nfields = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4)), UINT32_C(1));
 
         this->depth++;
-        for (uint32_t i = 0 ; i < nfields; i++)
+        for (uint32_t i = 0; i < nfields; i++)
         {
             FieldAccess * fa = expr->add_fields();
             const uint32_t noption = rg.nextMediumNumber();

@@ -665,11 +665,11 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::CTE)] = !under_remote && !this->ctes.empty();
     queryMask[static_cast<size_t>(QueryOp::Table)] = has_table;
     queryMask[static_cast<size_t>(QueryOp::View)] = this->peer_query != PeerQuery::ClickHouseOnly && has_view;
-    queryMask[static_cast<size_t>(QueryOp::RemoteUDF)] = this->allow_engine_udf && can_recurse;
+    queryMask[static_cast<size_t>(QueryOp::RemoteUDF)] = !under_remote && this->allow_engine_udf && can_recurse;
     /// queryMask[static_cast<size_t>(QueryOp::NumbersUDF)] = true;
     queryMask[static_cast<size_t>(QueryOp::SystemTable)] = this->allow_not_deterministic && !systemTables.empty();
     queryMask[static_cast<size_t>(QueryOp::MergeUDF)] = this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
+    queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = !under_remote && this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::LoopUDF)] = fc.allow_infinite_tables && this->allow_engine_udf && can_recurse;
     /// queryMask[static_cast<size_t>(QueryOp::ValuesUDF)] = true;
@@ -1242,11 +1242,11 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     addSargableColRef(rg, col2, expr2);
 }
 
-void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc)
+void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc)
 {
     const uint32_t nopt = rg.nextSmallNumber();
 
-    if (allow_using && nopt < 3)
+    if (nopt < 3)
     {
         /// Using clause
         UsingExpr * uexpr = jc->mutable_using_expr();
@@ -1266,6 +1266,9 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         {
             cols2.push_back(entry.path);
         }
+        /// set_intersection requires sorted ranges
+        std::sort(cols1.begin(), cols1.end());
+        std::sort(cols2.begin(), cols2.end());
         std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
 
         if (intersect.empty())
@@ -1300,32 +1303,16 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
-            if (rg.nextSmallNumber() < 3)
-            {
-                /// Negate clause
-                if (rg.nextSmallNumber() < 9)
-                {
-                    UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+            /// Determine the target node for this individual clause, advancing expr to the rhs for the next iteration
+            Expr * clause_target;
 
-                    uexpr->set_paren(true);
-                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-                    expr = uexpr->mutable_expr();
-                }
-                else
-                {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
-                    expr = sfc->add_args()->mutable_expr();
-                }
-            }
             if (i == nclauses - 1)
             {
-                addJoinClause(rg, expr);
+                clause_target = expr;
             }
             else
             {
+                /// Split AND/OR first so NOT applies only to the current clause, not the whole remaining chain
                 Expr * predicate = nullptr;
                 const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
 
@@ -1346,8 +1333,29 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
                     predicate = sfc->add_args()->mutable_expr();
                     expr = sfc->add_args()->mutable_expr();
                 }
-                addJoinClause(rg, predicate);
+                clause_target = predicate;
             }
+            /// Optionally negate just this individual clause
+            if (rg.nextSmallNumber() < 3)
+            {
+                if (rg.nextSmallNumber() < 9)
+                {
+                    UnaryExpr * uexpr = clause_target->mutable_comp_expr()->mutable_unary_expr();
+
+                    uexpr->set_paren(true);
+                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+                    clause_target = uexpr->mutable_expr();
+                }
+                else
+                {
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
+
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    clause_target = sfc->add_args()->mutable_expr();
+                }
+            }
+            addJoinClause(rg, clause_target);
         }
     }
     else
@@ -1619,29 +1627,12 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
 
         for (uint32_t i = 0; i < nclauses; i++)
         {
-            if (rg.nextSmallNumber() < 3)
-            {
-                /// Negate clause
-                if (rg.nextSmallNumber() < 9)
-                {
-                    UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
-
-                    uexpr->set_paren(true);
-                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-                    expr = uexpr->mutable_expr();
-                }
-                else
-                {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
-                    expr = sfc->add_args()->mutable_expr();
-                }
-            }
+            /// Establish clause_target for this iteration: do AND/OR split first,
+            /// then apply NOT only to the current clause (not the entire remaining chain).
+            Expr * clause_target;
             if (i == nclauses - 1)
             {
-                addWhereFilter(rg, available_cols, expr);
+                clause_target = expr;
             }
             else
             {
@@ -1665,8 +1656,29 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                     predicate = sfc->add_args()->mutable_expr();
                     expr = sfc->add_args()->mutable_expr();
                 }
-                addWhereFilter(rg, available_cols, predicate);
+                clause_target = predicate;
             }
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Negate this clause only
+                if (rg.nextSmallNumber() < 9)
+                {
+                    UnaryExpr * uexpr = clause_target->mutable_comp_expr()->mutable_unary_expr();
+
+                    uexpr->set_paren(true);
+                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+                    clause_target = uexpr->mutable_expr();
+                }
+                else
+                {
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
+
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    clause_target = sfc->add_args()->mutable_expr();
+                }
+            }
+            addWhereFilter(rg, available_cols, clause_target);
             this->width++;
         }
         this->width -= nclauses;
@@ -1722,7 +1734,7 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
                 core->set_const_on_right(rg.nextBool());
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());
-            generateJoinConstraint(rg, true, core->mutable_join_constraint());
+            generateJoinConstraint(rg, core->mutable_join_constraint());
         }
     }
     this->width -= njoined;
