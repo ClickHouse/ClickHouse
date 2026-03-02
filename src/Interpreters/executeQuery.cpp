@@ -1218,7 +1218,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// The DETACH/ATTACH may fail for various reasons
             /// (e.g., a concurrent query interfered).
             /// Since this is a testing-only feature, we just skip this table.
-            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::warning);
+            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::information);
         }
     }
 }
