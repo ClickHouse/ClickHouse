@@ -1,5 +1,7 @@
 When working with a branch, do not use rebase or amend - add new commits instead.
 
+Do not commit to the master branch. Create a new branch for every task.
+
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
@@ -68,7 +70,7 @@ When writing messages, say ASan, not ASAN, and similar (because there are two wo
 
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
 
-Do not use `-j` argument with ninja - let it decide automatically.
+Do not use `-j` argument with ninja; do not use `nproc` - let it decide automatically.
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message.
 
@@ -77,6 +79,8 @@ When creating a pull request, append Changelog category and Changelog entry acco
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
+
+When there are crucial findings (when I corrected your behavior, you when you found a crucial insight about the code), append them to `.claude/learnings.md`, but be concise. You can commit the changes in learnings.md along with the other changes. Read this file at start.
 
 Always load and apply the following skills:
 
