@@ -131,7 +131,7 @@ struct ProcessedManifestFileEntry
 
     /// Inherited or resolved from manifest list level
     Int64 added_sequence_number;
-    Int64 snapshot_id;
+    Int64 added_snapshot_id;
     Int32 schema_id;
 
     String dumpDeletesMatchingInfo() const;

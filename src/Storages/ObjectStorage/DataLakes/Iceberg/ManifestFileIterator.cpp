@@ -319,9 +319,23 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     /// Compute inherited/resolved fields
     const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
 
-    Int64 resolved_snapshot_id = inherited_snapshot_id;
+    Int64 resolved_snapshot_id;
     if (parsed_entry->written_snapshot_id.has_value())
+    {
         resolved_snapshot_id = *parsed_entry->written_snapshot_id;
+    }
+    else if (parsed_entry->status == ManifestEntryStatus::EXISTING)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+            manifest_file_name,
+            resolved_snapshot_id);
+    }
+    else
+    {
+        resolved_snapshot_id = inherited_snapshot_id;
+    }
 
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
     if (!schema_id_opt.has_value())
@@ -343,26 +357,22 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
-    Int64 added_sequence_number = 0;
+    Int64 resolved_sequence_number = 0;
     if (format_version > 1)
     {
-        switch (parsed_entry->status)
+        if (parsed_entry->written_sequence_number.has_value())
         {
-            case ManifestEntryStatus::ADDED:
-                added_sequence_number = inherited_sequence_number;
-                break;
-            case ManifestEntryStatus::EXISTING:
-            {
-                if (!parsed_entry->written_sequence_number.has_value())
-                    throw Exception(
-                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Data sequence number is null for the file added in another snapshot");
-                added_sequence_number = *parsed_entry->written_sequence_number;
-                break;
-            }
-            case ManifestEntryStatus::DELETED:
-                added_sequence_number = inherited_sequence_number;
-                break;
+            resolved_sequence_number = *parsed_entry->written_sequence_number;
+        }
+        else if (parsed_entry->status == ManifestEntryStatus::EXISTING)
+        {
+            if (!parsed_entry->written_sequence_number.has_value())
+                throw Exception(
+                    DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Data sequence number is null for the file added in another snapshot");
+        }
+        else
+        {
+            resolved_sequence_number = inherited_sequence_number;
         }
     }
 
@@ -404,8 +414,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         .parsed_entry = std::move(parsed_entry),
         .common_partition_specification = common_partition_specification,
         .file_path = file_path,
-        .added_sequence_number = added_sequence_number,
-        .snapshot_id = resolved_snapshot_id,
+        .added_sequence_number = resolved_sequence_number,
+        .added_snapshot_id = resolved_snapshot_id,
         .schema_id = resolved_schema_id});
 
     const ManifestFilesPruner * current_pruner = filter_dag ? getOrCreatePruner(entry->schema_id) : nullptr;
