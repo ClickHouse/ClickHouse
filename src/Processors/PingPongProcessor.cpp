@@ -118,7 +118,7 @@ bool PingPongProcessor::sendPing()
     return false;
 }
 
-bool PingPongProcessor::recievePing()
+bool PingPongProcessor::receivePing()
 {
     if (aux_in_port.hasData())
     {
@@ -147,11 +147,16 @@ IProcessor::Status PingPongProcessor::prepare()
     {
         if (!is_received)
         {
-            bool received = recievePing();
-            if (!received)
-            {
-                return Status::NeedData;
-            }
+            receivePing();
+
+            /// Don't block here before processing regular ports.
+            /// If Order::First blocks waiting for the ping, the downstream
+            /// Y-shaped processor (e.g. MergeJoinTransform) may never consume
+            /// data from Order::Second's side (because it needs data from both
+            /// sides), preventing Second from consuming enough rows to send
+            /// the ping — a circular dependency that deadlocks the pipeline.
+            /// Instead, we let regular ports process data and only block at
+            /// finish time (below) when ping exchange is required for cleanup.
         }
     }
 
@@ -172,7 +177,7 @@ IProcessor::Status PingPongProcessor::prepare()
         {
             if (!is_received)
             {
-                bool received = recievePing();
+                bool received = receivePing();
                 if (!received)
                 {
                     return Status::NeedData;

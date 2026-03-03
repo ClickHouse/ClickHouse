@@ -59,20 +59,25 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
+        "contrib/clickstack",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
     res = res and Shell.check("git submodule init", verbose=True, strict=True)
     res = res and Shell.check(
-        command=f"xargs --max-procs={min([Utils.cpu_count(), 10])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
+        # NOTE: max-procs was 10 before, increased to 20 to speed up checkout.
+        # Roll back to 10 if this starts hitting GitHub rate limits.
+        command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
         stdin_str="\0".join(submodules_to_update) + "\0",
         timeout=240,
         retries=2,
         verbose=True,
     )
-    res = res and Shell.check("git submodule foreach git reset --hard", verbose=True)
-    res = res and Shell.check("git submodule foreach git checkout @ -f", verbose=True)
-    res = res and Shell.check("git submodule foreach git clean -xfd", verbose=True)
+    # NOTE: the three "git submodule foreach" cleanup commands (reset --hard,
+    # checkout @ -f, clean -xfd) that used to run here were removed because
+    # "git submodule update" already checks out the correct commit into a
+    # fresh clone.  The foreach commands added ~7s of sequential overhead
+    # iterating over every submodule for no benefit in the fast-test context.
     return res
 
 
@@ -155,21 +160,21 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
             )
             stages = [JobStages.CONFIG, JobStages.TEST]
+            resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
+            Shell.check(
+                f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-server",
+                strict=True,
+            )
+            Shell.check(
+                f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-client",
+                strict=True,
+            )
+            Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
         else:
             print(
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
-        resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
-        Shell.check(
-            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-server",
-            strict=True,
-        )
-        Shell.check(
-            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-client",
-            strict=True,
-        )
-        Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -212,6 +217,7 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -DUSE_SYSTEM_COMPILER_RT=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )

@@ -1560,7 +1560,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>();
 
-    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, origin, state_guard.lock());
+    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
     eviction_info.reset();
 
@@ -1575,7 +1575,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, origin, state_guard.lock());
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
@@ -1610,7 +1610,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, origin, state_guard.lock());
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);

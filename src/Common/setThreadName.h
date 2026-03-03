@@ -65,6 +65,7 @@ namespace DB
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
+    M(ICEBERG_ITERATOR, "IcebergIter") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \
     M(KEEPER_HANDLER, "KeeperHandler") \
@@ -157,6 +158,8 @@ namespace DB
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
     M(ZOOKEEPER_RECV, "ZooKeeperRecv") \
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
+    M(BLOB_KILLER_TASK, "BlobKillerTask") \
+    M(BLOB_COPIER_TASK, "BlobCopierTask") \
 
 
 enum class ThreadName : uint8_t

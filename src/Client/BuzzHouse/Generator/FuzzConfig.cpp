@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int NETWORK_ERROR;
 }
 }
 
@@ -18,6 +19,9 @@ namespace BuzzHouse
 
 const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
+
+const DB::Strings codecs
+    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
 
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
@@ -30,7 +34,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     String warehouse = "data";
     uint32_t port = default_port;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
@@ -73,7 +77,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> rest_catalog;
     std::optional<Catalog> unity_catalog;
 
-    static const SettingEntries configEntries
+    const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
@@ -126,10 +130,10 @@ static PerformanceMetric
 loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t default_threshold, const uint32_t default_minimum)
 {
     bool enabled = false;
-    uint32_t threshold = default_minimum;
-    uint32_t minimum = default_threshold;
+    uint32_t threshold = default_threshold;
+    uint32_t minimum = default_minimum;
 
-    static const SettingEntries metricEntries
+    const SettingEntries metricEntries
         = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
            {"threshold", [&](const JSONObjectType & value) { threshold = static_cast<uint32_t>(value.getUInt64()); }},
            {"minimum", [&](const JSONObjectType & value) { minimum = static_cast<uint32_t>(value.getUInt64()); }}};
@@ -315,7 +319,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"alias", allow_alias},
            {"kafka", allow_kafka}};
 
-    static const SettingEntries configEntries = {
+    const SettingEntries configEntries = {
         {"client_file_path",
          [&](const JSONObjectType & value)
          {
@@ -326,7 +330,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value)
          {
              server_file_path = std::filesystem::path(String(value.getString()));
-             fuzz_server_out = client_file_path / "fuzz.data";
+             fuzz_server_out = server_file_path / "fuzz.data";
          }},
         {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
@@ -388,6 +392,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
+        {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -488,7 +494,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         fmt::print(stderr, "Error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Couldn't not reconnect to the server");
+            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
         }
     }
     return res;
@@ -501,7 +507,7 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
     uint64_t found = 0;
 
     if (processServerQuery(
-            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_server_out.generic_string())))
+            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         out.clear();
@@ -526,6 +532,15 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    loadServerSettings<String>(
+        this->failpoints,
+        "failpoints",
+        "SELECT \"name\" FROM \"system\".\"fail_points\""
+        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+    loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -551,9 +566,11 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             fmt::format(
                 "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
                 "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
+        static constexpr std::array<std::string_view, 3> infinite_prefixes{"numbers", "zeros", "primes"};
         std::ifstream infile(fuzz_client_out);
+
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -569,7 +586,8 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             if (nschema != current_schema || ntable != current_table)
             {
                 if (!next_cols.empty() && current_table != "stack_trace"
-                    && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
+                    && (allow_infinite_tables
+                        || std::ranges::none_of(infinite_prefixes, [&](std::string_view p) { return current_table.starts_with(p); })))
                 {
                     tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
@@ -579,6 +597,13 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             }
             next_cols.emplace_back(ncol);
             buf.resize(0);
+        }
+        /// Emit the last table group that was never flushed by the loop
+        if (!next_cols.empty() && current_table != "stack_trace"
+            && (allow_infinite_tables
+                || std::ranges::none_of(infinite_prefixes, [&](std::string_view p) { return current_table.starts_with(p); })))
+        {
+            tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
         }
     }
 }
@@ -596,7 +621,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -615,7 +640,7 @@ bool FuzzConfig::hasMutations()
             false,
             fmt::format(
                 R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -638,7 +663,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
                 "FORMAT TabSeparated;",
                 rand_val,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -656,12 +681,29 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
             fmt::format(
                 R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 property,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
     }
     return res.empty() ? "-1" : res;
+}
+
+String FuzzConfig::getRandomFileSystemCacheValue()
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_client_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(
@@ -686,7 +728,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out, std::ios::in);
         std::getline(infile, res);
@@ -704,29 +746,37 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
                 " UNION ALL "
-                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
                 " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
                 " UNION ALL "
-                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE name = "
+                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE \"name\" = "
                 "'SharedCatalogDropDetachLocalTablesErrors')"
                 " UNION ALL "
                 "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
                 " UNION ALL "
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
-                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(30)) GROUP BY part_name HAVING count() > 5) tx)"
+                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')"
+                " UNION ALL "
+                "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
+                "'%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%')"
+                " UNION ALL "
+                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
+                "'%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%')"
                 ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_server_out.generic_string())))
+                fuzz_client_out.generic_string())))
     {
         String buf;
         size_t i = 0;
         std::ifstream infile(fuzz_client_out, std::ios::in);
-        static const DB::Strings & health_errors
+        static const DB::Strings health_errors
             = {"broken detached part(s)",
                "broken replica(s)",
                "broken data part(s)",
@@ -734,7 +784,22 @@ void FuzzConfig::validateClickHouseHealth()
                "shared catalog drop/detach error(s)",
                "readonly replica(s)",
                "part(s) with excessive errors",
-               "replica(s) with REPLICA_ALREADY_EXISTS errors"};
+               "replica(s) with REPLICA_ALREADY_EXISTS errors",
+               "replication queue exception(s)",
+               "LOGICAL_ERROR(s) in text_log",
+               "CORRUPTED_DATA(s) in text_log"};
+        static const DB::Strings detail_queries = {
+            R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
+            R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            "",
+            "",
+            R"(SELECT "database", "table", "last_exception" FROM "system"."replicas" WHERE readonly_start_time IS NOT NULL LIMIT 3)",
+            R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%LOGICAL_ERROR%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE '%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%' ORDER BY event_time DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
@@ -742,7 +807,29 @@ void FuzzConfig::validateClickHouseHealth()
             const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
             if (val != 0)
             {
-                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
+                String details;
+                if (i < detail_queries.size() && !detail_queries[i].empty()
+                    && processServerQuery(
+                        false,
+                        fmt::format(
+                            "{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", detail_queries[i], fuzz_client_out.generic_string())))
+                {
+                    String dbuf;
+                    std::ifstream detail_file(fuzz_client_out, std::ios::in);
+                    while (std::getline(detail_file, dbuf))
+                    {
+                        if (!dbuf.empty())
+                            details += "\n  " + dbuf;
+                    }
+                }
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE,
+                    "ClickHouse health check on {}:{}: found {} {}{}",
+                    host,
+                    port,
+                    val,
+                    health_errors[i],
+                    details.empty() ? "" : "\nDetails:" + details);
             }
             i++;
             buf.resize(0);

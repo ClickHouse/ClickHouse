@@ -345,18 +345,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
+                /// Also extra parentheses are needed for subqueries with NOT, because NOT (SELECT 1) is ambiguous.
+                /// Note: Tuples no longer need inside_parens for NOT because NOT is now always parsed as a
+                /// unary prefix operator (not a function call), so NOT (1, 2, 3) correctly produces NOT(tuple(1,2,3)).
                 /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
                 bool inside_parens = !has_alias
                     && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                        || (subquery && name == "not") || (is_tuple && name == "not"));
+                        || (subquery && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -529,10 +533,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                 }
 
-                // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
-                // signed integer literals, because the fuzzer sometimes inserts
-                // them, and we want to have consistent formatting.
+                /// It can be printed in a form of 'x.1' only if right hand side
+                /// is an unsigned integer lineral. We also allow nonnegative
+                /// signed integer literals, because the fuzzer sometimes inserts
+                /// them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
@@ -541,10 +545,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Little hack: Expression like this: (tab.*).1 (tab contains single tuple column)
+                        /// causes inconsistent formatting because it is formatted as tab.*.1 which is invalid.
+                        /// So when child 0 has more than one element, we surround it with parens.
+                        /// Exception: array and tuple functions format with their own brackets ([...] and (...)),
+                        /// which are already unambiguous with .N syntax. Adding extra parens around them
+                        /// would cause inconsistent formatting when re-parsed, because the parser's fast path
+                        /// creates ASTLiteral (size=1, no parens) while ASTFunction has size>1.
+                        const auto * left_func = arguments->children[0]->as<ASTFunction>();
+                        bool left_needs_parens = arguments->children[0]->size() > 1
+                            && !(left_func && (left_func->name == "array" || left_func->name == "tuple"));
+
+                        if (left_needs_parens)
+                        {
+                            nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            ostr << '(';
+                        }
+
                         /// Don't allow moving operators like '-' before parents,
                         /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+
+                        if (left_needs_parens)
+                            ostr << ')';
+
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
@@ -683,7 +708,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
+    /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
+    /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
+    bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
+
+    if (need_parens)
         ostr << '(';
 
     if (arguments)
@@ -759,7 +789,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         }
     }
 
-    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
+    if (need_parens)
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

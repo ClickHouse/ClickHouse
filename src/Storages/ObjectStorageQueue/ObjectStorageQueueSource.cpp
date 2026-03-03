@@ -8,9 +8,11 @@
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -43,6 +45,11 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -939,7 +946,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_,
-    bool commit_once_processed_)
+    bool commit_once_processed_,
+    bool add_deduplication_info_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -961,6 +969,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
+    , add_deduplication_info(add_deduplication_info_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -974,6 +984,7 @@ String ObjectStorageQueueSource::getName() const
 
 Chunk ObjectStorageQueueSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueSource::generate");
     Chunk chunk;
     try
     {
@@ -1188,7 +1199,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (result)
         {
-            LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
+            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
+            const auto row_offset = file_status->processed_rows.load();
+
+            std::string dedup_token;
+            if (add_deduplication_info)
+            {
+                /// Etag is quoted for some reason.
+                std::string etag = object_metadata->etag;
+                if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
+                    etag = etag.substr(1, etag.size() - 2);
+
+                /// Create unique token per chunk: etag + row offset
+                dedup_token = fmt::format("{}:{}", etag, row_offset);
+
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
+                deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
+                chunk.getChunkInfos().add(std::move(deduplication_info));
+            }
+
+            LOG_TEST(log, "Read {} rows from file {} (file offset: {}, deduplication token for chunk: {})",
+                     chunk.getNumRows(), path, row_offset, dedup_token);
 
             file_status->processed_rows += chunk.getNumRows();
             progress->processed_rows += chunk.getNumRows();
@@ -1205,12 +1236,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     path);
             }
 
-            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = path, .size = object_metadata->size_bytes, .last_modified = object_metadata->last_modified},
+                {
+                    .path = path,
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
+                },
                 getContext());
 
             return chunk;
@@ -1320,6 +1353,18 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
                                       || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
+    /// Count successfully processed files in a failed batch.
+    /// If the batch had multiple files, don't reduce retry counts:
+    /// the failure may have been caused by just one bad file.
+    /// The batch will be halved on the next iteration until the bad file is alone.
+    size_t processed_count = 0;
+    if (!insert_succeeded && reduce_retry_count)
+    {
+        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
+            if (file_state == FileState::Processed)
+                ++processed_count;
+    }
+
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
@@ -1360,7 +1405,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        reduce_retry_count);
+                        reduce_retry_count && processed_count <= 1);
                 }
                 break;
             }
@@ -1384,7 +1429,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    reduce_retry_count);
+                    reduce_retry_count && processed_count <= 1);
                 break;
             }
             case FileState::ErrorOnRead:
@@ -1444,6 +1489,14 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeProcessed();
                     }
+                    else if (file_metadata->wasProcessingResetWithoutFailure())
+                    {
+                        /// The file was just reset for retry (processing node removed),
+                        /// not actually marked as failed. This happens when reduce_retry_count
+                        /// is false (e.g. due to TOO_MANY_PARTS, or when batch halving is used
+                        /// to isolate a bad file).
+                        file_metadata->finalizeResetProcessing();
+                    }
                     else
                     {
                         file_metadata->finalizeFailed(exception_message);
@@ -1461,7 +1514,10 @@ void ObjectStorageQueueSource::finalizeCommit(
                             file_state, file_metadata->getPath());
                     }
 
-                    file_metadata->finalizeFailed(exception_message);
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_message);
                     break;
                 }
                 case FileState::ErrorOnRead:

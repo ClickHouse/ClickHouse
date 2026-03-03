@@ -21,14 +21,18 @@ extern const int ILLEGAL_COLUMN;
 
 /// arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']) = [('a', 'd'), ('b', 'e'), ('c', 'f')]
 /// arrayZipUnaligned(['a', 'b', 'c'], ['d', 'e']) = [('a', 'd'), ('b', 'e'), ('c', null)]
-template <bool allow_unaligned>
 class FunctionArrayZip : public IFunction
 {
 public:
-    static constexpr auto name = allow_unaligned ? "arrayZipUnaligned" : "arrayZip";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayZip>(); }
+    FunctionArrayZip(const char * name_, bool allow_unaligned_)
+        : function_name(name_), allow_unaligned(allow_unaligned_) {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool allow_unaligned)
+    {
+        return std::make_shared<FunctionArrayZip>(name, allow_unaligned);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -52,7 +56,7 @@ public:
                     arguments[index].type->getName());
 
             auto nested_type = array_type->getNestedType();
-            if constexpr (allow_unaligned)
+            if (allow_unaligned)
                 nested_type = makeNullable(nested_type);
             arguments_types.emplace_back(nested_type);
         }
@@ -99,7 +103,7 @@ public:
             }
         }
 
-        if constexpr (!allow_unaligned)
+        if (!allow_unaligned)
         {
             if (has_unaligned)
                 throw Exception(
@@ -115,6 +119,9 @@ public:
     }
 
 private:
+    const char * function_name;
+    bool allow_unaligned;
+
     ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count, bool has_unaligned) const
     {
         std::vector<const ColumnArray *> array_columns(holders.size());
@@ -180,7 +187,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayZip<false>>(documentation);
+    factory.registerFunction("arrayZip", [](ContextPtr){ return FunctionArrayZip::create("arrayZip", false); }, documentation);
 
     FunctionDocumentation::Description description_unaligned = "Combines multiple arrays into a single array, allowing for unaligned arrays (arrays of differing lengths). The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.";
     FunctionDocumentation::Syntax syntax_unaligned = "arrayZipUnaligned(arr1, arr2, ..., arrN)";
@@ -191,7 +198,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
-    factory.registerFunction<FunctionArrayZip<true>>(documentation_unaligned);
+    factory.registerFunction("arrayZipUnaligned", [](ContextPtr){ return FunctionArrayZip::create("arrayZipUnaligned", true); }, documentation_unaligned);
 }
 
 }

@@ -246,7 +246,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
-                    overcommit_eviction_evict_steps,
+                    overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
                     "overcommit");
@@ -266,6 +266,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             };
             break;
         }
+#else
+        case FileCachePolicy::LRU_OVERCOMMIT:
+        case FileCachePolicy::SLRU_OVERCOMMIT:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overcommit cache policies are not supported without distributed cache");
 #endif
     }
     if (use_split_cache)
@@ -1144,7 +1148,6 @@ bool FileCache::doTryReserve(
                     required_elements_num,
                     main_priority_iterator.get(),
                     /* is_total_space_cleanup */false,
-                    /* is_dynamic_resize */false,
                     origin_info,
                     lock);
             }
@@ -1156,7 +1159,6 @@ bool FileCache::doTryReserve(
             required_elements_num,
             main_priority_iterator.get(),
             /* is_total_space_cleanup */false,
-            /* is_dynamic_resize */false,
             origin_info,
             lock);
 
@@ -1441,7 +1443,6 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             elements_to_evict,
             /* reservee */nullptr,
             /* is_total_space_cleanup */true,
-            /* is_dynamic_resize */false,
             getInternalOrigin(),
             lock);
     }
@@ -2288,22 +2289,9 @@ bool FileCache::doDynamicResizeImpl(
     /// b. Release a cache lock.
     ///     1. Do actual eviction from filesystem.
 
-    size_t current_size = main_priority->getSize(state_lock);
-    size_t current_elements_count = main_priority->getElementsCount(state_lock);
-
-    size_t size_to_evict = current_size > desired_limits.max_size
-        ? current_size - desired_limits.max_size
-        : 0;
-    size_t elements_to_evict = current_elements_count > desired_limits.max_elements
-        ? current_elements_count - desired_limits.max_elements
-        : 0;
-
-    auto eviction_info = main_priority->collectEvictionInfo(
-        size_to_evict,
-        elements_to_evict,
-        /* reservee */nullptr,
-        /* is_total_space_cleanup */false,
-        /* is_dynamic_resize */true,
+    auto eviction_info = main_priority->collectEvictionInfoForResize(
+        desired_limits.max_size,
+        desired_limits.max_elements,
         getInternalOrigin(),
         state_lock);
 
@@ -2323,7 +2311,9 @@ bool FileCache::doDynamicResizeImpl(
 
         result_limits = desired_limits;
 
-        LOG_INFO(log, "Nothing needs to be evicted for new size limits");
+        LOG_INFO(
+            log, "Nothing needs to be evicted for new size limits ({})",
+            main_priority->getStateInfoForLog(state_lock));
         return true;
     }
 
@@ -2350,7 +2340,11 @@ bool FileCache::doDynamicResizeImpl(
     }
 
     /// Remove only queue entries of eviction candidates.
-    eviction_candidates.removeQueueEntries(cache_guard.writeLock());
+    /// Hold the write lock until after modifying size limits,
+    /// to prevent concurrent `tryIncreasePriority` from promoting entries
+    /// into the protected queue between removal and limit modification.
+    auto write_lock = cache_guard.writeLock();
+    eviction_candidates.removeQueueEntries(write_lock);
 
     /// Note that (in-memory) metadata about corresponding file segments
     /// (e.g. file segment info in CacheMetadata) will be removed
@@ -2369,6 +2363,7 @@ bool FileCache::doDynamicResizeImpl(
         state_lock);
 
     state_lock.unlock();
+    write_lock.unlock();
 
     /// Do actual eviction from filesystem.
     eviction_candidates.evict();

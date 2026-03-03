@@ -22,7 +22,7 @@ services:
           tsdb:
             out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_WRITER_PORT}
@@ -60,7 +60,7 @@ services:
           tsdb:
             out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_READER_PORT}
@@ -96,7 +96,7 @@ services:
         tsdb:
           out_of_order_time_window: 100y
       EOF
-      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver &> /var/log/prometheus/prometheus.log
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
       '
     expose:
       - ${PROMETHEUS_RECEIVER_PORT}

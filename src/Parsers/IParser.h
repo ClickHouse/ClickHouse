@@ -7,7 +7,6 @@
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -16,6 +15,8 @@
 
 namespace DB
 {
+
+struct LiteralTokenMap;
 
 namespace ErrorCodes
 {

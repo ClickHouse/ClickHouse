@@ -13,7 +13,9 @@ for i in {1..250}; do
     table_structure+=", c$i String"
 done
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0"
+# Redirect server logs to /dev/null to suppress sporadic `ConnectionGroup: Too many active sessions` warnings
+# that appear in stderr when many S3 connections are opened across parallel tests.
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parsing_to_custom_serialization 1 --parallel_replicas_for_cluster_engines 0 --server_logs_file=/dev/null"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_insert_mem;
@@ -30,9 +32,13 @@ $MY_CLICKHOUSE_CLIENT --query "
 
 filename="test_data_sparse_$CLICKHOUSE_DATABASE.json"
 
+# 10000 rows with 250 String columns. Each row sets only one column (c{number % 250}),
+# so each column has ~40 non-default values out of 10000 (99.6% defaults, above the 90% sparse threshold).
+# Without sparse serialization, each INSERT writes ~20MB (250 columns × 10000 rows × 8 bytes offset).
+# With sparse serialization, only non-default values are stored, bringing it well under the 10MB threshold.
 $MY_CLICKHOUSE_CLIENT --query "
     INSERT INTO FUNCTION file('$filename', LineAsString)
-    SELECT format('{{ \"id\": {}, \"c{}\": \"{}\" }}', number, number % 250, hex(number * 1000000)) FROM numbers(30000)
+    SELECT format('{{ \"id\": {}, \"c{}\": \"{}\" }}', number, number % 250, hex(number * 1000000)) FROM numbers(10000)
     SETTINGS engine_file_truncate_on_insert = 1;
 
     INSERT INTO FUNCTION s3(s3_conn, filename='$filename', format='LineAsString')
@@ -55,17 +61,25 @@ $MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FOR
 
 $MY_CLICKHOUSE_CLIENT --query "
     SELECT count() FROM t_insert_mem;
-    SELECT sum(sipHash64(*)) FROM t_insert_mem;
-    SELECT sum(sipHash64(*)) FROM t_reference;
+    SELECT (SELECT sum(sipHash64(*)) FROM t_insert_mem) = (SELECT sum(sipHash64(*)) FROM t_reference);
 
     SELECT serialization_kind, count() FROM system.parts_columns
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
+"
 
-    SYSTEM FLUSH LOGS query_log;
+# Wait for all INSERT query_log entries to appear.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $MY_CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    count=$($MY_CLICKHOUSE_CLIENT --query "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'")
+    [ "$count" -ge 4 ] && break
+    sleep 0.5
+done
 
+$MY_CLICKHOUSE_CLIENT --query "
     SELECT written_bytes <= 10000000 FROM system.query_log
-    WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds;
 
     DROP TABLE IF EXISTS t_insert_mem;

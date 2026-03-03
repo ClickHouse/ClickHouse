@@ -53,6 +53,8 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
     extern DataLakeStorageSettingsString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
+    extern DataLakeStorageSettingsString storage_aws_role_arn;
+    extern DataLakeStorageSettingsString storage_aws_role_session_name;
     extern DataLakeStorageSettingsString storage_catalog_url;
     extern DataLakeStorageSettingsString storage_warehouse;
     extern DataLakeStorageSettingsString storage_catalog_credential;
@@ -165,11 +167,11 @@ public:
 
     }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
     {
         if (ready_object_storage)
             return ready_object_storage;
-        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
@@ -180,10 +182,20 @@ public:
         return std::nullopt;
     }
 
+    bool supportsTotalRows(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalRows(context, storage_type);
+    }
+
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
         return current_metadata->totalRows(local_context);
+    }
+
+    bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
+    {
+        return DataLakeMetadata::supportsTotalBytes(context, storage_type);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
@@ -210,19 +222,27 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context);
+        return current_metadata->getTableStateSnapshot(context);
     }
 
-    /// This method should work even if metadata is not initialized
-    bool needsUpdateForSchemaConsistency() const override
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot & state, ContextPtr context) const override
     {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#endif
-        return false;
+        assertInitialized();
+        auto metadata = current_metadata->buildStorageMetadataFromState(state, context);
+        if (metadata)
+            LOG_TEST(log, "Built storage metadata from state with columns: {}",
+                metadata->getColumns().toString(/* include_comments */false));
+        return metadata;
+    }
+
+    bool shouldReloadSchemaForConsistency(ContextPtr context) const override
+    {
+        assertInitialized();
+        return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -318,6 +338,8 @@ public:
                 .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
                 .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
                 .region = (*settings)[DataLakeStorageSetting::storage_region].value,
+                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
+                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
             };
 
             return std::make_shared<DataLake::GlueCatalog>(

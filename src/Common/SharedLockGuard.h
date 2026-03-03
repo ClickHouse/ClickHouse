@@ -28,6 +28,13 @@ public:
     explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : shared_lock(mutex_) {}
     ~SharedLockGuard() TSA_RELEASE() = default;
 
+    SharedLockGuard(SharedLockGuard && shared_lock_guard_) noexcept
+        : shared_lock(std::move(shared_lock_guard_.shared_lock))
+        , locked(shared_lock_guard_.locked)
+    {
+        shared_lock_guard_.locked = false;
+    }
+
     void lock() TSA_ACQUIRE_SHARED()
     {
         if (locked)

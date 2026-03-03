@@ -151,6 +151,8 @@ void asyncCopy(
         fs::path dest(to_path);
         to_disk.createDirectories(dest);
 
+        /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
+        /// dest is an exception, but it's passed as value, not reference
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
             asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
     }
@@ -171,6 +173,7 @@ void IDisk::copyThroughBuffers(
     write_settings.s3_allow_parallel_part_upload = false;
     write_settings.azure_allow_parallel_part_upload = false;
 
+    /// This will capture by reference, which is fine since we got references ourselves and runner will be destroyed before returning
     asyncCopy(*this, from_path, *to_disk, to_path, runner, read_settings, write_settings, cancellation_hook);
 
     runner.waitForAllToFinishAndRethrowFirstError();

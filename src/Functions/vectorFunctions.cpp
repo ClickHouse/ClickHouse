@@ -2023,7 +2023,24 @@ If either the tuple or div contain non-integer elements then the result is calcu
     FunctionDocumentation documentation_tupleIntDivOrZeroByNumber = {description_tupleIntDivOrZeroByNumber, syntax_tupleIntDivOrZeroByNumber, arguments_tupleIntDivOrZeroByNumber, {}, returned_value_tupleIntDivOrZeroByNumber, examples_tupleIntDivOrZeroByNumber, introduced_in_tupleIntDivOrZeroByNumber, category_tupleIntDivOrZeroByNumber};
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>(documentation_tupleIntDivOrZeroByNumber);
 
-    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
+    FunctionDocumentation::Description description_dotProduct = R"(
+Calculates the [dot product](https://en.wikipedia.org/wiki/Dot_product) (scalar product) of two vectors (tuples or arrays of equal size).
+Returns the sum of the products of the corresponding elements.
+    )";
+    FunctionDocumentation::Syntax syntax_dotProduct = "dotProduct(vector1, vector2)";
+    FunctionDocumentation::Arguments arguments_dotProduct = {
+        {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
+        {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::Examples examples_dotProduct = {
+        {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dotProduct = {21, 11};
+    FunctionDocumentation::Category category_dotProduct = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_dotProduct = {description_dotProduct, syntax_dotProduct, arguments_dotProduct, {}, returned_value_dotProduct, examples_dotProduct, introduced_in_dotProduct, category_dotProduct};
+
+    factory.registerFunction<TupleOrArrayFunctionDotProduct>(documentation_dotProduct);
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::Case::Insensitive);
 
     /// L1Norm documentation
@@ -2424,6 +2441,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
 

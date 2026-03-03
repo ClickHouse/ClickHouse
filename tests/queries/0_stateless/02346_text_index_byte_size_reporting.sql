@@ -3,8 +3,6 @@ DROP TABLE IF EXISTS tab;
 -- Tests that text indexes report correct compressed and uncompressed byte sizes.
 -- Related issue: https://github.com/ClickHouse/ClickHouse/issues/87846
 
-SET enable_full_text_index = 1;
-
 CREATE TABLE tab
 (
     s String,

@@ -525,11 +525,15 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         for (const String & virtual_part_name : entry_virtual_parts)
         {
-            current_parts.add(virtual_part_name, nullptr);
+            bool added = current_parts.add(virtual_part_name, nullptr);
 
-            /// These parts are already covered by newer part, we don't have to
-            /// mutate it.
-            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
+            /// If the part was not added to current_parts (because a covering part already exists),
+            /// then it is obsolete and should also be removed from mutations' parts_to_do.
+            /// Otherwise, only remove parts covered by this new part.
+            /// This prevents phantom entries in parts_to_do when e.g. PartCheckThread re-enqueues
+            /// a GET_PART for an already-mutated part: addPartToMutations re-adds it, but the
+            /// subsequent removePartsCoveredBy does not remove the part itself, leaving the mutation stuck.
+            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ !added, /*remove_covered_parts = */ true);
         }
 
         if (auto drop_range_part_name = entry->getDropRange(format_version))

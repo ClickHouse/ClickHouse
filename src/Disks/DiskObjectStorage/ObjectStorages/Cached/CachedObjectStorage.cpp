@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
-            auto read_buffer_creator = [=, this]()
+            auto read_buffer_creator = [this, object, read_settings, read_hint]()
             {
                 return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
@@ -144,15 +144,12 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeCacheIfExists(object.remote_path);
-    object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
         removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjectsIfExist(objects);
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

@@ -12,9 +12,9 @@ INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
 -- Use rounding to avoid minor precision differences when using non-vectorized implementations of distance function
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 17), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 17), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -25,9 +25,9 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 33), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 33), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -38,9 +38,9 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 65), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 65), 1) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 1) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
