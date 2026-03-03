@@ -774,7 +774,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
     def prepare_logs(self, info, all=False):
-        res = [f"{temp_dir}}/test.txt.rsa"]
+        res = [f"{temp_dir}/test.txt.rsa"]
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
