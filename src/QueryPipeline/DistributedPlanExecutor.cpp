@@ -867,6 +867,9 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
 
 void TaskToHostMap::fillHostnames(ContextPtr context)
 {
+    if (context->getSettingsRef()[Setting::distributed_plan_execute_locally])
+        return;
+
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
 
@@ -901,6 +904,9 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
 
 void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
 {
+    if (hostnames.empty())
+        return;
+
     size_t current_host = 0;
     for (const auto & [stage_id, stage] : distributed_query_plan.stages)
     {
