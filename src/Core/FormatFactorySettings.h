@@ -1237,6 +1237,10 @@ Disabled by default.
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing zero bytes from FixedString values in text output formats.
 
+Does not change values stored in memory or functions like `length`.
+Example: with this setting enabled, `toFixedString('John', 8)` is printed as `John`,
+but `length(toFixedString('John', 8))` is still `8`.
+
 Disabled by default.
 )", 0) \
     \
