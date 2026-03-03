@@ -392,7 +392,10 @@ class CommitStatusCheck:
 
     @staticmethod
     def process_mergeable_check_status(
-        commit_status_data: Optional[GH.CommitStatus], sha: str
+        commit_status_data: Optional[GH.CommitStatus],
+        sha: str,
+        failing_checks=None,
+        pr_number=None,
     ):
         override = False
         if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
@@ -414,14 +417,162 @@ class CommitStatusCheck:
                 f"Mergeable check commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
             )
         if override:
-            GH.post_commit_status(
-                CheckStatuses.MERGEABLE_CHECK,
-                Result.Status.SUCCESS,
-                "Manually overridden",
-                "",
-                sha=sha,
-                repo="ClickHouse/ClickHouse",
+            if failing_checks:
+                CommitStatusCheck._override_with_fix_prs(
+                    failing_checks, pr_number, sha
+                )
+            else:
+                GH.post_commit_status(
+                    CheckStatuses.MERGEABLE_CHECK,
+                    Result.Status.SUCCESS,
+                    "Manually overridden",
+                    "",
+                    sha=sha,
+                    repo="ClickHouse/ClickHouse",
+                )
+
+    @staticmethod
+    def _parse_pr_reference(ref):
+        """Parse PR number from formats: 12345, #12345, or full GitHub URL."""
+        ref = ref.strip()
+        m = re.match(
+            r"https?://github\.com/ClickHouse/ClickHouse/pull/(\d+)", ref
+        )
+        if m:
+            return int(m.group(1))
+        if ref.startswith("#"):
+            ref = ref[1:]
+        try:
+            num = int(ref)
+            if 1 <= num <= 999999:
+                return num
+        except ValueError:
+            pass
+        return None
+
+    @staticmethod
+    def _validate_pr_exists(pr_num):
+        """Check that a PR exists in ClickHouse/ClickHouse. Returns dict or None."""
+        output = Shell.get_output(
+            f"gh pr view {pr_num} --repo ClickHouse/ClickHouse "
+            f"--json number,title,state,url"
+        )
+        if not output:
+            return None
+        try:
+            return json.loads(output)
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+    @staticmethod
+    def _override_with_fix_prs(failing_checks, pr_number, sha):
+        """
+        Require the user to provide fix PRs for all failing checks before
+        allowing the Mergeable Check override.
+        """
+        # Clear screen and set red background with bright white foreground
+        print("\033[2J\033[H\033[41;97m\033[2J\033[H", end="", flush=True)
+        try:
+            print("=" * 80)
+            print("FAILING CHECKS THAT REQUIRE INVESTIGATION:")
+            print("=" * 80)
+            for i, job_name in enumerate(failing_checks, 1):
+                print(f"  {i}. {job_name}")
+            print("=" * 80)
+
+            print(
+                "\nWARNING: Before overriding the Mergeable Check, you MUST investigate\n"
+                "each and every failing check listed above.\n"
+                "\n"
+                "Example — start investigation with Claude Code:\n"
+                f"  claude 'Investigate CI failures for PR #{pr_number}: "
+                f"{CreateIssue.get_job_report_url(pr_number, sha)}'\n"
             )
+
+            if not UserPrompt.confirm(
+                "Have you PERSONALLY investigated EACH AND EVERY failing check listed above?"
+            ):
+                print(
+                    "Override cancelled. Please investigate all failures before retrying."
+                )
+                sys.exit(0)
+
+            print(
+                "\nFor each failing check, provide a pull request with the fix.\n"
+                "Accepted formats: 12345, #12345, or "
+                "https://github.com/ClickHouse/ClickHouse/pull/12345"
+            )
+
+            fix_prs = {}  # job_name -> (pr_num, title, url)
+            for job_name in failing_checks:
+                while True:
+                    pr_input = UserPrompt.get_string(
+                        f"Fix PR for '{job_name}'"
+                    )
+                    parsed_num = CommitStatusCheck._parse_pr_reference(pr_input)
+                    if parsed_num is None:
+                        print(
+                            "ERROR: Invalid format. "
+                            "Use a number, #number, or full GitHub PR URL."
+                        )
+                        continue
+                    pr_info = CommitStatusCheck._validate_pr_exists(parsed_num)
+                    if pr_info is None:
+                        print(
+                            f"ERROR: PR #{parsed_num} not found in "
+                            f"ClickHouse/ClickHouse."
+                        )
+                        continue
+                    print(
+                        f"  -> PR #{parsed_num}: {pr_info['title']} "
+                        f"[{pr_info['state']}]"
+                    )
+                    fix_prs[job_name] = (
+                        parsed_num,
+                        pr_info["title"],
+                        pr_info["url"],
+                    )
+                    break
+
+            # Build the comment
+            comment_body = "**Mergeable Check Override**\n\n"
+            comment_body += (
+                "The following CI failures were investigated "
+                "and have associated fix PRs:\n\n"
+            )
+            comment_body += "| Failing Check | Fix PR |\n"
+            comment_body += "|:--|:--|\n"
+            for job_name, (num, title, url) in fix_prs.items():
+                comment_body += (
+                    f"| {job_name} | [#{num}: {title}]({url}) |\n"
+                )
+
+            print(f"\nComment to post on PR #{pr_number}:")
+            print("-" * 80)
+            print(comment_body)
+            print("-" * 80)
+
+            if not UserPrompt.confirm(
+                "Post this comment and override the Mergeable Check?"
+            ):
+                print("Override cancelled.")
+                sys.exit(0)
+        finally:
+            # Always reset terminal colors, even on Ctrl+C or errors
+            print("\033[0m\033[2J\033[H", end="", flush=True)
+
+        GH.post_pr_comment(
+            comment_body, pr=pr_number, repo="ClickHouse/ClickHouse"
+        )
+
+        GH.post_commit_status(
+            CheckStatuses.MERGEABLE_CHECK,
+            Result.Status.SUCCESS,
+            "Manually overridden",
+            "",
+            sha=sha,
+            repo="ClickHouse/ClickHouse",
+        )
 
     @classmethod
     def get_commit_statuses(cls, head_sha: str) -> dict:
@@ -801,8 +952,15 @@ def main():
             sys.exit(0)
 
     CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
+    all_failures = known_failures + unknown_failures
+    failing_job_names = list(
+        dict.fromkeys(job_name for job_name, _ in all_failures)
+    )
     CommitStatusCheck.process_mergeable_check_status(
-        mergeable_check_status, sha=head_sha
+        mergeable_check_status,
+        sha=head_sha,
+        failing_checks=failing_job_names,
+        pr_number=pr_number,
     )
 
     if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
