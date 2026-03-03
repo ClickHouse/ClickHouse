@@ -3571,6 +3571,45 @@ def test_write_column_order(started_cluster):
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
+def test_network_activity_with_system_tables(started_cluster):
+    instance = started_cluster.instances["node1"]
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_network_activity_with_system_tables")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+    )
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
+    """
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number as name, toString(number) as id from numbers(10)"
+    )
+
+    query_id = f"{table_name}_query"
+    instance.query(
+        f"SELECT * FROM system.tables WHERE name = '{table_name}'", query_id=query_id
+    )
+
+    instance.query("SYSTEM FLUSH LOGS text_log")
+
+    assert 0 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%Initialized scan state%'"
+        )
+    )
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526

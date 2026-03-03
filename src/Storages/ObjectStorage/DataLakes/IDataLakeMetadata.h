@@ -76,7 +76,9 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
+    static constexpr bool supportsTotalRows() { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
+    static constexpr bool supportsTotalBytes() { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
     /// Some data lakes specify information for reading files from disks.

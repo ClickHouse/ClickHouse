@@ -131,7 +131,9 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
+    virtual bool supportsTotalRows() const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual bool supportsTotalBytes() const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
