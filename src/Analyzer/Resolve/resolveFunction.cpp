@@ -33,10 +33,16 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
+
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
+
 
 namespace DB
 {
@@ -649,6 +655,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
         const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
 
+        auto exists_subquery_argument_node_type = exists_subquery_argument->getNodeType();
+        if (exists_subquery_argument_node_type != QueryTreeNodeType::QUERY
+            && exists_subquery_argument_node_type != QueryTreeNodeType::UNION)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function 'exists' expects a subquery argument. Actual: {}. In scope {}",
+                exists_subquery_argument->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
         auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
 
@@ -842,6 +858,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
             }
 
+            /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
+            /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
+            /// so it can be handled by the tuple/array → has() rewrite below.
+            if (in_second_argument->as<ColumnNode>())
+            {
+                auto tuple_function = std::make_shared<FunctionNode>("tuple");
+                tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
+                in_second_argument = std::move(tuple_function);
+                resolveFunction(in_second_argument, scope);
+            }
+
             /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
             if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
             {
@@ -1003,6 +1030,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Calculate function projection name
     ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
 
+    ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as
       * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
       * 2. Lambda function from sql user defined functions.
@@ -1017,8 +1045,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (!function_node.isWindowFunction())
     {
-        if (!lambda_expression_untyped)
-            lambda_expression_untyped = tryGetLambdaFromSQLUserDefinedFunctions(function_node.getFunctionName(), scope.context);
+        user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
+
+        if (!lambda_expression_untyped && user_defined_function)
+            /// Try to substitute user defined SQL expression
+            lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
@@ -1183,7 +1214,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
-    bool is_executable_udf = true;
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    bool can_have_parameters = (function != nullptr);
+
+    if (!function)
+    {
+        if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
+        {
+            UNUSED(create_function_query);
+            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name);
+        }
+    }
 
     ResolvedFunctionsCache * function_cache = nullptr;
 
@@ -1206,7 +1247,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function = FunctionFactory::instance().tryGet(function_name, scope.context);
 
-        is_executable_udf = false;
+        can_have_parameters = false;
     }
 
     if (function)
@@ -1263,8 +1304,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
-    if (!parameters.empty() && !is_executable_udf)
+    if (!parameters.empty() && !can_have_parameters)
     {
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
@@ -1311,6 +1351,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 lambda_arguments_size,
                                 argument_types[function_lambda_argument_index]->getName(),
                                 scope.scope_node->formatASTForErrorMessage());
+
+            /** Check that getLambdaArgumentTypes actually resolved the types for this lambda.
+              * If the argument types are still null, the function did not expect a lambda at this position.
+              * This can happen when a lambda is passed where a concrete value is expected,
+              * e.g. arrayFold(lambda, array, another_lambda_instead_of_initial_value).
+              */
+            for (size_t i = 0; i < function_data_type_arguments_size; ++i)
+            {
+                if (!function_data_type_argument_types[i])
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
+                        function_name,
+                        function_lambda_argument_index + 1,
+                        scope.scope_node->formatASTForErrorMessage());
+            }
 
             QueryTreeNodes lambda_arguments;
             lambda_arguments.reserve(lambda_arguments_size);

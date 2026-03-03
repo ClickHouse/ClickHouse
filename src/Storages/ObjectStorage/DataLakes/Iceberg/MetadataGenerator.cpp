@@ -106,12 +106,12 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const String & metadata_filename,
     Int64 parent_snapshot_id,
-    Int32 added_files,
-    Int32 added_records,
-    Int32 added_files_size,
-    Int32 num_partitions,
-    Int32 added_delete_files,
-    Int32 num_deleted_rows,
+    Int64 added_files,
+    Int64 added_records,
+    Int64 added_files_size,
+    Int64 num_partitions,
+    Int64 added_delete_files,
+    Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp)
 {
@@ -155,9 +155,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
     }
 
-    auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
+    auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
     {
-        Int32 prev_value = parent_snapshot ? std::stoi(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
+        Int64 prev_value = parent_snapshot ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
         summary->set(field_name, std::to_string(prev_value + snapshot_value));
     };
 
@@ -332,6 +332,53 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
             break;
         }
     }
+    current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
+    metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+}
+
+void MetadataGenerator::generateRenameColumnMetadata(const String & column_name, const String & new_column_name)
+{
+    auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
+
+    Poco::JSON::Object::Ptr current_schema;
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(i);
+            break;
+        }
+    }
+
+    if (!current_schema)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
+    current_schema = deepCopy(current_schema);
+
+    auto schema_fields = current_schema->getArray(Iceberg::f_fields);
+
+    for (UInt32 i = 0; i < schema_fields->size(); ++i)
+    {
+        if (schema_fields->getObject(i)->getValue<String>(Iceberg::f_name) == new_column_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", new_column_name);
+    }
+
+    bool found = false;
+    for (UInt32 i = 0; i < schema_fields->size(); ++i)
+    {
+        auto current_field = schema_fields->getObject(i);
+        if (current_field->getValue<String>(Iceberg::f_name) == column_name)
+        {
+            current_field->set(Iceberg::f_name, new_column_name);
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found column {}", column_name);
+
+    metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }

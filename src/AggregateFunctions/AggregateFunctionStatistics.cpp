@@ -536,7 +536,6 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
         },
-        {},
         documentation_varSampStable
     });
 
@@ -589,7 +588,6 @@ FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
         },
-        {},
         documentation_varPopStable
     });
 
@@ -637,7 +635,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    }, {}, documentation_stddevSampStable});
+    }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
@@ -683,7 +681,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    }, {}, documentation_stddevPopStable});
+    }, documentation_stddevPopStable});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
@@ -757,7 +755,6 @@ FROM
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
         },
-        {},
         covarSampStable_documentation
     });
 
@@ -808,7 +805,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
         },
-        {},
         covarPopStable_documentation
     });
 
@@ -867,7 +863,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
         },
-        AggregateFunctionProperties{},
         corrStable_documentation
     });
 }

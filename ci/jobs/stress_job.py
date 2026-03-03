@@ -35,7 +35,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             status = line[1]
             time = None
             if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # it's the time spent on the test
                 try:
                     time = float(line[2])
@@ -47,7 +47,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                 result.is_ok() or result.is_failure or result.is_error
             ), f"Unexpected status [{result.status}]"
             if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually
@@ -59,6 +59,8 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
 
 
 def get_additional_envs(info, check_name: str) -> List[str]:
+    from ci.jobs.ci_utils import is_extended_run
+
     result = []
     if not info.is_local_run:
         azure_connection_string = Shell.get_output(
@@ -76,6 +78,10 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+
+    result.append(
+        f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
+    )
 
     return result
 
@@ -220,9 +226,31 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             failed_results.append(test_result)
 
     if server_died:
-        server_err_log = server_log_path / "clickhouse-server.err.log"
-        stderr_log = result_path / "stderr.log"
-        if not (server_err_log.exists() and stderr_log.exists()):
+        # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
+        # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
+        # sc1/sc2: their dedicated server log + matching stderr log
+        replica_log_pairs = []
+
+        main_stderr = result_path / "stderr.log"
+        if server_log_path.exists():
+            main_server_logs = sorted(
+                p
+                for p in server_log_path.iterdir()
+                if p.is_file()
+                and ".err." in p.name
+                and "sc1" not in p.name
+                and "sc2" not in p.name
+            )
+            for log_file in main_server_logs:
+                replica_log_pairs.append(("main", log_file, main_stderr))
+
+        for sc in ("sc1", "sc2"):
+            sc_server_log = server_log_path / f"clickhouse-server-{sc}.err.log"
+            sc_stderr = result_path / f"stderr-{sc}.log"
+            if sc_server_log.exists():
+                replica_log_pairs.append((sc, sc_server_log, sc_stderr))
+
+        if not replica_log_pairs:
             failed_results.append(
                 Result.create_from(
                     name="Unknown error",
@@ -231,13 +259,36 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            log_parser = FuzzerLogParser(
-                server_log=server_err_log,
-                stderr_log=stderr_log if stderr_log.exists() else "",
-                fuzzer_log="",
-            )
-            try:
-                name, description, files = log_parser.parse_failure()
+            definitive_result = None
+            fallback_result = None
+
+            for replica_name, server_log_file, stderr_log in replica_log_pairs:
+                log_parser = FuzzerLogParser(
+                    server_log=server_log_file,
+                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
+                    fuzzer_log="",
+                )
+                try:
+                    name, description, files = log_parser.parse_failure()
+                    file_pair_info = f"Log files: {server_log_file.name}"
+                    if stderr_log.exists():
+                        file_pair_info += f", {stderr_log.name}"
+                    description = f"{file_pair_info}\n{description}"
+                    if name != FuzzerLogParser.UNKNOWN_ERROR:
+                        definitive_result = (name, description, files)
+                        break
+                    if fallback_result is None:
+                        fallback_result = (name, description, files)
+                except Exception as e:
+                    print(
+                        f"ERROR: Failed to parse failure logs for {replica_name} "
+                        f"({server_log_file.name}): {e}\n"
+                        f"Server logs should still be collected."
+                    )
+
+            result = definitive_result or fallback_result
+            if result:
+                name, description, files = result
                 failed_results.append(
                     Result.create_from(
                         name=name,
@@ -246,14 +297,11 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                         files=files,
                     )
                 )
-            except Exception as e:
-                print(
-                    f"ERROR: Failed to parse failure logs: {e}\nServer logs should still be collected."
-                )
+            else:
                 failed_results.append(
                     Result.create_from(
                         name="Parse failure error",
-                        info=f"Error parsing failure logs: {e}",
+                        info="All log parsing attempts failed",
                         status=Result.Status.FAILED,
                     )
                 )

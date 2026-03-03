@@ -177,8 +177,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
 
-    # 12 % 3 == 0, so it's Atomic database
-    if i == 12 and not upgrade_check and not encrypted_storage:
+    if i % 3 == 2 and not upgrade_check and not encrypted_storage:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
@@ -207,7 +206,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
 
-    if random.random() < 0.2:
+    if random.random() < 0.2 and not upgrade_check:
         client_options.append(
             f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
         )
@@ -266,7 +265,7 @@ def run_func_test(
         commands.append(full_command)
         check_command = (
             full_command
-            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+            + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
         try:
@@ -280,6 +279,8 @@ def run_func_test(
                 "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
+                "DATABASE_REPLICATION_FAILED",
+                "QUERY_WAS_CANCELLED",
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(
@@ -463,7 +464,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 break
             except Exception as ex:
                 logging.error(
-                    "Failed to SHOW or DROP databasese, will retry %s", str(ex)
+                    "Failed to SHOW or DROP databases, will retry %s", str(ex)
                 )
                 time.sleep(i)
         else:

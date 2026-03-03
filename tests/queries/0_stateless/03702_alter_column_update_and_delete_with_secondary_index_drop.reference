@@ -8,7 +8,7 @@ CREATE TABLE test_table
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY intDiv(id, 100)
-    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0, index_granularity=8192;
+    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0, index_granularity=8192, index_granularity_bytes=0;
 INSERT INTO test_table SELECT number, number FROM numbers(10);
 SYSTEM STOP MERGES test_table;
 SET alter_sync = 0, mutations_sync = 0;

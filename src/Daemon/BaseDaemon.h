@@ -48,8 +48,6 @@ public:
     /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
 
-    void reloadConfiguration();
-
     /// Process command line parameters
     void defineOptions(Poco::Util::OptionSet & new_options) override;
 
@@ -121,10 +119,9 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
-    /// The working directory at the time the daemon was started, before any chdir calls.
-    const std::string & getOriginalWorkingDirectory() const { return original_working_directory; }
-
 protected:
+    void loadConfiguration();
+
     virtual void logRevision() const;
 
     /// thread safe
@@ -163,11 +160,6 @@ protected:
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
-    Poco::Util::AbstractConfiguration * last_configuration = nullptr;
-
-    /// The working directory at the time the daemon was started, before any chdir calls.
-    /// Used to resolve relative config paths correctly.
-    std::string original_working_directory;
 
     String build_id;
     String stored_binary_hash;

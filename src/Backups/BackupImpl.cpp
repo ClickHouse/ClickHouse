@@ -1191,29 +1191,20 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
-bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
+void BackupImpl::removeAllFilesUnderDirectory(const String & directory) const
 {
-    try
-    {
-        LOG_INFO(log, "Removing all files of under directory {}", directory);
+    LOG_INFO(log, "Removing all files of under directory {}", directory);
 
-        Strings files_to_remove = listFiles(directory, true);
-        Strings objects_to_remove;
-        for (const String & file_name : files_to_remove)
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
-            objects_to_remove.push_back(file_object_key);
-        }
-
-        lightweight_snapshot_writer->removeFiles(objects_to_remove);
-        return true;
-    }
-    catch (...)
+    Strings files_to_remove = listFiles(directory, true);
+    Strings objects_to_remove;
+    for (const String & file_name : files_to_remove)
     {
-        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
-        return false;
+        std::lock_guard<std::mutex> lock(mutex);
+        String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
+        objects_to_remove.push_back(file_object_key);
     }
+
+    lightweight_snapshot_writer->removeFiles(objects_to_remove);
 }
 
 }

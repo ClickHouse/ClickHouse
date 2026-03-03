@@ -980,9 +980,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithDate32Data(arrow_column, column_name, type_hint, settings.date_time_overflow_behavior);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
-        // ClickHouse writes Date as arrow UINT16 and DateTime as arrow UINT32,
-        // so, read UINT16 as Date and UINT32 as DateTime to perform correct conversion
-        // between Date and DateTime further.
+        // ClickHouse writes DateTime as arrow UINT32,
+        // so, read UINT32 as DateTime to perform correct conversion further.
+        // UINT16 is also read as Date for backward compatibility with older Arrow files.
         case arrow::Type::UINT16:
         {
             auto column = readColumnWithNumericData<UInt16>(arrow_column, column_name);
@@ -1165,10 +1165,12 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             DataTypePtr array_type;
             /// If type hint is Nested, we should return Nested type,
             /// because we differentiate Nested and simple Array(Tuple)
-            if (type_hint && isNested(type_hint))
+            const auto * tuple_type = type_hint && isNested(type_hint)
+                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
+                : nullptr;
+            if (tuple_type)
             {
-                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
-                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+                array_type = createNested(tuple_type->getElements(), tuple_type->getElementNames());
             }
             else
             {

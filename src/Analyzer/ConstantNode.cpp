@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -14,7 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -191,15 +191,24 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType({});
-        return requiresCastCall(type, getResultType());
+        try
+        {
+            auto field_type = applyVisitor(FieldToDataType(), getValue());
+            return requiresCastCall(field_type, getResultType());
+        }
+        catch (...)
+        {
+            /// FieldToDataType may throw for complex cases like mixed-type arrays.
+            /// If we can't determine the natural type, a cast is needed.
+            return true;
+        }
     };
 
     if (source_expression != nullptr || requires_cast())
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
-        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
+        /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
         auto constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
@@ -208,7 +217,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     auto constant_value_ast = getCachedAST(from_field);
 
     if (isBool(constant_value_type))
-        constant_value_ast->custom_type = constant_value_type;
+        constant_value_ast->value = Field(constant_value_ast->value.safeGet<UInt64>() != 0);
 
     return constant_value_ast;
 }

@@ -215,7 +215,7 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const;
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
@@ -243,6 +243,8 @@ private:
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
 
+    /// Points to wrapped disk in case of cache disk.
+    DiskObjectStorageConstPtr wrapped_disk = nullptr;
     LoggerPtr log;
 
     ClusterConfigurationPtr cluster;

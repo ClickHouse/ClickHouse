@@ -117,20 +117,11 @@ function configure_limits()
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
 
-    # Set maximum memory usage as half of total memory (less chance of OOM).
-    #
-    # But not via max_server_memory_usage but via max_memory_usage_for_user,
-    # so that we can override this setting and execute service queries, like:
-    # - hung check
-    # - show/drop database
-    # - ...
-    #
-    # So max_memory_usage_for_user will be a soft limit, and
-    # max_server_memory_usage will be hard limit, and queries that should be
-    # executed regardless memory limits will use max_memory_usage_for_user=0,
-    # instead of relying on max_untracked_memory
+    # NOTE: the total server memory usage is capped to the memory usage of the
+    # whole cgroup, so, there is no need to take into account that we run
+    # multiple servers, so static 80% will be just fine.
 
-    max_server_memory_usage_to_ram_ratio=0.5
+    max_server_memory_usage_to_ram_ratio=0.8
     echo "Setting max_server_memory_usage_to_ram_ratio to ${max_server_memory_usage_to_ram_ratio}"
     cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
 <clickhouse>
@@ -166,7 +157,7 @@ EOL
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
+                <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
                     <readonly/>
                 </enable_analyzer>
@@ -265,8 +256,28 @@ function stop_server()
     fi
 }
 
+function wait_server_port_free()
+{
+    local port=$1
+    local timeout=${2:-120}
+    local elapsed=0
+    while ss -tlnp | grep -q ":${port}\b" && [ "$elapsed" -lt "$timeout" ]; do
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    if [ "$elapsed" -ge "$timeout" ]; then
+        echo "Warning: port $port is still in use after ${timeout}s"
+    fi
+}
+
 function start_server()
 {
+    # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
+    # especially under sanitizer builds. Wait for the server ports to become available.
+    wait_server_port_free 9000
+    wait_server_port_free 9009
+    wait_server_port_free 9181
+
     counter=0
     max_attempt=${1:-6}
     until clickhouse-client --query "SELECT 1"
@@ -326,7 +337,7 @@ function check_logs_for_critical_errors()
 
 function collect_query_and_trace_logs()
 {
-    for table in query_log trace_log metric_log
+    for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
         clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst

@@ -69,9 +69,12 @@ public:
         /// JOIN using expression
         if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
         {
-            auto & columns_from_subtrees = column_node->getExpression()->as<ListNode &>().getNodes();
-            visit(columns_from_subtrees[0]);
-            visit(columns_from_subtrees[1]);
+            if (auto * list_node = column_node->getExpression()->as<ListNode>())
+            {
+                auto & columns_from_subtrees = list_node->getNodes();
+                visit(columns_from_subtrees[0]);
+                visit(columns_from_subtrees[1]);
+            }
             return;
         }
 

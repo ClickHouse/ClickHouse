@@ -41,7 +41,9 @@ private:
 class FunctionBaseVariantAdaptor final : public IFunctionBase
 {
 public:
-    FunctionBaseVariantAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_);
+    FunctionBaseVariantAdaptor(
+        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+        ColumnsWithTypeAndName arguments_with_type_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 

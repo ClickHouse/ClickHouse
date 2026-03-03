@@ -204,11 +204,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
+ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
-    NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
     ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
-        /*projection_names=*/ primary_key_columns_names_set,
+        /*projection_names=*/ indexes_column_names,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
         context);
@@ -226,7 +225,7 @@ namespace DB
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
-    const Names & primary_key_column_names,
+    const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
@@ -258,7 +257,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     for (const auto & part_ranges : parts_with_ranges)
     {
-        chassert(part_ranges.ranges.size() == 1);
         chassert(part_ranges.exact_ranges.empty());
 
         const auto & part_name = part_ranges.data_part->name;
@@ -278,7 +276,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     std::optional<std::string> filter_query = std::nullopt;
     if (filter_actions_dag)
     {
-        auto filter_ast = getFilterAST(*filter_actions_dag, primary_key_column_names, execution_context, &external_tables);
+        auto filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
         if (filter_ast)
             filter_query = filter_ast->formatWithSecretsOneLine();
     }
@@ -302,7 +300,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
         if (i == local_replica_index)
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, &logger, &replica_parts, &replicas_marks, &local_index_analysis_callback, &replicas_rows, &res]()
             {
                 LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
@@ -312,7 +311,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         }
         else
         {
-            runner.enqueueAndKeepTrack([&, i, replica_address, connection_pool]()
+            /// Passing references here is fine. All of them will outlive the runner
+            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]()
             {
                 try
                 {

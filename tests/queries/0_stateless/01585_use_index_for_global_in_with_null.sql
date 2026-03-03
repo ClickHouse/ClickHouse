@@ -19,20 +19,23 @@ select * from xp_d where i global in [0, 1];
 
 set max_rows_to_read = 4; -- 2 in the subquery, 2 in the query itself
 select * from xp where i in (select * from numbers(2));
-select * from xp where i global in (select * from numbers(2));
+
+-- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
+select * from xp where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
+
 select * from xp_d where i in (select * from numbers(2));
 
 set max_rows_to_read = 6; -- 2 subquery, 2 from global temp table (GLOBAL IN), 2 from local xp table
-select * from xp_d where i global in (select * from numbers(2));
+select * from xp_d where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
 
 set transform_null_in = 1;
 set max_rows_to_read = 4; -- 2 in the subquery, 2 in the query itself
 select * from xp where i in (select * from numbers(2));
-select * from xp where i global in (select * from numbers(2));
+select * from xp where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
 select * from xp_d where i in (select * from numbers(2));
 
 set max_rows_to_read = 6; -- 2 subquery, 2 from global temp table (GLOBAL IN), 2 from local xp table
-select * from xp_d where i global in (select * from numbers(2));
+select * from xp_d where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
 
 set max_rows_to_read = 0; -- No rows should be read
 select * from xp where i in (null);

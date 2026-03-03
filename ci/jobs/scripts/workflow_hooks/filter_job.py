@@ -45,7 +45,17 @@ INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
+    "Build (amd_tsan)",
+    "Build (amd_msan)",
+    "Build (amd_ubsan)",
+    "Build (amd_debug)",
+    "Build (amd_binary)",
     "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (amd_tsan, flaky check)",
+    "Stateless tests (amd_msan, flaky check)",
+    "Stateless tests (amd_ubsan, flaky check)",
+    "Stateless tests (amd_debug, flaky check)",
+    "Stateless tests (amd_binary, flaky check)",
 ]
 
 
@@ -83,6 +93,20 @@ def should_skip_job(job_name):
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
+
+    if (
+        job_name == JobNames.SMOKE_TEST_MACOS
+        and _info_cache.pr_number
+        and Labels.CI_MACOS not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
+
+    if (
+        JobNames.BUILD_TOOLCHAIN in job_name
+        and _info_cache.pr_number
+        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
@@ -138,7 +162,19 @@ def should_skip_job(job_name):
         )
 
     if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
-        return True, "Skipped, not a bug-fix PR"
+        # Don't skip if the corresponding test job file was changed
+        skip = True
+        if job_name == JobNames.BUGFIX_VALIDATE_FT and any(
+            f.endswith("jobs/functional_tests.py") for f in changed_files
+        ):
+            skip = False
+        elif job_name == JobNames.BUGFIX_VALIDATE_IT and any(
+            f.endswith("jobs/integration_test_job.py") for f in changed_files
+        ):
+            skip = False
+
+        if skip:
+            return True, "Skipped, not a bug-fix PR"
 
     if "flaky" in job_name.lower():
         changed_files = _info_cache.get_changed_files()
@@ -173,10 +209,8 @@ def should_skip_job(job_name):
         and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
         and "arm" in job_name
+        and _info_cache.pr_number  # run all performance jobs on master
     ):
-        if "release_base" in job_name and not _info_cache.pr_number:
-            # comparison with the latest release merge base - do not skip on master
-            return False, ""
         return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only the functional tests script changed, run only the first batch of stateless tests

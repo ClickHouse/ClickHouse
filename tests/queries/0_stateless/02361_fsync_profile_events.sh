@@ -43,7 +43,7 @@ for i in {1..100}; do
             ProfileEvents['DirectorySyncElapsedMicroseconds']>0
         from system.query_log
         where
-            event_date >= yesterday() and
+            event_date >= yesterday() AND event_time >= now() - 600 and
             current_database = currentDatabase() and
             query_id = {query_id:String} and
             type = 'QueryFinish';

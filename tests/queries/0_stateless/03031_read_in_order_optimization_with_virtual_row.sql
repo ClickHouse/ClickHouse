@@ -52,7 +52,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'preliminary merge, no filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -76,7 +76,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'preliminary merge with filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -99,7 +99,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'no preliminary merge, no filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
@@ -123,7 +123,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 AND log_comment = 'no preliminary merge, with filter'
 AND type = 'QueryFinish'
 ORDER BY query_start_time DESC
