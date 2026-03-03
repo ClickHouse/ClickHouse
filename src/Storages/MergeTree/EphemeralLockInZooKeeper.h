@@ -22,9 +22,6 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
         const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
         const std::optional<String> & znode_data);
 
-    /// Parse the sequential number suffix from a ZooKeeper path.
-    static UInt64 parseNumber(const String & path, size_t prefix_size);
-
 protected:
     EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_ = "");
 

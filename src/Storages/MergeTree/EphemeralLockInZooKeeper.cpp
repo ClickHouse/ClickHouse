@@ -19,18 +19,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Parse the sequential number suffix from a ZooKeeper path.
+UInt64 parseSequentialNodeNumber(const String & path, size_t prefix_size)
+{
+    if (path.size() <= prefix_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path of the sequential node is shorter than the provided prefix size: path={}, prefix_size={}", path, prefix_size);
+    return parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
+}
+
+}
+
 EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_)
     : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_), number(number_)
 {
     if (conflict_path.empty() && path.size() <= path_prefix.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
-}
-
-UInt64 EphemeralLockInZooKeeper::parseNumber(const String & path, size_t prefix_size)
-{
-    if (path.size() <= prefix_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path of the sequential node is shorter than the provided prefix size: path={}, prefix_size={}", path, prefix_size);
-    return parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
 }
 
 EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
@@ -86,7 +92,7 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
         path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
     }
 
-    const UInt64 number = EphemeralLockInZooKeeper::parseNumber(path, path_prefix_.size());
+    const UInt64 number = parseSequentialNodeNumber(path, path_prefix_.size());
     CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path, number};
 }
@@ -189,7 +195,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             size_t prefix_size = block_numbers_path.size() + 1 + partitions[i].size() + 1 + path_prefix.size();
             const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
 
-            const UInt64 number = EphemeralLockInZooKeeper::parseNumber(path, prefix_size);
+            const UInt64 number = parseSequentialNodeNumber(path, prefix_size);
             CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
             locks.push_back(LockInfo{path, partitions[i], number});
         }
