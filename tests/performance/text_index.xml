@@ -43,6 +43,8 @@
   <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, [])</query>
   <query>SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, [])</query>
 
+  <query>SELECT token, cardinality FROM mergeTreeTextIndex(currentDatabase(), hits_10m_single, idx_sp) FORMAT Null</query>
+
   <query>SELECT count() FROM hits_10m_single WHERE SearchPhrase LIKE '%video%'</query>
   <query>SELECT count() FROM hits_10m_single WHERE SearchPhrase LIKE '%yandex%'</query>
   <query>SELECT count() FROM hits_10m_single WHERE SearchPhrase LIKE '%google%'</query>
