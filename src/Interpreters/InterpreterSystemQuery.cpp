@@ -147,6 +147,12 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char restart_replica_fail_after_detach[];
 }
 
 namespace ActionLocks
@@ -1244,6 +1250,12 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         {
             try
             {
+                fiu_do_on(FailPoints::restart_replica_fail_after_detach,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure by failpoint restart_replica_fail_after_detach");
+                });
+
                 new_table = StorageFactory::instance().get(create,
                     data_path,
                     system_context,

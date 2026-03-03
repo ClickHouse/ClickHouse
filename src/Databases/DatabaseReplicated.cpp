@@ -122,6 +122,7 @@ namespace FailPoints
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
+    extern const char database_replicated_force_metadata_digest_check[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1221,8 +1222,10 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
 void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Reduce number of debug checks
-    if (thread_local_rng() % 16)
+    /// Reduce number of debug checks, unless a failpoint forces the check.
+    bool force_check = false;
+    fiu_do_on(FailPoints::database_replicated_force_metadata_digest_check, { force_check = true; });
+    if (!force_check && thread_local_rng() % 16)
         return;
 
     if (!checkDigestValid(local_context))
