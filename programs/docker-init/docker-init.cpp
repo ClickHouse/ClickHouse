@@ -13,11 +13,11 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,7 +25,6 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
-#include <signal.h> // NOLINT(modernize-deprecated-headers)
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -87,24 +86,24 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
     pid_t pid = fork();
     if (pid < 0)
     {
-        close(pipefd[0]);
-        close(pipefd[1]);
+        (void)close(pipefd[0]);
+        (void)close(pipefd[1]);
         return {-1, {}};
     }
 
     if (pid == 0)
     {
-        close(pipefd[0]);
+        (void)close(pipefd[0]);
         if (dup2(pipefd[1], STDOUT_FILENO) < 0)
             _exit(127);
-        close(pipefd[1]);
+        (void)close(pipefd[1]);
 
         /// Suppress stderr to avoid noise from --try extractions.
         int devnull = open("/dev/null", O_WRONLY);
         if (devnull >= 0)
         {
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
+            (void)dup2(devnull, STDERR_FILENO);
+            (void)close(devnull);
         }
 
         auto argv = buildArgv(args);
@@ -112,27 +111,34 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
         _exit(127);
     }
 
-    close(pipefd[1]);
+    (void)close(pipefd[1]);
 
     std::string output;
     char buf[4096];
     ssize_t n;
     while ((n = read(pipefd[0], buf, sizeof(buf))) > 0)
         output.append(buf, static_cast<size_t>(n));
-    close(pipefd[0]);
+    (void)close(pipefd[0]);
 
     int status = 0;
     waitpid(pid, &status, 0);
 
+    /// Split output into non-empty lines.
     std::vector<std::string> lines;
-    std::istringstream ss(output);
-    std::string line;
-    while (std::getline(ss, line))
     {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
-        if (!line.empty())
-            lines.push_back(std::move(line));
+        size_t pos = 0;
+        while (pos < output.size())
+        {
+            size_t found = output.find('\n', pos);
+            if (found == std::string::npos)
+                found = output.size();
+            std::string line = output.substr(pos, found - pos);
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (!line.empty())
+                lines.push_back(std::move(line));
+            pos = found + 1;
+        }
     }
 
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, std::move(lines)};
@@ -149,15 +155,15 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
     pid_t lhs_pid = fork();
     if (lhs_pid < 0)
     {
-        close(pipefd[0]);
-        close(pipefd[1]);
+        (void)close(pipefd[0]);
+        (void)close(pipefd[1]);
         return -1;
     }
     if (lhs_pid == 0)
     {
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
+        (void)close(pipefd[0]);
+        (void)dup2(pipefd[1], STDOUT_FILENO);
+        (void)close(pipefd[1]);
         auto argv = buildArgv(lhs);
         execvp(argv[0], argv.data());
         _exit(127);
@@ -166,26 +172,27 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
     pid_t rhs_pid = fork();
     if (rhs_pid < 0)
     {
-        close(pipefd[0]);
-        close(pipefd[1]);
+        (void)close(pipefd[0]);
+        (void)close(pipefd[1]);
         kill(lhs_pid, SIGTERM);
         waitpid(lhs_pid, nullptr, 0);
         return -1;
     }
     if (rhs_pid == 0)
     {
-        close(pipefd[1]);
-        dup2(pipefd[0], STDIN_FILENO);
-        close(pipefd[0]);
+        (void)close(pipefd[1]);
+        (void)dup2(pipefd[0], STDIN_FILENO);
+        (void)close(pipefd[0]);
         auto argv = buildArgv(rhs);
         execvp(argv[0], argv.data());
         _exit(127);
     }
 
-    close(pipefd[0]);
-    close(pipefd[1]);
+    (void)close(pipefd[0]);
+    (void)close(pipefd[1]);
 
-    int lhs_status = 0, rhs_status = 0;
+    int lhs_status = 0;
+    int rhs_status = 0;
     waitpid(lhs_pid, &lhs_status, 0);
     waitpid(rhs_pid, &rhs_status, 0);
 
@@ -240,7 +247,7 @@ std::vector<std::string> extractConfigValues(const std::string & config_file, co
 void recursiveChown(const std::string & path_str, uid_t uid, gid_t gid)
 {
     if (lchown(path_str.c_str(), uid, gid) < 0)
-        std::cerr << "docker-init: warning: lchown " << path_str << ": " << strerror(errno) << "\n";
+        std::cerr << "docker-init: warning: lchown " << path_str << ": " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
 
     std::error_code ec;
     if (!fs::is_directory(path_str, ec))
@@ -249,7 +256,7 @@ void recursiveChown(const std::string & path_str, uid_t uid, gid_t gid)
     for (const auto & entry : fs::recursive_directory_iterator(path_str, fs::directory_options::skip_permission_denied, ec))
     {
         if (lchown(entry.path().c_str(), uid, gid) < 0)
-            std::cerr << "docker-init: warning: lchown " << entry.path() << ": " << strerror(errno) << "\n";
+            std::cerr << "docker-init: warning: lchown " << entry.path() << ": " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
     }
 }
 
@@ -430,7 +437,7 @@ void manageClickHouseUser(
 }
 
 /// Start a temporary ClickHouse server, run init scripts, then stop it.
-void initClickHouseDb(
+void initClickHouseDB(
     const std::string & config_file,
     const std::string & data_dir,
     const std::string & clickhouse_user,
@@ -452,17 +459,9 @@ void initClickHouseDb(
     std::string clickhouse_db = getEnv("CLICKHOUSE_DB");
 
     /// Check whether /docker-entrypoint-initdb.d has any files.
-    bool has_init_files = false;
     std::error_code ec;
-    if (fs::is_directory("/docker-entrypoint-initdb.d", ec))
-    {
-        for (const auto & entry : fs::directory_iterator("/docker-entrypoint-initdb.d", ec))
-        {
-            (void)entry;
-            has_init_files = true;
-            break;
-        }
-    }
+    bool has_init_files = fs::is_directory("/docker-entrypoint-initdb.d", ec)
+        && fs::directory_iterator("/docker-entrypoint-initdb.d", ec) != fs::directory_iterator{};
 
     if (!has_init_files && clickhouse_db.empty())
         return;
@@ -546,7 +545,7 @@ void initClickHouseDb(
         else
         {
             --tries;
-            sleep(1); // Wait between health-check retries — not a race condition fix.
+            sleep(1); // NOLINT(concurrency-mt-unsafe) -- Wait between health-check retries — not a race condition fix.
         }
     }
 
@@ -787,7 +786,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
         auto exec_argv = buildArgv(exec_args);
         execvp(exec_argv[0], exec_argv.data());
-        std::cerr << "docker-init: failed to exec clickhouse keeper: " << strerror(errno) << "\n";
+        std::cerr << "docker-init: failed to exec clickhouse keeper: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
         return 1;
     }
 
@@ -840,7 +839,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
             std::getline(pf, clickhouse_password);
         else
             std::cerr << "docker-init: warning: cannot read CLICKHOUSE_PASSWORD_FILE '"
-                      << password_file << "': " << strerror(errno) << "\n";
+                      << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
     }
 
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
@@ -849,7 +848,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     manageClickHouseUser(config_file, clickhouse_user, clickhouse_password, access_management, skip_user_setup);
 
     bool always_run_initdb = !getEnv("CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS").empty();
-    initClickHouseDb(config_file, data_dir, clickhouse_user, clickhouse_password,
+    initClickHouseDB(config_file, data_dir, clickhouse_user, clickhouse_password,
                      run_uid, run_gid, extra_args, always_run_initdb);
 
     /// Set watchdog env — default to disabled so Ctrl+C works in Docker.
@@ -866,6 +865,6 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
     auto exec_argv = buildArgv(exec_args);
     execvp(exec_argv[0], exec_argv.data());
-    std::cerr << "docker-init: failed to exec clickhouse server: " << strerror(errno) << "\n";
+    std::cerr << "docker-init: failed to exec clickhouse server: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
     return 1;
 }
