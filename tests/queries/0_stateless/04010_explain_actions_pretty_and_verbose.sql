@@ -1,4 +1,4 @@
-
+SET enable_analyzer=1;
 
 EXPLAIN actions = 1, verbose = 0
 SELECT number % 10 AS key, sum(number * 2) AS total
