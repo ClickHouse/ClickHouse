@@ -40,7 +40,6 @@
 
 #include <Common/config_version.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/StdHelpers.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -70,6 +69,17 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Helper for std::visit with multiple lambda overloads
+    /// Usage:
+    ///   std::variant<int, std::string> v = 42;
+    ///   auto result = std::visit(overloaded {
+    ///       [](int i) { return std::to_string(i); },
+    ///       [](const std::string& s) { return s; },
+    ///       [](const auto& other) { return "unknown"; }
+    ///   }, v);
+    template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; }; // NOLINT
+    template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
     const std::string AUTHORIZATION_HEADER = "authorization";
     const std::string AUTHORIZATION_MIDDLEWARE_NAME = "authorization_middleware";
 
@@ -1146,6 +1156,21 @@ static ColumnsWithTypeAndName getHeader(const ColumnsWithTypeAndName & columns)
     return res;
 }
 
+static std::shared_ptr<arrow::Table> getEmptyArrowTable(std::shared_ptr<arrow::Schema> schema)
+{
+    size_t columns_num = schema->num_fields();
+    std::vector<std::shared_ptr<arrow::ChunkedArray>> empty_columns;
+    empty_columns.reserve(columns_num);
+    
+    for (size_t i = 0; i < columns_num; ++i) {
+        auto empty_chunked = std::make_shared<arrow::ChunkedArray>(
+            arrow::ArrayVector{}, schema->field(static_cast<int>(i))->type());
+        empty_columns.push_back(empty_chunked);
+    }
+    
+    return arrow::Table::Make(schema, empty_columns);
+}
+
 static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std::shared_ptr<arrow::Table>>>> executeSQLtoTables_impl(
     const std::shared_ptr<Session> & session,
     const std::string & sql,
@@ -1195,7 +1220,10 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
                 }
             }
         }
-        if (single_table)
+
+        if (!header)
+            tables.emplace_back(getEmptyArrowTable(schema));
+        else if (single_table)
             tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
 
         block_io.onFinish();
@@ -1231,17 +1259,41 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     return std::tuple{std::get<0>(res.ValueUnsafe()), std::get<1>(res.ValueUnsafe()).front()};
 }
 
-using CommandSelectorTuple = std::tuple<std::string, std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)>, std::function<void(Block &)>>;
+struct SQLSet
+{
+    std::string sql;
+    std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+    std::function<void(Block &)> block_modifier;
+};
+
+struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>
+{
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    CommandSelectorResult(const SQLSet & sql_set) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(sql_set) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    CommandSelectorResult(const arrow::Result<std::shared_ptr<arrow::Table>> & table) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(table) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    CommandSelectorResult(const arrow::Status & status) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(status) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    CommandSelectorResult(std::shared_ptr<arrow::Table> table) : std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>(table) {}
+
+    SQLSet * getSQLSet()
+    {
+        return std::get_if<SQLSet>(this);
+    }
+
+    arrow::Result<std::shared_ptr<arrow::Table>> * getTable()
+    {
+        return std::get_if<arrow::Result<std::shared_ptr<arrow::Table>>>(this);
+    }
+};
+
 
 /// commandSelector accepts arrow flight sql command in protobuf any-message and produces either resulting arrow::Table
 /// (and if schema_only == true then table can be empty - only schema is requested) or set of sql query - which will be executed,
 /// and, if resulting table requires modification, possible schema_modifier and block_modifier - they should consistently
 /// manipulate schema and blocks to produce compatible results.
-std::variant<
-    CommandSelectorTuple,
-    arrow::Result<std::shared_ptr<arrow::Table>>
->
-commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
+CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
 {
     std::string sql;
     std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
@@ -1405,7 +1457,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
 
         std::vector<std::string> where;
         if (command.has_db_schema_filter_pattern())
-            where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+            where.push_back("database LIKE " + quoteString(command.db_schema_filter_pattern()));
 
         auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
@@ -1425,8 +1477,8 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
         any_msg.UnpackTo(&command);
 
         std::vector<std::string> where;
-        where.push_back("database = '" + (command.has_db_schema() ? command.db_schema() : "default") + "'");
-        where.push_back("name = '" + command.table() + "'");
+        where.push_back("database = " + quoteString(command.has_db_schema() ? command.db_schema() : "default"));
+        where.push_back("name = " + quoteString(command.table()));
         auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         sql =
@@ -1447,9 +1499,9 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
 
         std::vector<std::string> where;
         if (command.has_db_schema_filter_pattern())
-            where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+            where.push_back("database LIKE " + quoteString(command.db_schema_filter_pattern()));
         if (command.has_table_name_filter_pattern())
-            where.push_back("table LIKE '" + command.table_name_filter_pattern() + "'");
+            where.push_back("table LIKE " + quoteString(command.table_name_filter_pattern()));
         auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         if (command.include_schema())
@@ -1524,7 +1576,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
         sql = command.query();
     }
 
-    return CommandSelectorTuple{sql, schema_modifier, block_modifier};
+    return SQLSet{sql, schema_modifier, block_modifier};
 }
 
 arrow::Status ArrowFlightHandler::GetFlightInfo(
@@ -1562,9 +1614,13 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             )
             {
                 auto res = commandSelector(any_msg);
-                if (const auto * command_selector_tuple = std::get_if<0>(&res))
-                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
-                else if (const auto * result_table = std::get_if<1>(&res))
+                if (const auto * sql_set = res.getSQLSet())
+                {
+                    sql = sql_set->sql;
+                    schema_modifier = sql_set->schema_modifier;
+                    block_modifier = sql_set->block_modifier;
+                }
+                else if (const auto * result_table = res.getTable())
                 {
                     ARROW_RETURN_NOT_OK(*result_table);
                     table = result_table->ValueUnsafe();
@@ -1679,9 +1735,13 @@ arrow::Status ArrowFlightHandler::GetSchema(
             )
             {
                 auto res = commandSelector(any_msg, true);
-                if (const auto * command_selector_tuple = std::get_if<0>(&res))
-                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
-                else if (const auto * result_table = std::get_if<1>(&res))
+                if (const auto * sql_set = res.getSQLSet())
+                {
+                    sql = sql_set->sql;
+                    schema_modifier = sql_set->schema_modifier;
+                    block_modifier = sql_set->block_modifier;
+                }
+                else if (const auto * result_table = res.getTable())
                 {
                     ARROW_RETURN_NOT_OK(*result_table);
                     schema = result_table->ValueUnsafe()->schema();
@@ -1776,9 +1836,13 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             )
             {
                 auto res = commandSelector(any_msg);
-                if (const auto * command_selector_tuple = std::get_if<0>(&res))
-                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
-                else if (const auto * result_table = std::get_if<1>(&res))
+                if (const auto * sql_set = res.getSQLSet())
+                {
+                    sql = sql_set->sql;
+                    schema_modifier = sql_set->schema_modifier;
+                    block_modifier = sql_set->block_modifier;
+                }
+                else if (const auto * result_table = res.getTable())
                 {
                     ARROW_RETURN_NOT_OK(*result_table);
                     table = result_table->ValueUnsafe();
@@ -2079,7 +2143,15 @@ arrow::Status ArrowFlightHandler::DoPut(
                 if (command.temporary())
                     return arrow::Status::NotImplemented("Implicit temporary tables are not supported.");
 
-                sql = "INSERT INTO " + (command.has_schema() ? command.schema() + "." : "") + command.table() + " FORMAT Arrow";
+                std::string schema_string;
+                if (command.has_schema())
+                {
+                    if (!isValidIdentifier(command.schema()))
+                        return arrow::Status::Invalid("Invalid schema name: ", command.schema());
+                    schema_string = backQuoteIfNeed(command.schema()) + ".";
+                }
+
+                sql = "INSERT INTO " + schema_string + backQuoteIfNeed(command.table()) + " FORMAT Arrow";
             }
         }
 
@@ -2204,15 +2276,32 @@ arrow::Status ArrowFlightHandler::DoAction(
 
             auto visitor = overloaded {
                 [](const std::monostate &) { return std::string(); },
-                [](const std::string & str) { return fmt::format("='{}'", str); },
+                [](const std::string & str) { return fmt::format("={}", quoteString(str)); },
                 [](bool b) { return fmt::format("={}", b ? "true" : "false"); },
-                [](const std::vector<std::string> & strings) { return strings.empty() ? "=[]" : "=['" + boost::join(strings, "','")  + "']"; },
+                [](const std::vector<std::string> & strings) {
+                    std::string res = "=[";
+                    for (size_t i = 0; i < strings.size(); ++i)
+                    {
+                        if (i > 0) res += ",";
+                        res += quoteString(strings[i]);
+                    }
+                    res += "]";
+                    return res;
+                },
                 [](const auto & v) { return fmt::format("={}", v); }
             };
 
             for (const auto & [setting, value] : request.session_options)
             {
-                auto set_query = "SET " + setting + std::visit(visitor, value);
+                if (!isValidIdentifier(setting))
+                {
+                    result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{
+                        arrow::flight::SetSessionOptionErrorValue::kInvalidName
+                    };
+                    continue;
+                }
+
+                auto set_query = "SET " + backQuoteIfNeed(setting) + std::visit(visitor, value);
                 std::optional<BlockIO> block_io;
                 try
                 {

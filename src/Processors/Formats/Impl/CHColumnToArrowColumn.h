@@ -56,7 +56,7 @@ public:
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
-        std::optional<std::reference_wrapper<std::unordered_map<std::string, MutableColumnPtr>>> cached_dictionary_values = {});
+        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
 
     /// Makes a copy of this converter.
     /// This can be useful to prepare for conversion in multiple threads.
