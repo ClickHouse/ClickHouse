@@ -1073,6 +1073,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
+            {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });
