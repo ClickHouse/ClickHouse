@@ -9,6 +9,8 @@
 -- loop hits the final mark (0 rows), makes no progress, and increments past the
 -- end -> "Trying to get non existing mark N, while size is N".
 
+SET enable_full_text_index = 1;
+
 DROP TABLE IF EXISTS t_text_index_skip_bug;
 
 CREATE TABLE t_text_index_skip_bug
