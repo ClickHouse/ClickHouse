@@ -261,7 +261,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     {
         std::optional<String> captured_storage_id;
         std::optional<String> captured_query_id;
-        bool captured_was_deleting = item_->is_currently_deleting;
 
         Stopwatch destruction_watch;
 
@@ -288,12 +287,11 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             if (elapsed_ms > THRESHOLD_MILLISECONDS)
             {
                 LOG_WARNING(log,
-                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}, deleting={}",
+                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}",
                     elapsed_ms,
                     name,
                     captured_storage_id.value_or("unknown"),
-                    captured_query_id.value_or("unknown"),
-                    captured_was_deleting);
+                    captured_query_id.value_or("unknown"));
             }
         });
 
