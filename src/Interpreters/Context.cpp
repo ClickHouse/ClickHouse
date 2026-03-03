@@ -50,7 +50,6 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
