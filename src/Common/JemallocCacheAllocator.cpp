@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <cstring>
 
-static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+static constexpr size_t MALLOC_MIN_ALIGNMENT = alignof(std::max_align_t);
 
 namespace DB
 {
