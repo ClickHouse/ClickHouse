@@ -158,30 +158,8 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         }
         else if (!search_query->patterns.empty())
         {
-            /// For pattern queries (LIKE), use pattern_tokens
-            /// Estimate cardinality as sum of all matched token cardinalities
-            size_t total_cardinality = 0;
-            for (const auto & [token, token_info] : pattern_tokens)
-            {
-                total_cardinality += token_info.cardinality;
-            }
-
-            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
-            const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
-
-            if (static_cast<double>(total_cardinality) <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
-            {
-                /// Add all pattern-matched tokens to useful_tokens
-                for (const auto & [token, _] : pattern_tokens)
-                    useful_tokens.insert(token);
-                ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
-            }
-            else
-            {
-                is_always_true[i] = true;
-                ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
-            }
+            for (const auto & [token, _] : pattern_tokens)
+                useful_tokens.insert(token);
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
