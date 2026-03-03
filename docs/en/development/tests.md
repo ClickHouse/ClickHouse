@@ -18,7 +18,7 @@ There are following tests in ClickHouse:
   - Sequential tests which cannot be run in parallel
 - [Integration tests](#integration-tests), run by `pytest` in a cluster
 - [Unit tests](#unit-tests)
-- [Performance tests]({#performance-tests)
+- [Performance tests](#performance-tests)
 - [Build tests](#build-tests)
 - [Sanitizers](#sanitizers)
 - [Fuzzers](#fuzzing)
