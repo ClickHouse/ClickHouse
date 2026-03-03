@@ -96,7 +96,7 @@ RUN ARCH=$(uname -m) && \
     rm rustup-init && \
     chmod 777 -R /rust && \
     rustup toolchain install nightly-2026-03-02 --no-self-update && \
-    rustup default nightly-2025-07-07 && \
+    rustup default nightly-2026-03-02 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
