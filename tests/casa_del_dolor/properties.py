@@ -165,6 +165,7 @@ possible_properties = {
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
     "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "index_mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
