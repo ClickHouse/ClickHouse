@@ -57,15 +57,15 @@ public:
 
 REGISTER_FUNCTION(DumpColumnStructure)
 {
-    FunctionDocumentation::Description description_dumpColumnStructure = R"(
+    FunctionDocumentation::Description description = R"(
 Outputs a detailed description of the internal structure of a column and its data type.
 )";
-    FunctionDocumentation::Syntax syntax_dumpColumnStructure = "dumpColumnStructure(x)";
-    FunctionDocumentation::Arguments arguments_dumpColumnStructure = {
+    FunctionDocumentation::Syntax syntax = "dumpColumnStructure(x)";
+    FunctionDocumentation::Arguments arguments = {
         {"x", "Value for which to get the description of.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dumpColumnStructure = {"Returns a description of the column structure used for representing the value.", {"String"}};
-    FunctionDocumentation::Examples examples_dumpColumnStructure = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a description of the column structure used for representing the value.", {"String"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -78,11 +78,11 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_dumpColumnStructure = {1, 1};
-    FunctionDocumentation::Category category_dumpColumnStructure = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_dumpColumnStructure = {description_dumpColumnStructure, syntax_dumpColumnStructure, arguments_dumpColumnStructure, {}, returned_value_dumpColumnStructure, examples_dumpColumnStructure, introduced_in_dumpColumnStructure, category_dumpColumnStructure};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDumpColumnStructure>(documentation_dumpColumnStructure);
+    factory.registerFunction<FunctionDumpColumnStructure>(documentation);
 }
 
 }

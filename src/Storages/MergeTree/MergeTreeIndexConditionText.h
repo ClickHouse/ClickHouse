@@ -1,5 +1,5 @@
 #pragma once
-#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -145,7 +145,11 @@ private:
     std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
-    static TextSearchMode getTextSearchMode(const RPNElement & element);
+
+    /// Returns true if all tokens must be read for text index analysis
+    /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
+    /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
+    static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
     TokenizerPtr tokenizer;
