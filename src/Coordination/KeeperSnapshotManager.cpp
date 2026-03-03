@@ -22,14 +22,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-
-namespace ProfileEvents
-{
-    extern const Event KeeperSnapshotWrittenBytes;
-    extern const Event KeeperSnapshotFileSyncMicroseconds;
-}
 
 namespace DB
 {
@@ -70,7 +62,7 @@ namespace
     {
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
-        std::vector<std::string_view> name_parts;
+        Strings name_parts;
         splitInto<'_', '.'>(name_parts, filename);
         return parse<uint64_t>(name_parts[1]);
     }
@@ -264,7 +256,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         const auto & path = it->key;
 
         // write only the root system path because of digest
-        if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
+        if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
             if (counter == snapshot.snapshot_container_size - 1)
                 break;
@@ -519,7 +511,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -527,7 +519,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #endif
                 }
             }
@@ -733,14 +725,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
 
     auto plain_buf = disk->writeFile(snapshot_file_name);
     copyData(reader, *plain_buf);
-
-    const size_t bytes_written = plain_buf->count();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
-
-    Stopwatch watch;
     plain_buf->sync();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
     plain_buf->finalize();
 
     disk->removeFile(tmp_snapshot_file_name);
@@ -927,16 +912,9 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    const size_t bytes_before = compressed_writer->count();
     KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
-    const size_t bytes_written = compressed_writer->count() - bytes_before;
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
-
     compressed_writer->finalize();
-
-    Stopwatch watch;
     compressed_writer->sync();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
     disk->removeFile(tmp_snapshot_file_name);
 

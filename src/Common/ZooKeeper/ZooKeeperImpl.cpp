@@ -1,13 +1,5 @@
-#include <atomic>
-#include <chrono>
-#include <ranges>
-
-#include <Common/OpenTelemetryTracingContext.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/OSThreadNiceValue.h>
+
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -24,6 +16,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Histogram.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -32,17 +25,11 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Coordination/KeeperConstants.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Common/ZooKeeper/KeeperSpans.h>
 #include "config.h"
 
 #if USE_SSL
@@ -82,33 +69,32 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB
+namespace Metrics::ResponseTime
 {
+    using namespace DB;
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
-}
+    Histogram::MetricFamily & mf = Histogram::Factory::instance().registerMetric(
+        "keeper_response_time_ms",
+        "The response time of Keeper, in milliseconds",
+        {1, 2, 5, 10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 500, 1000, 2000},
+        {"operation"}
+    );
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+    Histogram::Metric & create = mf.withLabels({"create"});
+    Histogram::Metric & remove = mf.withLabels({"remove"});
+    Histogram::Metric & removeRecursive = mf.withLabels({"remove_recursive"});
+    Histogram::Metric & exists = mf.withLabels({"exists"});
+    Histogram::Metric & get = mf.withLabels({"get"});
+    Histogram::Metric & set = mf.withLabels({"set"});
+    Histogram::Metric & list = mf.withLabels({"list"});
+    Histogram::Metric & check = mf.withLabels({"check"});
+    Histogram::Metric & sync = mf.withLabels({"sync"});
+    Histogram::Metric & reconfig = mf.withLabels({"reconfig"});
+    Histogram::Metric & multi = mf.withLabels({"multi"});
+    Histogram::Metric & get_acl = mf.withLabels({"get_acl"});
 
-}
-
-namespace HistogramMetrics
-{
-    extern MetricFamily & KeeperResponseTime;
-    extern Metric & KeeperResponseTimeReadonly;
-    extern Metric & KeeperResponseTimeWrite;
-    extern Metric & KeeperResponseTimeMulti;
-}
-
-namespace
-{
     template <typename Response>
-    void instrumentResponseTimeMetric(std::function<void(const Response &)> & callback, HistogramMetrics::Metric & histogram)
+    void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
     {
         callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
         {
@@ -118,6 +104,7 @@ namespace
         };
     }
 }
+
 
 /** ZooKeeper wire protocol.
 
@@ -406,16 +393,11 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_,
-    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_)
-    : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
-    , path_acls(args_.path_acls)
-    , args(args_)
-    , last_zxid_seen(args_.last_zxid_seen)
+    std::shared_ptr<ZooKeeperLog> zk_log_)
+    : path_acls(args_.path_acls), args(args_)
 {
     log = getLogger("ZooKeeperClient");
-    zk_log = std::move(zk_log_);
-    aggregated_zookeeper_log = std::move(aggregated_zookeeper_log_);
+    std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
     {
@@ -451,8 +433,6 @@ ZooKeeper::ZooKeeper(
             use_xid_64 = true;
             close_xid = CLOSE_XID_64;
         }
-        pass_opentelemetry_tracing_context = args.pass_opentelemetry_tracing_context;
-        enforce_component_tracking = args.enforce_component_tracking;
         connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
@@ -657,6 +637,7 @@ void ZooKeeper::connect(
 void ZooKeeper::sendHandshake()
 {
     int32_t handshake_length = 45;
+    int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::string password = args.password;
@@ -664,13 +645,7 @@ void ZooKeeper::sendHandshake()
     bool read_only = true;
 
     write(handshake_length);
-    if (pass_opentelemetry_tracing_context)
-    {
-        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING);
-        write(use_xid_64);
-        write(use_compression);
-    }
-    else if (use_xid_64)
+    if (use_xid_64)
     {
         write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
         write(use_compression);
@@ -683,7 +658,7 @@ void ZooKeeper::sendHandshake()
     {
         write(ZOOKEEPER_PROTOCOL_VERSION);
     }
-    write(last_zxid_seen.load(std::memory_order_relaxed));
+    write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
     write(password);
@@ -713,12 +688,7 @@ void ZooKeeper::receiveHandshake()
                                      "Keeper server rejected the connection during the handshake. "
                                      "Possibly it's overloaded, doesn't see leader or stale");
 
-    if (pass_opentelemetry_tracing_context)
-    {
-        if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
-            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with opentelemetry tracing: {}", protocol_version_read);
-    }
-    else if (use_xid_64)
+    if (use_xid_64)
     {
         if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
             throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
@@ -749,7 +719,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
+    request.write(getWriteBuffer(), use_xid_64);
     flushWriteBuffer();
 
     int32_t length;
@@ -791,15 +761,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
-    DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
-
-    scope_guard os_thread_nice_value_guard;
-    if (send_receive_os_threads_nice_value != 0)
-    {
-        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
-    }
+    setThreadName("ZooKeeperSend");
 
     auto prev_heartbeat_time = clock::now();
 
@@ -827,15 +789,6 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        info.request->spans.client_requests_queue,
-                        [&]
-                        {
-                            return std::vector<OpenTelemetry::SpanAttribute>{
-                                {"zookeeper_client.requests_queue.size", requests_queue.size()},
-                            };
-                        });
-
                     if (info.watch)
                         info.request->has_watch = true;
 
@@ -858,7 +811,7 @@ void ZooKeeper::sendThread()
                     }
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
+                    info.request->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
@@ -875,7 +828,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
+                request.write(getWriteBuffer(), use_xid_64);
                 flushWriteBuffer();
             }
 
@@ -892,15 +845,7 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
-    DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
-
-    scope_guard os_thread_nice_value_guard;
-    if (send_receive_os_threads_nice_value != 0)
-    {
-        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
-    }
+    setThreadName("ZooKeeperRecv");
 
     try
     {
@@ -918,9 +863,9 @@ void ZooKeeper::receiveThread()
                 std::lock_guard lock(operations_mutex);
                 if (!operations.empty())
                 {
-                    /// Operations are ordered by xid (and consequently, by create_ts).
+                    /// Operations are ordered by xid (and consequently, by time).
                     earliest_operation = operations.begin()->second;
-                    auto earliest_operation_deadline = earliest_operation->request->create_ts + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
+                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(static_cast<Int64>(args.operation_timeout_ms) * 1000);
                     if (now > earliest_operation_deadline)
                         throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
                                         args.operation_timeout_ms, earliest_operation->request->getPath());
@@ -982,12 +927,6 @@ void ZooKeeper::receiveEvent()
     read(zxid);
     read(err);
 
-    /// Watches have zxid = -1, some errors have zxid = 0.
-    if (zxid > 0)
-    {
-        last_zxid_seen.store(zxid, std::memory_order_relaxed);
-    }
-
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
     UInt64 elapsed_microseconds = 0;
@@ -1005,7 +944,6 @@ void ZooKeeper::receiveEvent()
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
-        request_info.component = "Watch";
 
         request_info.callback = [this](const Response & response_)
         {
@@ -1027,12 +965,9 @@ void ZooKeeper::receiveEvent()
             }
             else
             {
-                /// NOTE We may process callbacks not under mutex.
-                for (const auto & event_or_callback : it->second)
-                {
-                    if (event_or_callback)
-                        event_or_callback(watch_response);
-                }
+                for (const auto & callback : it->second)
+                    if (callback)
+                        (*callback)(watch_response);   /// NOTE We may process callbacks not under mutex.
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);
@@ -1057,10 +992,7 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        auto receive_ts = clock::now();
-
-        chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
-        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.request->create_ts).count();
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
@@ -1085,7 +1017,7 @@ void ZooKeeper::receiveEvent()
         }
 
         /// Just helper for watch callbacks update. The main logic is below.
-        const auto update_watch_callbacks = [this](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp, const Coordination::WatchCallbackPtrOrEventPtr & watch)
+        const auto update_watch_callbacks = [this](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp, const Coordination::WatchCallbackPtr & watch)
         {
             bool add_watch = false;
             /// 3 indicates the ZooKeeperExistsRequest.
@@ -1099,31 +1031,15 @@ void ZooKeeper::receiveEvent()
             if (add_watch)
             {
 
-                /// The key of watches should exclude the args.chroot
+                /// The key of wathces should exclude the args.chroot
                 String req_path = req->getPath();
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
                 auto & callbacks = watches[req_path];
-                if (watch)
+                if (watch && *watch)
                 {
                     if (callbacks.insert(watch).second)
-                    {
-                        /// Warn only for debug or sanitizers builds (i.e. CI), since it is OK to have 100 replicas,
-                        /// but if we will log only if the number of watches > 1000..10000, then, CI will not capture anything.
-                        ///
-                        /// And we do have tests that create > 100 replicas, so we cannot assert for 100 watches here
-                        /// (since all replicas shares some paths in ZooKeeper)
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                        static constexpr size_t WATCHES_CALLBACK_SANITY_LIMIT = 10000;
-                        chassert(callbacks.size() <= WATCHES_CALLBACK_SANITY_LIMIT);
-                        if (callbacks.size() > 100)
-                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
-#endif
-                        /// It is unlikely that 10K watches is OK, let's warn even in release builds.
-                        if (callbacks.size() > 10000)
-                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-                    }
                 }
             }
         };
@@ -1162,7 +1078,6 @@ void ZooKeeper::receiveEvent()
         }
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
     }
     catch (...)
     {
@@ -1182,7 +1097,6 @@ void ZooKeeper::receiveEvent()
                 request_info.callback(*response);
 
             logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-            observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
         }
         catch (...)
         {
@@ -1210,13 +1124,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     bool already_started = finalization_started.test_and_set();
 
     if (already_started)
-    {
-        LOG_INFO(log, "Session {} already finalized. Current reason: '{}'", session_id, reason);
         return;
-    }
 
-    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}' {}",
-             session_id, already_started, requests_queue.isFinished(), reason, StackTrace().toString());
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
+             session_id, already_started, requests_queue.isFinished(), reason);
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1282,17 +1193,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-
-                chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
-                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.request->create_ts).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
-                        observeOperation(request_info.request.get(), response.get(), elapsed_microseconds, request_info.component);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1317,14 +1225,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (const auto & event_or_callback : path_watches.second)
+                for (const auto & callback : path_watches.second)
                 {
                     watch_callback_count += 1;
-                    if (event_or_callback)
+                    if (callback)
                     {
                         try
                         {
-                            event_or_callback(response);
+                            (*callback)(response);
                         }
                         catch (...)
                         {
@@ -1352,10 +1260,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        chassert(info.request->create_ts != std::chrono::steady_clock::time_point{});
-                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.request->create_ts).count();
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
-                        observeOperation(info.request.get(), response.get(), elapsed_microseconds, info.component);
                     }
                     catch (...)
                     {
@@ -1371,8 +1277,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    const WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
-                    event_or_callback(response);
+                    (*info.watch)(response);
                 }
                 catch (...)
                 {
@@ -1392,24 +1297,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        info.request->create_ts = clock::now();
-
-        /// Capture component name from thread-local storage if not already set
-        if (info.component.empty())
-        {
-            auto current_component = Coordination::getCurrentComponent();
-            if (current_component.empty())
-            {
-                if (enforce_component_tracking)
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Current component is empty, please set it for your scope using Coordination::setCurrentComponent");
-            }
-            else
-            {
-                info.component = current_component;
-            }
-        }
-
-        auto maybe_zk_log = getZooKeeperLog();
+        info.time = clock::now();
+        auto maybe_zk_log = std::atomic_load(&zk_log);
         if (maybe_zk_log)
         {
             info.request->thread_id = getThreadId();
@@ -1435,16 +1324,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         }
 
         maybeInjectSendFault();
-
-        if (
-            const auto & current_trace_context = OpenTelemetry::CurrentContext();
-            current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
-        )
-        {
-            info.request->tracing_context = current_trace_context;
-        }
-
-        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
@@ -1543,12 +1422,12 @@ String ZooKeeper::tryGetAvailabilityZone()
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
     ResponseCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtr watch)
 {
     RequestInfo request_info;
     request_info.request = request;
     request_info.callback = callback;
-    request_info.watch = std::move(watch);
+    request_info.watch = watch;
 
     pushRequest(std::move(request_info));
 }
@@ -1581,11 +1460,12 @@ void ZooKeeper::create(
 
     request.acls = std::move(final_acls);
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::create);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCreateRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CreateResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
 }
@@ -1599,11 +1479,12 @@ void ZooKeeper::remove(
     request.path = path;
     request.version = version;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::remove);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
@@ -1620,11 +1501,12 @@ void ZooKeeper::removeRecursive(
     request.path = path;
     request.remove_nodes_limit = remove_nodes_limit;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::removeRecursive);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRecursiveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
@@ -1632,17 +1514,18 @@ void ZooKeeper::removeRecursive(
 void ZooKeeper::exists(
     const String & path,
     ExistsCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtr watch)
 {
     ZooKeeperExistsRequest request;
     request.path = path;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::exists);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
     request_info.watch = watch;
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 }
@@ -1651,17 +1534,18 @@ void ZooKeeper::exists(
 void ZooKeeper::get(
     const String & path,
     GetCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtr watch)
 {
     ZooKeeperGetRequest request;
     request.path = path;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
     request_info.watch = watch;
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
 }
@@ -1678,11 +1562,12 @@ void ZooKeeper::set(
     request.data = data;
     request.version = version;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::set);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSetRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SetResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
 }
@@ -1692,24 +1577,10 @@ void ZooKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch,
-    bool with_stat,
-    bool with_data)
+    WatchCallbackPtr watch)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-
-    if (with_stat || with_data)
-    {
-        if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
-            throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
-
-        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
-        list_with_stats_request->list_request_type = list_request_type;
-        list_with_stats_request->with_stat = with_stat;
-        list_with_stats_request->with_data = with_data;
-        request = std::move(list_with_stats_request);
-    }
-    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+    if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
@@ -1725,13 +1596,14 @@ void ZooKeeper::list(
 
     request->path = path;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::list);
 
     RequestInfo request_info;
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     if (watch)
         request_info.watch = std::move(watch);
     request_info.request = std::move(request);
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
 }
@@ -1746,11 +1618,12 @@ void ZooKeeper::check(
     request.path = path;
     request.version = version;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::check);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCheckRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
 }
@@ -1762,11 +1635,12 @@ void ZooKeeper::sync(
     ZooKeeperSyncRequest request;
     request.path = path;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::sync);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
@@ -1784,11 +1658,12 @@ void ZooKeeper::reconfig(
     request.new_members = new_members;
     request.version = version;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeWrite);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::reconfig);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperReconfigRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ReconfigResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperReconfig);
 }
@@ -1805,11 +1680,12 @@ void ZooKeeper::getACL(const String & path, GetACLCallback callback)
     ZooKeeperGetACLRequest request;
     request.path = path;
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get_acl);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetACLRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
+
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperGetACL);
 }
@@ -1857,7 +1733,7 @@ void ZooKeeper::multi(
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
     }
 
-    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::multi);
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
@@ -1881,8 +1757,6 @@ void ZooKeeper::close()
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
-
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request_info.request->spans.client_requests_queue, request_info.request->tracing_context);
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
@@ -1913,53 +1787,17 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
-std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
+void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
-    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
-    {
-        return maybe_zk_log;
-    }
-
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
-        {
-            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
-            return maybe_zk_log;
-        }
-    }
-
-    return nullptr;
-}
-std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
-{
-    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
-    {
-        return maybe_aggregated_zookeeper_log;
-    }
-
-    if (const auto maybe_global_context = Context::getGlobalContextInstance())
-    {
-        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
-        {
-            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
-            return maybe_aggregated_zookeeper_log;
-        }
-    }
-
-    return nullptr;
+    /// logOperationIfNeeded(...) uses zk_log and can be called from different threads, so we have to use atomic shared_ptr
+    std::atomic_store(&zk_log, std::move(zk_log_));
 }
 
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
-
-    auto maybe_zk_log = getZooKeeperLog();
+    auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
-        return;
-
-    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;
@@ -2008,45 +1846,6 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component)
-{
-    chassert(response);
-
-    auto current_aggregated_zookeeper_log = getAggregatedZooKeeperLog();
-    if (!current_aggregated_zookeeper_log)
-        return;
-
-    if (!request)
-    {
-        if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
-        {
-            current_aggregated_zookeeper_log->observe(
-                session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error, component);
-        }
-        else
-        {
-            chassert(dynamic_cast<const ZooKeeperResponse &>(*response).xid == PING_XID);
-        }
-        return;
-    }
-
-    current_aggregated_zookeeper_log->observe(session_id, request->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error, component);
-
-    const auto * multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
-
-    if (!multi_response)
-        return;
-
-    const auto & multi_request = static_cast<const ZooKeeperMultiRequest &>(*request);
-    chassert(
-        (request->getOpNum() == OpNum::Multi || request->getOpNum() == OpNum::MultiRead)
-        && multi_request.requests.size() == multi_response->responses.size());
-
-    for (const auto [subrequest, subresponse] : std::views::zip(multi_request.requests, multi_response->responses))
-    {
-        observeOperation(subrequest.get(), subresponse.get(), elapsed_microseconds, component);
-    }
-}
 
 void ZooKeeper::setServerCompletelyStarted()
 {

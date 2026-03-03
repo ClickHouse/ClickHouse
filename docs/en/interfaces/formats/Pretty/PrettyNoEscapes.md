@@ -6,7 +6,6 @@ keywords: ['PrettyNoEscapes']
 output_format: true
 slug: /interfaces/formats/PrettyNoEscapes
 title: 'PrettyNoEscapes'
-doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -29,7 +28,7 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 ```
 
 :::note
-The [HTTP interface](/interfaces/http) can be used for displaying this format in the browser.
+The [HTTP interface](../../../interfaces/http.md) can be used for displaying this format in the browser.
 :::
 
 ## Format settings {#format-settings}

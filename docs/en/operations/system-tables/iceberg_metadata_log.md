@@ -4,7 +4,6 @@ description: 'System table containing information about metadata files read from
 keywords: ['system table', 'iceberg_metadata_log']
 slug: /operations/system-tables/iceberg_metadata_log
 title: 'system.iceberg_metadata_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -19,10 +18,9 @@ This table logs every metadata file and entry read from Iceberg tables, includin
 
 :::note
 This table is primarily intended for debugging purposes.
-:::
+:::note
 
 ## Columns {#columns}
-
 | Name           | Type      | Description                                                                                   |
 |----------------|-----------|----------------------------------------------------------------------------------------------|
 | `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log entry.                                                                       |
@@ -33,7 +31,6 @@ This table is primarily intended for debugging purposes.
 | `file_path`    | [String](../../sql-reference/data-types/string.md)    | Path to the root metadata JSON file, Avro manifest list, or manifest file.                   |
 | `content`      | [String](../../sql-reference/data-types/string.md)    | Content in JSON format (raw metadata from .json, Avro metadata, or Avro entry).              |
 | `row_in_file`  | [Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md)) | Row number in the file, if applicable. Present for `ManifestListEntry` and `ManifestFileEntry` content types. |
-| `pruning_status`  | [Nullable](../../sql-reference/data-types/nullable.md)([Enum8](../../sql-reference/data-types/enum.md)) | Pruning status for the entry. 'NotPruned', 'PartitionPruned', 'MinMaxIndexPruned'. Pay attention that partition pruning is done before minmax pruning so 'PartitionPruned' means that the entry was pruned by partition filter and minmax pruning was not even attempted. Present for `ManifestFileEntry` content type. |
 
 ## `content_type` values {#content-type-values}
 
@@ -79,10 +76,9 @@ See more information in the description of the [`iceberg_metadata_log_level`](..
 ### Good To Know {#good-to-know}
 
 - Use `iceberg_metadata_log_level` at the query level only when you need to investigate your Iceberg table in detail. Otherwise, you may populate the log table with excessive metadata and experience performance degradation.
-- The table contains duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity. Separate rows store content and pruning status because they are collected at different moments in a program. Content is collected when the metadata is read, pruning status is collected when the metadata is checked for pruning. **Never rely on the table itself for deduplication.**
+- The table may contain duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity.
 - If you use a `content_type` more verbose than `ManifestListMetadata`, the Iceberg metadata cache is disabled for manifest lists.
 - Similarly, if you use a `content_type` more verbose than `ManifestFileMetadata`, the Iceberg metadata cache is disabled for manifest files.
-- If the SELECT query was cancelled or failed, the log table may still contain entries for metadata processed before the failure but will not contain information about metadata entities that were not processed.
 
 ## See also {#see-also}
 - [Iceberg Table Engine](../../engines/table-engines/integrations/iceberg.md)

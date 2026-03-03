@@ -35,8 +35,6 @@ public:
 
     std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
-    bool isMessageQueue() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -207,7 +205,7 @@ private:
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
         for (auto & c : random_str)
-            c = static_cast<char>(distribution(thread_local_rng));
+            c = distribution(thread_local_rng);
         return random_str;
     }
 };

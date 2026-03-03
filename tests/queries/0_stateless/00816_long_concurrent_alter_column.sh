@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
-# no-msan: too slow, concurrent ALTER operations with 500 columns can cause timeout
+# Tags: long
 
 set -e
 
@@ -9,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 echo "DROP TABLE IF EXISTS concurrent_alter_column" | ${CLICKHOUSE_CLIENT}
-echo "CREATE TABLE concurrent_alter_column (ts DATETIME) ENGINE = MergeTree PARTITION BY toStartOfDay(ts) ORDER BY tuple() SETTINGS auto_statistics_types = ''" | ${CLICKHOUSE_CLIENT}
+echo "CREATE TABLE concurrent_alter_column (ts DATETIME) ENGINE = MergeTree PARTITION BY toStartOfDay(ts) ORDER BY tuple()" | ${CLICKHOUSE_CLIENT}
 
 function thread1()
 {

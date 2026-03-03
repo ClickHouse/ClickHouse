@@ -18,7 +18,7 @@ public:
     String getID(char) const override { return "ColumnsTransformerList"; }
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTColumnsTransformerList>(*this);
+        auto clone = std::make_shared<ASTColumnsTransformerList>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -40,7 +40,7 @@ public:
     String getID(char) const override { return "ColumnsApplyTransformer"; }
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTColumnsApplyTransformer>(*this);
+        auto res = std::make_shared<ASTColumnsApplyTransformer>(*this);
         if (parameters)
             res->parameters = parameters->clone();
         if (lambda)
@@ -72,7 +72,7 @@ public:
     String getID(char) const override { return "ColumnsExceptTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTColumnsExceptTransformer>(*this);
+        auto clone = std::make_shared<ASTColumnsExceptTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -96,7 +96,7 @@ public:
         String getID(char) const override { return "ColumnsReplaceTransformer::Replacement"; }
         ASTPtr clone() const override
         {
-            auto replacement = make_intrusive<Replacement>(*this);
+            auto replacement = std::make_shared<Replacement>(*this);
             replacement->cloneChildren();
             return replacement;
         }
@@ -114,7 +114,7 @@ public:
     String getID(char) const override { return "ColumnsReplaceTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTColumnsReplaceTransformer>(*this);
+        auto clone = std::make_shared<ASTColumnsReplaceTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }

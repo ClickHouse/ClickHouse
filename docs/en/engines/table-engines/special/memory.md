@@ -5,8 +5,7 @@ description: 'The Memory engine stores data in RAM, in uncompressed form. Data i
 sidebar_label: 'Memory'
 sidebar_position: 110
 slug: /engines/table-engines/special/memory
-title: 'Memory table engine'
-doc_type: 'reference'
+title: 'Memory Table Engine'
 ---
 
 # Memory table engine

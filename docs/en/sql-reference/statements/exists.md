@@ -4,7 +4,6 @@ sidebar_label: 'EXISTS'
 sidebar_position: 45
 slug: /sql-reference/statements/exists
 title: 'EXISTS Statement'
-doc_type: 'reference'
 ---
 
 # EXISTS Statement
