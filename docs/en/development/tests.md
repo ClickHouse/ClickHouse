@@ -63,10 +63,10 @@ git clone --single-branch https://github.com/ClickHouse/ClickHouse
 cd ClickHouse
 ```
 
-3. Build code and run a subset of tests (named "Fast test").
+3. Build code and run "fast tests".
 
 ```sh
-python3 -m ci.praktika run "Fast test"
+python -m ci.praktika run fast
 ```
 
 You should get
@@ -103,19 +103,21 @@ cd ClickHouse
 
 3. Build the code.
 ```sh
-python3 -m ci.praktika run "Build (amd_debug)"
+python -m ci.praktika run build_debug
 cp ci/tmp/build/programs/clickhouse ci/tmp
 ```
 
 4. Run stateless tests which can be run in parallel.
 ```sh
-python3 -m ci.praktika run "Stateless tests (amd_debug, parallel)"
+python -m ci.praktika run functional
 ```
 
 You should get
 ```sh
 Failed: 0, Passed: 8497, Skipped: 103
 ```
+
+Note. `python -m ci.praktika run` invocations run a specific continuous integration job, you can can read more about ClickHouse CI [here](continuous-integration.md#running-stateless-tests).
 
 ### Adding a new test {#adding-a-new-test}
 
