@@ -154,12 +154,14 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_NOT:
         case RPNElement::FUNCTION_NOT_IN:
         case RPNElement::FUNCTION_NOT_EQUALS:
+        case RPNElement::FUNCTION_NOT_LIKE:
         case RPNElement::FUNCTION_HAS_ANY_TOKENS:
         {
             return true;
         }
         case RPNElement::FUNCTION_AND:
         case RPNElement::FUNCTION_EQUALS:
+        case RPNElement::FUNCTION_LIKE:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
