@@ -1056,7 +1056,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     for (const auto & path : metadata_files)
     {
         String filename = std::filesystem::path(path).filename();
-        if (isTemporaryMetadataFile(filename))
+        if (isTemporaryMetadataFile(filename, MetadataPathParsingMode::StrictMetadataFilePath))
             continue;
         auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 

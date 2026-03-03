@@ -61,8 +61,9 @@ def test_writes_create_version_hint_from_numeric_with_full_path(started_cluster_
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
-        f.write(b"1")
+    version_hint_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text"
+    instance.exec_in_container(["bash", "-c", f"printf '1' > {version_hint_path}"])
+    instance.restart_clickhouse()
 
     instance.query(
         f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);",
@@ -78,5 +79,5 @@ def test_writes_create_version_hint_from_numeric_with_full_path(started_cluster_
     )
 
     target_suffix = b"v2.metadata.json"
-    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
+    with open(version_hint_path, "rb") as f:
         assert f.read().strip().endswith(target_suffix)
