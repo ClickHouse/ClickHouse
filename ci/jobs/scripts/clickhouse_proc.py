@@ -56,6 +56,7 @@ class ClickHouseProc:
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
     ):
+        self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.ch_config_dir = f"/etc/clickhouse-server"
@@ -94,7 +95,10 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        # Fast test runs lightweight SQL tests that are not CPU-bound,
+        # so we can use more parallelism than the default cpu_count/2.
+        nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -407,6 +411,10 @@ profiles:
         )
 
     def start(self, replica_num=0):
+        if replica_num == 0:
+            # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
+            Shell.check("dmesg --clear", verbose=True)
+
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1
@@ -753,7 +761,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if not Shell.check(
+                if self.fast_test:
+                    # Use --force (SIGKILL) for fast test to avoid waiting for
+                    # graceful shutdown, which can take over a minute.
+                    # Graceful shutdown is not needed here because we already
+                    # flushed system logs above and don't need to preserve data.
+                    Shell.check(
+                        f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --force >/dev/null",
+                        verbose=True,
+                    )
+                elif not Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
