@@ -9,6 +9,21 @@ doc_type: 'guide'
 
 # Testing ClickHouse
 
+## Test types {#test-types}
+
+There are following tests in ClickHouse:
+- [Functional tests](#functional-tests) - a set of queries and scripts which include the following subsets
+  - Fast test - the minimal subset
+  - Stateless tests which do not require populating databased with data
+  - Sequential tests which cannot be run in parallel
+- [Integration tests](#integration-tests), run by `pytest` in a cluster
+- [Unit tests](#unit-tests)
+- [Performance tests]({#performance-tests)
+- [Build tests](#build-tests)
+- [Sanitizers](#sanitizers)
+- [Fuzzers](#fuzzing)
+and some others, see the sections below.
+
 ## Functional tests {#functional-tests}
 
 Functional tests are the most simple and convenient to use.
@@ -53,7 +68,7 @@ You may need a decently powerful machine to run a subset of tests (called "Fast 
 ```sh
 sudo apt-get update
 sudo apt-get install docker.io
-sudo usermod -aG docker ubuntu
+sudo usermod -aG docker "$USER"
 ```
 
 2. Get the source code.
@@ -84,7 +99,7 @@ You may need a decently powerful machine to run stateless tests. The following w
 ```sh
 sudo apt-get update
 sudo apt-get install docker.io
-sudo usermod -aG docker ubuntu
+sudo usermod -aG docker "$USER"
 sudo tee /etc/docker/daemon.json <<'EOF'
 {
   "ipv6": true,
@@ -117,7 +132,7 @@ You should get
 Failed: 0, Passed: 8497, Skipped: 103
 ```
 
-Note. `python -m ci.praktika run` invocations run a specific continuous integration job, you can can read more about ClickHouse CI [here](continuous-integration.md#running-stateless-tests).
+Note. `python -m ci.praktika run` invocations run a specific continuous integration job, you can read more about ClickHouse CI [here](continuous-integration.md#running-stateless-tests).
 
 ### Adding a new test {#adding-a-new-test}
 
@@ -181,8 +196,8 @@ List of available tags:
 | `global` | Same as `shard`. Prefer `shard` ||
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
 | `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
-| `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
-| `fasttest-only`|  Test is only run under [Fast test](continuous-integration.md#fast-test) ||
+| `no-fasttest`|  Test is not run under [Fast test](#test-types) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `fasttest-only`|  Test is only run under [Fast test](#test-types) ||
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` |||
 | `no-ordinary-database` |||
