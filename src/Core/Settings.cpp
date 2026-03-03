@@ -7452,6 +7452,9 @@ Allow to add hint (additional predicate) for filtering built from the inverted t
     DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
 Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
+    DECLARE(Bool, use_text_index_like_optimization, true, R"(
+Enable optimization of LIKE/NOT LIKE queries using the inverted text index.
+)", 0) \
     DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
 Whether to use a cache of deserialized text index dictionary block.
 Using the text index dictionary block cache can significantly reduce latency and increase throughput when working with a large number of text index queries.

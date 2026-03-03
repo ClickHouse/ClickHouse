@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsBool use_text_index_like_optimization;
 }
 
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
@@ -709,7 +710,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if ((function_name == "like" || function_name == "notLike") && tokenizer->supportsStringLike())
     {
         /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha)
+        /// Requires explicit opt-in via use_text_index_like_optimization because scanning
+        /// the index dictionary for pattern-matching tokens has non-trivial overhead.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+            && getContext()->getSettingsRef()[Setting::use_text_index_like_optimization])
         {
             /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
             /// Add support for multiple patterns later with hint mode:
