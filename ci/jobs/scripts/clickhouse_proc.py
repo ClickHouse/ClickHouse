@@ -82,8 +82,6 @@ class ClickHouseProc:
         self.pid_file_replica_2 = (
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
-        Shell.run(f"echo test >{temp_dir}/test.txt")  # REMOVEMVE
-        Utils.encode(f"{temp_dir}/test.txt")
         self.pid_0 = 0
         self.pid_1 = 0
         self.pid_2 = 0
@@ -770,6 +768,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
     def prepare_logs(self, info, all=False):
+        res = []
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()

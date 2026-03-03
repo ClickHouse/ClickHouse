@@ -814,7 +814,7 @@ openssl pkeyutl -encrypt -pubin -inkey public.pem -in {Utils.AES_KEY} -out {Util
 """)
 
         Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{Utils.AES_KEY}")
-        return path + ".rsa"
+        return f"{path}.enc"
 
     @classmethod
     def compress_files_gz(cls, files, archive_name):
