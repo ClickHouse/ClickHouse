@@ -18,6 +18,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [IN access_storage_type]
+    [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
@@ -219,24 +220,22 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 
 `mira` should start client app at the host where the ClickHouse server runs.
 
-Create the user account `john`, assign roles to it and make this roles default:
+Create the user account `john` and assign roles:
 
 ```sql
-CREATE USER john DEFAULT ROLE role1, role2;
+CREATE USER john ROLE role1, role2;
 ```
 
-Create the user account `john` and make all his future roles default:
+Create the user account `john`, assign roles and make some of them default:
 
 ```sql
-CREATE USER john DEFAULT ROLE ALL;
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
 ```
 
-When some role is assigned to `john` in the future, it will become default automatically.
-
-Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
+or
 
 ```sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 ```
 
 Create the user account `john` and allow him to grant his privileges to the user with `jack` account:

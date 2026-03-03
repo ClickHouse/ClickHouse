@@ -330,8 +330,8 @@
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
-    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
-    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexTokensCacheBytes, "Size of the text index tokens cache in bytes") \
+    M(TextIndexTokensCacheCells, "Number of entries in the text index tokens cache") \
     M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
@@ -395,6 +395,8 @@
     M(SharedMergeTreeMinActiveReplicas, "The minimum number of active replicas registered in Keeper") \
     M(SharedMergeTreeMinInactiveReplicas, "The minimum number of inactive replicas registered in Keeper") \
     M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
+    M(SharedMergeTreeMinPartitions, "The minimum number of partitions registered in Keeper across all SharedMergeTree tables") \
+    M(SharedMergeTreeMaxPartitions, "The maximum number of partitions registered in Keeper across all SharedMergeTree tables") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \

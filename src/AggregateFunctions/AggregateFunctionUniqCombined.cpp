@@ -134,7 +134,6 @@ SELECT uniqCombined(15)(number) FROM numbers(1e5);
         {
             return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
         },
-        {},
         documentation_uniqCombined
     });
     /// uniqCombined64 documentation
@@ -213,7 +212,6 @@ SELECT uniqCombined(number) FROM numbers(1e10);
         {
             return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
         },
-        {},
         documentation_uniqCombined64
     });
 }
