@@ -815,7 +815,26 @@ void DiskLocal::chmod(const String & path, mode_t mode)
 
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
-    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
+    auto application_type = Context::getGlobalContextInstance()->getApplicationType();
+    chassert(application_type == Context::ApplicationType::LOCAL || application_type == Context::ApplicationType::SERVER);
+    if (application_type == Context::ApplicationType::SERVER)
+    {
+        auto user_files_path = Context::getGlobalContextInstance()->getUserFilesPath();
+        if (user_files_path.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "User files path is not properly set, cannot use LocalObjectStorage in this server configuration at all");
+        if (!disk_path.starts_with(user_files_path))
+            throw Exception(
+                ErrorCodes::PATH_ACCESS_DENIED,
+                "DiskLocal must be located inside user files path to be used as object storage. Disk path: {}, user files path: {}, disk "
+                "name: "
+                "{}",
+                disk_path,
+                user_files_path,
+                name);
+    }
+    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */ false);
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 

@@ -79,7 +79,7 @@ Iceberg::ManifestFilePtr getManifestFile(
     bool use_iceberg_metadata_cache
         = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
 
-    auto create_fn = [&, use_iceberg_metadata_cache]()
+    auto create_fn = [&, use_iceberg_metadata_cache]()  
     {
         RelativePathWithMetadata manifest_object_info(filename);
 
