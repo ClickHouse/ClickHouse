@@ -788,7 +788,7 @@ class Utils:
     def encode(cls, path: str) -> str:
         Shell.run(
             f"""
-cat <<'EOF' >public.pem
+cat <<EOF >public.pem
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1UbfE9ncXjxKpDaFwbzw
 GL4m+3BmNx+PSIGbjkOxO5OZzgM9Qhlod2fKf8/R0b3e7+kM2eJTCWgZUCKvW1Un
@@ -798,14 +798,10 @@ tzNqFlrEiWni1xlV1mfE95GFKwpAekvKkAMQbaZz9hfBIlOnflVloKA9/LqXd+4j
 WLB5nUj/cihbdG2cDfaXmwalhlGfwdF28vIYcvnQzjXOS8F7JL25PkGXnEZOmBG3
 TQIDAQAB
 -----END PUBLIC KEY-----
-'EOF'
+EOF
 
-openssl pkeyutl -encrypt \
-  -pubin -inkey public.pem \
-  -in {path} \
-  -out {path}.rsa \
-  -pkeyopt rsa_padding_mode:oaep \
-  -pkeyopt rsa_oaep_md:sha256
+openssl pkeyutl -encrypt -pubin -inkey public.pem -in {path} -out {path}.rsa \
+    -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """,
             verbose=True,
         )
