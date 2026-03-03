@@ -4,6 +4,7 @@ SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET enable_join_runtime_filters = 0;
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 CREATE TABLE t(x Int, y Int) ORDER BY ()
 AS SELECT number as x, number % 2 as y FROM numbers(100);

@@ -3,6 +3,7 @@ SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;

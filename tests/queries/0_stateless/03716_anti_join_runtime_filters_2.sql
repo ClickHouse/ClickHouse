@@ -2,6 +2,7 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey;
@@ -58,4 +59,3 @@ WHERE NOT EXISTS (
     WHERE c_nationkey = n_nationkey
 )
 SETTINGS correlated_subqueries_default_join_kind = 'left';
-

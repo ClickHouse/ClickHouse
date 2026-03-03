@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1

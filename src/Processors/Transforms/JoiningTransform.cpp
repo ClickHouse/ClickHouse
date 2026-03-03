@@ -12,6 +12,10 @@ namespace ProfileEvents
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
+    extern const Event JoinNonJoinedTransformBlockCount;
+    extern const Event JoinNonJoinedTransformRowCount;
+    extern const Event JoinDelayedJoinedTransformBlockCount;
+    extern const Event JoinDelayedJoinedTransformRowCount;
 }
 
 namespace DB
@@ -118,7 +122,10 @@ IProcessor::Status JoiningTransform::prepare()
     auto & input = inputs.front();
     if (input.isFinished())
     {
-        if (process_non_joined)
+        /// There is a big assumption here: if join supports parallel non-joined block processing, then it is
+        /// assumed the query pipeline contains the appropriate `NonJoinedBlocksTransform` processors and we can
+        /// safely skip processing non-joined blocks depending on `canProcessNonJoinedBlocksInParallel()`.
+        if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->canProcessNonJoinedBlocksInParallel()))
             return Status::Ready;
 
         output.finish();
@@ -478,7 +485,9 @@ void DelayedJoinedBlocksWorkerTransform::work()
     }
 
     // Add block to the output
-    auto rows = block.rows();
+    const auto rows = block.rows();
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformRowCount, rows);
     output_chunk.setColumns(block.getColumns(), rows);
 }
 
@@ -593,6 +602,9 @@ NonJoinedBlocksTransform::NonJoinedBlocksTransform(
 
 Chunk NonJoinedBlocksTransform::generate()
 {
+    if (!join->canProcessNonJoinedBlocksInParallel())
+        return {};
+
     if (!non_joined_blocks)
     {
         non_joined_blocks = join->getNonJoinedBlocks(
@@ -606,8 +618,11 @@ Chunk NonJoinedBlocksTransform::generate()
     if (block.empty())
         return {};
 
-    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-    return Chunk(block.getColumns(), block.rows());
+    const auto rows = block.rows();
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, rows);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
+    return Chunk(block.getColumns(), rows);
 }
 
 }
