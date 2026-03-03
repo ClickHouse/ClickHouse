@@ -41,8 +41,8 @@ PROTOBUF_GENERATE_GRPC_CPP(
 # overrides to enable Flight-specific optimizations. See comments in
 # protobuf-internal.cc
 set(ARROW_FLIGHT_SRCS
-        ${flight_sources}
-        ${flight_sql_sources}
+        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.cc
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
