@@ -55,7 +55,8 @@ StatementGenerator::StatementGenerator(
               {0.30, 0.90}, /// SelectQuery
               {0.01, 0.10}, /// Kill
               {0.01, 0.08} /// ShowStatement
-          }}))
+          }},
+          "SQL statements"))
     , litGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -78,7 +79,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// LitJSON
               {0.01, 0.15}, /// LitNULLVal
               {0.01, 0.10} /// LitFraction
-          }}))
+          }},
+          "SQL expression literals"))
     , expGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -103,7 +105,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.15}, /// DictExpr
               {0.01, 0.15}, /// JoinExpr
               {0.01, 0.15} /// StarExpr
-          }}))
+          }},
+          "SQL expressions"))
     , predGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -118,7 +121,8 @@ StatementGenerator::StatementGenerator(
               {0.03, 0.20}, /// LikeExpr
               {0.10, 0.35}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
-          }}))
+          }},
+          "SQL predicates"))
     , queryGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -142,7 +146,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.05}, /// RandomTableUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
-          }}))
+          }},
+          "SQL queries"))
     , SQLMask(static_cast<size_t>(SQLOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)

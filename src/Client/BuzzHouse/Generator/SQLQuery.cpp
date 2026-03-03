@@ -680,15 +680,14 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_projection_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::RandomTableUDF)] = this->allow_not_deterministic && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
-    /// If MV chaining is requested, force the next source to be a view (clears flag after use)
-    if (this->chain_views && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
-    {
-        std::fill(queryMask.begin(), queryMask.end(), false);
-        queryMask[static_cast<size_t>(QueryOp::View)] = true;
-    }
-    queryGen.setEnabled(queryMask);
 
-    switch (static_cast<QueryOp>(queryGen.nextOp())) /// drifts over time
+    queryGen.setEnabled(queryMask);
+    /// If MV chaining is requested, force the next source to be a view (clears flag after use)
+    const auto nopt = (this->chain_views && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
+        ? QueryOp::View
+        : static_cast<QueryOp>(queryGen.nextOp()); /// drifts over time
+
+    switch (nopt)
     {
         case QueryOp::DerivatedTable: {
             /// A derived query
