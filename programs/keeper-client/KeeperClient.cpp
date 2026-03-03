@@ -52,13 +52,18 @@ void prependDoubleQuoteForPath(replxx::Replxx & rx)
     size_t cursor = state.cursor_position();
     std::string text(state.text());
 
-    auto word_begin = std::find_first_of(text.rbegin() + text.size() - cursor, text.rend(), word_breaks.begin(), word_breaks.end()).base();
-    /// Do not quote first argument (w/o moving word_begin)
+    if (text.empty() || cursor == 0)
+        return;
+
+    auto word_begin = std::find_first_of(text.rbegin() + (text.size() - cursor), text.rend(), word_breaks.begin(), word_breaks.end()).base();
+    /// Do not quote the first word (command name).
+    /// Walk backwards from word_begin, skipping spaces, to check whether there is
+    /// any non-space content before this word. If there isn't — this IS the first word.
     {
-        auto first_word = word_begin;
-        while (std::isspace(*first_word))
-            --first_word;
-        if (first_word == text.begin())
+        auto it = word_begin;
+        while (it != text.begin() && std::isspace(*(it - 1)))
+            --it;
+        if (it == text.begin())
             return;
     }
 
