@@ -1,5 +1,3 @@
--- Tags: no-tsan
-
 DROP TABLE IF EXISTS events;
 
 SET allow_suspicious_low_cardinality_types = 1;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <type_traits>
 
 #include <Columns/ColumnDecimal.h>
@@ -113,9 +114,7 @@ public:
     {
         static_assert(is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (std::is_floating_point_v<U>)
-            return static_cast<U>(-max.value) <= x && x <= static_cast<U>(max.value);
-        else if constexpr (is_signed_v<U>)
+        if constexpr (is_signed_v<U>)
             return -max.value <= x && x <= max.value;
         else
             return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);

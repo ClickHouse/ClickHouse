@@ -3,6 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Interpreters/Context.h>
@@ -17,6 +18,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_impersonate_user;
 }
 
 namespace
@@ -79,12 +85,8 @@ namespace
 
 BlockIO InterpreterExecuteAsQuery::execute()
 {
-    if (!getContext()->getAccessControl().isImpersonateUserAllowed())
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "IMPERSONATE feature is disabled, set access_control_improvements.allow_impersonate_user to 1 to enable");
-    }
+    if (!getContext()->getGlobalContext()->getServerSettings()[ServerSetting::allow_impersonate_user])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IMPERSONATE feature is disabled, set allow_impersonate_user to 1 to enable");
 
     const auto & query = query_ptr->as<const ASTExecuteAsQuery &>();
     String target_user_name = query.target_user->toString();

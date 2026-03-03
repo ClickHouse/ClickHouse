@@ -10,9 +10,7 @@
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <IO/ReadBufferFromS3.h>
-#include <Parsers/IParser.h>
-#include <IO/S3/Client.h>
+
 
 namespace DB
 {
@@ -25,9 +23,6 @@ namespace S3RequestSetting
 
 class S3ObjectStorage : public IObjectStorage
 {
-public:
-    using S3CredentialsRefreshCallback = ReadBufferFromS3::S3CredentialsRefreshCallback;
-
 private:
     friend class S3PlainObjectStorage;
 
@@ -39,8 +34,7 @@ private:
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
-        bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
+        bool for_disk_s3_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
@@ -49,7 +43,6 @@ private:
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
-        , credentials_refresh_callback(credentials_refresh_callback_)
     {
     }
 
@@ -60,9 +53,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "S3"; }
-
-    std::string getDiskName() const override { return disk_name; }
+    std::string getName() const override { return "S3ObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return uri.key; }
 
@@ -156,7 +147,7 @@ private:
 
     std::string disk_name;
 
-    mutable MultiVersion<S3::Client> client;
+    MultiVersion<S3::Client> client;
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
@@ -165,7 +156,6 @@ private:
     LoggerPtr log;
 
     const bool for_disk_s3;
-    S3CredentialsRefreshCallback credentials_refresh_callback;
 };
 
 }

@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
-#include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -100,8 +99,7 @@ public:
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -137,14 +135,6 @@ private:
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
-    std::shared_ptr<const QueryPlan> query_plan;
 };
-
-ASTPtr tryBuildAdditionalFilterAST(
-    const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
-    Tables * external_tables,
-    ContextMutablePtr & context);
 
 }

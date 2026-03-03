@@ -59,13 +59,8 @@ if __name__ == "__main__":
     title, body, labels = GH.get_pr_title_body_labels()
     if not title or not body:
         print("WARNING: Failed to get PR title or body, read from environment")
-        body = Info().pr_body
-        labels = Info().pr_labels
 
-    if "release" in labels or "release-lts" in labels:
-        print("NOTE: Release PR detected, skipping changelog entry check")
-        sys.exit(0)
-
+    body = Info().pr_body
     error, category = get_category(body)
     if error or not category:
         print(f"ERROR: {error}")

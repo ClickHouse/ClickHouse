@@ -244,11 +244,7 @@ public:
         if (unlikely(whole_part + 1.0 == whole_part))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
-            writeText(
-                std::floor(
-                    whole_part * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale))
-                    / static_cast<Float64>(unit_multiplier)),
-                buf_to);
+            writeText(std::floor(whole_part * DecimalUtils::scaleMultiplier<Int64>(unit_scale) / unit_multiplier), buf_to);
             buf_to.write(unit_name, unit_name_size);
             writeChar('s', buf_to);
             has_output = true;
@@ -258,7 +254,7 @@ public:
         UInt64 num_units = 0;
         if (unit_scale == 0)  /// dealing with whole number of seconds
         {
-            num_units = static_cast<UInt64>(std::floor(whole_part / static_cast<double>(unit_multiplier)));
+            num_units = static_cast<UInt64>(std::floor(whole_part / unit_multiplier));
 
             if (!num_units)
             {
@@ -268,7 +264,7 @@ public:
             }
 
             /// Remaining value to print on next iteration.
-            whole_part -= static_cast<double>(num_units * unit_multiplier);
+            whole_part -= num_units * unit_multiplier;
         }
         else   /// dealing with sub-seconds, a bit more peculiar to avoid more precision issues
         {

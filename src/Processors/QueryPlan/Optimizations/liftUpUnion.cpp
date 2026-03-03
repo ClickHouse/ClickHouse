@@ -25,10 +25,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Union does not change header.
         /// We can push down expression and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = expression->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = expression->getOutputHeader();
 
         ///                    - Something
         /// Expression - Union - Something

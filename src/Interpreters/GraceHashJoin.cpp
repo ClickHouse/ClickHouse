@@ -23,13 +23,6 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForJoin;
 }
 
-namespace ProfileEvents
-{
-    extern const Event ExternalJoinCompressedBytes;
-    extern const Event ExternalJoinUncompressedBytes;
-    extern const Event ExternalJoinWritePart;
-}
-
 namespace DB
 {
 
@@ -266,12 +259,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
-    , tmp_data(tmp_data_->childScope({
-            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
-            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
-            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-            .num_files = ProfileEvents::ExternalJoinWritePart,
-        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
+    , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin, table_join->temporaryFilesBufferSize()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -460,14 +448,8 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
 
 void GraceHashJoin::setTotals(const Block & block)
 {
-    std::lock_guard lock(totals_mutex);
-    IJoin::setTotals(block);
-}
-
-const Block & GraceHashJoin::getTotals() const
-{
-    std::lock_guard lock(totals_mutex);
-    return IJoin::getTotals();
+    if (block.rows() > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin, got '{}'", block.dumpStructure());
 }
 
 size_t GraceHashJoin::getTotalRowCount() const

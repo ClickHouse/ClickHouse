@@ -103,12 +103,7 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     files_path = f"{table_name}_data"
 
     for node in [node1, node2]:
-        node.query("DROP DATABASE IF EXISTS r SYNC")
-
-    # Clean up the ZK path in case DROP DATABASE on an older binary didn't fully remove it
-    zk_client = started_cluster.get_kazoo_client("zoo1")
-    if zk_client.exists("/clickhouse/databases/replicateddb3"):
-        zk_client.delete("/clickhouse/databases/replicateddb3", recursive=True)
+        node.query("DROP DATABASE IF EXISTS r")
 
     node1.query(
         "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node1')"
@@ -169,34 +164,7 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
             if expected_rows[0] == get_count():
                 break
             time.sleep(1)
-
-        if expected_rows[0] != get_count():
-            files_to_generate = expected_rows[0]  # 1 row per file
-            expected_files = [
-                f"{files_path}/test_{x}.csv" for x in range(files_to_generate)
-            ]
-
-            for node in [node1, node2]:
-                node.query("SYSTEM FLUSH LOGS")
-
-            processed_files = (
-                node.query(
-                    f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-                )
-                .strip()
-                .split("\n")
-            )
-
-            processed_files.sort()
-            logging.debug(f"Processed files: {processed_files}")
-            missing_files = [
-                file for file in expected_files if file not in processed_files
-            ]
-            missing_files.sort()
-
-            assert (
-                False
-            ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
+        assert expected_rows[0] == get_count()
 
     add_files_and_check()
 
@@ -309,6 +277,3 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     assert buckets_num == metadata["buckets"]
 
     node.query(f"DROP TABLE r.{table_name} SYNC")
-
-    for node in [node1, node2]:
-        node.query("DROP DATABASE IF EXISTS r SYNC")

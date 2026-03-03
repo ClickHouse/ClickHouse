@@ -8,13 +8,11 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_a
             Description: minmax GRANULARITY 1
-            Condition: and((a in (-Inf, 129]), (a in [110, +Inf)))
             Parts: 2/2
             Granules: 50/50
           Skip
             Name: idx_b
             Description: set GRANULARITY 1
-            Condition: (b in [2, 2])
             Parts: 2/2
             Granules: 50/50
           Ranges: 2
@@ -28,13 +26,11 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_a
             Description: minmax GRANULARITY 1
-            Condition: and((a in (-Inf, 129]), (a in [110, +Inf)))
             Parts: 1/1
             Granules: 6/50
           Skip
             Name: idx_b
             Description: set GRANULARITY 1
-            Condition: (b in [2, 2])
             Parts: 1/1
             Granules: 6/6
           Ranges: 1
@@ -48,13 +44,11 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_a
             Description: minmax GRANULARITY 1
-            Condition: and((a in (-Inf, 129]), (a in [110, +Inf)))
             Parts: 1/2
             Granules: 6/50
           Skip
             Name: idx_b
             Description: set GRANULARITY 1
-            Condition: (b in [2, 2])
             Parts: 1/1
             Granules: 6/6
           Ranges: 1

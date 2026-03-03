@@ -20,16 +20,19 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Name of the main node is shorter than prefix.");
 }
 
-EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
+template <typename T>
+std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_,
     const String & temp_path,
     const ZooKeeperWithFaultInjectionPtr & zookeeper_,
-    const std::vector<String> & deduplication_paths,
+    const T & deduplication_path,
     const std::optional<String> & znode_data)
 {
+    static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+
     String path;
 
-    if (deduplication_paths.empty())
+    if (deduplication_path.empty())
     {
         String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER);
         path = zookeeper_->create(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential);
@@ -40,9 +43,15 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
 
         /// Check for duplicates in advance, to avoid superfluous block numbers allocation
         Coordination::Requests ops;
-
-        for (const auto & single_dedup_path : deduplication_paths)
-            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
+        if constexpr (async_insert)
+        {
+            for (const auto & single_dedup_path : deduplication_path)
+                zkutil::addCheckNotExistsRequest(ops, *zookeeper_, single_dedup_path);
+        }
+        else
+        {
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper_, deduplication_path);
+        }
 
         auto deduplication_path_ops_size = ops.size();
 
@@ -51,16 +60,27 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e == Coordination::Error::ZNODEEXISTS)
         {
-            auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
-
-            if (failed_idx < deduplication_path_ops_size)
+            if constexpr (async_insert)
             {
-                const String & failed_op_path = ops[failed_idx]->getPath();
+                auto failed_idx = zkutil::getFailedOpIndex(Coordination::Error::ZNODEEXISTS, responses);
+
+                if (failed_idx < deduplication_path_ops_size)
+                {
+                    const String & failed_op_path = ops[failed_idx]->getPath();
+                    LOG_DEBUG(
+                        getLogger("createEphemeralLockInZooKeeper"),
+                        "Deduplication path already exists: deduplication_path={}",
+                        failed_op_path);
+                    return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
+                }
+            }
+            else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            {
                 LOG_DEBUG(
                     getLogger("createEphemeralLockInZooKeeper"),
                     "Deduplication path already exists: deduplication_path={}",
-                    failed_op_path);
-                return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
+                    deduplication_path);
+                return {};
             }
         }
 
@@ -96,7 +116,7 @@ void EphemeralLockInZooKeeper::checkCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
 }
 
-void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops) const
+void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)
 {
     checkCreated();
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
@@ -209,20 +229,6 @@ void EphemeralLocksInAllPartitions::unlock()
     zookeeper = nullptr;
 }
 
-void EphemeralLocksInAllPartitions::assumeUnlocked()
-{
-    zookeeper = nullptr;
-}
-
-void EphemeralLocksInAllPartitions::getUnlockOps(Coordination::Requests & ops) const
-{
-    if (!zookeeper)
-        return;
-
-    for (const auto & lock : locks)
-        ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
-}
-
 EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
 {
     try
@@ -235,22 +241,12 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
     }
 }
 
-void PartitionBlockNumbersHolder::assumeUnlocked()
-{
-    if (multiple_partitions_holder)
-        multiple_partitions_holder->assumeUnlocked();
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<String>(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path,
+    const std::optional<String> & znode_data);
 
-    if (single_partition_holder)
-        single_partition_holder->assumeUnlocked();
-}
-
-void PartitionBlockNumbersHolder::getUnlockOps(Coordination::Requests & ops) const
-{
-    if (multiple_partitions_holder)
-        multiple_partitions_holder->getUnlockOps(ops);
-
-    if (single_partition_holder)
-        single_partition_holder->getUnlockOp(ops);
-}
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
+    const std::optional<String> & znode_data);
 
 }

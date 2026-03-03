@@ -7,6 +7,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/WriteBufferFromString.h>
 #include "config.h"
 
 #include <span>
@@ -37,7 +38,6 @@ struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
-class WriteBufferFromOwnString;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -88,10 +88,6 @@ struct ColumnsWithRowNumbers
     std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
     std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
-
-/// Helper throw functions so Column headers don't need to include Exception.h.
-[[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
-[[noreturn]] void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type);
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -186,11 +182,15 @@ public:
     struct Options
     {
         Int64 optimize_const_name_size = -1;
-        bool notFull(WriteBufferFromOwnString & buf) const;
+
+        bool notFull(WriteBufferFromOwnString & buf) const
+        {
+            return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+        }
     };
 
-    virtual void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
-    String getValueName(size_t n, const Options & options) const;
+    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -535,13 +535,13 @@ public:
     /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
-    /** Computes minimum and maximum element of the column in the range [start, end).
+    /** Computes minimum and maximum element of the column.
       * In addition to numeric types, the function is completely implemented for Date and DateTime.
       * For strings and arrays function should return default value.
       *  (except for constant columns; they should return value of the constant).
-      * If the range is empty the function should return default value.
+      * If column is empty function should return default value.
       */
-    virtual void getExtremes(Field & min, Field & max, size_t start, size_t end) const = 0;
+    virtual void getExtremes(Field & min, Field & max) const = 0;
 
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).
@@ -886,6 +886,9 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
+
+/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
+bool isColumnLazy(const IColumn & column);
 
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);

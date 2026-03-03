@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_mt;
 
 CREATE TABLE t_mem (a Int32, b Int32) ENGINE = Memory;
-CREATE TABLE t_mt (a Int32, b Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi';
+CREATE TABLE t_mt (a Int32, b Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
 
 INSERT INTO t_mem SELECT number, sipHash64(number, 1) FROM numbers(5_000);
 INSERT INTO t_mt SELECT number, sipHash64(number, 2) FROM numbers(5_000);
@@ -17,7 +17,6 @@ SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET join_use_nulls = 1;
-SET enable_join_runtime_filters = 0;
 
 SELECT * FROM t_view AS t1
 LEFT JOIN t_mem AS t2

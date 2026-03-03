@@ -169,16 +169,7 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
     hash_state.update(is_deterministic_constant);
 
     if (column)
-    {
         hash_state.update(column->getName());
-
-        /// We must also hash the actual constant value, not just the column type name.
-        /// Otherwise, two different constants with the same type and the same expression-based
-        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
-        /// leading to query condition cache collisions and incorrect results.
-        if (isColumnConst(*column))
-            column->updateHashWithValue(0, hash_state);
-    }
 
     for (const auto & child : children)
         child->updateHash(hash_state);
@@ -565,15 +556,6 @@ void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 
     if (!replaced)
         outputs.push_back(&node);
-}
-
-ActionsDAG::NodeRawConstPtrs ActionsDAG::getNodesPointers() const
-{
-    NodeRawConstPtrs result;
-    result.reserve(nodes.size());
-    for (const auto & node : nodes)
-        result.push_back(&node);
-    return result;
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
@@ -1725,26 +1707,6 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
     return addAlias(func, node.result_name);
 }
 
-void ActionsDAG::removeTrivialWrappers()
-{
-    auto is_trivial_wrapper = [](const Node * node)
-    {
-        return node->type == ActionType::FUNCTION && node->children.size() == 1
-            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
-    };
-
-    for (auto & node : nodes)
-        for (auto & child : node.children)
-            while (is_trivial_wrapper(child))
-                child = child->children[0];
-
-    for (auto *& output : outputs)
-        while (is_trivial_wrapper(output))
-            output = output->children[0];
-
-    removeUnusedActions();
-}
-
 ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,
@@ -1752,8 +1714,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     ContextPtr context,
     bool ignore_constant_values,
     bool add_cast_columns,
-    NameToNameMap * new_names,
-    NameSet * columns_contain_compiled_function)
+    NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1825,15 +1786,6 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
                         res_elem.name);
-            }
-            else if (columns_contain_compiled_function && columns_contain_compiled_function->contains(res_elem.name))
-            {
-                /// It may happen when JIT compilation is enabled that source column is constant and destination column is not constant.
-                /// e.g. expression "and(equals(materialize(null::Nullable(UInt64)), null::Nullable(UInt64)), equals(null::Nullable(UInt64), null::Nullable(UInt64)))"
-                /// compiled expression is "and(equals(input: Nullable(UInt64), null), null). Partial evaluation of the compiled expression isn't able to infer that the result column is constant.
-                /// It causes inconsistency between pipeline header(source column is not constant) and output header of ExpressionStep(destination column is constant).
-                /// So we need to convert non-constant column to constant column under this condition.
-                dst_node = &actions_dag.addColumn(res_elem);
             }
             else
                 throw Exception(
@@ -2483,7 +2435,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         if (input->column)
             continue;
 
-        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        auto constant_column = input->result_type->createColumnConst(0, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
         input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
     }
@@ -2502,15 +2454,13 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         return false;
     }
 
-    if (!filter_with_default_value_inputs)
-        return false;
-
     const auto * filter_with_default_value_inputs_filter_node = filter_with_default_value_inputs->getOutputs()[0];
     if (!filter_with_default_value_inputs_filter_node->column || !isColumnConst(*filter_with_default_value_inputs_filter_node->column))
         return false;
 
     const auto & constant_type = filter_with_default_value_inputs_filter_node->result_type;
-    if (!constant_type->canBeUsedInBooleanContext())
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
         return false;
 
     Field value;
@@ -2519,7 +2469,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    auto predicate_value = value.safeGet<UInt8>();
+    UInt8 predicate_value = value.safeGet<UInt8>();
     return predicate_value == 0;
 }
 
@@ -2792,12 +2742,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    if (result_predicate->type == ActionType::COLUMN)
-    {
-        /// If result is a column, it means that predicate is constant. Let's not push it further.
-        return {};
-    }
-
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
@@ -2935,6 +2879,20 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
     NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+
+    if (rejected_conjunctions.size() == 1)
+    {
+        chassert(rejected_conjunctions.front()->result_type);
+
+        bool left_stream_push_constant = !left_stream_allowed_conjunctions.empty() && left_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
+        bool right_stream_push_constant = !right_stream_allowed_conjunctions.empty() && right_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
+
+        if ((left_stream_push_constant || right_stream_push_constant) && !rejected_conjunctions.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return {};
+        }
+    }
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
@@ -3823,18 +3781,12 @@ static MutableColumnPtr deserializeConstant(
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
+        registry.sets[hash].push_back(column_set.get());
 
         if (!is_constant)
-        {
-            registry.sets[hash].push_back(column_set.get());
             return column_set;
-        }
 
-        auto column_const = ColumnConst::create(std::move(column_set), 0);
-        /// After move, get the pointer from ColumnConst
-        const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
-        registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
-        return column_const;
+        return ColumnConst::create(std::move(column_set), 0);
     }
 
     if (WhichDataType(type).isFunction())

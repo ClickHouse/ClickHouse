@@ -33,6 +33,7 @@
 #include <memory>
 #include <variant>
 #include <optional>
+#include <numeric>
 
 
 /** This dictionary stores all content in a hash table in memory
@@ -106,14 +107,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -170,10 +171,10 @@ public:
 
 private:
     template <typename Value>
-    using CollectionsHolder = VectorWithMemoryTracking<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
+    using CollectionsHolder = std::vector<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
-    using NullableSets = VectorWithMemoryTracking<NullableSet>;
+    using NullableSets = std::vector<NullableSet>;
 
     struct Attribute final
     {
@@ -265,7 +266,7 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
 
-    VectorWithMemoryTracking<Attribute> attributes;
+    std::vector<Attribute> attributes;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
@@ -275,8 +276,8 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
-    VectorWithMemoryTracking<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
+    std::vector<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

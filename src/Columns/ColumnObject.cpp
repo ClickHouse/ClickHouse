@@ -1,9 +1,11 @@
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -269,7 +271,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
         name_buf << '{';
@@ -288,7 +290,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -309,7 +311,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -345,12 +347,14 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             const auto column = decoded_type->createColumn();
             decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-            column->getValueNameImpl(name_buf, 0, options);
+            column->getValueNameAndTypeImpl(name_buf, 0, options);
         }
     }
 
     if (options.notFull(name_buf))
         name_buf << "}";
+
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -640,13 +644,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     }
 
     /// Finally, insert paths from shared data.
-    /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
-    /// and destination columns, we can insert into shared data from source shared data directly.
-    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
-        shared_data->insertFrom(*src_object_column.shared_data, n);
-    /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
-    else
-        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+    insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -686,13 +684,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     }
 
     /// Finally, insert paths from shared data.
-    /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
-    /// and destination columns, we can insert into shared data from source shared data directly.
-    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
-        shared_data->insertRangeFrom(*src_object_column.shared_data, start, length);
-    /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
-    else
-        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+    insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -1539,7 +1531,7 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
+void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
 {
     if (empty())
     {

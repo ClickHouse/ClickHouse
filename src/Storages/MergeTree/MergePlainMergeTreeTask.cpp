@@ -8,7 +8,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 
 
@@ -34,7 +33,6 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
-    auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::executeStep");
     /// All metrics will be saved in the thread_group, including all scheduled tasks.
     /// In profile_counters only metrics from this thread will be saved.
     ProfileEventsScope profile_events_scope(&profile_counters);
@@ -156,25 +154,19 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
-    auto prewarm_caches = storage.getCachesToPrewarm(new_part->getBytesUncompressedOnDisk());
+    size_t bytes_uncompressed = new_part->getBytesUncompressedOnDisk();
 
-    if (prewarm_caches.mark_cache)
+    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
     {
         auto marks = merge_task->releaseCachedMarks();
-        addMarksToCache(*new_part, marks, prewarm_caches.mark_cache.get());
+        addMarksToCache(*new_part, marks, mark_cache.get());
     }
 
-    if (prewarm_caches.index_mark_cache)
-    {
-        auto index_marks = merge_task->releaseCachedIndexMarks();
-        addMarksToCache(*new_part, index_marks, prewarm_caches.index_mark_cache.get());
-    }
-
-    if (prewarm_caches.primary_index_cache)
+    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
     {
         /// Move index to cache and reset it here because we need
         /// a correct part name after rename for a key of cache entry.
-        new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+        new_part->moveIndexToCache(*index_cache);
     }
 
     write_part_log({});
@@ -195,7 +187,6 @@ void MergePlainMergeTreeTask::finish()
 
 void MergePlainMergeTreeTask::cancel() noexcept
 {
-    auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::cancel");
     if (merge_task)
         merge_task->cancel();
 
@@ -213,10 +204,11 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    auto context = Context::createCopy(storage.getContext());
     context->makeQueryContextForMerge(*storage.getSettings());
     auto query_id = getQueryId();
     context->setCurrentQueryId(query_id);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
     return context;
 }
 

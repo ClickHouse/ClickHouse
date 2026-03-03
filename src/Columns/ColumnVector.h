@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
@@ -16,6 +17,11 @@ class SipHash;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** A template for columns that use a simple array to store.
  */
@@ -97,9 +103,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throwCannotPopBack(n, this->getName(), size());
-
         data.resize_assume_reserved(data.size() - n);
     }
 
@@ -206,7 +209,7 @@ public:
         res = (*this)[n];
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -219,7 +222,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "UInt");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
@@ -228,7 +231,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "Int");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
@@ -236,7 +239,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "bool");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
@@ -267,7 +270,7 @@ public:
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }

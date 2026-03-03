@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/MergeTreeSerializationEnums.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {

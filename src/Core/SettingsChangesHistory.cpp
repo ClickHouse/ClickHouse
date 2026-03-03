@@ -39,84 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.3",
-        {
-            {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
-            {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
-            {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
-            {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
-            {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
-        });
-        addSettingsChanges(settings_changes_history, "26.2",
-        {
-            {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
-            {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
-            {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
-            {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
-            {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
-            {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
-            {"parallel_replicas_filter_pushdown", false, false, "New setting"},
-            {"optimize_dry_run_check_part", true, true, "New setting"},
-            {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
-            {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
-            {"enable_full_text_index", false, true, "The text index is now GA"},
-            {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
-            {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
-            {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
-            {"use_statistics_cache", false, true, "Enable statistics cache"},
-            {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
-            {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
-            {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
-            {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
-            {"allow_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
-            {"allow_experimental_insert_into_iceberg", false, false, "Insert into iceberg was moved to Beta"},
-            {"output_format_arrow_date_as_uint16", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."},
-            {"jemalloc_profile_text_output_format", "collapsed", "collapsed", "New setting to control output format for system.jemalloc_profile_text table. Possible values: 'raw', 'symbolized', 'collapsed'"},
-            {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
-            {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
-            {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
-        });
-        addSettingsChanges(settings_changes_history, "26.1",
-        {
-            {"use_statistics", true, true, "Enable this optimization by default."},
-            {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
-            {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
-            {"distributed_index_analysis", false, false, "New experimental setting"},
-            {"distributed_index_analysis_for_non_shared_merge_tree", false, false, "New setting"},
-            {"distributed_cache_file_cache_name", "", "", "New setting."},
-            {"trace_profile_events_list", "", "", "New setting"},
-            {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
-            {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
-            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
-            {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
-            {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
-            {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
-            {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
-            {"max_insert_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "An alias for max_insert_block_size."},
-            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
-            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
-            {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
-            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
-            {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
-            {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
-            {"use_skip_indexes_on_data_read", false, true, "Default enable"},
-            {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
-            {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
-            {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
-            {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_POSSIBLE"},
-            {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
-            {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
-            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
-            {"use_variant_as_common_type", false, true, "Improves usability."},
-            {"max_dynamic_subcolumns_in_json_type_parsing", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns during JSON type parsing regardless the parameters specified in the data type"},
-            {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
-            {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
-            {"database_datalake_require_metadata_access", true, true, "New setting."},
-            {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
-        });
         addSettingsChanges(settings_changes_history, "25.12",
         {
             {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
@@ -142,7 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
-            {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
+            {"apply_row_policy_after_final", true, true, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
             {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
@@ -162,6 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
+            {"parallel_replicas_filter_pushdown", false, false, "New setting"},
 
         });
         addSettingsChanges(settings_changes_history, "25.11",
@@ -347,7 +270,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
-            {"allow_insert_into_iceberg", false, false, "New setting."},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
@@ -573,7 +496,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
-            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
@@ -1070,29 +993,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.3",
-        {
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
-        {
-            {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
-            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
-            {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
-            {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
-            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
-            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
-        {
-            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
-            {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
-            {"materialize_statistics_on_merge", true, true, "New setting"},
-            {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},

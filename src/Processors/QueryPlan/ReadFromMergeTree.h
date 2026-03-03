@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -10,10 +9,12 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
-#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
+
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class Pipe;
 class ParallelReadingExtension;
@@ -31,15 +32,28 @@ struct MergeTreeDataSelectSamplingData
     bool use_sampling = false;
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
-    boost::intrusive_ptr<ASTFunction> filter_function;
+    std::shared_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
 struct UsefulSkipIndexes
 {
-    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
+    struct MergedDataSkippingIndexAndCondition
+    {
+        std::vector<MergeTreeIndexPtr> indices;
+        MergeTreeIndexMergedConditionPtr condition;
+
+        void addIndex(const MergeTreeIndexPtr & index)
+        {
+            indices.push_back(index);
+            condition->addIndex(indices.back());
+        }
+    };
+
+    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
+    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
@@ -89,17 +103,6 @@ public:
         PrimaryKeyExpand,
     };
 
-    struct DistributedIndexStat
-    {
-        std::string address;
-        size_t num_parts_send;
-        size_t num_parts_received;
-        size_t num_granules_send;
-        size_t num_granules_received;
-        /// Note, probably need to include the following as well:
-        /// - search_algorithm
-    };
-
     /// This is a struct with information about applied indexes.
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
@@ -113,8 +116,6 @@ public:
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-
-        std::vector<DistributedIndexStat> distributed = {};
     };
 
     using IndexStats = std::vector<IndexStat>;
@@ -269,8 +270,6 @@ public:
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
-            , use_skip_indexes_if_final_exact_mode(false)
-            , use_skip_indexes_on_data_read(false)
         {}
 
         KeyCondition key_condition;
@@ -282,8 +281,6 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
-        bool use_skip_indexes_if_final_exact_mode;
-        bool use_skip_indexes_on_data_read;
         std::optional<std::unordered_set<String>> part_values;
     };
 
@@ -304,13 +301,13 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
-        bool allow_query_condition_cache_,
-        bool supports_skip_indexes_on_data_read);
+        bool allow_query_condition_cache_);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
@@ -320,6 +317,7 @@ public:
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
@@ -355,35 +353,19 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
-    bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
-
-    static void buildIndexes(
-        std::optional<ReadFromMergeTree::Indexes> & indexes,
-        const ActionsDAG * filter_actions_dag_,
-        const MergeTreeData & data,
-        const RangesInDataParts & parts,
-        [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
-        [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
-        const ContextPtr & query_context,
-        const SelectQueryInfo & query_info_,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool skip_partition_pruning_ = false);
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
-
-    bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
@@ -402,6 +384,7 @@ private:
     Names all_column_names;
 
     const MergeTreeData & data;
+    LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
@@ -422,7 +405,6 @@ private:
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
-    bool skip_partition_pruning = false;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;

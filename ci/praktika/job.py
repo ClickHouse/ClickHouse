@@ -42,16 +42,11 @@ class Job:
         command: str
 
         # What job requires
-        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
+        #   May be phony or physical names
         requires: List[str] = field(default_factory=list)
 
-        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
-        # hard dependencies: they must run (and cannot be skipped as unaffected)
-        # unless their artifacts are already cached by CI.
-        needs_jobs_from_requires: bool = False
-
         # What job provides
-        #   May be only `Artifact.Config.name`
+        #   May be phony or physical names
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None

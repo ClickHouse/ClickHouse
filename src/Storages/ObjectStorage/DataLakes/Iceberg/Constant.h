@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/types.h>
 namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.

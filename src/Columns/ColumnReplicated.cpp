@@ -82,9 +82,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-void ColumnReplicated::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
-    nested_column->getValueNameImpl(name_buf, indexes.getIndexAt(n), options);
+    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
 }
 
 bool ColumnReplicated::getBool(size_t n) const
@@ -533,11 +533,10 @@ void ColumnReplicated::updateHashFast(SipHash & hash) const
     nested_column->updateHashFast(hash);
 }
 
-void ColumnReplicated::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnReplicated::getExtremes(Field & min, Field & max) const
 {
     /// It might happen that some indexes are unused, so we cannot call nested_column->getExtremes.
-    auto indexed = nested_column->index(*indexes.getIndexes(), 0);
-    indexed->getExtremes(min, max, start, end);
+    nested_column->index(*indexes.getIndexes(), 0)->getExtremes(min, max);
 }
 
 void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size_t from, size_t limit) const
@@ -670,7 +669,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], i);
     return result;
 }
 

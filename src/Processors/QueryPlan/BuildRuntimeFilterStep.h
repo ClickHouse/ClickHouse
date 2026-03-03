@@ -18,9 +18,6 @@ public:
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling,
-        Float64 max_ratio_of_set_bits_in_bloom_filter,
         bool allow_to_use_not_exact_filter_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
@@ -40,8 +37,6 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    void describeActions(FormatSettings & settings) const override;
-
 private:
     void updateOutputHeader() override;
 
@@ -52,9 +47,6 @@ private:
     UInt64 exact_values_limit;
     UInt64 bloom_filter_bytes;
     UInt64 bloom_filter_hash_functions;
-    Float64 pass_ratio_threshold_for_disabling;
-    UInt64 blocks_to_skip_before_reenabling;
-    Float64 max_ratio_of_set_bits_in_bloom_filter;
 
     bool allow_to_use_not_exact_filter;
 };

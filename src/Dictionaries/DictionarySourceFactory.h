@@ -2,9 +2,8 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Logger_fwd.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <unordered_map>
 #include <boost/noncopyable.hpp>
 
 namespace Poco
@@ -13,6 +12,8 @@ namespace Util
 {
     class AbstractConfiguration;
 }
+
+class Logger;
 }
 
 namespace DB
@@ -57,7 +58,7 @@ public:
     void checkSourceAvailable(const std::string & source_type, const std::string & dictionary_name, const ContextPtr & context) const;
 
 private:
-    using SourceRegistry = UnorderedMapWithMemoryTracking<std::string, Creator>;
+    using SourceRegistry = std::unordered_map<std::string, Creator>;
     SourceRegistry registered_sources;
 
     LoggerPtr log;

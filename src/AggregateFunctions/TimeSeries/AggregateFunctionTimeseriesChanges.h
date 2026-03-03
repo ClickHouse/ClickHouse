@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstring>
+#include <deque>
+#include <vector>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -13,8 +15,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -111,7 +111,7 @@ public:
     }
 
 private:
-    void fillResultValue(const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
+    void fillResultValue(const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         if (samples_in_window.empty())
@@ -171,8 +171,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
+        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets

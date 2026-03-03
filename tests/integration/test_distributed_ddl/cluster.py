@@ -96,10 +96,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             )
 
             self.ddl_check_query(
-                instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster' SYNC"
-            )
-            self.ddl_check_query(
-                instance, "CREATE DATABASE test ON CLUSTER 'cluster'"
+                instance, "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster'"
             )
 
         except Exception as e:

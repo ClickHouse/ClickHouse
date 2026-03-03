@@ -51,6 +51,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -164,6 +166,7 @@ public:
     void addCreatingSetsTransform(
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
+        StoragePtr external_table,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 

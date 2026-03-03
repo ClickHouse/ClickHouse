@@ -19,7 +19,7 @@ struct KostikConsistentHashImpl
 
     static ResultType apply(UInt64 hash, BucketsType n)
     {
-        return static_cast<ResultType>(ConsistentHashing(hash, n));
+        return ConsistentHashing(hash, n);
     }
 };
 

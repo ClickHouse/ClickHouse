@@ -1,7 +1,5 @@
 -- Test for issue #96068
 
-SET use_statistics = 1;
-
 DROP TABLE IF EXISTS tab;
 
 -- The table has no manually or automatically created statistics

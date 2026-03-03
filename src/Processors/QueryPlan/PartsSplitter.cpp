@@ -875,7 +875,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             if (type->isNullable())
             {
                 pks_ast.push_back(makeASTFunction("isNull", pk_ast));
-                values_ast.push_back(make_intrusive<ASTLiteral>(values[i].isNull() ? 1 : 0));
+                values_ast.push_back(std::make_shared<ASTLiteral>(values[i].isNull() ? 1 : 0));
                 pk_ast = makeASTFunction("assumeNotNull", pk_ast);
             }
 
@@ -889,12 +889,12 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             }
             else
             {
-                ASTPtr component_ast = make_intrusive<ASTLiteral>(values[i]);
+                ASTPtr component_ast = std::make_shared<ASTLiteral>(values[i]);
                 auto decayed_type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
 
                 // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
                 // So we need an explicit Cast for them.
-                component_ast = makeASTFunction("cast", std::move(component_ast), make_intrusive<ASTLiteral>(decayed_type->getName()));
+                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(decayed_type->getName()));
 
                 values_ast.push_back(std::move(component_ast));
             }
@@ -1131,9 +1131,6 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
     bool split_intersecting_parts_ranges_into_layers)
 {
-    if (!max_layers)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layers should be greater than 0");
-
     auto logger = getLogger("PartsSplitter");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
@@ -1184,12 +1181,15 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
 
-    if (!split_intersecting_parts_ranges_into_layers || max_layers == 1)
+    if (!split_intersecting_parts_ranges_into_layers)
     {
         if (!intersecting_parts_ranges.empty())
             result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
+
+    if (max_layers <= 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);

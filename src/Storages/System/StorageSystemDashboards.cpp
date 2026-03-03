@@ -1498,26 +1498,28 @@ ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
         },
         {
             { "dashboard", "Cloud overview" },
-            { "title", "Primary Index Cache Bytes (max/server)" },
+            { "title", "Primary Index Cache Bytes" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(CurrentMetric_PrimaryIndexCacheBytes)
-FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric = 'PrimaryIndexCacheBytes'
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
         {
             { "dashboard", "Cloud overview" },
-            { "title", "Primary Index Cache Files (max/server)" },
+            { "title", "Primary Index Cache Files" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(CurrentMetric_PrimaryIndexCacheFiles)
-FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+    AND metric = 'PrimaryIndexCacheFiles'
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
 )EOQ") }

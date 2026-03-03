@@ -109,12 +109,6 @@ When reading diffs, scan for these classes of bugs:
 - Accidental O(N²) patterns on large inputs.
 - Extra syscalls, unnecessary fsyncs, sleeps, or polling in hot paths.
 
-**7) Compilation time & build impact**
-- Adding non-trivial code (function bodies, method implementations, template definitions) to widely-included headers instead of moving it to `.cpp` files. Large function bodies in headers force recompilation of every translation unit that includes them. Prefer keeping only declarations, forward declarations, and truly trivial inline functions in `.h` files.
-- Adding or pulling heavy transitive includes into high-fan-out headers. When a header is included by hundreds or thousands of translation units, every extra `#include` it carries multiplies across the entire build. Watch for headers like `Exception.h`, `IColumn.h`, `IDataType.h`, and other foundational headers gaining new includes. Prefer forward declarations, dedicated lightweight `_fwd.h` headers, or moving the dependency into `.cpp` files.
-- Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
-- Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
-
 CLICKHOUSE-SPECIFIC RULES (MANDATORY)
 - **Deletion logging**  
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
@@ -131,10 +125,8 @@ CLICKHOUSE-SPECIFIC RULES (MANDATORY)
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**  
   New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsHistory.cpp` is updated when settings change.
-- **Cloud/OSS alignment**
+- **Cloud/OSS alignment**  
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
-- **Header hygiene & compilation time**
-  ClickHouse has ~10k translation units; compilation time is a key developer productivity concern. Non-trivial function bodies, template definitions, and `constexpr` logic should live in `.cpp` files, not in headers. Do not add heavy `#include` directives to foundational headers (e.g. `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, `Context_fwd.h`); prefer forward declarations or `_fwd.h` headers. Use `if constexpr` to avoid instantiating template specializations that are statically unreachable.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 
@@ -154,7 +146,6 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Hidden magic constants that should be settings.
 - Confusing or incomplete user-visible behavior/docs.
 - Missing or unclear comments in complex logic that future maintainers must understand.
-- Compilation time regressions: non-trivial code added to widely-included headers, heavy new transitive includes in high-fan-out headers, or unnecessary template instantiations that significantly increase build times.
 
 **Nits** – only mention if they materially improve robustness or clarity
 - Minor refactors that clearly reduce future bug risk.
@@ -220,49 +211,3 @@ STYLE & CONDUCT
 - Avoid changing scope: review what’s in the PR; suggest follow-ups separately.
 - If you are not reasonably confident a finding is a real issue or meaningful risk, **do not mention it**.
 - When performing a code review, **ignore `/.github/workflows/*` files**.
-
-RUNNING STATELESS TESTS
-
-Stateless tests are located in `tests/queries/0_stateless/`.
-
-**Prerequisites:**
-1. Build ClickHouse: `cd build && ninja clickhouse-server`
-2. Start the server: `./build/programs/clickhouse server --config-file ./programs/server/config.xml`
-3. Wait for server to be ready: `./build/programs/clickhouse client -q "SELECT 1"`
-
-**Running tests** (default config uses TCP=9000, HTTP=8123):
-```bash
-CLICKHOUSE_PORT_TCP=9000 CLICKHOUSE_PORT_HTTP=8123 ./tests/clickhouse-test <test_name>
-```
-
-**Useful flags:**
-- `--no-random-settings` - Disable settings randomization (useful for deterministic debugging)
-- `--no-random-merge-tree-settings` - Disable MergeTree settings randomization
-- `--record` - Automatically update `.reference` files when stdout differs
-
-**Test file extensions:**
-- `.sql` - SQL test (most common)
-- `.sql.j2` - Jinja2-templated SQL test
-- `.sh` - Shell script test
-- `.py` - Python test
-- `.expect` - Expect script test
-- `.reference` - Expected output (compared against stdout)
-- `.gen.reference` - Generated reference for `.j2` tests
-
-**Database name normalization:**
-The test runner creates a temporary database with a random name (e.g., `test_abc123`) for each test.
-After test execution, the random database name is replaced with `default` in stdout/stderr files before comparison with `.reference`.
-This means `.reference` files should use `default` for database names, NOT `${CLICKHOUSE_DATABASE}` or the actual random name.
-
-**Test tags:**
-Tests can have tags in the first line as a comment: `-- Tags: no-fasttest, no-parallel`
-Common tags: `disabled`, `no-fasttest`, `no-parallel`, `no-random-settings`, `no-random-merge-tree-settings`, `long`
-
-**Random settings limits:**
-Tests can specify limits for randomized settings: `-- Random settings limits: max_threads=(1, 4); ...`
-
-**Stopping the server:**
-```bash
-pgrep -f "clickhouse server"  # Get PIDs
-kill <pid1> <pid2>            # Stop processes
-```

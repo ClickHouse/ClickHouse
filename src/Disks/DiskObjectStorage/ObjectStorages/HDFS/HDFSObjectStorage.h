@@ -8,7 +8,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
-#include <Common/Logger.h>
+#include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -37,12 +37,10 @@ public:
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
-        bool lazy_initialize,
-        const String & disk_name_ = {})
+        bool lazy_initialize)
         : HDFSErrorWrapper(hdfs_root_path_, config_)
         , config(config_)
         , settings(std::move(settings_))
-        , disk_name(disk_name_)
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
         const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
@@ -57,9 +55,7 @@ public:
             initializeHDFSFS();
     }
 
-    std::string getName() const override { return "HDFS"; }
-
-    std::string getDiskName() const override { return disk_name; }
+    std::string getName() const override { return "HDFSObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return url; }
 
@@ -126,7 +122,6 @@ private:
     mutable std::atomic_bool initialized{false};
 
     SettingsPtr settings;
-    std::string disk_name;
     std::string url;
     std::string url_without_path;
     std::string data_directory;

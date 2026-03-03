@@ -994,7 +994,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
+        if (!isTuple(type0) || !isTuple(type1))
             return {};
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
@@ -1023,8 +1023,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
-            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
+        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
             return {};
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -1884,6 +1883,9 @@ public:
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
+            // if (isTime(new_arguments[0].type))
+            //     new_arguments[0].type = std::make_shared<Int64>();
+
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
@@ -2599,12 +2601,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
-                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
@@ -2721,73 +2723,59 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        auto denull_left_type = removeNullable(arguments[0]);
-        auto denull_right_type = removeNullable(arguments[1]);
-        WhichDataType data_type_lhs(denull_left_type);
-        WhichDataType data_type_rhs(denull_right_type);
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
         if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime()) ||
             (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime()))
             return false;
 
-        return castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
-                {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            });
+                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                    return true;
+            }
+            return false;
+        });
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         assert(2 == arguments.size());
 
-        auto denull_left_type = removeNullable(arguments[0].type);
-        auto denull_right_type = removeNullable(arguments[1].type);
         llvm::Value * result = nullptr;
-
-        castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                        auto * lval = nativeCast(b, arguments[0], result_type);
-                        auto * rval = nativeCast(b, arguments[1], result_type);
-                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-                        return true;
-                    }
+                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                    auto * lval = nativeCast(b, arguments[0], result_type);
+                    auto * rval = nativeCast(b, arguments[1], result_type);
+                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+
+                    return true;
                 }
-                return false;
-            });
+            }
+
+            return false;
+        });
 
         return result;
     }
@@ -3003,53 +2991,36 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// Only division-like operations can have division_by_nullable=true.
-        /// Using if constexpr avoids instantiating FunctionBinaryArithmetic<..., true> and
-        /// FunctionBinaryArithmeticWithConstants<..., true> for all other operations,
-        /// significantly reducing template bloat.
-        static constexpr bool can_have_division_by_nullable =
-            IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::div_floating;
-
-        bool division_by_nullable = false;
-        if constexpr (can_have_division_by_nullable)
-        {
-            /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
-            /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-                && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
-                    || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
-        }
-
-        auto make_adaptor = [&](auto function)
-        {
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                function,
-                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
-                return_type);
-        };
+        /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
+        /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
+        bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
+            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
+                || (IsOperation<Op>::div_floating
+                    && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
-            if constexpr (can_have_division_by_nullable)
-            {
-                if (division_by_nullable)
-                    return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
-                        arguments[0], arguments[1], return_type, context));
-            }
-            return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
-                arguments[0], arguments[1], return_type, context));
-        }
+            auto function = division_by_nullable ? FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
+                    arguments[0], arguments[1], return_type, context)
+                : FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
+                    arguments[0], arguments[1], return_type, context);
 
-        if constexpr (can_have_division_by_nullable)
-        {
-            if (division_by_nullable)
-                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context));
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                function,
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
+                return_type);
         }
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context));
+        auto function = division_by_nullable
+            ? FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context)
+            : FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context);
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            function,
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](const auto & elem) { return elem.type; })},
+            return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

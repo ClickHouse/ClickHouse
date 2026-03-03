@@ -15,4 +15,3 @@ services:
               source: ${DREMIO26_LOGS:-}
               target: /var/log/dremio/
         user: ${DREMIO26_DOCKER_USER}
-        cpus: 3

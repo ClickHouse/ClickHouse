@@ -14,21 +14,24 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <algorithm>
 #include <mutex>
@@ -36,6 +39,7 @@
 #include <utility>
 
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <fmt/ranges.h>
 
@@ -620,7 +624,6 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::detachDatabase");
     if (database_name == TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
     assert(!database_name.empty());
@@ -993,7 +996,6 @@ DatabaseCatalog & DatabaseCatalog::instance()
 
 void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 {
-    auto compoment_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
@@ -1118,7 +1120,6 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
-    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
@@ -1363,7 +1364,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
-    auto ast_attach = make_intrusive<ASTCreateQuery>();
+    auto ast_attach = std::make_shared<ASTCreateQuery>();
     ast_attach->attach = true;
     ast_attach->setDatabase(dropped_table.table_id.database_name);
     ast_attach->setTable(dropped_table.table_id.table_name);
@@ -1450,7 +1451,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
 
     for (const auto & item : tables_to_drop)
     {
-        auto job = [this, table_iterator = item] ()
+        auto job = [&, table_iterator = item] ()
         {
             try
             {
@@ -1527,7 +1528,6 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
     auto db_disk = table.db_disk;
 
     if (table.table)
@@ -1697,7 +1697,6 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             old_view_dependencies.push_back(the_table_from);
         }
     }
-
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),

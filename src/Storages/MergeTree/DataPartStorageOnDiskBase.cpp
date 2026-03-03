@@ -746,17 +746,12 @@ void DataPartStorageOnDiskBase::remove(
 
         if (!disk->existsDirectory(from))
         {
-            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
             return;
         }
-
-        /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
-        /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
-        if (!can_remove_description)
-            can_remove_description.emplace(can_remove_callback());
 
         try
         {
@@ -769,7 +764,10 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
                 return;
             }
             throw;
@@ -778,8 +776,12 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
-                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
+
                 return;
             }
             throw;
@@ -980,11 +982,6 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
-}
-
-bool DataPartStorageOnDiskBase::isCaseInsensitive() const
-{
-    return getDisk()->isCaseInsensitive();
 }
 
 }

@@ -23,7 +23,7 @@ class WebObjectStorage : public IObjectStorage, WithContext
 public:
     WebObjectStorage(const String & url_, ContextPtr context_);
 
-    std::string getName() const override { return "Web"; }
+    std::string getName() const override { return "WebObjectStorage"; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Web; }
 

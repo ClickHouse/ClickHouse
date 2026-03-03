@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>

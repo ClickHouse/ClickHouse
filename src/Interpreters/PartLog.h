@@ -5,7 +5,6 @@
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -75,7 +74,7 @@ struct PartLogElement
     String path_on_disk;
     Strings deduplication_block_ids;
 
-    MergeTreeDataPartFormat part_format;
+    MergeTreeDataPartType part_type;
 
     /// Size of the part
     UInt64 rows = 0;
@@ -93,9 +92,6 @@ struct PartLogElement
     /// Was the operation successful?
     UInt16 error = 0;
     String exception;
-
-    /// Mutation IDs for MUTATE_PART events (array of all mutation IDs applied)
-    Strings mutation_ids;
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 

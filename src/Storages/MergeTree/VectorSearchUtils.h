@@ -18,8 +18,6 @@ struct VectorSearchParameters
     bool return_distances;
 };
 
-using OptionalVectorSearchParameters = std::optional<VectorSearchParameters>;
-
 struct NearestNeighbours
 {
     std::vector<UInt64> rows;

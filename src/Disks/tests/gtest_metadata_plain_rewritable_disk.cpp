@@ -12,7 +12,6 @@
 #include <Core/ServerUUID.h>
 
 #include <Common/thread_local_rng.h>
-#include <Common/FailPoint.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
@@ -77,7 +76,7 @@ private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
         fs::remove_all("./" + key_prefix);
-        LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
+        LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
@@ -165,7 +164,7 @@ TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
         tx->createDirectory("A/B");
         tx->createDirectory("A/B/C");
         tx->createDirectory("A/D");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -188,7 +187,7 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
         tx->createDirectory("A");
         tx->createDirectory("B");
         tx->createDirectory("C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>({"A", "B", "C"}));
@@ -198,7 +197,7 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("D/E/F/G/H");
         tx->createDirectoryRecursive("/D/E/F/K");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     /// For now we can not create file under the directory created in the same tx.
@@ -206,7 +205,7 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
         auto tx = metadata->createTransaction();
         size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("D/E/F/G/H/file").serialize(), "file");
         tx->createMetadataFile("D/E/F/G/H/file", {StoredObject("file", "file", file_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(sorted(metadata->listDirectory("/D/E/F")), std::vector<std::string>({"G", "K"}));
@@ -229,7 +228,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->createDirectory("A");
         tx->createDirectory("A/B");
         tx->createDirectoryRecursive("A/B/C/D");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     auto a_path = createMetadataObjectPath(metadata, "A");
@@ -240,7 +239,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("A", "MOVED");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
@@ -277,7 +276,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
         tx->createDirectory("A");
         tx->createDirectory("A/B");
         tx->createDirectory("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     auto a_path = createMetadataObjectPath(metadata, "A");
@@ -289,7 +288,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
         auto tx = metadata->createTransaction();
         tx->moveDirectory("A", "MOVED");
         tx->moveFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_EQ(readObject(object_storage, a_path), "A/");
@@ -325,7 +324,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateNotFromRoot)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A/B/C");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
@@ -341,7 +340,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateRecursive)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -359,7 +358,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
         tx->createDirectory("A");
         tx->createDirectory("A/B");
         tx->createDirectory("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -369,7 +368,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -379,7 +378,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("A");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -395,7 +394,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectory)
         auto tx = metadata->createTransaction();
         tx->removeDirectory("A/B");
         tx->removeDirectory("A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
@@ -418,7 +417,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
         tx->createDirectory("A");
         tx->createDirectory("A/B");
         tx->createDirectory("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -429,7 +428,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
         auto tx = metadata->createTransaction();
         tx->removeDirectory("A/B/C");
         tx->removeDirectory("A");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -439,7 +438,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("X");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -457,7 +456,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryUndo)
         tx->removeDirectory("A/B/C");
         tx->removeDirectory("A/B");
         tx->removeDirectory("A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A"));
@@ -486,7 +485,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
         tx->createDirectory("root/A/B/D");
         tx->createDirectory("root/A/B/E");
         tx->createDirectory("root/A/B/E/F");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
@@ -499,7 +498,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
         tx->createMetadataFile("root/A/B/file_2", {StoredObject("root/A/B/file_2", "file_2", file_2_size)});
         tx->createMetadataFile("root/A/C/file_3", {StoredObject("root/A/C/file_3", "file_3", file_3_size)});
         tx->createMetadataFile("root/A/B/E/F/file_4", {StoredObject("root/A/B/E/F/file_4", "file_4", file_4_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("root/A/B"));
@@ -515,9 +514,9 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     /// Check undo
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("root/A", /*should_remove_blob=*/nullptr);
+        tx->removeRecursive("root/A");
         tx->moveFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_EQ(listAllBlobs("RemoveDirectoryRecursive"), inodes_start);
@@ -525,8 +524,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
     /// Remove fs tree
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("root/A", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("root/A");
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("root/A"));
@@ -552,7 +551,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursiveVirtualNodes)
         tx->createDirectory("root");
         tx->createDirectory("root/A");
         tx->createDirectoryRecursive("root/A/B/C/D");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("root/A"));
@@ -562,8 +561,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursiveVirtualNodes)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("root/A", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("root/A");
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("root"));
@@ -592,7 +591,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
         tx->createDirectory("B");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -602,7 +601,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
         auto tx = metadata->createTransaction();
         size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
         tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("A/file"));
@@ -613,7 +612,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
     {
         auto tx = metadata->createTransaction();
         tx->moveFile("A/file", "B/file");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsFile("A/file"));
@@ -634,7 +633,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
         tx->createDirectory("B");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
@@ -644,7 +643,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
         auto tx = metadata->createTransaction();
         size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
         tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("A/file"));
@@ -656,7 +655,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
         auto tx = metadata->createTransaction();
         tx->moveFile("A/file", "B/file");
         tx->moveFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsFile("A/file"));
@@ -675,14 +674,14 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/B").serialize(), "Hello world!");
         tx->createMetadataFile("A/B", {StoredObject("A/B", "B", b_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
@@ -691,7 +690,7 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A/B");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
@@ -709,8 +708,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveEmpty)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("non-existing", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("non-existing");
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("non-existing"));
@@ -727,7 +726,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoteLayout)
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
         tx->createDirectory("A/B");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     std::string a_remote = generateObjectKeyPrefixForDirectoryPath(metadata, "A/");
@@ -767,7 +766,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
         size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/B").serialize(), "B");
         tx->createMetadataFile("/A", {StoredObject("A", "A", a_size)});
         tx->createMetadataFile("/B", {StoredObject("B", "B", b_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory(""));
@@ -780,7 +779,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
     {
         auto tx = metadata->createTransaction();
         tx->moveFile("/A", "/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsFile("A"));
@@ -799,7 +798,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
         auto tx = metadata->createTransaction();
         tx->createDirectory("X");
         tx->moveFile("/C", "/X/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsFile("A"));
@@ -828,19 +827,19 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/B").serialize(), "B");
         tx->createMetadataFile("/A", {StoredObject("A", "A", a_size)});
         tx->createMetadataFile("/B", {StoredObject("B", "B", b_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("/");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("/", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("/");
+        tx->commit();
     }
 
     EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({
@@ -854,9 +853,9 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         files_objects.append_range(metadata->getStorageObjects("/B"));
 
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("/A", /*if_exists=*/false, /*should_remove_objects=*/true);
-        tx->unlinkFile("/B", /*if_exists=*/false, /*should_remove_objects=*/true);
-        tx->commit(DB::NoCommitOptions{});
+        tx->unlinkMetadata("/A");
+        tx->unlinkMetadata("/B");
+        tx->commit();
 
         object_storage->removeObjectsIfExist(files_objects);
     }
@@ -866,7 +865,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("/");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/"));
@@ -875,7 +874,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("/");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/"));
@@ -889,25 +888,25 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("non-existing", /*if_exists=*/false, /*should_remove_objects=*/true);
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        tx->unlinkMetadata("non-existing");
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("non-existing/A", /*if_exists=*/false, /*should_remove_objects=*/true);
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        tx->unlinkMetadata("non-existing/A");
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("A/non-existing", /*if_exists=*/false, /*should_remove_objects=*/true);
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        tx->unlinkMetadata("A/non-existing");
+        EXPECT_ANY_THROW(tx->commit());
     }
 }
 
@@ -919,61 +918,61 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveReplaceNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("non-existing/A", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("A/non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveFile("non-existing/A", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->moveFile("A/non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->replaceFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->replaceFile("non-existing/A", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->replaceFile("A/non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 }
 
@@ -985,43 +984,43 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("non-existing");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("non-existing/A");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("A/non-existing");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("non-existing", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("non-existing");
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("non-existing/A", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("non-existing/A");
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("A/non-existing", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("A/non-existing");
+        tx->commit();
     }
 }
 
@@ -1033,25 +1032,61 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->createHardLink("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->createHardLink("non-existing/A", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     {
         auto tx = metadata->createTransaction();
         tx->createHardLink("A/non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
+    }
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, LookupBlobs)
+{
+    auto metadata = getMetadataStorage("LookupBlobs");
+    auto object_storage = getObjectStorage("LookupBlobs");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("non-existing"), std::nullopt);
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("non-existing/A"), std::nullopt);
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/B"), std::nullopt);
+        tx->commit();
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/X"), std::nullopt);
+        tx->commit();
     }
 }
 
@@ -1063,7 +1098,7 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsFile("non-existing"));
@@ -1113,7 +1148,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("/A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1123,7 +1158,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
         auto tx = metadata->createTransaction();
         size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("A", "f1", f1_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
@@ -1141,7 +1176,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
         tx->createMetadataFile("/A/f1", {StoredObject("C", "f1", size_2)});
         size_t size_3 = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "Just break the rule, then you see the truth");
         tx->createMetadataFile("/A/f1", {StoredObject("G", "f1", size_3)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
@@ -1152,8 +1187,8 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
 
     {
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("/A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
-        tx->commit(DB::NoCommitOptions{});
+        tx->unlinkMetadata("/A/f1");
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1161,8 +1196,8 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
 
     {
         auto tx = metadata->createTransaction();
-        tx->unlinkFile("/A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        tx->unlinkMetadata("/A/f1");
+        EXPECT_ANY_THROW(tx->commit());
     }
 }
 
@@ -1176,7 +1211,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveToExisting)
         tx->createDirectory("/A");
         tx->createDirectory("/B");
         tx->createDirectory("/B/A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1186,7 +1221,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveToExisting)
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("/A", "/B/A");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1202,7 +1237,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryUndo)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("/A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1214,7 +1249,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryUndo)
         tx->createDirectory("/A/B");
         tx->createDirectory("/A/B");
         tx->moveDirectory("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1235,7 +1270,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("/A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1244,7 +1279,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
         auto tx = metadata->createTransaction();
         size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("f1", "f1", f1_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
@@ -1253,7 +1288,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
     {
         auto tx = metadata->createTransaction();
         tx->createHardLink("/A/f1", "A/f2");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/f1"));
@@ -1280,14 +1315,14 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("/A");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     {
         auto tx = metadata->createTransaction();
         size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("f1", "f1", f1_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A"));
@@ -1298,7 +1333,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
         auto tx = metadata->createTransaction();
         tx->createHardLink("/A/f1", "A/f2");
         tx->createHardLink("/B/f1", "A/f2");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 2);
@@ -1310,7 +1345,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
         auto tx = metadata->createTransaction();
         tx->createHardLink("/A/f1", "A/f2");
         tx->createHardLink("f1", "f2");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_EQ(listAllBlobs("CreateHardLinkUndo").size(), 2);
@@ -1322,7 +1357,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
         auto tx = metadata->createTransaction();
         tx->createHardLink("/A/f1", "A/f2");
         tx->createHardLink("/A/f1", "A/f2");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     metadata = restartMetadataStorage("CreateHardLinkUndo");
@@ -1346,7 +1381,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
         auto tx = metadata->createTransaction();
         size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("f1").serialize(), "f1");
         tx->createMetadataFile("/f1", {StoredObject("f1", "f1", f1_size)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/f1"));
@@ -1354,7 +1389,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
     {
         auto tx = metadata->createTransaction();
         tx->createHardLink("/f1", "/f2");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/f1"));
@@ -1364,7 +1399,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
         auto tx = metadata->createTransaction();
         tx->createHardLink("/f2", "/f3");
         tx->createHardLink("/f1", "/f2");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     metadata = restartMetadataStorage("CreateHardLinkRootFiles");
@@ -1388,7 +1423,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveVirtual)
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C/D/E");
         tx->createDirectoryRecursive("/A/B/C/X/Y");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1403,7 +1438,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveVirtual)
     {
         auto tx = metadata->createTransaction();
         tx->moveDirectory("/A/B/C", "/A/B/H");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
@@ -1439,7 +1474,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
         tx->createDirectoryRecursive("/A/B/C/D/E");
         tx->createDirectoryRecursive("/A/B/C/X/Y");
         tx->createDirectoryRecursive("/A/B/C/K/L");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1455,8 +1490,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("/A/B/C/D", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("/A/B/C/D");
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1479,8 +1514,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("/A/B/C", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
+        tx->removeRecursive("/A/B/C");
+        tx->commit();
     }
 
     EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
@@ -1504,7 +1539,7 @@ TEST_F(MetadataPlainRewritableDiskTest, VirtualSubpathTrim)
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C");
         tx->createDirectoryRecursive("/A/B/C/D/E");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1519,7 +1554,7 @@ TEST_F(MetadataPlainRewritableDiskTest, VirtualSubpathTrim)
     {
         auto tx = metadata->createTransaction();
         tx->removeDirectory("/A/B/C/D/E");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1548,12 +1583,12 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
 
         tx = metadata->createTransaction();
         written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1591,12 +1626,12 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
 
         tx = metadata->createTransaction();
         written_bytes_file = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_file);
@@ -1606,7 +1641,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)
         written_bytes_tmp = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/tmp").serialize(), "stop!");
         tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
         tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
@@ -1627,12 +1662,12 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
 
         tx = metadata->createTransaction();
         written_bytes_file = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_file);
@@ -1643,7 +1678,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
         tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
         tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
         tx->moveFile("non-existing", "non-existing");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
@@ -1672,7 +1707,7 @@ TEST_F(MetadataPlainRewritableDiskTest, OwnChangesVisibility)
         tx->createDirectoryRecursive("/A/B/C");
         size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1704,7 +1739,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UncommittedMove)
         size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
         tx->moveFile("/A/B/C/file", "/X/Y/Z/file");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1741,7 +1776,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UncommittedHardlink)
         size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
         tx->createHardLink("/A/B/C/file", "/X/Y/Z/file");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
@@ -1782,7 +1817,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UncommittedHardlinkUndo)
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
         tx->createHardLink("/A/B/C/file", "/X/Y/Z/file");
         tx->moveFile("non-existing", "other-place");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->commit());
     }
 
     EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
@@ -1828,7 +1863,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UncommittedDirectoryMoves)
         writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/X/file_3").serialize(), "5");
         tx->createMetadataFile("/A/B/C/X/file_3", {StoredObject("file_3", "file_3", 1)});
 
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
 
     EXPECT_EQ(listAllBlobs("UncommittedDirectoryMoves"), std::vector<std::string>({
@@ -1878,12 +1913,12 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
     {
         auto tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B/C");
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
 
         tx = metadata->createTransaction();
         auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "I'm real");
         tx->createMetadataFile("/A/B/file", {StoredObject("/A/B/file", "file", size_bytes)});
-        tx->commit(DB::NoCommitOptions{});
+        tx->commit();
     }
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/file").front().remote_path), "I'm real");
 
@@ -1894,51 +1929,4 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
             "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
             "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
         }));
-}
-
-TEST_F(MetadataPlainRewritableDiskTest, UnlinkUndoInCaseOfNetworkError)
-{
-    thread_local_rng.seed(42);
-
-    auto metadata = getMetadataStorage("UnlinkUndoInCaseOfNetworkError");
-    auto object_storage = getObjectStorage("UnlinkUndoInCaseOfNetworkError");
-
-    {
-        auto tx = metadata->createTransaction();
-
-        tx->createDirectory("/A");
-        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "This is San Francisco, city of stile disco");
-        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
-
-        tx->commit(DB::NoCommitOptions{});
-    }
-
-    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "This is San Francisco, city of stile disco");
-
-    {
-        FailPointInjection::enableFailPoint("local_object_storage_network_error_during_remove");
-
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("/A/file", /*if_exists=*/false, /*should_remove_objects=*/true);
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
-    }
-
-    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "This is San Francisco, city of stile disco");
-}
-
-TEST_F(MetadataPlainRewritableDiskTest, TestComplexUnlink)
-{
-    thread_local_rng.seed(42);
-
-    auto metadata = getMetadataStorage("TestComplexUnlink");
-    auto object_storage = getObjectStorage("TestComplexUnlink");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("file", /*if_exists=*/true, /*should_remove_objects=*/true);
-        tx->createMetadataFile("file", {DB::StoredObject("key", "file", 1)});
-        tx->commit(DB::NoCommitOptions{});
-    }
-
-    EXPECT_TRUE(metadata->existsFile("file"));
 }

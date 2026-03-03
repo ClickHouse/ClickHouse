@@ -11,7 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnMap.h>
 #include <base/getFQDNOrHostName.h>
-#include <city.h>
+#include <Common/SipHash.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ZooKeeper/SystemTablesDataTypes.h>
 
@@ -59,10 +59,6 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
                 "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
-
-    result.add({"component",
-                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                "Component that caused the event."});
     return result;
 }
 
@@ -78,7 +74,6 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(count);
     errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
-    columns[i++]->insert(component.view());
 }
 
 void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
@@ -96,7 +91,6 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
             .session_id = entry_key.session_id,
             .parent_path = entry_key.parent_path,
             .operation = entry_key.operation,
-            .component = entry_key.component,
             .count = entry_stats.count,
             .errors = std::move(entry_stats.errors),
             .total_latency_microseconds = entry_stats.total_latency_microseconds,
@@ -105,31 +99,24 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
     }
 }
 
-void AggregatedZooKeeperLog::observe(
-    Int64 session_id,
-    Int32 operation,
-    const std::filesystem::path & path,
-    UInt64 latency_microseconds,
-    Coordination::Error error,
-    StaticString component)
+void AggregatedZooKeeperLog::observe(Int64 session_id, Int32 operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
 {
     std::lock_guard lock(stats_mutex);
+    stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);
+}
 
-    EntryKey entry_key{
-        .session_id = session_id,
-        .operation = operation,
-        .parent_path = path.parent_path(),
-        .component = component
-    };
-    stats[std::move(entry_key)].observe(latency_microseconds, error);
+bool AggregatedZooKeeperLog::EntryKey::operator==(const EntryKey & other) const
+{
+    return session_id == other.session_id && operation == other.operation && parent_path == other.parent_path;
 }
 
 size_t AggregatedZooKeeperLog::EntryKeyHash::operator()(const EntryKey & entry_key) const
 {
-    return CityHash_v1_0_2::CityHash64WithSeed(
-        entry_key.parent_path.data(),
-        entry_key.parent_path.size(),
-        static_cast<uint64_t>(entry_key.operation) ^ static_cast<uint64_t>(entry_key.session_id));
+    SipHash hash;
+    hash.update(entry_key.session_id);
+    hash.update(entry_key.operation);
+    hash.update(entry_key.parent_path);
+    return hash.get64();
 }
 
 void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Coordination::Error error)

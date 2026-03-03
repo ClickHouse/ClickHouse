@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Columns/ColumnObject.h>
-#include <Core/MergeTreeSerializationEnums.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
-#include <Common/re2.h>
-
 #include <list>
 
 namespace DB
@@ -164,8 +162,6 @@ private:
 
 protected:
     bool shouldSkipPath(const String & path) const;
-
-    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;

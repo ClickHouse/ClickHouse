@@ -25,11 +25,8 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
-#include <Access/DiskAccessStorage.h>
-#include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
-#include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
@@ -90,11 +87,6 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
-    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
@@ -155,6 +147,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -242,8 +238,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
-        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
 
     GlobalThreadPool::initialize(
@@ -411,7 +406,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
@@ -544,7 +539,6 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
-        "            <access_management>1</access_management>"
         "            <named_collection_control>1</named_collection_control>"
         "        </default>"
         "    </users>"
@@ -557,19 +551,6 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(getClientConfiguration().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(getClientConfiguration().getBool("allow_plaintext_password", true));
-
-    /// Enable all access control improvements by default; can be overridden via config.
-    auto & config = getClientConfiguration();
-    access_control.setEnabledUsersWithoutRowPoliciesCanReadRows(config.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
-    access_control.setOnClusterQueriesRequireClusterGrant(config.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
-    access_control.setSelectFromSystemDatabaseRequiresGrant(config.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
-    access_control.setSelectFromInformationSchemaRequiresGrant(config.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
-    access_control.setSettingsConstraintsReplacePrevious(config.getBool("access_control_improvements.settings_constraints_replace_previous", true));
-    access_control.setTableEnginesRequireGrant(config.getBool("access_control_improvements.table_engines_require_grant", true));
-    access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
-    access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
-    access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
-
     if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
         String config_path = getClientConfiguration().getString("config-file", "");
@@ -599,20 +580,6 @@ void LocalServer::setupUsers()
         global_context->setUsersConfig(users_config);
     else
         throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
-
-    /// Add a writeable storage for SQL-based access management.
-    /// This allows creating users, roles, row policies, etc. via SQL queries.
-    if (getClientConfiguration().has("path"))
-    {
-        /// Use disk storage for persistence when --path is specified.
-        String access_path = fs::path(global_context->getPath()) / "access" / "";
-        access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
-    }
-    else
-    {
-        /// Use in-memory storage for temporary/ephemeral mode.
-        access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
-    }
 }
 
 void LocalServer::connect()
@@ -726,15 +693,7 @@ try
     connect();
 
     if (!table_name.empty())
-    {
-        // Set option to false for hidden query to prevent double-printing time
-        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
-        getClientConfiguration().setBool("print-time-to-stderr", false);
-
         processQueryText(initial_query);
-
-        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
-    }
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -843,7 +802,7 @@ void LocalServer::processConfig()
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
     const size_t physical_server_memory = getMemoryAmount();
-    const size_t default_max_server_memory_usage = static_cast<size_t>(static_cast<double>(physical_server_memory) * max_server_memory_usage_to_ram_ratio);
+    const size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
     if (max_server_memory_usage == 0)
     {
@@ -870,7 +829,7 @@ void LocalServer::processConfig()
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
-    const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
     size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
@@ -1158,22 +1117,22 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("table,N", po::value<std::string>(), "Name of the initial table")
-        ("copy", "Shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
+        ("table,N", po::value<std::string>(), "name of the initial table")
+        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
-        ("structure,S", po::value<std::string>(), "Structure of the initial table (list of column and type names)")
-        ("file,F", po::value<std::string>(), "Path to file with data of the initial table (stdin if not specified)")
+        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
+        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
-        ("input-format", po::value<std::string>(), "Default input format. Takes precedence over --format.")
+        ("input-format", po::value<std::string>(), "input format of the initial table data")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
-        ("no-system-tables", "Do not attach system tables (better startup time)")
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
-        ("only-system-tables", "Attach only system tables from specified path")
+        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
