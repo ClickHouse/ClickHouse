@@ -985,7 +985,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
 
-    addTransitivePredicates(query_graph, global_expression_actions);
+    if (optimization_settings.enable_join_transitive_predicates)
+        addTransitivePredicates(query_graph, global_expression_actions);
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);

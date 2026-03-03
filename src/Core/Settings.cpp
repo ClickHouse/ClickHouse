@@ -2302,6 +2302,12 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Value is the maximum number of tables to optimize.
 )", 0) \
     \
+    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+Infer transitive equi-join predicates from existing join conditions.
+For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
+is added so the join order optimizer can consider direct (A JOIN C) plans.
+)", EXPERIMENTAL) \
+    \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
  )", 0) \
