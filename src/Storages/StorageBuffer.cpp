@@ -38,6 +38,7 @@
 #include <Storages/IStorage.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -564,7 +565,6 @@ void StorageBuffer::read(
 static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
-    size_t old_rows = to.rows();
     size_t old_bytes = to.bytes();
 
     if (to.empty())
@@ -575,7 +575,15 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     from.checkNumberOfRows();
     to.checkNumberOfRows();
 
+    /// Take checkpoints of all destination columns before any modifications
+    /// to be able to rollback in case of an exception in the middle of insertion.
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(to.columns());
+    for (size_t column_no = 0; column_no < to.columns(); ++column_no)
+        checkpoints.push_back(to.getByPosition(column_no).column->getCheckpoint());
+
     MutableColumnPtr last_col;
+    size_t mutated_columns = 0;
     try
     {
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -601,6 +609,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
                 LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
                 last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
             }
+            ++mutated_columns;
 
             /// In case of ColumnAggregateFunction aggregate states will
             /// be allocated from the query context but can be destroyed from the
@@ -633,10 +642,11 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 
         try
         {
-            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            for (size_t column_no = 0; column_no < mutated_columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
-                /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
+                /// If there is no column, the exception was thrown in the middle of append,
+                /// during insertRangeFrom() — move last_col back so we can roll it back.
                 if (!col_to)
                 {
                     col_to = std::move(last_col);
@@ -646,8 +656,11 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
                 /// But if there is still nothing, abort
                 if (!col_to)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No column to rollback");
-                if (col_to->size() != old_rows)
-                    col_to = col_to->cut(0, old_rows);
+
+                /// Rollback to the state before the exception.
+                auto mutable_col = IColumn::mutate(std::move(col_to));
+                mutable_col->rollback(*checkpoints[column_no]);
+                col_to = std::move(mutable_col);
             }
         }
         catch (...)
