@@ -4531,10 +4531,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                                 return nullptr;
 
                             /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
-                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
-                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
-                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
-                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
+                            /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
+                            /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
+                            /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
+                            if (!expression_source
+                                && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
+                                    || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
                                 return nullptr;
 
                             /// Create ColumnNode with expression from parent projection

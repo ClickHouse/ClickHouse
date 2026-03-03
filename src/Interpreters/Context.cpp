@@ -49,7 +49,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -887,7 +887,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
-        ObjectStorageQueueFactory::instance().shutdown();
+        StreamingStorageRegistry::instance().shutdown();
 
         /// Stop all MergeTree background executors before shutting down databases.
         /// This ensures no background tasks (merges, mutations, moves, part cleanup)
