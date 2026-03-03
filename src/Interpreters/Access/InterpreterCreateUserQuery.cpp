@@ -41,8 +41,7 @@ namespace
         User & user,
         const ASTCreateUserQuery & query,
         const std::vector<AuthenticationData> authentication_methods,
-        const boost::intrusive_ptr<ASTUserNameWithHost> & override_name,
-        const std::optional<RolesOrUsersSet> & override_roles,
+        const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
@@ -59,7 +58,7 @@ namespace
         else if (query.new_name)
             user.setName(*query.new_name);
         else if (query.names->size() == 1)
-            user.setName(query.names->toStrings().at(0));
+            user.setName(query.names->front()->toString());
 
         if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -143,10 +142,10 @@ namespace
             }
         }
 
-        if (override_name && !override_name->getHostPattern().empty())
+        if (override_name && !override_name->host_pattern.empty())
         {
             user.allowed_client_hosts = AllowedClientHosts{};
-            user.allowed_client_hosts.addLikePattern(override_name->getHostPattern());
+            user.allowed_client_hosts.addLikePattern(override_name->host_pattern);
         }
         else if (query.hosts)
             user.allowed_client_hosts = *query.hosts;
@@ -156,26 +155,12 @@ namespace
         if (query.add_hosts)
             user.allowed_client_hosts.add(*query.add_hosts);
 
-        auto grant_roles = [&](const RolesOrUsersSet & roles_, bool as_default_role_)
+        auto set_default_roles = [&](const RolesOrUsersSet & default_roles_)
         {
-            if (as_default_role_ && (query.alter || roles_.all))
-                return;
-            chassert(!query.alter && !roles_.all);
-            user.granted_roles.grant(roles_.getMatchingIDs());
-        };
+            if (!query.alter && !default_roles_.all)
+                user.granted_roles.grant(default_roles_.getMatchingIDs());
 
-        if (override_roles)
-            grant_roles(*override_roles, /* as_default_role = */ false);
-        else if (query.roles)
-            grant_roles(*query.roles, /* as_default_role = */ false);
-        else if (override_default_roles)
-            grant_roles(*override_default_roles, /* as_default_role = */ true);
-        else if (query.default_roles)
-            grant_roles(*query.default_roles, /* as_default_role = */ true);
-
-        auto set_default_roles = [&](const RolesOrUsersSet & roles_)
-        {
-            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, roles_);
+            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, default_roles_);
         };
 
         if (override_default_roles)
@@ -208,8 +193,8 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
-    for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+    for (const auto & name : *query.names)
+        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name->toString());
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
@@ -230,15 +215,6 @@ BlockIO InterpreterCreateUserQuery::execute()
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
         global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
-
-    std::optional<RolesOrUsersSet> roles_from_query;
-    if (query.roles)
-    {
-        roles_from_query = RolesOrUsersSet{*query.roles, access_control};
-        chassert(!query.alter && !roles_from_query->all);
-        for (const UUID & role : roles_from_query->getMatchingIDs())
-            access->checkAdminOption(role);
-    }
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -283,7 +259,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
+                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -304,9 +280,8 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            const auto & name_with_host = boost::static_pointer_cast<ASTUserNameWithHost>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name_with_host, roles_from_query, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -370,7 +345,6 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         user,
         query,
         authentication_methods,
-        {},
         {},
         {},
         {},

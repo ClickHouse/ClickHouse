@@ -9,7 +9,6 @@ namespace DB
 
 class WriteBuffer;
 class Context;
-class IDataType;
 
 
 /** Stream to output data in format "each value in separate row".
@@ -18,7 +17,7 @@ class IDataType;
 class VerticalRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    VerticalRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
@@ -58,7 +57,6 @@ private:
     NamesAndPaddings names_and_paddings;
 
     std::vector<UInt8> is_number;
-    std::vector<UInt8> is_json;
     bool color;
 };
 

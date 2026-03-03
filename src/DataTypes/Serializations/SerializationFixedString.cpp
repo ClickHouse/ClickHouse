@@ -10,10 +10,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include <Common/PODArray.h>
+#include "Common/PODArray.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <base/types.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -82,15 +82,9 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
-
-    size_t skipped_bytes;
-
-    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
-    istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
     size_t max_bytes;
@@ -205,17 +199,10 @@ bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadB
 }
 
 
-void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    if (settings.values.escape_quote_with_quote)
-    {
-        writeChar('\'', ostr);
-        writeAnyEscapedString<'\'', true, false>(pos, pos + n, ostr);
-        writeChar('\'', ostr);
-    }
-    else
-        writeAnyQuotedString<'\''>(pos, pos + n, ostr);
+    writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 

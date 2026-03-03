@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-parallel, no-random-merge-tree-settings
 
 drop table if exists test;
 

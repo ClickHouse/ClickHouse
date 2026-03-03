@@ -9,9 +9,10 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+class Throttler;
 
-class IThrottler;
-using ThrottlerPtr = std::shared_ptr<IThrottler>;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
+
 
 /// Copies data from ReadBuffer to WriteBuffer, all that is.
 void copyData(ReadBuffer & from, WriteBuffer & to);
@@ -32,5 +33,6 @@ void copyDataMaxBytes(ReadBuffer & from, WriteBuffer & to, size_t max_bytes);
 /// Same as above but also use throttler to limit maximum speed
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler);
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler);
+void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook, ThrottlerPtr throttler);
 
 }

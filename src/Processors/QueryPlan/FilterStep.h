@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -11,18 +10,10 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const SharedHeader & input_header_,
+        const Header & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
-
-    FilterStep(const FilterStep & other)
-        : ITransformingStep(other)
-        , actions_dag(other.actions_dag.clone())
-        , filter_column_name(other.filter_column_name)
-        , remove_filter_column(other.remove_filter_column)
-        , condition(other.condition)
-    {}
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -35,25 +26,14 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    void setQueryConditionHash(size_t condition_hash_);
 
     static bool canUseType(const DataTypePtr & type);
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
-
-    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
-    void decorrelateActions() { actions_dag.decorrelate(); }
-
-    bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
-
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;
@@ -62,7 +42,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    std::optional<size_t> condition_hash;
 };
 
 }

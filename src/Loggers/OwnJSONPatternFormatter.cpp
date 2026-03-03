@@ -1,5 +1,6 @@
-#include <Loggers/OwnJSONPatternFormatter.h>
+#include "OwnJSONPatternFormatter.h"
 
+#include <functional>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -10,37 +11,37 @@
 #include <Common/DateLUTImpl.h>
 
 
-OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config)
 {
-    if (config.has(config_prefix + ".names.date_time"))
-        date_time = config.getString(config_prefix + ".names.date_time", "");
+    if (config.has("logger.formatting.names.date_time"))
+        date_time = config.getString("logger.formatting.names.date_time", "");
 
-    if (config.has(config_prefix + ".names.date_time_utc"))
-        date_time_utc= config.getString(config_prefix + ".names.date_time_utc", "");
+    if (config.has("logger.formatting.names.date_time_utc"))
+        date_time_utc= config.getString("logger.formatting.names.date_time_utc", "");
 
-    if (config.has(config_prefix + ".names.thread_name"))
-        thread_name = config.getString(config_prefix + ".names.thread_name", "");
+    if (config.has("logger.formatting.names.thread_name"))
+        thread_name = config.getString("logger.formatting.names.thread_name", "");
 
-    if (config.has(config_prefix + ".names.thread_id"))
-        thread_id = config.getString(config_prefix + ".names.thread_id", "");
+    if (config.has("logger.formatting.names.thread_id"))
+        thread_id = config.getString("logger.formatting.names.thread_id", "");
 
-    if (config.has(config_prefix + ".names.level"))
-        level = config.getString(config_prefix + ".names.level", "");
+    if (config.has("logger.formatting.names.level"))
+        level = config.getString("logger.formatting.names.level", "");
 
-    if (config.has(config_prefix + ".names.query_id"))
-        query_id = config.getString(config_prefix + ".names.query_id", "");
+    if (config.has("logger.formatting.names.query_id"))
+        query_id = config.getString("logger.formatting.names.query_id", "");
 
-    if (config.has(config_prefix + ".names.logger_name"))
-        logger_name = config.getString(config_prefix + ".names.logger_name", "");
+    if (config.has("logger.formatting.names.logger_name"))
+        logger_name = config.getString("logger.formatting.names.logger_name", "");
 
-    if (config.has(config_prefix + ".names.message"))
-        message = config.getString(config_prefix + ".names.message", "");
+    if (config.has("logger.formatting.names.message"))
+        message = config.getString("logger.formatting.names.message", "");
 
-    if (config.has(config_prefix + ".names.source_file"))
-        source_file = config.getString(config_prefix + ".names.source_file", "");
+    if (config.has("logger.formatting.names.source_file"))
+        source_file = config.getString("logger.formatting.names.source_file", "");
 
-    if (config.has(config_prefix + ".names.source_line"))
-        source_line = config.getString(config_prefix + ".names.source_line", "");
+    if (config.has("logger.formatting.names.source_line"))
+        source_line = config.getString("logger.formatting.names.source_line", "");
 
     if (date_time.empty() && thread_name.empty() && thread_id.empty() && level.empty() && query_id.empty()
         && logger_name.empty() && message.empty() && source_file.empty() && source_line.empty())
@@ -65,7 +66,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     DB::FormatSettings settings;
     bool print_comma = false;
 
-    const Poco::Message & msg = *msg_ext.base;
+    const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
     if (!date_time_utc.empty())
@@ -191,7 +192,11 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        writeJSONString(msg.getSourceFile(), wb, settings);
+        const char * source_file_name = msg.getSourceFile();
+        if (source_file_name != nullptr)
+            writeJSONString(source_file_name, wb, settings);
+        else
+            writeJSONString("", wb, settings);
     }
 
     if (!source_line.empty())

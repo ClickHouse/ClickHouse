@@ -1,5 +1,5 @@
-#include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include "AggregateFunctionArray.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 #include <Common/typeid_cast.h>
 
@@ -22,8 +22,6 @@ public:
     String getName() const override { return "Array"; }
 
     bool supportsNesting() const override { return true; }
-
-    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

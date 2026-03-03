@@ -34,46 +34,44 @@ $CLICKHOUSE_CLIENT --check_table_dependencies=0 --query "DROP TABLE dict_invalid
 
 function check_exception_detected()
 {
-    local TIMELIMIT=$((SECONDS+30))
+
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
 
-    while [ -z "$query_result" ] && [ $SECONDS -lt "$TIMELIMIT" ]
+    while [ -z "$query_result" ]
     do
         query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }
 
-check_exception_detected 2> /dev/null
+
+export -f check_exception_detected;
+timeout 30 bash -c check_exception_detected 2> /dev/null
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1 | grep -Eo "dict_invalidate.*UNKNOWN_TABLE" | wc -l
 
 $CLICKHOUSE_CLIENT --query "
-CREATE TABLE dict_invalidate_new
+CREATE TABLE dict_invalidate
 ENGINE = Memory AS
 SELECT
     133 as dummy,
     toDateTime('2019-10-29 18:51:35') AS last_time
 FROM system.one"
 
-$CLICKHOUSE_CLIENT --query "
-RENAME TABLE dict_invalidate_new TO dict_invalidate
-"
-
 function check_exception_fixed()
 {
-    local TIMELIMIT=$((SECONDS+60))
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
 
-    while [ "$query_result" ] && [ $SECONDS -lt "$TIMELIMIT" ]
+    while [ "$query_result" ]
     do
         query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }
 
+export -f check_exception_fixed;
 # it may take a while until dictionary reloads
-check_exception_fixed 2> /dev/null
+timeout 60 bash -c check_exception_fixed 2> /dev/null
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1
 $CLICKHOUSE_CLIENT --query "SELECT dictGetUInt8('invalidate', 'two', toUInt64(133))"

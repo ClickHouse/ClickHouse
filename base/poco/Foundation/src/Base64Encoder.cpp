@@ -172,7 +172,6 @@ Base64EncoderBuf* Base64EncoderIOS::rdbuf()
 
 Base64Encoder::Base64Encoder(std::ostream& ostr, int options): Base64EncoderIOS(ostr, options), std::ostream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 

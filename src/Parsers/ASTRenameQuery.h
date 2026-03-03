@@ -5,6 +5,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -74,12 +75,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = make_intrusive<ASTIdentifier>(database_name);
+                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
                 children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = make_intrusive<ASTIdentifier>(database_name);
+                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
                 children.push_back(elem.to.database);
             }
         }
@@ -92,7 +93,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTRenameQuery>(*this);
+        auto res = std::make_shared<ASTRenameQuery>(*this);
         res->children.clear();
 
         auto clone_child = [&res](ASTPtr & node)
@@ -125,12 +126,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = make_intrusive<ASTIdentifier>(params.default_database);
+                elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = make_intrusive<ASTIdentifier>(params.default_database);
+                elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.to.database);
             }
         }
@@ -146,7 +147,7 @@ public:
         {
             if (name.empty())
                 return nullptr;
-            ASTPtr ast = make_intrusive<ASTIdentifier>(name);
+            ASTPtr ast = std::make_shared<ASTIdentifier>(name);
             children.push_back(ast);
             return ast;
         };
@@ -158,18 +159,19 @@ protected:
     {
         if (database)
         {
-            ostr << "RENAME DATABASE ";
+            ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
 
             if (elements.at(0).if_exists)
-                ostr << "IF EXISTS ";
+                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
             elements.at(0).from.database->format(ostr, settings, state, frame);
-            ostr << " TO ";
+            ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
             elements.at(0).to.database->format(ostr, settings, state, frame);
             formatOnCluster(ostr, settings);
             return;
         }
 
+        ostr << (settings.hilite ? hilite_keyword : "");
         if (exchange && dictionary)
             ostr << "EXCHANGE DICTIONARIES ";
         else if (exchange)
@@ -179,13 +181,15 @@ protected:
         else
             ostr << "RENAME TABLE ";
 
+        ostr << (settings.hilite ? hilite_none : "");
+
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
             if (it != elements.cbegin())
                 ostr << ", ";
 
             if (it->if_exists)
-                ostr << "IF EXISTS ";
+                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
 
             if (it->from.database)
@@ -197,7 +201,7 @@ protected:
             chassert(it->from.table);
             it->from.table->format(ostr, settings, state, frame);
 
-            ostr << (exchange ? " AND " : " TO ");
+            ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
 
             if (it->to.database)
             {

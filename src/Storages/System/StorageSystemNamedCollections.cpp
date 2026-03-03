@@ -1,6 +1,5 @@
-#include <Storages/System/StorageSystemNamedCollections.h>
+#include "StorageSystemNamedCollections.h"
 
-#include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
@@ -29,8 +28,6 @@ ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
         {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
-        {"source", std::make_shared<DataTypeString>(), "Named collection source."},
-        {"create_query", std::make_shared<DataTypeString>(), "Named collection create query."},
     };
 }
 
@@ -76,9 +73,6 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         }
 
         offsets.push_back(offsets.back() + size);
-
-        res_columns[2]->insert(magic_enum::enum_name(collection->getSourceId()));
-        res_columns[3]->insert(collection->getCreateStatement(access_secrets));
     }
 }
 

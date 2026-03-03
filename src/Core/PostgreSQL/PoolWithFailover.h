@@ -6,7 +6,7 @@
 #if USE_LIBPQXX
 
 
-#include <Core/PostgreSQL/ConnectionHolder.h>
+#include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>

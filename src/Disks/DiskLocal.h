@@ -36,8 +36,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
-
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -53,6 +51,8 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
+
+    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -81,7 +81,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -115,7 +116,7 @@ public:
 
     bool isSymlinkNoThrow(const String & path) const override;
 
-    void createDirectorySymlink(const String & target, const String & link) override;
+    void createDirectoriesSymlink(const String & target, const String & link) override;
 
     String readSymlink(const fs::path & path) const override;
 
@@ -139,7 +140,7 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl() override;
+    void startupImpl(ContextPtr context) override;
 
     void shutdown() override;
 
@@ -155,13 +156,11 @@ public:
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
 
-    ObjectStoragePtr getObjectStorage() override;
-
 protected:
     void checkAccessImpl(const String & path) override;
 
 private:
-    std::optional<UInt64> tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
+    std::optional<UInt64> tryReserve(UInt64 bytes);
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.

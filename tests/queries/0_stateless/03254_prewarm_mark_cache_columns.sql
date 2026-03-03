@@ -10,18 +10,18 @@ INSERT INTO t_prewarm_columns VALUES (1, 1, 1, 1);
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 DETACH TABLE t_prewarm_columns;
 ATTACH TABLE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SYSTEM PREWARM MARK CACHE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['LoadedMarksCount'] FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_columns%'

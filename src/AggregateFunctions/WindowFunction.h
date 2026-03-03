@@ -2,7 +2,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -29,7 +28,7 @@ public:
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 
-    virtual ColumnPtr castColumn(const Columns &, const VectorWithMemoryTracking<size_t> &) { return nullptr; }
+    virtual ColumnPtr castColumn(const Columns &, const std::vector<size_t> &) { return nullptr; }
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
@@ -48,13 +47,13 @@ struct WindowFunctionWorkspace
     // instead.
     IWindowFunction * window_function_impl = nullptr;
 
-    VectorWithMemoryTracking<size_t> argument_column_indices;
+    std::vector<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
     mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
-    VectorWithMemoryTracking<const IColumn *> argument_columns;
+    std::vector<const IColumn *> argument_columns;
     UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
 };
 
