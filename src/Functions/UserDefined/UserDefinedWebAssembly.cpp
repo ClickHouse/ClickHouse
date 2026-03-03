@@ -542,7 +542,7 @@ public:
         return result_column;
     }
 
-    void interruptExecution() const override
+    void cancelExecution() const override
     {
         interrupt_source.request_stop();
     }

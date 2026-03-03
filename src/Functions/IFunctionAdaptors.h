@@ -13,7 +13,7 @@ public:
     explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     String getName() const override { return function->getName(); }
-    void interruptExecution() const override { function->interruptExecution(); }
+    void cancelExecution() const override { function->cancelExecution(); }
 
 protected:
 

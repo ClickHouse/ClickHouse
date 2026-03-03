@@ -43,7 +43,7 @@ void ExpressionTransform::onCancel() noexcept
     for (const auto & node : nodes)
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-            node.function->interruptExecution();
+            node.function->cancelExecution();
     }
 }
 
