@@ -1161,13 +1161,10 @@ static std::shared_ptr<arrow::Table> getEmptyArrowTable(std::shared_ptr<arrow::S
     size_t columns_num = schema->num_fields();
     std::vector<std::shared_ptr<arrow::ChunkedArray>> empty_columns;
     empty_columns.reserve(columns_num);
-    
-    for (size_t i = 0; i < columns_num; ++i) {
-        auto empty_chunked = std::make_shared<arrow::ChunkedArray>(
-            arrow::ArrayVector{}, schema->field(static_cast<int>(i))->type());
-        empty_columns.push_back(empty_chunked);
-    }
-    
+
+    for (size_t i = 0; i < columns_num; ++i)
+        empty_columns.push_back(std::make_shared<arrow::ChunkedArray>(arrow::ArrayVector{}, schema->field(static_cast<int>(i))->type()));
+
     return arrow::Table::Make(schema, empty_columns);
 }
 
@@ -2278,7 +2275,8 @@ arrow::Status ArrowFlightHandler::DoAction(
                 [](const std::monostate &) { return std::string(); },
                 [](const std::string & str) { return fmt::format("={}", quoteString(str)); },
                 [](bool b) { return fmt::format("={}", b ? "true" : "false"); },
-                [](const std::vector<std::string> & strings) {
+                [](const std::vector<std::string> & strings)
+                {
                     std::string res = "=[";
                     for (size_t i = 0; i < strings.size(); ++i)
                     {
