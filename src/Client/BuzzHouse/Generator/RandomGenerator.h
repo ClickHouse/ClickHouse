@@ -82,6 +82,7 @@ private:
 
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
+        "00", /// Null byte
         "FF",
         "C328",
         "A0A1",
@@ -96,7 +97,25 @@ private:
         "C328FF",
         "AAC328"};
 
-    const DB::Strings jcols{"", "_", ".", "1", "叫", "c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{
+        "_",
+        ".",
+        "1",
+        "叫",
+        "c0",
+        "c1",
+        "c0.c1",
+        "😆",
+        "😉😉",
+        "123",
+        "0",
+        "a.b.c",
+        "a.b.c.d",
+        "select",
+        "from",
+        "where",
+        "key with space",
+        "key-with-dash"};
 
 public:
     pcg64_fast generator;
@@ -123,7 +142,7 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
-        , subseconds(0, UINT32_C(1000000000))
+        , subseconds(0, UINT32_C(999999999))
         , strlens(min_string_length, max_string_length)
         , ints64(limited ? -50 : std::numeric_limits<int64_t>::min(), limited ? 50 : std::numeric_limits<int64_t>::max())
         , uints64(limited ? 0 : std::numeric_limits<uint64_t>::min(), limited ? 100 : std::numeric_limits<uint64_t>::max())
@@ -133,9 +152,71 @@ public:
     {
     }
 
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
+    const DB::Strings nasty_strings{
+        "a\"a",
+        "b\\tb",
+        "c\\nc",
+        "d\\'d",
+        "e e",
+        "",
+        "😉",
+        "\"",
+        "\\'",
+        "\\t",
+        "\\n",
+        "--",
+        "0",
+        "1",
+        "-1",
+        "{",
+        "}",
+        "(",
+        ")",
+        "[",
+        "]",
+        ",",
+        ".",
+        ";",
+        ":",
+        "\\\\",
+        "/",
+        "_",
+        "%",
+        "*",
+        "\\0",
+        "{}",
+        "[]",
+        "()",
+        "null",
+        "NULL",
+        "TRUE",
+        "叫",
+        "FALSE",
+        /// Format string probes
+        "%s",
+        "%d",
+        "%n",
+        "{0}",
+        "{{}}",
+        /// Numeric-looking strings (test implicit casts)
+        "NaN",
+        "Inf",
+        "-Inf",
+        "1e5",
+        "1.0",
+        "0.0",
+        /// Date/time-looking strings (test type coercions)
+        "2024-01-01",
+        "00:00:00",
+        "1970-01-01 00:00:00",
+        /// Windows line ending, other special whitespace
+        "\\r\\n",
+        "\\r",
+        /// Extra punctuation useful for parser probing
+        "?",
+        "@",
+        "#",
+        "$"};
 
     uint64_t getSeed() const;
 
