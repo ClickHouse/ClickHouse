@@ -8,6 +8,7 @@ insert into test_10m select number, number*100 from numbers(10e6);
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set cluster_for_parallel_replicas='';
+set max_parallel_replicas=100;
 
 select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings distributed_index_analysis=1; -- { serverError CLUSTER_DOESNT_EXIST }
 
