@@ -66,7 +66,16 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
+
+    /// Check that all sort columns are present in the expression DAG's outputs.
+    /// A sort column might not be in the DAG outputs if it is a pass-through column
+    /// not referenced by the expression, e.g. after convertJoinToIn optimization.
+    const auto & expression_dag = expression_step->getExpression();
+    for (const auto & col : sort_columns)
+        if (!expression_dag.tryFindInOutputs(col))
+            return 0;
+
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_dag.splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())
