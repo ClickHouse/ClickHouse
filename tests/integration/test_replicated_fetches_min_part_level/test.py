@@ -200,3 +200,88 @@ def test_default_setting_fetches_all(started_cluster):
     finally:
         node1.query("DROP TABLE IF EXISTS test_default_fetch SYNC")
         node2.query("DROP TABLE IF EXISTS test_default_fetch SYNC")
+
+
+def test_level0_parts_fetched_after_timeout(started_cluster):
+    """
+    When replicated_fetches_min_part_level = 1 and timeout is set,
+    level-0 parts are eventually fetched after timeout expires.
+    """
+    node1.query(
+        """
+        CREATE TABLE test_timeout_fetch (x UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/test_timeout_fetch', '1')
+        ORDER BY x
+        SETTINGS
+            replicated_fetches_min_part_level = 1,
+            replicated_fetches_min_part_level_timeout_sec = 5
+        """
+    )
+    node2.query(
+        """
+        CREATE TABLE test_timeout_fetch (x UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/test_timeout_fetch', '2')
+        ORDER BY x
+        SETTINGS
+            replicated_fetches_min_part_level = 1,
+            replicated_fetches_min_part_level_timeout_sec = 5
+        """
+    )
+
+    try:
+        node2.query("SYSTEM STOP FETCHES test_timeout_fetch")
+        node1.query("INSERT INTO test_timeout_fetch VALUES (1)")
+
+        count_before = int(node2.query("SELECT count() FROM test_timeout_fetch").strip())
+        assert count_before == 0, f"Expected 0 rows on node2 before timeout, got {count_before}"
+
+        node2.query("SYSTEM START FETCHES test_timeout_fetch")
+
+        assert wait_for_count(node2, "test_timeout_fetch", 1, timeout=30), (
+            "node2 did not fetch level-0 part after timeout"
+        )
+    finally:
+        node2.query("SYSTEM START FETCHES test_timeout_fetch")
+        node1.query("DROP TABLE IF EXISTS test_timeout_fetch SYNC")
+        node2.query("DROP TABLE IF EXISTS test_timeout_fetch SYNC")
+
+
+def test_permanent_skip_with_zero_timeout(started_cluster):
+    """
+    When replicated_fetches_min_part_level_timeout_sec = 0,
+    level-0 parts are skipped permanently.
+    """
+    node1.query(
+        """
+        CREATE TABLE test_permanent_skip (x UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/test_permanent_skip', '1')
+        ORDER BY x
+        SETTINGS
+            replicated_fetches_min_part_level = 1,
+            replicated_fetches_min_part_level_timeout_sec = 0
+        """
+    )
+    node2.query(
+        """
+        CREATE TABLE test_permanent_skip (x UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/test_permanent_skip', '2')
+        ORDER BY x
+        SETTINGS
+            replicated_fetches_min_part_level = 1,
+            replicated_fetches_min_part_level_timeout_sec = 0
+        """
+    )
+
+    try:
+        node2.query("SYSTEM STOP FETCHES test_permanent_skip")
+        node1.query("INSERT INTO test_permanent_skip VALUES (1)")
+
+        time.sleep(3)
+        count = int(node2.query("SELECT count() FROM test_permanent_skip").strip())
+        assert count == 0, f"Expected 0 rows on node2 with zero timeout, got {count}"
+
+        node2.query("SYSTEM START FETCHES test_permanent_skip")
+    finally:
+        node2.query("SYSTEM START FETCHES test_permanent_skip")
+        node1.query("DROP TABLE IF EXISTS test_permanent_skip SYNC")
+        node2.query("DROP TABLE IF EXISTS test_permanent_skip SYNC")
