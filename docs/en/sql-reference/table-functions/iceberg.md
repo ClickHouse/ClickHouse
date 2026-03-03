@@ -557,7 +557,7 @@ The command performs the following steps:
 4. Generates new metadata without the expired snapshots
 5. Physically deletes unreachable manifest lists, manifest files, and data files
 
-#### Snapshot Retention Policy
+#### Snapshot Retention Policy {#iceberg-snapshot-retention-policy}
 
 The `expire_snapshots` command respects the [Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy). Retention can be configured via Iceberg table properties and per-reference overrides:
 
