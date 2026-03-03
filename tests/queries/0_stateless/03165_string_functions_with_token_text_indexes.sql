@@ -116,8 +116,6 @@ SELECT '';
 SELECT '-------- Text index filter --------';
 SELECT '';
 
-SET use_text_index_like_optimization = 0;
-
 DROP TABLE IF EXISTS 03165_token_ft;
 CREATE TABLE 03165_token_ft
 (

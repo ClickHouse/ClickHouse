@@ -458,40 +458,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
     if (sparse_index->empty())
         return;
 
-    const auto read_dictionary_block_tokens = [&](ReadBuffer & istr)
-    {
-        UInt64 tokens_format;
-        readVarUInt(tokens_format, istr);
-
-        size_t num_tokens = 0;
-        readVarUInt(num_tokens, istr);
-
-        ColumnPtr tokens_column;
-        switch (tokens_format)
-        {
-            case static_cast<UInt64>(TextIndexSerialization::TokensFormat::RawStrings):
-                tokens_column = deserializeTokensRaw(istr, num_tokens);
-                break;
-            case static_cast<UInt64>(TextIndexSerialization::TokensFormat::FrontCodedStrings):
-                tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
-                break;
-            default:
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
-        }
-        return tokens_column;
-    };
-
-    const auto read_dictionary_block_token_infos = [&](ReadBuffer & istr, size_t num_tokens)
-    {
-        std::vector<TokenPostingsInfo> token_infos;
-        token_infos.reserve(num_tokens);
-
-        for (size_t i = 0; i < num_tokens; ++i)
-            token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, &postings_serialization));
-
-        return token_infos;
-    };
-
+    std::vector<size_t> matched_indices;
     for (size_t block_idx = 0; block_idx < sparse_index->size(); ++block_idx)
     {
         /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
@@ -499,12 +466,13 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         dictionary_stream.seekToMark({offset_in_file, 0});
         auto * data_buffer = dictionary_stream.getDataBuffer();
 
-        auto tokens_column = read_dictionary_block_tokens(*data_buffer);
+        auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
         const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
         size_t num_tokens = block_tokens.size();
 
-        std::vector<size_t> matched_indices;
-        matched_indices.reserve(num_tokens);
+        matched_indices.clear();
+        if (num_tokens > matched_indices.capacity())
+            matched_indices.reserve(num_tokens);
 
         for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
         {
@@ -515,17 +483,20 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
             }
         }
 
-        matched_indices.shrink_to_fit();
-
         if (matched_indices.empty())
             continue;
 
-        auto token_infos = read_dictionary_block_token_infos(*data_buffer, num_tokens);
+        /// Deserialize only the token infos for matched tokens.
+        auto token_infos = TextIndexSerialization::deserializeTokenInfos(
+            *data_buffer,
+            num_tokens,
+            matched_indices,
+            postings_serialization);
 
-        for (const auto & idx : matched_indices)
+        for (size_t i = 0; i < matched_indices.size(); ++i)
         {
-            String token(block_tokens.getDataAt(idx));
-            auto token_info = std::make_shared<TokenPostingsInfo>(std::move(token_infos[idx]));
+            String token(block_tokens.getDataAt(matched_indices[i]));
+            auto token_info = std::make_shared<TokenPostingsInfo>(std::move(token_infos[i]));
             pattern_tokens.emplace(std::move(token), std::move(token_info));
         }
     }

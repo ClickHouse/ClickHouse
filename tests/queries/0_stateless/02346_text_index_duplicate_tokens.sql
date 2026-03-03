@@ -9,7 +9,6 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET optimize_rewrite_like_perfect_affix = 1;
 SET optimize_or_like_chain = 0;
-SET use_text_index_like_optimization = 0;
 
 CREATE TABLE tab
 (

@@ -4,7 +4,6 @@ SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET use_statistics = 0;
-SET use_text_index_like_optimization = 0;
 
 -- Tests text search setting 'query_plan_text_index_add_hint' with different tokenizers
 
