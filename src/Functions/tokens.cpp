@@ -155,7 +155,7 @@ private:
             }
             else
             {
-                forEachTokenPadded(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+                forEachToken(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
                 {
                     column_result.insertData(token_start, token_len);
                     ++tokens_count;
