@@ -2,15 +2,18 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/ITokenizer.h>
@@ -503,6 +506,9 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
         index_id_for_caches = fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index.getFileName());
     }
 
+    is_empty = false;
+    analyzer.emplace(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
+
     analyzeDictionary(*index_stream, *dictionary_stream, state);
     analyzePostings(*postings_stream, state);
 }
@@ -513,9 +519,6 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     MergeTreeIndexDeserializationState & state)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    is_empty = false;
-    analyzer.emplace(condition_text);
-
     auto cardinalities_cache = condition_text.cardinalitiesCache();
     auto tokens_to_read = fillTokensFromCache(state);
 
@@ -1398,7 +1401,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
-    forEachTokenPadded(
+    forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
@@ -1502,14 +1505,20 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (isArray(index_column.type))
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
-        const auto & column_data = column_array.getData();
+
+        const IColumn & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
+
+        const bool data_is_nullable = column_data.isNullable();
 
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                std::string_view ref = column_data.getDataAt(element_idx);
+                if (data_is_nullable && column_data.isNullAt(element_idx))
+                    continue;
+
+                const std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
             granule_builder.incrementCurrentRow();
@@ -1517,10 +1526,15 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else
     {
-        for (size_t i = 0; i < rows_read; ++i)
+        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
+
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            std::string_view ref = preprocessed_column->getDataAt(offset + i);
-            granule_builder.addDocument(ref);
+            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
+            {
+                const std::string_view ref = preprocessed_column->getDataAt(i);
+                granule_builder.addDocument(ref);
+            }
             granule_builder.incrementCurrentRow();
         }
     }
@@ -1721,23 +1735,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    WhichDataType data_type(index.data_types[0]);
-    if (data_type.isArray())
+    DataTypePtr nested_type = index.data_types[0];
+    while (true)
     {
-        const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
-        data_type = WhichDataType(array_type.getNestedType());
-    }
-    else if (data_type.isLowCardinality())
-    {
-        const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index.data_types[0]);
-        data_type = WhichDataType(low_cardinality.getDictionaryType());
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested_type.get()))
+            nested_type = array_type->getNestedType();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+            nested_type = nullable_type->getNestedType();
+        else if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            nested_type = lc_type->getDictionaryType();
+        else
+            break;
     }
 
+    WhichDataType data_type(nested_type);
     if (!data_type.isString() && !data_type.isFixedString())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
+            "Text index must be created on columns of type `String` or `FixedString`");
     }
 
     /// Create the preprocessor for validation.

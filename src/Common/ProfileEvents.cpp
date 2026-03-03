@@ -933,6 +933,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperPacketsSent, "Packets sent by keeper server", ValueType::Number) \
     M(KeeperPacketsReceived, "Packets received by keeper server", ValueType::Number) \
     M(KeeperRequestTotal, "Total requests number on keeper server", ValueType::Number) \
+    M(KeeperRequestTotalWithSubrequests, "Total requests number on keeper server, counting each subrequest within a multi request", ValueType::Number) \
     M(KeeperLatency, "Keeper latency", ValueType::Milliseconds) \
     M(KeeperTotalElapsedMicroseconds, "Keeper total latency for a single request", ValueType::Microseconds) \
     M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request", ValueType::Microseconds) \

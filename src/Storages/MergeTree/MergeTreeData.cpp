@@ -267,6 +267,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -2332,6 +2333,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// For iteration to be completed
     runner.waitForAllToFinishAndRethrowFirstError();
 
+    /// Check if the table is explicitly marked as readonly via the `table_readonly` setting.
+    const bool is_table_readonly = (*settings)[MergeTreeSetting::table_readonly];
+
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
@@ -2503,8 +2507,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly)
+    /// If all disks are readonly or the table is explicitly marked as readonly,
+    /// it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -2548,7 +2553,9 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-    if (refresh_statistics_seconds && !refresh_stats_task)
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+    if (refresh_statistics_seconds)
     {
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
@@ -4838,6 +4845,9 @@ void MergeTreeData::changeSettings(
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
+        UInt64 has_refresh_statistics_interval_changed
+            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
@@ -4855,6 +4865,11 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
+
+        if (has_refresh_statistics_interval_changed)
+        {
+            startStatisticsCache();
+        }
     }
 }
 
@@ -7646,6 +7661,9 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
+    if (name.empty())
+        throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Empty part name");
+
     if (name.contains('/') || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
