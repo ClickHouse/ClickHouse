@@ -15,18 +15,20 @@ set parallel_replicas_index_analysis_only_on_coordinator=1;
 set parallel_replicas_local_plan=1;
 set distributed_index_analysis=1;
 set max_parallel_replicas=100;
-set cluster_for_parallel_replicas='parallel_replicas';
 --- Ignore warnings when replica does not respond, and analysis is done on initiator
 set send_logs_level='error';
 
 -- { echo }
-select sum(key) from test_10m;
-select sum(key) from test_10m where key = 1;
+select sum(key) from test_10m settings cluster_for_parallel_replicas='parallel_replicas';
+select sum(key) from test_10m where key = 1 settings cluster_for_parallel_replicas='parallel_replicas';
+select sum(key) from test_10m settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first';
+select sum(key) from test_10m where key = 1 settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first';
 
 -- { echoOff }
 system flush logs query_log;
 select
   normalizeQuery(query) q,
+  Settings['cluster_for_parallel_replicas'] cluster,
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0 not_blazingly_fast,
   ProfileEvents['DistributedIndexAnalysisMissingParts'] missing_parts,
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] replicas,

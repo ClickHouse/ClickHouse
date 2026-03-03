@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnBLOB.h>
@@ -240,42 +241,47 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     auto connection_pools = prepareConnectionPools(context, shard);
     size_t local_replica_index = findLocalReplica(connection_pools, shard.local_addresses);
     size_t total_replicas = shard.getAllNodeCount();
-    size_t active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
+    size_t max_active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
 
     /// Establish connections to remote replicas upfront, before distributing parts
     /// with consistent hashing. This lets us detect dead replicas early and avoid
     /// assigning parts to them (which would require a timeout + local fallback).
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-    std::vector<ConnectionPool::Entry> connections(active_replicas);
-    for (size_t i = 0; i < active_replicas; ++i)
+    std::vector<ConnectionPool::Entry> connections(total_replicas);
+
+    /// Local replica is always active (no connection needed).
+    std::vector<size_t> active_replica_indexes;
+    active_replica_indexes.reserve(max_active_replicas);
+    active_replica_indexes.push_back(local_replica_index);
+
+    /// Fill remaining slots with successfully connected remote replicas.
+    for (size_t i = 0; i < total_replicas && active_replica_indexes.size() < max_active_replicas; ++i)
     {
         if (i == local_replica_index)
             continue;
         try
         {
             connections[i] = connection_pools[i]->get(timeouts, settings);
+            active_replica_indexes.push_back(i);
         }
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
             const auto & replica_address = connection_pools[i]->getAddress();
-            tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). Its will not be participate in distributed index analysis", replica_address, i), LogsLevel::warning);
-            --active_replicas;
+            tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). It will not participate in distributed index analysis", replica_address, i), LogsLevel::warning);
         }
     }
-    LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, local replica index: {}, active replicas: {})",
+
+    /// Sort to maintain deterministic part distribution regardless of connection order.
+    std::sort(active_replica_indexes.begin(), active_replica_indexes.end());
+
+    LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, local replica index: {}, active replicas: {} ({}))",
               storage_id.getNameForLogs(),
-              total_replicas, local_replica_index, active_replicas);
+              total_replicas, local_replica_index, active_replica_indexes.size(), fmt::join(active_replica_indexes, ", "));
 
-    chassert(active_replicas <= connection_pools.size());
-
-    std::vector<std::vector<std::string_view>> replicas_parts;
-    replicas_parts.resize(active_replicas);
-
-    std::vector<size_t> replicas_marks;
-    replicas_marks.resize(active_replicas);
-    std::vector<size_t> replicas_rows;
-    replicas_rows.resize(active_replicas);
+    std::vector<std::vector<std::string_view>> replicas_parts(total_replicas);
+    std::vector<size_t> replicas_marks(total_replicas, 0);
+    std::vector<size_t> replicas_rows(total_replicas, 0);
 
     for (const auto & part_ranges : parts_with_ranges)
     {
@@ -283,11 +289,12 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         chassert(part_ranges.exact_ranges.empty());
 
         const auto & part_name = part_ranges.data_part->name;
-        const auto & part_replica_index = partReplica(part_name, active_replicas);
-        replicas_parts[part_replica_index].push_back(part_name);
+        const auto hash_index = partReplica(part_name, active_replica_indexes.size());
+        const auto replica_index = active_replica_indexes[hash_index];
+        replicas_parts[replica_index].push_back(part_name);
 
-        replicas_marks[part_replica_index] += part_ranges.getMarksCount();
-        replicas_rows[part_replica_index] += part_ranges.getRowsCount();
+        replicas_marks[replica_index] += part_ranges.getMarksCount();
+        replicas_rows[replica_index] += part_ranges.getRowsCount();
     }
 
     DistributedIndexAnalysisPartsRanges res;
@@ -308,9 +315,9 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                     CurrentMetrics::DistributedIndexAnalysisThreadsActive,
                     CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
                     /// TODO: limit amount of threads (maybe shared thread pool)
-                    replicas_parts.size());
+                    active_replica_indexes.size());
     ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
-    for (size_t i = 0; i < replicas_parts.size(); ++i)
+    for (const auto i : active_replica_indexes)
     {
         const auto & replica_parts = replicas_parts[i];
         const auto & connection_pool = connection_pools.at(i);
