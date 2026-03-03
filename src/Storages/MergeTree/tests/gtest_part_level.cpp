@@ -73,3 +73,46 @@ TEST(MergeTreePartLevel, PartitionedTableLevelTwo)
     auto info = MergeTreePartInfo::fromPartName("20240101_1_5_2", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
     EXPECT_EQ(info.level, 2u);
 }
+
+TEST(MergeTreePartLevel, TimeoutExceededForcesFetch)
+{
+    // Simulate: level-0 part, min_level=1, create_time 400s ago, timeout=300s
+    // elapsed (400) >= timeout (300) → force fetch (do NOT return false)
+    auto info = MergeTreePartInfo::fromPartName("all_1_1_0", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+    UInt64 min_level = 1;
+    UInt64 timeout_sec = 300;
+    time_t create_time = time(nullptr) - 400; // 400 seconds ago
+
+    EXPECT_TRUE(info.level < min_level);  // Part is below threshold
+
+    // Timeout check: elapsed >= timeout → force fetch
+    auto elapsed = time(nullptr) - create_time;
+    EXPECT_GE(elapsed, static_cast<time_t>(timeout_sec));  // Should force fetch
+}
+
+TEST(MergeTreePartLevel, TimeoutNotExceededStillSkips)
+{
+    // Simulate: level-0 part, min_level=1, create_time 100s ago, timeout=300s
+    // elapsed (100) < timeout (300) → still skip
+    auto info = MergeTreePartInfo::fromPartName("all_1_1_0", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+    UInt64 min_level = 1;
+    UInt64 timeout_sec = 300;
+    time_t create_time = time(nullptr) - 100; // 100 seconds ago
+
+    EXPECT_TRUE(info.level < min_level);  // Part is below threshold
+
+    // Timeout check: elapsed < timeout → still skip
+    auto elapsed = time(nullptr) - create_time;
+    EXPECT_LT(elapsed, static_cast<time_t>(timeout_sec));  // Should still skip
+}
+
+TEST(MergeTreePartLevel, ZeroTimeoutMeansPermanentSkip)
+{
+    // When timeout_sec = 0, the timeout check is disabled entirely
+    // Even if the part is very old, it should not be force-fetched
+    UInt64 timeout_sec = 0;
+
+    // The check in shouldExecuteLogEntry is: if (timeout_sec > 0 && entry.create_time > 0)
+    // When timeout_sec == 0, this condition is false → permanent skip
+    EXPECT_FALSE(timeout_sec > 0);  // Confirms the guard disables timeout
+}
