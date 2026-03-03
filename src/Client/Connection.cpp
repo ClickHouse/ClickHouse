@@ -58,6 +58,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
+    extern const Event DistributedConnectionConnectCount;
 }
 
 namespace DB
@@ -145,6 +146,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
+    ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
