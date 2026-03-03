@@ -305,6 +305,9 @@ void JoinStepLogical::swapInputs()
         join_operator.kind = JoinKind::Left;
 
     expression_actions.swapExpressionSources();
+
+    std::swap(left_table_label, right_table_label);
+    std::swap(left_rows_estimation, right_rows_estimation);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -1738,6 +1741,12 @@ QueryPlanStepPtr JoinStepLogical::clone() const
         join_settings,
         sorting_settings);
     result_step->setStepDescription(*this);
+    result_step->left_table_label = left_table_label;
+    result_step->right_table_label = right_table_label;
+    result_step->left_rows_estimation = left_rows_estimation;
+    result_step->right_rows_estimation = right_rows_estimation;
+    result_step->result_rows_estimation = result_rows_estimation;
+    result_step->optimized = optimized;
     return result_step;
 }
 
