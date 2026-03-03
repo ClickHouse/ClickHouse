@@ -2532,7 +2532,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
 
     /// The filter expression may evaluate to any numeric type (not just UInt8),
     /// e.g. when WHERE uses a Float64 expression like radians(col).
-    /// Check if the value is zero (falsy) in the context of any numeric type.
+    /// Check if the value is zero (evaluates to false) in the context of any numeric type.
     if (value.getType() == Field::Types::UInt64)
         return value.safeGet<UInt64>() == 0;
     if (value.getType() == Field::Types::Int64)
