@@ -134,6 +134,7 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
+    std::vector<size_t> max_files_override_per_task;
 
     LoggerPtr log;
 
@@ -156,7 +157,8 @@ private:
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context,
-        bool commit_once_processed);
+        bool commit_once_processed,
+        size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
