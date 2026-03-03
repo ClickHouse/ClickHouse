@@ -86,6 +86,7 @@ rocksdb_properties = {
 
 
 possible_properties = {
+    "allow_feature_tier": lambda: random.randint(0, 2),
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
         "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
@@ -124,11 +125,14 @@ possible_properties = {
     "background_message_broker_schedule_pool_size": no_zero_threads_lambda,
     "background_move_pool_size": no_zero_threads_lambda,
     # "background_pool_size": threads_lambda, has to be in a certain range
+    "background_schedule_pool_max_parallel_tasks_per_type_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 1.0
+    ),
     "background_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
-    "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.01, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
@@ -141,6 +145,7 @@ possible_properties = {
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
+    "distributed_ddl_use_initial_user_and_roles": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
@@ -148,12 +153,13 @@ possible_properties = {
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
+    "dns_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "format_alter_operations_with_parentheses": true_false_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 10000),
+    "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -228,7 +234,11 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "mlock_executable": true_false_lambda,
+    "mlock_executable_min_total_memory_amount_bytes": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024
+    ),
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
+    "os_collect_psi_metrics": true_false_lambda,
     "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(
         0.2, 0.2, -20, 19
     ),
@@ -267,14 +277,36 @@ possible_properties = {
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
+    "s3_credentials_provider_max_cache_size": threshold_generator(
+        0.2, 0.2, 0, 104857600
+    ),
     "s3queue_disable_streaming": true_false_lambda,
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished_queries": true_false_lambda,
+    "snapshot_cleaner_pool_size": threads_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
     "temporary_data_in_distributed_cache": true_false_lambda,
+    "text_index_dictionary_block_cache_max_entries": threshold_generator(
+        0.2, 0.2, 0, 1024
+    ),
+    "text_index_dictionary_block_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_dictionary_block_cache_size": threshold_generator(
+        0.2, 0.2, 0, 104857600
+    ),
+    "text_index_dictionary_block_cache_size_ratio": threshold_generator(
+        0.2, 0.2, 0.0, 1.0
+    ),
+    "text_index_header_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "text_index_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "text_index_postings_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -288,7 +320,7 @@ possible_properties = {
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_minimalistic_part_header_in_zookeeper": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
-    "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1000),
+    "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -340,7 +372,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         # "server_side_encryption_customer_key_base64": true_false_lambda, not working well
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "support_batch_delete": true_false_lambda,
         "thread_pool_size": threads_lambda,
         "use_insecure_imds_request": true_false_lambda,
@@ -360,7 +392,7 @@ object_storages_properties = {
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "skip_access_check": true_false_lambda,
+        # "skip_access_check": true_false_lambda, may break the startup
         "thread_pool_size": threads_lambda,
         "use_native_copy": true_false_lambda,
     },
@@ -398,10 +430,15 @@ cache_storage_properties = {
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": threads_lambda,
-    "max_elements": threshold_generator(0.2, 0.2, 3, 10000000),
+    "max_elements": threshold_generator(0.2, 0.2, 100, 10000000),
     "max_file_segment_size": file_size_value(100),
+    "overcommit_eviction_evict_step": threshold_generator(
+        0.2, 0.2, 0, 10 * 1024 * 1024
+    ),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
+    "use_split_cache": true_false_lambda,
+    "split_cache_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "write_cache_per_user_id_directory": true_false_lambda,
 }
 
@@ -422,7 +459,7 @@ all_disks_properties = {
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
     "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
-    "skip_access_check": true_false_lambda,
+    # "skip_access_check": true_false_lambda, may break the startup
 }
 
 
@@ -565,7 +602,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
         iter_prev_disk = prev_disk = random.choice(range(0, i))
@@ -593,6 +630,7 @@ def add_single_disk(
     allowed_disk_xml.text = f"disk{i}"
     final_type = disk_type
     final_super_type = disk_type
+    final_metadata_type = "local"  # default
 
     if disk_type == "object_storage":
         object_storages = ["local"]
@@ -615,7 +653,7 @@ def add_single_disk(
         metadata_type = "keeper" if object_storage_type == "s3_with_keeper" else "local"
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
-                ["local", "plain", "web"]
+                ["plain", "web"]
                 if object_storage_type == "web"
                 else ["local", "plain", "plain_rewritable"]
             )
@@ -625,6 +663,7 @@ def add_single_disk(
             metadata_type = random.choice(possible_metadata_types)
         metadata_xml = ET.SubElement(next_disk, "metadata_type")
         metadata_xml.text = metadata_type
+        final_metadata_type = metadata_type
 
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
@@ -688,6 +727,7 @@ def add_single_disk(
         if random.randint(1, 100) <= 70:
             metadata_xml = ET.SubElement(next_disk, "metadata_background_cleanup")
             apply_properties_recursively(metadata_xml, metadata_cleanup_properties)
+        final_metadata_type = "keeper"
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
@@ -723,7 +763,7 @@ def add_single_disk(
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
         apply_properties_recursively(next_disk, all_disks_properties)
-    return (prev_disk, final_type, final_super_type)
+    return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
 class DiskPropertiesGroup(PropertiesGroup):
@@ -748,6 +788,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         created_disks_types = []
         created_cache_disks = []
         created_keeper_disks = []
+        safe_for_database_disk = []
 
         for i in range(0, number_disks):
             possible_types = (
@@ -779,6 +820,10 @@ class DiskPropertiesGroup(PropertiesGroup):
                 and next_created_disk_pair[2] == "s3_with_keeper"
             ):
                 created_keeper_disks.append(i)
+            if next_created_disk_pair[3] == "local" and next_created_disk_pair[
+                2
+            ] not in ("cache", "encrypted"):
+                safe_for_database_disk.append(i)
 
         # Allow any disk in any table engine
         disks_table_engines.text = ",".join(
@@ -854,10 +899,10 @@ class DiskPropertiesGroup(PropertiesGroup):
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if number_disks > 0 and random.randint(1, 100) <= 30:
+        if len(safe_for_database_disk) > 0 and random.randint(1, 100) <= 30:
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
-            disk_element.text = f"disk{random.randint(0, number_disks - 1)}"
+            disk_element.text = f"disk{random.choice(safe_for_database_disk)}"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
@@ -1019,8 +1064,8 @@ class LogTablePropertiesGroup(PropertiesGroup):
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
             "flush_on_crash": true_false_lambda,
             # Setting these may crash the server
-            #"max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
-            #"reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         # Can't use this without the engine parameter?
         # number_policies = 0
@@ -1435,6 +1480,9 @@ keeper_settings = {
         "max_flush_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
         "max_log_file_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
         "max_request_queue_size": threshold_generator(0.2, 0.2, 0, 100000),
+        "max_requests_append_bytes_size": threshold_generator(
+            0.2, 0.2, 0, 10 * 1024 * 1024
+        ),
         "max_requests_append_size": threshold_generator(0.2, 0.2, 0, 200),
         "max_requests_batch_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024

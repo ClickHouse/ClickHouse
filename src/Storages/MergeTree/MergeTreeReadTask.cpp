@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -361,6 +362,7 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
     if (size_predictor)
         size_predictor->startBlock();
 

@@ -27,6 +27,7 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -338,6 +339,8 @@ protected:
     {
         if (done)
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("TablesBlockSource::generate");
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 

@@ -1389,8 +1389,10 @@ static BlockIO executeQueryImpl(
     {
         if (auto txn = context->getCurrentTransaction())
         {
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
-            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            if (txn->getState() == MergeTreeTransaction::COMMITTING)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
+            if (txn->getState() == MergeTreeTransaction::COMMITTED)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
             bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
@@ -2027,7 +2029,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
         try
         {
-            auto fuzz_context = Context::createCopy(context);
+            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+            context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            auto fuzz_session_context = Context::createCopy(context);
+            fuzz_session_context->makeSessionContext();
+
+            auto fuzz_context = Context::createCopy(fuzz_session_context);
+            fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2035,12 +2045,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pulling())
+                if (result.second.pipeline.pushing())
                 {
-                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                    result.second.pipeline.cancel();
                 }
-                CompletedPipelineExecutor executor(result.second.pipeline);
-                executor.execute();
+                else
+                {
+                    if (result.second.pipeline.pulling())
+                    {
+                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    }
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
+                }
             }
 
             base_ast = fuzzed_ast;
