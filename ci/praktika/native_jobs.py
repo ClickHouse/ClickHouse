@@ -819,12 +819,10 @@ def _finish_workflow(workflow, job_name):
                 # add error info to job info as well
                 result.set_info(ResultInfo.NOT_FINALIZED)
                 update_final_report = True
-        job = workflow.get_job(result.name)
-        if not job or not job.allow_merge_on_failure:
-            print(
-                f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
-            )
-            failed_results.append(result.name)
+        print(
+            f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
+        )
+        failed_results.append(result.name)
 
     if failed_results or dropped_results:
         ready_for_merge_status = Result.Status.FAILED

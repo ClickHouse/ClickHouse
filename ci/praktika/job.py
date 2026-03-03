@@ -66,8 +66,6 @@ class Job:
 
         run_unless_cancelled: bool = False
 
-        allow_merge_on_failure: bool = False
-
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
@@ -200,11 +198,6 @@ class Job:
                 if artifact_keyword.lower() not in artifact.lower():
                     provides_res.append(artifact)
             res.provides = provides_res
-            return res
-
-        def set_allow_merge_on_failure(self, value=True):
-            res = copy.deepcopy(self)
-            res.allow_merge_on_failure = value
             return res
 
         def set_post_hooks(self, post_hooks):

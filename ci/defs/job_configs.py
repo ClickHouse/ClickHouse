@@ -157,7 +157,6 @@ class JobConfigs:
         name=JobNames.PR_BODY,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_merge_on_failure=True,
         enable_gh_auth=True,
     )
     fast_test = Job.Config(
@@ -663,9 +662,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
-        True
-    ).parametrize(
+    functional_tests_jobs_azure = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan, azure, parallel",
             runs_on=RunnerLabels.ARM_MEDIUM,
