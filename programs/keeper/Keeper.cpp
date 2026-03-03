@@ -661,8 +661,7 @@ try
 
         /// Signal Keeper TCP handlers to close before waiting for connections,
         /// otherwise they keep running indefinitely and block shutdown.
-        if (auto keeper_dispatcher = global_context->tryGetKeeperDispatcher())
-            keeper_dispatcher->signalShutdown();
+        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
