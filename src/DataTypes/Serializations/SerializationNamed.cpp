@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

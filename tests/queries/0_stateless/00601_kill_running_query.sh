@@ -21,7 +21,7 @@ function wait_for_query_to_start()
 
 # Use sleep-based query that is guaranteed to run long enough to be killed,
 # unlike the previous groupArray query that could complete too quickly on fast machines.
-${CLICKHOUSE_CURL_COMMAND} -q --max-time 30 -sS "$CLICKHOUSE_URL&query_id=test_00601_$CLICKHOUSE_DATABASE" -d 'SELECT sleep(1) FROM numbers(10000) SETTINGS max_block_size = 1, max_rows_to_read = 0' > /dev/null &
+${CLICKHOUSE_CURL_COMMAND} -q --max-time 30 -sS "$CLICKHOUSE_URL&query_id=test_00601_$CLICKHOUSE_DATABASE" -d 'SELECT sleep(1) FROM numbers(10000) SETTINGS max_block_size = 1, max_rows_to_read = 0' > /dev/null 2>&1 &
 wait_for_query_to_start "test_00601_$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = 'test_00601_$CLICKHOUSE_DATABASE'"
 wait || true

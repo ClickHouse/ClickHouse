@@ -19,6 +19,10 @@ This query tries to initialize an unscheduled merge of data parts for tables. No
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 ```
 
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
 The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](/sql-reference/statements/create/view#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren't supported.
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](/operations/settings/settings#alter_sync) setting is set to `2`) or on current replica (if the [alter_sync](/operations/settings/settings#alter_sync) setting is set to `1`).
@@ -30,15 +34,63 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 
 You can specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout](/operations/settings/settings#replication_wait_for_inactive_replica_timeout) setting.
 
-:::note    
+:::note
 If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
+
+## DRY RUN {#dry-run}
+
+The `DRY RUN` clause simulates a merge of the specified parts without committing the result. The merged part is written to a temporary location, validated, and then discarded. The original parts and table data remain unchanged.
+
+This is useful for:
+- Testing merge correctness across ClickHouse versions.
+- Reproducing merge-related bugs deterministically.
+- Benchmarking merge performance.
+
+`DRY RUN` is only supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family tables. The `PARTS` keyword with a list of part names is required. All specified parts must exist, be active, and belong to the same partition.
+
+`DRY RUN` is incompatible with `FINAL` and `PARTITION`. It can be combined with `DEDUPLICATE` (with optional column specification) and `CLEANUP` (for `ReplacingMergeTree` tables).
+
+**Syntax**
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+By default, the resulting merged part is validated in a way similar to [`CHECK TABLE`](/sql-reference/statements/check-table) query. This behavior is controlled by the [optimize_dry_run_check_part](/operations/settings/settings#optimize_dry_run_check_part) setting (enabled by default). Disabling it skips validation, which can be useful for benchmarking the merge itself.
+
+**Example**
+
+```sql
+CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
+INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
+
+-- Simulate merging using two parts
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
+
+-- Simulate merging with deduplication
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
+
+-- Parts and data remain unchanged after DRY RUN
+SELECT name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
+ORDER BY name;
+```
+
+```response
+┌─name────────┬─rows─┐
+│ all_1_1_0   │    2 │
+│ all_2_2_0   │    2 │
+└─────────────┴──────┘
+```
 
 ## BY expression {#by-expression}
 
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](/sql-reference/statements/select#select-clause) or [`EXCEPT`](/sql-reference/statements/select/except-modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
-:::note    
+:::note
 Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
 
 Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.

@@ -684,10 +684,10 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             structure_state.last_granule_structure.clear();
 
         size_t rows_to_read = limit + rows_offset;
-        StructureGranule current_granule;
-        std::swap(structure_state.last_granule_structure, current_granule);
         while (rows_to_read != 0)
         {
+            auto & current_granule = structure_state.last_granule_structure;
+
             /// Calculate remaining rows in current granule that can be read.
             size_t remaining_rows_in_granule = current_granule.num_rows - current_granule.limit - current_granule.offset;
 
@@ -738,12 +738,7 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
             }
 
             result->push_back(current_granule);
-            current_granule.clear();
         }
-
-        /// Remember the state of the last read granule because it can be partially read.
-        if (!result->empty())
-            structure_state.last_granule_structure = result->back();
     }
 
     /// Add deserialized data into cache.

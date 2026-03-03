@@ -1463,6 +1463,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
+    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
+    How often replicas will try to update replica set in background.
+    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1520,6 +1523,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
     If true, lightweight delete is optimized on vertical merge.
+    )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
+    If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
+    the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
     )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
@@ -1938,7 +1945,7 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
@@ -2079,6 +2086,9 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
     Batch size for ZooKeeper multi-create get-part requests when cloning replica.
+    )", 0) \
+    DECLARE(Bool, table_readonly, false, R"(
+    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

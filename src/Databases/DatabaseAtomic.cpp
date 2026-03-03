@@ -13,6 +13,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
@@ -121,6 +122,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::drop");
     waitDatabaseStarted();
     {
         std::lock_guard lock(mutex);
@@ -146,6 +148,7 @@ void DatabaseAtomic::drop(ContextPtr)
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
@@ -182,6 +185,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::dropTable");
     waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
@@ -235,6 +239,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameTable");
     if (typeid(*this) != typeid(to_database))
     {
         if (typeid_cast<DatabaseOrdinary *>(&to_database))
@@ -709,6 +714,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameDatabase");
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();

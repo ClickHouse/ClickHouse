@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -84,7 +85,7 @@ public:
     TypeIndex getDataType() const override { throwMustBeDecompressed(); }
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
@@ -129,7 +130,7 @@ public:
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
     MutableColumns scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
-    void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
+    void getExtremes(Field &, Field &, size_t, size_t) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
