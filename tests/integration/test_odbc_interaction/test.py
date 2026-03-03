@@ -957,7 +957,7 @@ def test_many_connections(started_cluster):
         query += "SELECT key FROM {t} UNION ALL "
     query += "SELECT key FROM {t})"
 
-    assert node1.query(query.format(t="test_pg_table")) == "250\n"
+    assert_eq_with_retry(node1, query.format(t="test_pg_table"), "250")
     cursor.execute("DROP TABLE clickhouse.test_pg_table")
 
 

@@ -18,7 +18,7 @@
             --metric-value-color: black;
             --error-color: #dc3545;
             --success-color: #28a745;
-            --warning-color: #ffc107;
+            --warning-color: #b58900;
             --table-header-bg: #f8f9fa;
             --table-hover-bg: #f1f1f1;
             --btn-primary-bg: black;
@@ -71,6 +71,32 @@
             display: flex;
             gap: 1rem;
             align-items: center;
+        }
+        .connection-params {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .connection-params input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-background);
+            color: var(--color);
+            font-size: 0.85rem;
+            font-family: inherit;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+            transition: border-color 0.2s;
+        }
+        .connection-params input:focus {
+            outline: none;
+            border-color: var(--btn-primary-bg);
+        }
+        #url {
+            width: 350px;
+        }
+        #user, #password {
+            width: 120px;
         }
         .btn {
             padding: 0.5rem 1rem;
@@ -229,13 +255,13 @@
         .tab-content.active {
             display: block;
         }
-        #profile-result {
+        #profile-result, #query-flamegraph-result {
             /* CSS containment to isolate rendering and prevent affecting other tabs */
             contain: layout style paint;
             /* Allow browser to skip rendering when not in viewport */
             content-visibility: auto;
         }
-        #profile-result pre {
+        #profile-result pre, #query-flamegraph-result pre {
             /* Additional containment for large text content */
             contain: layout style paint;
         }
@@ -421,6 +447,11 @@
     <div class="header">
         <h1>ClickHouse Jemalloc Statistics</h1>
         <div class="controls">
+            <div class="connection-params">
+                <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
+                <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
+                <input spellcheck="false" id="password" type="password" placeholder="password" />
+            </div>
             <span class="timestamp" id="timestamp"></span>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <label for="refresh-interval" style="font-size: 0.9rem;" title="Set to 0 to disable auto-refresh">Auto-refresh (s):</label>
@@ -513,6 +544,31 @@
         if (password_from_url) {
             password = password_from_url;
         }
+
+        /// Read connection parameters from the input fields
+        function readConnectionParams() {
+            host = document.getElementById('url').value || host;
+            user = document.getElementById('user').value || user;
+            password = document.getElementById('password').value || password;
+        }
+
+        /// Build a query URL with authentication and CORS parameters
+        function buildUrl(query, format = 'TabSeparated') {
+            let url = `${host}?default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
+            if (add_http_cors_header) {
+                url += '&add_http_cors_header=1';
+            }
+            if (user) {
+                url += `&user=${encodeURIComponent(user)}`;
+            }
+            if (password) {
+                url += `&password=${encodeURIComponent(password)}`;
+            }
+            return url;
+        }
+
+        const fetchOptions = { method: 'POST', headers: { 'Authorization': 'never' } };
+
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -896,20 +952,23 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        function copyProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
+        // Shared profile output helpers parameterized by result div ID
+
+        function getFullProfileText(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            if (!pre) return null;
+            if (resultDiv.dataset.allLines) {
+                return JSON.parse(resultDiv.dataset.allLines).join('\n');
+            }
+            return pre.textContent;
+        }
+
+        function copyProfileOutput(resultDivId) {
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
                 alert('No profile output to copy');
                 return;
-            }
-            // If we have stored all lines, copy those; otherwise copy displayed text
-            let text;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                text = allLines.join('\n');
-            } else {
-                text = pre.textContent;
             }
             const button = event.target;
             const originalText = button.textContent;
@@ -944,24 +1003,17 @@
                 document.body.removeChild(textarea);
             }
         }
-        function saveProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
+
+        function saveProfileOutput(resultDivId, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const pre = resultDiv ? resultDiv.querySelector('pre') : null;
+            const text = getFullProfileText(resultDivId);
+            if (!text) {
                 alert('No profile output to save');
                 return;
             }
-            // If we have stored all lines, save those; otherwise save displayed text
-            let text;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                text = allLines.join('\n');
-            } else {
-                text = pre.textContent;
-            }
             const format = pre.dataset.format || 'Raw';
 
-            // Determine file extension based on format
             let extension;
             if (format === 'Raw') {
                 extension = '.heap';
@@ -977,15 +1029,126 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `jemalloc-profile-${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-        function closeProfileOutput() {
-            const resultDiv = document.getElementById('profile-result');
+
+        function closeProfileOutput(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
             resultDiv.innerHTML = '';
+        }
+
+        function showMoreProfileLines(resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const preElement = resultDiv.querySelector('pre');
+            const allLines = JSON.parse(resultDiv.dataset.allLines);
+            const currentLine = parseInt(resultDiv.dataset.currentLine);
+            const batchSize = 1000;
+            const nextLine = Math.min(currentLine + batchSize, allLines.length);
+
+            const newLines = allLines.slice(0, nextLine);
+            const format = preElement.dataset.format;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = newLines.map(line => {
+                    if (line.length > maxLineLength) {
+                        return line.substring(0, maxLineLength) + '...';
+                    }
+                    return line;
+                });
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = newLines.join('\n');
+            }
+            preElement.textContent = displayText;
+
+            resultDiv.dataset.currentLine = nextLine.toString();
+
+            const infoDiv = resultDiv.querySelector('.metric-label').parentElement.nextElementSibling;
+            const totalLines = allLines.length;
+            if (nextLine >= totalLines) {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing.*lines/, `${totalLines} lines`);
+                const buttonDiv = resultDiv.querySelector('div[style*="text-align: center"]');
+                if (buttonDiv) buttonDiv.remove();
+            } else {
+                infoDiv.textContent = infoDiv.textContent.replace(/Showing \d+/, `Showing ${nextLine}`);
+            }
+        }
+
+        function downloadFlameGraphFromProfile(resultDivId, filenamePrefix, countname) {
+            const text = getFullProfileText(resultDivId);
+            if (!text || text === 'No profile data') {
+                alert('No profile data available. Please get a profile first.');
+                return;
+            }
+
+            const svg = generateFlameGraphSVG(text, window.innerWidth, countname || 'bytes');
+
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filenamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function renderProfileOutputCard(resultDivId, label, lines, format, flameGraphOnclick, filenamePrefix) {
+            const resultDiv = document.getElementById(resultDivId);
+            const timestamp = new Date().toLocaleString();
+            const totalLines = lines.length;
+            const initialLines = 1000;
+            const hasMore = totalLines > initialLines;
+
+            const visualizeButton = flameGraphOnclick
+                ? `<button class="btn btn-primary" onclick="${flameGraphOnclick}" style="padding: 0.4rem 1rem; font-size: 0.85rem;">🔥 Generate Flame Graph</button>`
+                : '';
+
+            resultDiv.innerHTML = `
+                <div class="metric-card" style="margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div class="metric-label">${label}</div>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            ${visualizeButton}
+                            <button class="btn btn-secondary" onclick="copyProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Copy All</button>
+                            <button class="btn btn-secondary" onclick="saveProfileOutput('${resultDivId}', '${filenamePrefix}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">💾 Save</button>
+                            <button class="btn btn-secondary" onclick="closeProfileOutput('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">✕ Close</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
+                        Generated at: ${timestamp}${hasMore ? ` | Showing ${initialLines} of ${totalLines} lines` : ` | ${totalLines} lines`}
+                    </div>
+                    <pre data-format="${format}" style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; max-height: 600px; font-size: 0.85rem; line-height: 1.5; white-space: pre;"></pre>
+                    ${hasMore ? `<div style="margin-top: 0.5rem; text-align: center;"><button class="btn btn-primary" onclick="showMoreProfileLines('${resultDivId}')" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Show More Lines</button></div>` : ''}
+                </div>
+            `;
+
+            const preElement = resultDiv.querySelector('pre');
+            const displayLines = hasMore ? lines.slice(0, initialLines) : lines;
+            const maxLineLength = 500;
+
+            let displayText;
+            if (format === 'Collapsed') {
+                const truncatedLines = displayLines.map(line =>
+                    line.length > maxLineLength ? line.substring(0, maxLineLength) + '...' : line
+                );
+                displayText = truncatedLines.join('\n');
+            } else {
+                displayText = displayLines.join('\n');
+            }
+            preElement.textContent = displayText || 'No profile data';
+
+            resultDiv.dataset.allLines = JSON.stringify(lines);
+            if (hasMore) {
+                resultDiv.dataset.currentLine = initialLines.toString();
+            }
         }
         function parseJemallocStats(statsText) {
             const stats = {
@@ -2019,16 +2182,10 @@
             container.innerHTML = backgroundInfo + mutexTable;
         }
         async function checkProfilingEnabled() {
+            readConnectionParams();
             try {
-                const query = "SELECT value FROM system.asynchronous_metrics WHERE name = 'jemalloc.prof.thread_active_init'";
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, { method: 'POST' });
+                const query = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'jemalloc.prof.thread_active_init'";
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     return null;
                 }
@@ -2054,6 +2211,7 @@
         let profileAbortController = null;
 
         async function getProfile() {
+            readConnectionParams();
             const button = document.getElementById('get-profile-btn');
             const resultDiv = document.getElementById('profile-result');
 
@@ -2086,79 +2244,25 @@
                 }
                 if (outputFormat === 'Collapsed') {
                     settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
+                    settings += `, max_block_size = 500`;
                 }
                 const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, {
-                    method: 'POST',
+                const response = await fetch(buildUrl(query), {
+                    ...fetchOptions,
                     signal: profileAbortController.signal
                 });
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const result = await response.text();
-                const timestamp = new Date().toLocaleString();
-                const visualizeButton = outputFormat === 'Collapsed'
-                    ? '<button class="btn btn-primary" onclick="generateFlameGraph()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">🔥 Generate Flame Graph</button>'
-                    : '';
-
-                // Split into lines for progressive loading
                 const lines = result ? result.split('\n') : [];
-                const totalLines = lines.length;
-                const initialLines = 1000;
-                const hasMore = totalLines > initialLines;
 
-                // Build DOM structure first without the large text content
-                resultDiv.innerHTML = `
-                    <div class="metric-card" style="margin-top: 1rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <div class="metric-label">Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})</div>
-                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                ${visualizeButton}
-                                <button class="btn btn-secondary" onclick="copyProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Copy All</button>
-                                <button class="btn btn-secondary" onclick="saveProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">💾 Save</button>
-                                <button class="btn btn-secondary" onclick="closeProfileOutput()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">✕ Close</button>
-                            </div>
-                        </div>
-                        <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
-                            Generated at: ${timestamp}${hasMore ? ` | Showing ${initialLines} of ${totalLines} lines` : ` | ${totalLines} lines`}
-                        </div>
-                        <pre data-format="${outputFormat}" style="margin-top: 0.5rem; background: var(--table-header-bg); padding: 1rem; border-radius: 4px; overflow-x: auto; max-height: 600px; font-size: 0.85rem; line-height: 1.5; white-space: pre;"></pre>
-                        ${hasMore ? '<div style="margin-top: 0.5rem; text-align: center;"><button class="btn btn-primary" onclick="showMoreProfileLines()" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Show More Lines</button></div>' : ''}
-                    </div>
-                `;
+                const label = `Profile Output (${outputFormat}${(outputFormat === 'Symbolized' || outputFormat === 'Collapsed') ? (symbolizeWithInline ? ' - with inline' : ' - no inline') : ''}${outputFormat === 'Collapsed' && useCount ? ' - count' : ''})`;
+                const flameGraphOnclick = outputFormat === 'Collapsed'
+                    ? `downloadFlameGraphFromProfile('profile-result', 'flamegraph', document.getElementById('profile-collapsed-use-count').checked ? 'allocations' : 'bytes')`
+                    : null;
 
-                // Set text content separately for better performance with large text
-                const preElement = resultDiv.querySelector('pre');
-                const displayLines = hasMore ? lines.slice(0, initialLines) : lines;
-
-                // Truncate long lines for collapsed format
-                const maxLineLength = 500;
-                let displayText;
-                if (outputFormat === 'Collapsed') {
-                    const truncatedLines = displayLines.map(line => {
-                        if (line.length > maxLineLength) {
-                            return line.substring(0, maxLineLength) + '...';
-                        }
-                        return line;
-                    });
-                    displayText = truncatedLines.join('\n');
-                } else {
-                    displayText = displayLines.join('\n');
-                }
-                preElement.textContent = displayText || 'No profile data';
-
-                // Store full data for "Show more" functionality and operations
-                resultDiv.dataset.allLines = JSON.stringify(lines);
-                if (hasMore) {
-                    resultDiv.dataset.currentLine = initialLines.toString();
-                }
+                renderProfileOutputCard('profile-result', label, lines, outputFormat, flameGraphOnclick, 'jemalloc-profile');
             } catch (error) {
                 console.error('Error getting profile:', error);
                 if (error.name === 'AbortError') {
@@ -2170,48 +2274,6 @@
                 profileAbortController = null;
                 button.disabled = false;
                 button.textContent = 'Get Profile';
-            }
-        }
-        function showMoreProfileLines() {
-            const resultDiv = document.getElementById('profile-result');
-            const preElement = resultDiv.querySelector('pre');
-            const allLines = JSON.parse(resultDiv.dataset.allLines);
-            const currentLine = parseInt(resultDiv.dataset.currentLine);
-            const batchSize = 1000;
-            const nextLine = Math.min(currentLine + batchSize, allLines.length);
-
-            // Prepare lines to display with truncation if needed
-            const newLines = allLines.slice(0, nextLine);
-            const format = preElement.dataset.format;
-            const maxLineLength = 500;
-
-            let displayText;
-            if (format === 'Collapsed') {
-                const truncatedLines = newLines.map(line => {
-                    if (line.length > maxLineLength) {
-                        return line.substring(0, maxLineLength) + '...';
-                    }
-                    return line;
-                });
-                displayText = truncatedLines.join('\n');
-            } else {
-                displayText = newLines.join('\n');
-            }
-            preElement.textContent = displayText;
-
-            // Update current line count
-            resultDiv.dataset.currentLine = nextLine.toString();
-
-            // Update info text
-            const infoDiv = resultDiv.querySelector('.metric-label').parentElement.nextElementSibling;
-            const totalLines = allLines.length;
-            if (nextLine >= totalLines) {
-                infoDiv.textContent = infoDiv.textContent.replace(/Showing.*lines/, `${totalLines} lines`);
-                // Remove the "Show more" button
-                const buttonDiv = resultDiv.querySelector('div[style*="text-align: center"]');
-                if (buttonDiv) buttonDiv.remove();
-            } else {
-                infoDiv.textContent = infoDiv.textContent.replace(/Showing \d+/, `Showing ${nextLine}`);
             }
         }
         async function renderProfileStats() {
@@ -2313,6 +2375,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             `;
         }
         async function getQueryProfile() {
+            readConnectionParams();
             const button = document.getElementById('query-profile-btn');
             const resultDiv = document.getElementById('query-profile-result');
             const queryIdInput = document.getElementById('query-profile-id');
@@ -2330,31 +2393,16 @@ SETTINGS jemalloc_enable_profiler = 1,
             try {
                 // First, flush the logs to ensure all data is written
                 const flushQuery = 'SYSTEM FLUSH LOGS';
-                let flushUrl = `${host}?query=${encodeURIComponent(flushQuery)}`;
-                if (user) {
-                    flushUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    flushUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const flushResponse = await fetch(flushUrl, { method: 'POST' });
-                if (!flushResponse.ok) {
-                    throw new Error(`Failed to flush logs: HTTP ${flushResponse.status}: ${flushResponse.statusText}`);
+                const flushResponse = await fetch(buildUrl(flushQuery), fetchOptions);
+                const flushFailed = !flushResponse.ok;
+                if (flushFailed) {
+                    resultDiv.innerHTML = '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>';
                 }
 
                 // Query to get min and max event_time_microseconds for JemallocSample events
                 const query = `SELECT toUnixTimestamp64Micro(min(event_time_microseconds)) AS min_time, toUnixTimestamp64Micro(max(event_time_microseconds)) AS max_time FROM system.trace_log WHERE query_id = '${queryId}' AND trace_type = 'JemallocSample'`;
 
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const response = await fetch(url, { method: 'POST' });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2362,12 +2410,15 @@ SETTINGS jemalloc_enable_profiler = 1,
                 const result = await response.text();
                 const lines = result.trim().split('\n');
 
-                if (lines.length === 0 || !lines[0]) {
-                    resultDiv.innerHTML = `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
+                const [minTime, maxTime] = (lines[0] || '').split('\t');
+
+                if (!minTime || !maxTime || (minTime === '0' && maxTime === '0')) {
+                    const msg = flushFailed
+                        ? '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>'
+                        : '';
+                    resultDiv.innerHTML = msg + `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
                     return;
                 }
-
-                const [minTime, maxTime] = lines[0].split('\t');
 
                 // Now get cumulative memory usage over time with at most 10000 points
                 const maxPoints = 10000;
@@ -2377,15 +2428,7 @@ SETTINGS jemalloc_enable_profiler = 1,
 
                 const cumulativeQuery = `WITH per_bucket AS (SELECT intDiv(toUnixTimestamp64Micro(event_time_microseconds) - ${minTime}, ${bucketSize}) * ${bucketSize} + ${minTime} AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size FROM per_bucket ORDER BY bucket_time`;
 
-                let cumulativeUrl = `${host}?default_format=TabSeparated&query=${encodeURIComponent(cumulativeQuery)}`;
-                if (user) {
-                    cumulativeUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    cumulativeUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const cumulativeResponse = await fetch(cumulativeUrl, { method: 'POST' });
+                const cumulativeResponse = await fetch(buildUrl(cumulativeQuery), fetchOptions);
                 if (!cumulativeResponse.ok) {
                     throw new Error(`HTTP ${cumulativeResponse.status}: ${cumulativeResponse.statusText}`);
                 }
@@ -2402,15 +2445,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 // Get max memory usage and its timepoint
                 const maxMemQuery = `SELECT argMax(bucket_time, cumulative_size), max(cumulative_size) FROM (WITH per_bucket AS (SELECT event_time_microseconds AS bucket_time, sum(size) AS bucket_sum FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' GROUP BY bucket_time) SELECT bucket_time, sum(bucket_sum) OVER (ORDER BY bucket_time ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_size, formatReadableSize(cumulative_size) AS cumulative_size_readable FROM per_bucket ORDER BY bucket_time)`;
 
-                let maxMemUrl = `${host}?default_format=TabSeparated&query=${encodeURIComponent(maxMemQuery)}`;
-                if (user) {
-                    maxMemUrl += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    maxMemUrl += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const maxMemResponse = await fetch(maxMemUrl, { method: 'POST' });
+                const maxMemResponse = await fetch(buildUrl(maxMemQuery), fetchOptions);
                 if (!maxMemResponse.ok) {
                     throw new Error(`HTTP ${maxMemResponse.status}: ${maxMemResponse.statusText}`);
                 }
@@ -2466,8 +2501,9 @@ SETTINGS jemalloc_enable_profiler = 1,
                                 <label for="flamegraph-time" style="display: block; font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Time</label>
                                 <input type="text" id="flamegraph-time" value="${formatTime(maxMemTime)}" style="width: 100%; padding: 0.5rem; font-family: monospace; font-size: 0.85rem; background: var(--input-background); color: var(--color); border: 1px solid var(--border-color); border-radius: 4px;">
                             </div>
-                            <button id="generate-query-flamegraph-btn" onclick="generateQueryFlameGraph()" class="btn btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;">🔥 Generate Flame Graph</button>
+                            <button id="generate-query-flamegraph-btn" onclick="getQueryCollapsedProfile()" class="btn btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;">Get Profile</button>
                         </div>
+                        <div id="query-flamegraph-result"></div>
                     </div>
                 `;
 
@@ -2533,12 +2569,14 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
         }
 
-        async function generateQueryFlameGraph() {
+        async function getQueryCollapsedProfile() {
+            readConnectionParams();
             const button = document.getElementById('generate-query-flamegraph-btn');
             const queryIdInput = document.getElementById('query-profile-id');
             const timeInput = document.getElementById('flamegraph-time');
             const queryId = queryIdInput.value.trim();
             const time = timeInput.value.trim();
+            const resultDiv = document.getElementById('query-flamegraph-result');
 
             if (!queryId) {
                 alert('Please enter a query ID first and click Profile to load the data.');
@@ -2551,21 +2589,13 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
 
             button.disabled = true;
-            button.textContent = 'Generating...';
+            button.textContent = 'Getting profile...';
 
             try {
                 // Query to get collapsed flame graph data
-                const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}'`;
+                const query = `SELECT arrayJoin(flameGraph(arrayReverse(trace), size, ptr)) FROM system.trace_log WHERE trace_type = 'JemallocSample' AND query_id = '${queryId}' AND event_time_microseconds <= '${time}' SETTINGS allow_introspection_functions = 1`;
 
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-
-                const response = await fetch(url, { method: 'POST' });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2573,34 +2603,26 @@ SETTINGS jemalloc_enable_profiler = 1,
                 const collapsedData = await response.text();
 
                 if (!collapsedData || collapsedData.trim() === '') {
-                    alert('No flame graph data found for the specified query ID and time.');
+                    resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">No profile data found for the specified query ID and time.</div>`;
                     return;
                 }
 
-                // Generate the flame graph SVG
-                const svg = generateFlameGraphSVG(collapsedData, window.innerWidth);
+                const lines = collapsedData.split('\n');
+                const flameGraphOnclick = `downloadFlameGraphFromProfile('query-flamegraph-result', 'query-flamegraph-' + document.getElementById('query-profile-id').value.trim())`;
 
-                // Download the SVG file
-                const blob = new Blob([svg], { type: 'image/svg+xml' });
-                const url2 = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url2;
-                a.download = `query-flamegraph-${queryId}-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url2);
+                renderProfileOutputCard('query-flamegraph-result', 'Profile Output (Collapsed)', lines, 'Collapsed', flameGraphOnclick, 'query-profile-' + queryId);
 
             } catch (error) {
-                console.error('Error generating flame graph:', error);
-                alert(`Error generating flame graph: ${error.message}`);
+                console.error('Error getting query profile:', error);
+                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${error.message}</div>`;
             } finally {
                 button.disabled = false;
-                button.textContent = '🔥 Generate Flame Graph';
+                button.textContent = 'Get Profile';
             }
         }
 
         async function loadStats(isManualRefresh = false) {
+            readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
             const errorDiv = document.getElementById('error');
@@ -2613,17 +2635,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             errorDiv.style.display = 'none';
             try {
                 const query = 'SELECT * FROM system.jemalloc_stats';
-                // Build URL with parameters
-                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
-                if (user) {
-                    url += `&user=${encodeURIComponent(user)}`;
-                }
-                if (password) {
-                    url += `&password=${encodeURIComponent(password)}`;
-                }
-                const response = await fetch(url, {
-                    method: 'POST'
-                });
+                const response = await fetch(buildUrl(query), fetchOptions);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2687,42 +2699,6 @@ SETTINGS jemalloc_enable_profiler = 1,
             }, 500);
         }
         // Flame Graph Generation - generates and downloads SVG file directly
-        function generateFlameGraph() {
-            const resultDiv = document.getElementById('profile-result');
-            const pre = resultDiv.querySelector('pre');
-            if (!pre) {
-                alert('No profile data found. Please get a collapsed profile first.');
-                return;
-            }
-            // If we have stored all lines, use those; otherwise use displayed text
-            let collapsedData;
-            if (resultDiv.dataset.allLines) {
-                const allLines = JSON.parse(resultDiv.dataset.allLines);
-                collapsedData = allLines.join('\n');
-            } else {
-                collapsedData = pre.textContent;
-            }
-            if (!collapsedData || collapsedData === 'No profile data') {
-                alert('No profile data available. Please get a collapsed profile first.');
-                return;
-            }
-
-            // Generate the flame graph SVG with full viewport width
-            const useCount = document.getElementById('profile-collapsed-use-count').checked;
-            const svg = generateFlameGraphSVG(collapsedData, window.innerWidth, useCount ? 'allocations' : 'bytes');
-
-            // Download the SVG file
-            const blob = new Blob([svg], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `flamegraph-${new Date().toISOString().replace(/[:.]/g, '-')}.svg`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-
         function generateFlameGraphSVG(collapsedData, imagewidth = 1200, countname = 'bytes') {
             // Configuration
             const fonttype = "Verdana";
@@ -3319,10 +3295,16 @@ SETTINGS jemalloc_enable_profiler = 1,
 ]]><\/script>\n`;
         }
 
-        // Load stats on page load
-        loadStats();
-        // Start auto-refresh with default interval
-        updateRefreshInterval();
-    </script>
+function start() {
+    document.getElementById('url').value = host;
+    document.getElementById('user').value = user;
+    document.getElementById('password').value = password;
+    loadStats();
+    updateRefreshInterval();
+}
+
+start();
+
+</script>
 </body>
 </html>

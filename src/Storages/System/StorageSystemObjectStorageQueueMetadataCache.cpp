@@ -12,7 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Disks/IDisk.h>
 

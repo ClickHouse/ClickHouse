@@ -11,6 +11,11 @@ if ! hash qemu-x86_64-static 2>/dev/null; then
     exit 0
 fi
 
+if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" == "1" ]; then
+    echo "@@SKIP@@: FIPS build"
+    exit 0
+fi
+
 command=$(command -v ${CLICKHOUSE_LOCAL})
 # Limit memory to 1 GB to fail fast if a sanitized binary is run under QEMU
 # (sanitized binaries try to allocate ~20 TiB of virtual memory for shadow memory)
