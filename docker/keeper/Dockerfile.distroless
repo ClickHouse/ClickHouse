@@ -1,0 +1,171 @@
+# Distroless ClickHouse Keeper image.
+# Contains no shell, no package manager, no coreutils.
+# The entrypoint is the compiled `clickhouse docker-init --keeper` subcommand.
+#
+# Build targets:
+#   production  — gcr.io/distroless/cc-debian12:nonroot  (default)
+#   debug       — gcr.io/distroless/cc-debian12:debug-nonroot  (includes busybox shell)
+#
+# Usage:
+#   docker build -f Dockerfile.distroless --target production -t clickhouse/clickhouse-keeper:distroless .
+#   docker build -f Dockerfile.distroless --target debug     -t clickhouse/clickhouse-keeper:distroless-debug .
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 1: Install ClickHouse and assemble the output directory tree.
+# ──────────────────────────────────────────────────────────────────────────────
+FROM ubuntu:22.04 AS ch-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG apt_archive="http://archive.ubuntu.com"
+
+# user/group precreated explicitly with fixed uid/gid on purpose.
+# The same uid/gid (101) is used both for alpine and ubuntu.
+RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
+    && groupadd -r clickhouse --gid=101 \
+    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        wget \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+ARG REPO_CHANNEL="stable"
+ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
+ARG VERSION="26.1.2.11"
+ARG PACKAGES="clickhouse-common-static clickhouse-server"
+
+ARG deb_location_url=""
+ARG DIRECT_DOWNLOAD_URLS=""
+ARG single_binary_location_url=""
+ARG TARGETARCH
+
+# Install from direct URLs (deb packages provided by CI).
+RUN if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+        rm -rf /tmp/clickhouse_debs \
+        && mkdir -p /tmp/clickhouse_debs \
+        && for url in $DIRECT_DOWNLOAD_URLS; do \
+            wget --progress=bar:force:noscroll "$url" -P /tmp/clickhouse_debs || exit 1 \
+        ; done \
+        && dpkg -i /tmp/clickhouse_debs/*.deb \
+        && rm -rf /tmp/* ; \
+    fi
+
+# Install from a web location with deb packages.
+RUN arch="${TARGETARCH:-amd64}" \
+    && if [ -n "${deb_location_url}" ]; then \
+        rm -rf /tmp/clickhouse_debs \
+        && mkdir -p /tmp/clickhouse_debs \
+        && for package in ${PACKAGES}; do \
+            { wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_${arch}.deb" -P /tmp/clickhouse_debs || \
+              wget --progress=bar:force:noscroll "${deb_location_url}/${package}_${VERSION}_all.deb" -P /tmp/clickhouse_debs ; } \
+            || exit 1 \
+        ; done \
+        && dpkg -i /tmp/clickhouse_debs/*.deb \
+        && rm -rf /tmp/* ; \
+    fi
+
+# Install from a single binary.
+RUN if [ -n "${single_binary_location_url}" ]; then \
+        rm -rf /tmp/clickhouse_binary \
+        && mkdir -p /tmp/clickhouse_binary \
+        && wget --progress=bar:force:noscroll "${single_binary_location_url}" -O /tmp/clickhouse_binary/clickhouse \
+        && chmod +x /tmp/clickhouse_binary/clickhouse \
+        && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" \
+        && rm -rf /tmp/* ; \
+    fi
+
+# Fall back to installation from the ClickHouse repository.
+RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+    ; apt-get update \
+    && apt-get install --yes --no-install-recommends dirmngr gnupg2 \
+    && mkdir -p /etc/apt/sources.list.d \
+    && GNUPGHOME=$(mktemp -d) \
+    && GNUPGHOME="$GNUPGHOME" gpg --batch --no-default-keyring \
+        --keyring /usr/share/keyrings/clickhouse-keyring.gpg \
+        --keyserver hkp://keyserver.ubuntu.com:80 \
+        --recv-keys 3a9ea1193a97b548be1457d48919f6bd2b48d754 \
+    && rm -rf "$GNUPGHOME" \
+    && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
+    && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
+    && echo "installing from repository: ${REPOSITORY}" \
+    && apt-get update \
+    && for package in ${PACKAGES}; do \
+        packages="${packages} ${package}=${VERSION}" \
+    ; done \
+    && apt-get install --yes --no-install-recommends ${packages} \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && apt-get autoremove --purge -yq dirmngr gnupg2
+
+# Verify the installation.
+RUN clickhouse-local -q 'SELECT version()'
+
+ARG DEFAULT_DATA_DIR="/var/lib/clickhouse"
+ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
+ARG DEFAULT_CONFIG_DIR="/etc/clickhouse-keeper"
+
+# Assemble the output directory tree.
+RUN mkdir -p \
+        /output/usr/bin \
+        /output/etc/clickhouse-keeper \
+        /output/var/lib/clickhouse \
+        /output/var/log/clickhouse-keeper \
+        /output/tmp \
+    && cp /usr/bin/clickhouse /output/usr/bin/clickhouse \
+    && for link in clickhouse-keeper clickhouse-keeper-client clickhouse-docker-init; do \
+        ln -sf /usr/bin/clickhouse "/output/usr/bin/${link}" ; \
+    done \
+    && chown -R clickhouse:clickhouse \
+        /output/var/lib/clickhouse \
+        /output/var/log/clickhouse-keeper \
+    && chmod 1777 /output/tmp \
+    && printf \
+        'root:x:0:0:root:/root:/sbin/nologin\n' \
+        'nobody:x:65534:65534:nobody:/nonexistent:/sbin/nologin\n' \
+        'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin\n' \
+        'clickhouse:x:101:101:ClickHouse:/var/lib/clickhouse:/sbin/nologin\n' \
+        > /output/etc/passwd \
+    && printf \
+        'root:x:0:\n' \
+        'nobody:x:65534:\n' \
+        'nonroot:x:65532:\n' \
+        'clickhouse:x:101:\n' \
+        > /output/etc/group
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 2: Production distroless image.
+# ──────────────────────────────────────────────────────────────────────────────
+FROM gcr.io/distroless/cc-debian12:nonroot AS production
+
+COPY --from=ch-builder /output/ /
+
+ENV TZ=UTC \
+    CLICKHOUSE_WATCHDOG_ENABLE=0
+
+# 9181: ZooKeeper-compatible client port
+# 9234: Raft port (inter-node communication)
+EXPOSE 9181 9234
+
+VOLUME ["/var/lib/clickhouse", "/var/log/clickhouse-keeper"]
+
+USER 101:101
+
+ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 3: Debug image — same as production but includes the busybox shell
+#           at /busybox/sh for interactive troubleshooting.
+# ──────────────────────────────────────────────────────────────────────────────
+FROM gcr.io/distroless/cc-debian12:debug-nonroot AS debug
+
+COPY --from=ch-builder /output/ /
+
+ENV TZ=UTC \
+    CLICKHOUSE_WATCHDOG_ENABLE=0
+
+EXPOSE 9181 9234
+
+VOLUME ["/var/lib/clickhouse", "/var/log/clickhouse-keeper"]
+
+USER 101:101
+
+ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]

@@ -101,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
+    parser.add_argument("--os", default=["ubuntu", "alpine", "distroless"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
         action=DelOS,
@@ -115,6 +115,13 @@ def parse_args() -> argparse.Namespace:
         nargs=0,
         default=argparse.SUPPRESS,
         help="don't build alpine image",
+    )
+    parser.add_argument(
+        "--no-distroless",
+        action=DelOS,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="don't build distroless image",
     )
     parser.add_argument(
         "--allow-build-reuse",
@@ -215,7 +222,10 @@ def build_and_push_image(
         cmd_args = list(init_args)
         urls = []
         if direct_urls:
-            if os == "ubuntu" and "clickhouse-server" in image.name:
+            # distroless uses an Ubuntu builder (dpkg), so it needs .deb packages.
+            # alpine and the keeper ubuntu variant use .tgz packages.
+            uses_deb = (os == "ubuntu" and "clickhouse-server" in image.name) or os == "distroless"
+            if uses_deb:
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
