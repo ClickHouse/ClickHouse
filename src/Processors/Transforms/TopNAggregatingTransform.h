@@ -18,9 +18,10 @@ namespace DB
 /// Stops reading after `limit` unique groups.
 ///
 /// Mode 2 (sorted_input=false): input is not sorted.
-/// Processes all rows, maintaining aggregate states per group.
-/// Uses a threshold to skip new groups whose values cannot reach the top K.
-/// Outputs the top K groups in sorted order.
+/// Aggregates all groups, then partial-sorts to select the top K.
+/// Eliminates the separate full sort step.
+/// NOTE: threshold-based group pruning (as described in the proposal) is not
+/// yet implemented; this is an intentional v1 simplification.
 class TopNAggregatingTransform : public IAccumulatingTransform
 {
 public:
@@ -71,8 +72,7 @@ private:
         AggregateDataPtr state = nullptr;
     };
 
-    /// Used for aggregate state allocation and key serialization.
-    mutable Arena arena;
+    Arena arena;
     std::vector<GroupState> group_states;
     size_t total_state_size = 0;
     size_t state_align = 1;
@@ -86,8 +86,8 @@ private:
     std::string serializeGroupKey(const Columns & columns, size_t row) const;
     void createAggregateStates(AggregateDataPtr place) const;
     void destroyAggregateStates(AggregateDataPtr place) const;
-    void addRowToAggregateStates(AggregateDataPtr place, const Columns & columns, size_t row) const;
-    void insertResultsFromStates(AggregateDataPtr place, MutableColumns & output_columns) const;
+    void addRowToAggregateStates(AggregateDataPtr place, const Columns & columns, size_t row);
+    void insertResultsFromStates(AggregateDataPtr place, MutableColumns & output_columns);
 };
 
 }

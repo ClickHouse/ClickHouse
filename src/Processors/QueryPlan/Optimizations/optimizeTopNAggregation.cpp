@@ -70,7 +70,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!limit_step)
         return;
 
-    if (limit_step->getLimit() == 0 || limit_step->withTies())
+    if (limit_step->getLimit() == 0 || limit_step->withTies() || limit_step->getOffset() > 0)
         return;
 
     if (node.children.size() != 1)
@@ -189,9 +189,12 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// All checks passed. Build the TopNAggregatingStep.
     size_t limit_value = limit_step->getLimit();
 
-    /// Build sort description using the original aggregate column name (pre-expression).
+    /// Preserve the full SortColumnDescription (nulls_direction, collator, etc.)
+    /// but update the column name to the pre-expression aggregate output name.
     SortDescription topn_sort_desc;
-    topn_sort_desc.push_back(SortColumnDescription(original_sort_col_name, sort_direction));
+    SortColumnDescription sort_col_desc = sort_desc[0];
+    sort_col_desc.column_name = original_sort_col_name;
+    topn_sort_desc.push_back(std::move(sort_col_desc));
 
     /// Check if we can do early termination (mode 1) by checking if ReadFromMergeTree exists
     /// and its sorting key matches the aggregate argument.

@@ -80,3 +80,27 @@ trace_98	2024-01-01 00:16:38
 trace_97	2024-01-01 00:16:37
 trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
+-- EXPLAIN LIMIT OFFSET (should NOT optimize)
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_topn)
+-- NULLS LAST: optimized
+d	200
+f	150
+a	100
+-- NULLS LAST: reference
+d	200
+f	150
+a	100
+-- NULLS FIRST: optimized
+b	\N
+d	200
+f	150
+-- NULLS FIRST: reference
+b	\N
+d	200
+f	150

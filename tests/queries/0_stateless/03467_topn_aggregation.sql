@@ -154,6 +154,58 @@ ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
+-- Negative case: OFFSET should NOT optimize (correctness)
+
+SELECT '-- EXPLAIN LIMIT OFFSET (should NOT optimize)';
+EXPLAIN PLAN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5 OFFSET 10
+SETTINGS optimize_topn_aggregation = 1;
+
+-- Nullable column with NULLS FIRST/LAST
+
+DROP TABLE IF EXISTS t_topn_nullable;
+CREATE TABLE t_topn_nullable (key String, val Nullable(UInt64))
+ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t_topn_nullable VALUES ('a', 100), ('b', NULL), ('c', 50), ('d', 200), ('e', 10), ('f', 150);
+
+SELECT '-- NULLS LAST: optimized';
+SELECT key, max(val) AS m
+FROM t_topn_nullable
+GROUP BY key
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- NULLS LAST: reference';
+SELECT key, max(val) AS m
+FROM t_topn_nullable
+GROUP BY key
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- NULLS FIRST: optimized';
+SELECT key, max(val) AS m
+FROM t_topn_nullable
+GROUP BY key
+ORDER BY m DESC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- NULLS FIRST: reference';
+SELECT key, max(val) AS m
+FROM t_topn_nullable
+GROUP BY key
+ORDER BY m DESC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;
 DROP TABLE t_topn_unsorted;
+DROP TABLE t_topn_nullable;

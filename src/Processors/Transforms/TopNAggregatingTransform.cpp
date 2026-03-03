@@ -3,8 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn.h>
 #include <Common/SipHash.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 
 #include <algorithm>
@@ -89,19 +87,10 @@ std::string TopNAggregatingTransform::serializeGroupKey(const Columns & columns,
     for (size_t idx : key_column_indices)
         columns[idx]->updateHashWithValue(row, hash);
 
-    WriteBufferFromOwnString wb;
     auto hash_result = hash.get128();
-    writeBinary(hash_result.items[0], wb);
-    writeBinary(hash_result.items[1], wb);
-
-    /// Append actual key values for correctness (hash collisions).
-    for (size_t idx : key_column_indices)
-    {
-        const char * begin = nullptr;
-        auto ref = columns[idx]->serializeValueIntoArena(row, arena, begin, nullptr);
-        wb.write(ref.data(), ref.size());
-    }
-    return wb.str();
+    std::string key(sizeof(hash_result), '\0');
+    memcpy(key.data(), &hash_result, sizeof(hash_result));
+    return key;
 }
 
 void TopNAggregatingTransform::createAggregateStates(AggregateDataPtr place) const
@@ -128,7 +117,7 @@ void TopNAggregatingTransform::destroyAggregateStates(AggregateDataPtr place) co
     }
 }
 
-void TopNAggregatingTransform::addRowToAggregateStates(AggregateDataPtr place, const Columns & columns, size_t row) const
+void TopNAggregatingTransform::addRowToAggregateStates(AggregateDataPtr place, const Columns & columns, size_t row)
 {
     size_t offset = 0;
     for (const auto & aggregate : aggregates)
@@ -149,7 +138,7 @@ void TopNAggregatingTransform::addRowToAggregateStates(AggregateDataPtr place, c
 }
 
 void TopNAggregatingTransform::insertResultsFromStates(
-    AggregateDataPtr place, MutableColumns & output_columns) const
+    AggregateDataPtr place, MutableColumns & output_columns)
 {
     size_t num_keys = key_names.size();
     size_t offset = 0;
@@ -324,13 +313,14 @@ Chunk TopNAggregatingTransform::generateMode2()
     std::vector<size_t> indices(num_groups_total);
     std::iota(indices.begin(), indices.end(), 0);
 
+    int nulls_dir = sort_description.front().nulls_direction;
     std::partial_sort(
         indices.begin(),
         indices.begin() + static_cast<std::ptrdiff_t>(std::min(limit, num_groups_total)),
         indices.end(),
         [&](size_t a, size_t b)
         {
-            int cmp = order_col->compareAt(a, b, *order_col, sort_direction);
+            int cmp = order_col->compareAt(a, b, *order_col, nulls_dir);
             return (sort_direction < 0) ? (cmp > 0) : (cmp < 0);
         });
 
