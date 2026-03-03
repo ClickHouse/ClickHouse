@@ -32,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 class MergeTreeTextIndexSource : public ISource
@@ -55,21 +54,9 @@ public:
         , token_key_condition(std::move(token_key_condition_))
     {
         const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
-        posting_list_codec = text_index.getPostingListCodec();
 
         for (const auto & substream : text_index.getSubstreams())
-        {
-            if (substream.type == MergeTreeIndexSubstream::Type::TextIndexDictionary)
-                dict_file_name = text_index.getFileName() + substream.suffix + substream.extension;
-            else if (substream.type == MergeTreeIndexSubstream::Type::Regular)
-                sparse_index_file_name = text_index.getFileName() + substream.suffix + substream.extension;
-        }
-
-        if (dict_file_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index '{}' has no dictionary substream", text_index.index.name);
-
-        if (sparse_index_file_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index '{}' has no index substream", text_index.index.name);
+            index_streams[substream.type] = {text_index.getFileName() + substream.suffix, substream.extension};
     }
 
     String getName() const override { return "MergeTreeTextIndex"; }
@@ -124,7 +111,13 @@ protected:
                 {
                     auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
                     for (size_t i = 0; i < block_size; ++i)
-                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    {
+                        /// If postings are embedded, offsets are not filled.
+                        if (dict_block->token_infos[i].header & EmbeddedPostings)
+                            data.push_back(static_cast<UInt64>(1));
+                        else
+                            data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    }
                 }
                 else if (column_name == "has_embedded_postings")
                 {
@@ -179,7 +172,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, posting_list_codec);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -189,7 +182,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, posting_list_codec);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -211,17 +204,20 @@ private:
                 return false;
 
             const auto & part = (*data_parts)[idx];
+            const auto & storage = part->getDataPartStorage();
 
             if (token_key_condition)
             {
+                auto [stream_name, extension] = index_streams.at(MergeTreeIndexSubstream::Type::Regular);
+
                 /// Skip part if index is not materialized in the part.
-                if (!part->checksums.files.contains(sparse_index_file_name))
+                /// Check for both original and hashed filenames (hashed if the index name is too long).
+                auto actual_sparse_index_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, part->checksums);
+                if (!actual_sparse_index_name)
                     continue;
 
-                auto idx_file = part->getDataPartStorage().readFile(
-                    sparse_index_file_name,
-                    read_settings,
-                    part->checksums.files.at(sparse_index_file_name).file_size);
+                auto sparse_file_name = *actual_sparse_index_name + extension;
+                auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
                 sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
@@ -234,14 +230,16 @@ private:
                     continue;
             }
 
+            auto [stream_name, extension] = index_streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
+
             /// Skip part if index is not materialized in the part.
-            if (!part->checksums.files.contains(dict_file_name))
+            /// Check for both original and hashed filenames (hashed if the index name is too long).
+            auto actual_dict_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, part->checksums);
+            if (!actual_dict_name)
                 continue;
 
-            auto dict_file = part->getDataPartStorage().readFile(
-                dict_file_name,
-                read_settings,
-                part->checksums.files.at(dict_file_name).file_size);
+            auto dict_file_name = *actual_dict_name + extension;
+            auto dict_file = storage.readFile(dict_file_name, read_settings, part->checksums.files.at(dict_file_name).file_size);
 
             dictionary_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(dict_file));
             current_part_name = part->name;
@@ -276,12 +274,10 @@ private:
     SharedHeader header;
     std::shared_ptr<MergeTreeData::DataPartsVector> data_parts;
     std::shared_ptr<std::atomic<size_t>> part_index;
-    PostingListCodecPtr posting_list_codec;
     ReadSettings read_settings;
     size_t max_block_size;
-    String dict_file_name;
-    String sparse_index_file_name;
     std::shared_ptr<const KeyCondition> token_key_condition;
+    std::map<MergeTreeIndexSubstream::Type, std::pair<String, String>> index_streams;
 
     /// State for current part
     String current_part_name;

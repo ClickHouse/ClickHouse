@@ -1399,7 +1399,7 @@ CONV_FN(ExprCase, ecase)
 
 CONV_FN(LambdaExpr, lambda)
 {
-    ret += "(";
+    ret += lambda.paren() ? "(" : "";
     for (int i = 0; i < lambda.args_size(); i++)
     {
         if (i != 0)
@@ -1410,7 +1410,8 @@ CONV_FN(LambdaExpr, lambda)
         ColumnToString(ret, 1, lambda.args(i));
         ret += "`";
     }
-    ret += ") -> ";
+    ret += lambda.paren() ? ")" : "";
+    ret += " -> ";
     ExprToString(ret, lambda.expr());
 }
 
@@ -1821,9 +1822,9 @@ CONV_FN(Expr, expr)
     {
         ret += "1";
     }
-    if (expr.has_field())
+    for (int i = 0; i < expr.fields_size(); i++)
     {
-        FieldAccessToString(ret, expr.field());
+        FieldAccessToString(ret, expr.fields(i));
     }
 }
 
@@ -4271,7 +4272,7 @@ CONV_FN(DictionaryRange, dr)
 {
     ret += " RANGE(MIN ";
     ExprToString(ret, dr.min());
-    ret += "MAX ";
+    ret += " MAX ";
     ExprToString(ret, dr.max());
     ret += ")";
 }
@@ -4966,7 +4967,7 @@ CONV_FN(SystemCommand, cmd)
                     ret += "LIGHTWEIGHT";
                     if (sr.lightweight().replicas_size() > 0)
                     {
-                        ret += " ";
+                        ret += " FROM ";
                         for (int i = 0; i < sr.lightweight().replicas_size(); i++)
                         {
                             if (i != 0)
@@ -5132,8 +5133,8 @@ CONV_FN(SystemCommand, cmd)
             ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropTextIndexDictionaryCache:
-            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+        case CmdType::kDropTextIndexTokensCache:
+            ret += "DROP TEXT INDEX TOKENS CACHE";
             can_set_cluster = true;
             break;
         case CmdType::kDropTextIndexHeaderCache:
@@ -5535,7 +5536,7 @@ CONV_FN(ShowStatement, sh)
             ret += "PROFILES";
             break;
         case ShowType::kPolicies:
-            ret += "POLICIES ON ";
+            ret += "ROW POLICIES ON ";
             ExprSchemaTableToString(ret, sh.policies());
             break;
         case ShowType::kQuotas:
