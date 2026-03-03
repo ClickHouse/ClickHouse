@@ -105,13 +105,13 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
     switch (node->type)
     {
         case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::PLACEHOLDER:
             return false;
         case ActionsDAG::ActionType::COLUMN:
             return true;
         case ActionsDAG::ActionType::FUNCTION:
         case ActionsDAG::ActionType::ALIAS:
         case ActionsDAG::ActionType::ARRAY_JOIN:
-        case ActionsDAG::ActionType::PLACEHOLDER:
             for (const auto * child : node->children)
             {
                 if (!isNodeOverSortingKey(child, sorting_key_names))
