@@ -3866,6 +3866,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
+        /// Argument is already a resolved TableFunctionNode (e.g. when the parent table function node
+        /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
+        if (table_function_argument->as<TableFunctionNode>())
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
@@ -4270,9 +4278,8 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression)
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
 {
-    NameSet existing_columns;
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
 
@@ -4343,15 +4350,11 @@ static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table
             }
             default:
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                    table_expression->getNodeTypeName(),
-                    table_expression->formatASTForErrorMessage());
+                return false;
             }
         }
     }
-    return existing_columns;
+    return true;
 }
 
 /// Resolve join node in scope
@@ -4443,7 +4446,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         if (resolved_nodes.size() == 1)
                         {
                             /// Added column should not conflict with existing column names
-                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
+                            NameSet existing_columns;
+                            if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                                return nullptr;
 
                             NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
                             while (existing_columns.contains(column_name_type.name))
@@ -4455,10 +4460,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                                 return nullptr;
 
                             /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
-                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
-                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
-                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
-                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
+                            /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
+                            /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
+                            /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
+                            if (!expression_source
+                                && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
+                                    || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
                                 return nullptr;
 
                             /// Create ColumnNode with expression from parent projection

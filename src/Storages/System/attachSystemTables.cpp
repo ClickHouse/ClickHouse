@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemKeywords.h>
 #include "config.h"
 
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
@@ -144,6 +145,7 @@ namespace DB
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
+    auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
