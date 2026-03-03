@@ -1153,6 +1153,7 @@ bool StatementGenerator::joinedTableOrFunction(
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_embedded_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_raw_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_compressed_postings"}, uint8_tp.get()));
+            this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
         case QueryOp::MergeIndexAnalyzeUDF: {
