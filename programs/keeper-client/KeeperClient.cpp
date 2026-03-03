@@ -1,7 +1,4 @@
 #include <KeeperClient.h>
-#include <algorithm>
-#include <cctype>
-#include <string_view>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -15,7 +12,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ErrnoException.h>
 #include <Parsers/parseQuery.h>
-#include <replxx.hxx>
 #include <Poco/Util/HelpFormatter.h>
 
 #if USE_SSL
@@ -24,6 +20,12 @@
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
 #endif
+
+#include <replxx.hxx>
+#include <algorithm>
+#include <cctype>
+#include <string_view>
+
 
 namespace
 {
