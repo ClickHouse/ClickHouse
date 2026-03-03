@@ -472,8 +472,9 @@ void StorageBuffer::read(
                     std::move(pipe_from_buffers),
                     *getVirtualsPtr());
 
-            auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
+            auto interpreter = InterpreterSelectQueryAnalyzer(
+                    query_info.query, local_context, storage,
+                    SelectQueryOptions(processed_stage));
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -768,7 +769,6 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            LOG_DEBUG(storage.log, "Flush buffer by threshold");
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
@@ -854,7 +854,6 @@ bool StorageBuffer::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
-    LOG_DEBUG(log, "Running optimize of buffers.");
     flushAllBuffers(false);
     return true;
 }
@@ -939,8 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            /// Passing buf as a reference is fine since it's a reference to this, which outlives the runner
-            runner->enqueueAndKeepTrack([this, &buf, check_thresholds]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1114,7 +1112,6 @@ void StorageBuffer::backgroundFlush()
 {
     try
     {
-        LOG_DEBUG(log, "Running background flush of buffers.");
         flushAllBuffers(true);
     }
     catch (...)

@@ -4,7 +4,7 @@
 
 #if USE_JEMALLOC
 
-#include <string_view>
+#include <string>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
@@ -22,11 +22,9 @@ void checkProfilingEnabled();
 
 void setProfileActive(bool value);
 
-std::string_view flushProfile(const char * file_prefix);
+std::string_view flushProfile(const std::string & file_prefix);
 
 void setBackgroundThreads(bool enabled);
-
-void setProfileSamplingRate(size_t lg_prof_sample);
 
 void setMaxBackgroundThreads(size_t max_threads);
 
@@ -49,8 +47,7 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log,
-    size_t profiler_sampling_rate);
+    bool collect_global_profile_samples_in_trace_log);
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
@@ -94,6 +91,12 @@ void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 std::string_view getLastFlushProfileForThread();
 
+/// Convert a jemalloc heap profile to symbolized format that jeprof can read without binary
+/// This generates a "jeprof --raw" compatible format with embedded symbols
+///
+/// Notes:
+/// - demangling code slightly differs (i.e. it may return "operator()" instead of "DB::Context::initializeSystemLogs()::$_0::operator()() const")
+void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename);
 
 }
 

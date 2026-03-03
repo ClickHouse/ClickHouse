@@ -194,7 +194,7 @@ bool isCompatible(ASTPtr & node)
                 return false;
 
         /// It should be formatted in the operator form.
-        function->setIsOperator(true);
+        function->is_operator = true;
 
         return true;
     }

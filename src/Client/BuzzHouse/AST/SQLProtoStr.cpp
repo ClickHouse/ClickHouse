@@ -1188,10 +1188,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kTuple: {
             const TupleTypeDef & tt = ttn.tuple();
 
-            if (tt.is_nullable())
-            {
-                ret += "Nullable(";
-            }
             ret += "Tuple";
             if (tt.has_with_names())
             {
@@ -1204,10 +1200,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             else
             {
                 ret += "()";
-            }
-            if (tt.is_nullable())
-            {
-                ret += ")";
             }
         }
         break;
@@ -1399,7 +1391,7 @@ CONV_FN(ExprCase, ecase)
 
 CONV_FN(LambdaExpr, lambda)
 {
-    ret += lambda.paren() ? "(" : "";
+    ret += "(";
     for (int i = 0; i < lambda.args_size(); i++)
     {
         if (i != 0)
@@ -1410,8 +1402,7 @@ CONV_FN(LambdaExpr, lambda)
         ColumnToString(ret, 1, lambda.args(i));
         ret += "`";
     }
-    ret += lambda.paren() ? ")" : "";
-    ret += " -> ";
+    ret += ") -> ";
     ExprToString(ret, lambda.expr());
 }
 
@@ -2023,9 +2014,9 @@ CONV_FN(FormatFunc, ff)
     ret += "$$)";
 }
 
-CONV_FN(NumbersFunc, gsf)
+CONV_FN(GenerateSeriesFunc, gsf)
 {
-    ret += NumbersFunc_NumbersName_Name(gsf.fname());
+    ret += GenerateSeriesFunc_GSName_Name(gsf.fname());
     ret += "(";
     ExprToString(ret, gsf.expr1());
     if (gsf.has_expr2())
@@ -2441,8 +2432,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kFormat:
             FormatFuncToString(ret, tf.format());
             break;
-        case TableFunctionType::kNumbers:
-            NumbersFuncToString(ret, tf.numbers());
+        case TableFunctionType::kGseries:
+            GenerateSeriesFuncToString(ret, tf.gseries());
             break;
         case TableFunctionType::kRemote:
             RemoteFuncToString(ret, tf.remote());
@@ -2974,6 +2965,24 @@ CONV_FN(IndexParam, ip)
     }
 }
 
+CONV_FN(CodecParam, cp)
+{
+    ret += CompressionCodec_Name(cp.codec()).substr(5);
+    if (cp.params_size())
+    {
+        ret += "(";
+        for (int i = 0; i < cp.params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            IndexParamToString(ret, cp.params(i));
+        }
+        ret += ")";
+    }
+}
+
 CONV_FN(DatabaseEngineParam, dep)
 {
     using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
@@ -3093,6 +3102,18 @@ CONV_FN(DefaultModifier, def_mod)
     }
 }
 
+CONV_FN(CodecList, cl)
+{
+    ret += "CODEC(";
+    CodecParamToString(ret, cl.codec());
+    for (int i = 0; i < cl.other_codecs_size(); i++)
+    {
+        ret += ", ";
+        CodecParamToString(ret, cl.other_codecs(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(ColumnDef, cdf)
 {
     ColumnPathToString(ret, 0, cdf.col());
@@ -3115,9 +3136,8 @@ CONV_FN(ColumnDef, cdf)
     }
     if (cdf.has_codecs())
     {
-        ret += " CODEC(";
-        ret += cdf.codecs();
-        ret += ")";
+        ret += " ";
+        CodecListToString(ret, cdf.codecs());
     }
     if (cdf.has_stats())
     {
@@ -3145,11 +3165,8 @@ CONV_FN(ColumnDef, cdf)
 CONV_FN(IndexDef, idef)
 {
     ret += "INDEX ";
-    if (idef.has_idx())
-    {
-        IndexToString(ret, idef.idx());
-        ret += " ";
-    }
+    IndexToString(ret, idef.idx());
+    ret += " ";
     ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
@@ -3173,35 +3190,18 @@ CONV_FN(IndexDef, idef)
     }
 }
 
-CONV_FN(ProjectionSelectDef, psdef)
-{
-    ret += "(";
-    SelectToString(ret, psdef.select());
-    ret += ")";
-    if (psdef.has_setting_values())
-    {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, psdef.setting_values());
-        ret += ")";
-    }
-}
-
 CONV_FN(ProjectionDef, proj_def)
 {
     ret += "PROJECTION ";
     ProjectionToString(ret, proj_def.proj());
-    ret += " ";
-    using ProjectionDefType = ProjectionDef::ProjectionOneofCase;
-    switch (proj_def.projection_oneof_case())
+    ret += " (";
+    SelectToString(ret, proj_def.select());
+    ret += ")";
+    if (proj_def.has_setting_values())
     {
-        case ProjectionDefType::kSelDef:
-            ProjectionSelectDefToString(ret, proj_def.sel_def());
-            break;
-        case ProjectionDefType::kIdxDef:
-            IndexDefToString(ret, proj_def.idx_def());
-            break;
-        default:
-            ret += "(SELECT c0 ORDER BY c0)";
+        ret += " WITH SETTINGS (";
+        SettingValuesToString(ret, proj_def.setting_values());
+        ret += ")";
     }
 }
 
@@ -3369,9 +3369,8 @@ CONV_FN(TTLUpdate, upt)
             TTLDeleteToString(ret, upt.del());
             break;
         case TTLUpdateType::kCodecs:
-            ret += "RECOMPRESS CODEC(";
-            ret += upt.codecs();
-            ret += ")";
+            ret += "RECOMPRESS ";
+            CodecListToString(ret, upt.codecs());
             break;
         case TTLUpdateType::kStorage:
             ret += "TO ";
@@ -3924,18 +3923,6 @@ CONV_FN(OptimizeTable, ot)
         ret += " ";
         SinglePartitionExprToString(ret, ot.single_partition());
     }
-    if (ot.dry_run_parts_size() > 0)
-    {
-        ret += " DRY RUN PARTS ";
-        for (int i = 0; i < ot.dry_run_parts_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            PartitionExprToString(ret, ot.dry_run_parts(i));
-        }
-    }
     if (ot.final())
     {
         ret += " ";
@@ -4272,7 +4259,7 @@ CONV_FN(DictionaryRange, dr)
 {
     ret += " RANGE(MIN ";
     ExprToString(ret, dr.min());
-    ret += " MAX ";
+    ret += "MAX ";
     ExprToString(ret, dr.max());
     ret += ")";
 }
@@ -4303,15 +4290,15 @@ CONV_FN(CreateDictionary, create_dictionary)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_dictionary.est());
+    if (create_dictionary.has_cluster())
+    {
+        ClusterToString(ret, true, create_dictionary.cluster());
+    }
     if (create_dictionary.has_uuid())
     {
         ret += " UUID '";
         ret += create_dictionary.uuid();
         ret += "'";
-    }
-    if (create_dictionary.has_cluster())
-    {
-        ClusterToString(ret, true, create_dictionary.cluster());
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -4952,39 +4939,11 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartPullingReplicationLog:
             SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
-        case CmdType::kSyncReplica: {
-            const auto & sr = cmd.sync_replica();
-
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, sr.est());
+        case CmdType::kSyncReplica:
+            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
             ret += " ";
-            using SyncType = SyncReplica::SyncOneofCase;
-            switch (sr.sync_oneof_case())
-            {
-                case SyncType::kStrict:
-                    ret += "STRICT";
-                    break;
-                case SyncType::kLightweight:
-                    ret += "LIGHTWEIGHT";
-                    if (sr.lightweight().replicas_size() > 0)
-                    {
-                        ret += " FROM ";
-                        for (int i = 0; i < sr.lightweight().replicas_size(); i++)
-                        {
-                            if (i != 0)
-                            {
-                                ret += ", ";
-                            }
-                            ret += "'";
-                            ret += sr.lightweight().replicas(i);
-                            ret += "'";
-                        }
-                    }
-                    break;
-                default:
-                    ret += "PULL";
-            }
-        }
-        break;
+            ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
+            break;
         case CmdType::kSyncReplicatedDatabase:
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
@@ -5119,11 +5078,11 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kEnableFailpoint:
             ret += "ENABLE FAILPOINT ";
-            ret += cmd.enable_failpoint();
+            ret += FailPoint_Name(cmd.enable_failpoint());
             break;
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
-            ret += cmd.disable_failpoint();
+            ret += FailPoint_Name(cmd.disable_failpoint());
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
@@ -5148,75 +5107,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropTextIndexCaches:
             ret += "DROP TEXT INDEX CACHES";
             can_set_cluster = true;
-            break;
-        case CmdType::kResetDdlWorker:
-            ret += "RESET DDL WORKER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kWaitFailpoint:
-            ret += "WAIT FAILPOINT ";
-            ret += cmd.wait_failpoint();
-            break;
-        case CmdType::kNotifyFailpoint:
-            ret += "NOTIFY FAILPOINT ";
-            ret += cmd.notify_failpoint();
-            break;
-        case CmdType::kReloadDeltaKernelTracing:
-            ret += "RELOAD DELTA KERNEL TRACING ";
-            ret += DeltaKernelTraceLevel_Name(cmd.reload_delta_kernel_tracing());
-            break;
-        case CmdType::kRestoreDatabaseReplica:
-            ret += "RESTORE DATABASE REPLICA";
-            if (cmd.has_cluster())
-            {
-                ClusterToString(ret, true, cmd.cluster());
-            }
-            ret += " ";
-            DatabaseToString(ret, cmd.restore_database_replica());
-            break;
-        case CmdType::kStopReplicatedView:
-            ret += "STOP REPLICATED VIEW ";
-            ExprSchemaTableToString(ret, cmd.stop_replicated_view());
-            break;
-        case CmdType::kStartReplicatedView:
-            ret += "START REPLICATED VIEW ";
-            ExprSchemaTableToString(ret, cmd.start_replicated_view());
-            break;
-        case CmdType::kUnfreeze:
-            ret += "UNFREEZE WITH NAME 'f";
-            ret += std::to_string(cmd.unfreeze());
-            ret += "'";
-            break;
-        case CmdType::kDropReplica:
-            ret += "DROP REPLICA '";
-            ret += cmd.drop_replica().replica();
-            ret += "'";
-            if (cmd.drop_replica().has_est())
-            {
-                ret += " FROM TABLE ";
-                ExprSchemaTableToString(ret, cmd.drop_replica().est());
-            }
-            else if (cmd.drop_replica().has_database())
-            {
-                ret += " FROM DATABASE ";
-                DatabaseToString(ret, cmd.drop_replica().database());
-            }
-            break;
-        case CmdType::kDropDatabaseReplica:
-            ret += "DROP DATABASE REPLICA '";
-            ret += cmd.drop_database_replica().replica();
-            ret += "'";
-            if (cmd.drop_database_replica().has_shard())
-            {
-                ret += " FROM SHARD '";
-                ret += cmd.drop_database_replica().shard();
-                ret += "'";
-            }
-            if (cmd.drop_database_replica().has_database())
-            {
-                ret += " FROM DATABASE ";
-                DatabaseToString(ret, cmd.drop_database_replica().database());
-            }
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5536,7 +5426,7 @@ CONV_FN(ShowStatement, sh)
             ret += "PROFILES";
             break;
         case ShowType::kPolicies:
-            ret += "ROW POLICIES ON ";
+            ret += "POLICIES ON ";
             ExprSchemaTableToString(ret, sh.policies());
             break;
         case ShowType::kQuotas:

@@ -6,6 +6,19 @@
 namespace DB
 {
 
+namespace
+{
+    struct Impl
+    {
+        static constexpr auto name = "formatReadableQuantity";
+
+        static void format(double value, DB::WriteBuffer & out)
+        {
+            formatReadableQuantity(value, out);
+        }
+    };
+}
+
 REGISTER_FUNCTION(FormatReadableQuantity)
 {
     FunctionDocumentation::Description description = R"(
@@ -41,7 +54,7 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("formatReadableQuantity", [](ContextPtr){ return FunctionFormatReadable::create("formatReadableQuantity", formatReadableQuantity); }, documentation);
+    factory.registerFunction<FunctionFormatReadable<Impl>>(documentation);
 }
 
 }

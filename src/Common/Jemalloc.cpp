@@ -3,12 +3,23 @@
 #if USE_JEMALLOC
 
 #include <Common/FramePointers.h>
+#include <Common/StringUtils.h>
+#include <Common/getExecutablePath.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <ranges>
+#include <base/hex.h>
+
+#include <unordered_set>
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
@@ -69,7 +80,7 @@ void setProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string_view flushProfile(const char * file_prefix)
+std::string_view flushProfile(const std::string & file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
@@ -99,21 +110,139 @@ void setMaxBackgroundThreads(size_t max_threads)
     setValue("max_background_threads", max_threads);
 }
 
-void setProfileSamplingRate(size_t lg_prof_sample)
+void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename)
 {
-    checkProfilingEnabled();
+    ReadBufferFromFile in(input_filename);
+    WriteBufferFromFile out(output_filename);
 
-    size_t current = getValue<size_t>("prof.lg_sample");
-    if (current == lg_prof_sample)
+    /// Collect all unique addresses from the heap profile
+    std::unordered_set<UInt64> addresses;
+    std::string profile_data;
+    std::string line;
+
+    /// Helper to parse hex address from string_view and advance it
+    auto parse_hex = [](std::string_view & src) -> std::optional<UInt64>
     {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Profiler sampling rate is already {}", current);
-        return;
+        /// Skip "0x" prefix if present
+        if (src.size() >= 2 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X'))
+            src.remove_prefix(2);
+
+        if (src.empty())
+            return std::nullopt;
+
+        UInt64 address = 0;
+        size_t processed = 0;
+
+        /// Parse hex digits
+        for (size_t i = 0; i < src.size() && processed < 16; ++i)
+        {
+            char c = src[i];
+            if (isHexDigit(c))
+            {
+                address = (address << 4) | unhex(c);
+                ++processed;
+            }
+            else
+                break;
+        }
+
+        if (processed == 0)
+            return std::nullopt;
+
+        src.remove_prefix(processed);
+        return address;
+    };
+
+    /// Collect addresses
+    while (!in.eof())
+    {
+        line.clear();
+        readStringUntilNewlineInto(line, in);
+        in.tryIgnore(1); /// skip EOL (if not EOF)
+
+        profile_data += line;
+        profile_data += '\n';
+
+        if (line.empty())
+            continue;
+
+        /// Stack traces start with '@' followed by hex addresses
+        if (line[0] == '@')
+        {
+            std::string_view line_addresses(line.data() + 1, line.size() - 1);
+
+            bool first = true;
+            while (!line_addresses.empty())
+            {
+                trimLeft(line_addresses);
+                if (line_addresses.empty())
+                    break;
+
+                auto address = parse_hex(line_addresses);
+                if (!address.has_value())
+                    break;
+
+                /// Need to subtract 1 for non first addresses to apply the same fix as in jeprof::FixCallerAddresses()
+                addresses.insert(first ? address.value() : address.value() - 1);
+
+                first = false;
+            }
+        }
     }
 
-    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
-    LOG_INFO(getLogger("SystemJemalloc"), "Profiler sampling rate changed from {} to {}", current, lg_prof_sample);
-}
+    /// Symbolized profile header
+    writeString("--- symbol\n", out);
+    if (auto binary_path = getExecutablePath(); !binary_path.empty())
+    {
+        writeString("binary=", out);
+        writeString(binary_path, out);
+        writeChar('\n', out);
+    }
 
+    /// Symbolize each unique address
+    for (UInt64 address : addresses)
+    {
+        FramePointers fp;
+        fp[0] = reinterpret_cast<void *>(address);
+
+        /// Note, callback calls inlines first, while jeprof needs the opposite
+        /// Note, cannot use frame.virtual_addr since it is empty for inlines
+        std::vector<std::string> symbols;
+        auto symbolize_callback = [&](const StackTrace::Frame & frame)
+        {
+            if (!frame.virtual_addr)
+            {
+                /// jeprof adds [inline] on it's own, so no need to do this here
+                symbols.push_back(frame.symbol.value_or("??"));
+            }
+            else
+                symbols.push_back(frame.symbol.value_or("??"));
+        };
+        /// Note, @fatal (handling inlines) is slow (few milliseconds vs ~10 seconds)
+        /// We can add SYSTEM JEMALLOC FLUSH FAST (or similar)
+        ///
+        /// TODO: introduce cache (we have multiple caches for this, need some generic approach)
+        StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ true);
+
+        writePointerHex(reinterpret_cast<const void *>(address), out);
+
+        std::string_view separator(" ");
+        /// Reverse, since forEachFrame() adds inline frames first
+        for (const auto & symbol : std::ranges::reverse_view(symbols))
+        {
+            writeString(separator, out);
+            writeString(symbol, out);
+            separator = std::string_view("--");
+        }
+        writeChar('\n', out);
+    }
+
+    writeString("---\n", out);
+    writeString("--- heap\n", out);
+    writeString(profile_data, out);
+
+    out.finalize();
+}
 
 namespace
 {
@@ -192,8 +321,7 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log,
-    size_t profiler_sampling_rate)
+    bool collect_global_profile_samples_in_trace_log)
 {
     if (enable_global_profiler)
     {
@@ -205,9 +333,6 @@ void setup(
 
     if (max_background_threads_num)
         setValue("max_background_threads", max_background_threads_num);
-
-    if (profiler_sampling_rate != 19)
-        setProfileSamplingRate(profiler_sampling_rate);
 
     collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);

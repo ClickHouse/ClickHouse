@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/NaNUtils.h>
@@ -53,7 +52,6 @@ public:
     std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
 
     MutableColumnPtr cloneEmpty() const override;
-    MutableColumnPtr cloneEmptyNullable() const override;
 
     const ColumnPtr & getNestedColumn() const override;
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
@@ -78,9 +76,9 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
     {
-        getNestedColumn()->getValueNameImpl(name_buf, n, options);
+        return getNestedColumn()->getValueNameAndTypeImpl(name_buf, n, options);
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
@@ -104,7 +102,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override { column_holder->getExtremes(min, max, start, end); }
+    void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
     size_t sizeOfValueIfFixed() const override { return column_holder->sizeOfValueIfFixed(); }
@@ -241,15 +239,6 @@ template <typename ColumnType>
 MutableColumnPtr ColumnUnique<ColumnType>::cloneEmpty() const
 {
     return ColumnUnique<ColumnType>::create(column_holder->cloneResized(numSpecialValues()), is_nullable);
-}
-
-template <typename ColumnType>
-MutableColumnPtr ColumnUnique<ColumnType>::cloneEmptyNullable() const
-{
-    auto holder = column_holder->cloneEmpty();
-    holder->insertDefault();
-    holder->insertDefault();
-    return ColumnUnique<ColumnType>::create(std::move(holder), true);
 }
 
 template <typename ColumnType>

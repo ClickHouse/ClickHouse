@@ -34,11 +34,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 #include <IO/readIntText.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/Dynamic/Var.h>
-
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -162,17 +157,6 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
-inline void readJSONBinary(Poco::JSON::Object::Ptr & object, ReadBuffer & buf)
-{
-    String json;
-    readStringBinary(json, buf);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var result = parser.parse(json);
-
-    object = result.extract<Poco::JSON::Object::Ptr>();
-}
-
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -189,8 +173,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
+template <typename T>
+void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1858,8 +1842,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
+template <typename T>
+void readBinary(std::vector<T> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);

@@ -139,25 +139,25 @@ private:
 
 REGISTER_FUNCTION(DynamicElement)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description dynamicElement_description = R"(
 Extracts a column with specified type from a `Dynamic` column.
 
 This function allows you to extract values of a specific type from a Dynamic column. If a row contains a value
 of the requested type, it returns that value. If the row contains a different type or NULL, it returns NULL
 for scalar types or an empty array for array types.
     )";
-    FunctionDocumentation::Syntax syntax = "dynamicElement(dynamic, type_name)";
-    FunctionDocumentation::Arguments arguments =
+    FunctionDocumentation::Syntax dynamicElement_syntax = "dynamicElement(dynamic, type_name)";
+    FunctionDocumentation::Arguments dynamicElement_arguments =
     {
         {"dynamic", "Dynamic column to extract from.", {"Dynamic"}},
         {"type_name", "The name of the variant type to extract (e.g., 'String', 'Int64', 'Array(Int64)')."}
     };
-    FunctionDocumentation::ReturnedValue returned_value =
+    FunctionDocumentation::ReturnedValue dynamicElement_returned_value =
     {
         "Returns values of the specified type from the Dynamic column. Returns NULL for non-matching types (or empty array for array types).",
         {"Any"}
     };
-    FunctionDocumentation::Examples examples =
+    FunctionDocumentation::Examples dynamicElement_examples =
     {
     {
         "Extracting different types from Dynamic column",
@@ -176,11 +176,11 @@ SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn dynamicElement_introduced_in = {24, 1};
+    FunctionDocumentation::Category dynamicElement_category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation dynamicElement_documentation = {dynamicElement_description, dynamicElement_syntax, dynamicElement_arguments, {}, dynamicElement_returned_value, dynamicElement_examples, dynamicElement_introduced_in, dynamicElement_category};
 
-    factory.registerFunction<FunctionDynamicElement>(documentation);
+    factory.registerFunction<FunctionDynamicElement>(dynamicElement_documentation);
 }
 
 }

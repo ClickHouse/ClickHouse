@@ -158,10 +158,6 @@ class Runner:
             status=Result.Status.RUNNING,
             start_time=Utils.timestamp(),
         )
-        if env.WORKFLOW_JOB_DATA:
-            result.add_ext_key_value(
-                "run_url", f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}"
-            )
         result.dump()
 
         if not local_run:
@@ -313,7 +309,6 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
-            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -322,18 +317,10 @@ class Runner:
                             "WARNING: Create mount dir point in advance to have the same owner"
                         )
                         Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
-                elif setting.startswith("--workdir"):
-                    print(
-                        f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
-                    )
-                    workdir = ""
-            if not Shell.check(
-                "if docker ps -a --format '{{.Names}}' | grep -qx praktika; then docker rm -f praktika; fi",
+            Shell.check(
+                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
-            ):
-                raise RuntimeError(
-                    "Failed to remove existing docker container 'praktika'"
-                )
+            )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -349,7 +336,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -378,15 +365,6 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        # Clean up stale experimental result file before starting the subprocess.
-        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
-        # the process — if the subprocess completes during that sleep (common for
-        # fast native jobs like Finish Workflow in backport PRs), deleting the file
-        # afterwards would remove the subprocess's own output, causing a spurious
-        # "Job killed or terminated" error.
-        if Path((Result.experimental_file_name_static())).exists():
-            Path(Result.experimental_file_name_static()).unlink()
-
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -394,6 +372,10 @@ class Runner:
             timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
+
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
 
             exit_code = process.wait()
 
@@ -437,8 +419,9 @@ class Runner:
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-            Shell.run(chown_cmd)
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
+            print(f"--- Run ownership fix command [{chown_cmd}]")
+            Shell.check(chown_cmd, verbose=True)
 
         return exit_code
 
@@ -536,7 +519,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
+        if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
@@ -574,9 +557,7 @@ class Runner:
                             ), f"Artifact {artifact_path} not found"
                             for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
-                                    s3_path=s3_path,
-                                    local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    s3_path=s3_path, local_path=file_path
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)

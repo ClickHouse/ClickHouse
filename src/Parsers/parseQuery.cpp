@@ -305,8 +305,6 @@ ASTPtr tryParseQuery(
             if (lookahead->isError())
             {
                 out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
-                // Advance the position for further processing of possible test hint.
-                _out_query_end = token_iterator.max().end;
                 return nullptr;
             }
 

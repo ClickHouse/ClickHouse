@@ -210,7 +210,7 @@ public:
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void atConnectionDestroy()
     {
         std::lock_guard lock(mutex);
 
@@ -421,7 +421,7 @@ private:
                 Session::setSendThrottler(throttler);
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             request_stream = &result;
             request_stream_completed = false;
@@ -435,7 +435,7 @@ private:
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
             std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
+            result.exceptions(std::ios::badbit);
 
             response_stream = &result;
             response_stream_completed = false;
@@ -714,7 +714,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection) noexcept
+    void atConnectionDestroy(PooledConnection & connection)
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -729,25 +729,17 @@ private:
             return;
         }
 
-        try
-        {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        connection_to_store->assign(connection);
 
-            {
-                MemoryTrackerSwitcher switcher{&total_memory_tracker};
-                std::lock_guard lock(mutex);
-                stored_connections.push(connection_to_store);
-            }
-
-            CurrentMetrics::add(getMetrics().stored_count, 1);
-            ProfileEvents::increment(getMetrics().preserved, 1);
-        }
-        catch (...)
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
-            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            std::lock_guard lock(mutex);
+            stored_connections.push(connection_to_store);
         }
+
+        CurrentMetrics::add(getMetrics().stored_count, 1);
+        ProfileEvents::increment(getMetrics().preserved, 1);
     }
 
 

@@ -24,7 +24,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -48,9 +48,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Config Workflow' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -61,7 +63,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -85,9 +87,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "VectorSearchStress" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -98,7 +102,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -122,9 +126,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "VectorSearchStress" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   vector_search_stress:
     runs-on: [self-hosted, arm-medium]
@@ -135,7 +141,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -159,9 +165,11 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Vector Search Stress' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -173,7 +181,7 @@ jobs:
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
@@ -197,6 +205,8 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Finish Workflow' --workflow "VectorSearchStress" --ci |& tee ./ci/tmp/job.log
+          fi

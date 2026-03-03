@@ -1,4 +1,4 @@
--- Tags: no-tsan
+-- Tags: no-parallel-replicas
 
 DROP TABLE IF EXISTS events;
 

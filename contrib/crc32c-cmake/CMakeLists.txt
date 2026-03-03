@@ -15,13 +15,13 @@ set(CRC32C_SOURCES
 if(ARCH_AARCH64)
   include_directories(${CRC32C_CMAKE_DIR}/aarch64)
 
-  # crc32c_arm64.cc uses the vmull_p64 instruction, which requires the AES extension.
-  # The default ARM profile includes +crypto (which implies AES), the compat profile does not.
-  if (NOT NO_ARMV81_OR_HIGHER)
+  # crc32c_arm64.cc uses the vmull_p64 instruction, which is only available when building
+  # with the `aes` flag.
+  if (ENABLE_AES)
     list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
   endif()
 elseif(ARCH_AMD64)
-  if(X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
+  if(ENABLE_SSE42)
     include_directories(${CRC32C_CMAKE_DIR}/x86_64/sse42)
     list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_sse42.cc")
   else()

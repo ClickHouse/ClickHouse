@@ -3,7 +3,6 @@
 #include <typeinfo>
 #include <vector>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 #include <gtest/gtest.h>

@@ -66,8 +66,7 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(

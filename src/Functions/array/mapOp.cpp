@@ -43,16 +43,15 @@ enum class OpTypes : uint8_t
     SUBTRACT = 1
 };
 
+template <OpTypes op_type>
 class FunctionMapOp : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }
-    explicit FunctionMapOp(OpTypes op_type_) : op_type(op_type_) {}
+    static constexpr auto name = (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapOp>(); }
 
 private:
-    const OpTypes op_type;
-
-    String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
@@ -245,7 +244,7 @@ private:
                     arg.val_column->get(offset + j, temp_val);
                     ValType value = temp_val.safeGet<ValType>();
 
-                    if (op_type == OpTypes::ADD)
+                    if constexpr (op_type == OpTypes::ADD)
                     {
                         const auto [it, inserted] = summing_map.insert({key, value});
                         if (!inserted)
@@ -253,6 +252,7 @@ private:
                     }
                     else
                     {
+                        static_assert(op_type == OpTypes::SUBTRACT);
                         const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
                             it->second = common::subIgnoreOverflow(it->second, value);
@@ -466,7 +466,7 @@ Collect all the keys and sum corresponding values.
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, {}, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
-    factory.registerFunction("mapAdd", [](ContextPtr context){ return FunctionMapOp::create(context, OpTypes::ADD); }, documentation_mapAdd);
+    factory.registerFunction<FunctionMapOp<OpTypes::ADD>>(documentation_mapAdd);
 
     /// mapSubtract function documentation
     FunctionDocumentation::Description description_mapSubtract = R"(
@@ -484,7 +484,7 @@ Collect all the keys and subtract corresponding values.
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, {}, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
-    factory.registerFunction("mapSubtract", [](ContextPtr context){ return FunctionMapOp::create(context, OpTypes::SUBTRACT); }, documentation_mapSubtract);
+    factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>(documentation_mapSubtract);
 }
 
 }

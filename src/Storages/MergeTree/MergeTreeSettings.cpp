@@ -17,7 +17,6 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
@@ -652,7 +651,7 @@ namespace ErrorCodes
     Possible values:
     - true, false
     )", false) \
-    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, R"(
     If settings `min_age_to_force_merge_seconds` and
     `min_age_to_force_merge_on_partition_only` should respect setting
     `max_bytes_to_merge_at_max_space_in_pool`.
@@ -1460,9 +1459,6 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
-    DECLARE(Seconds, shared_merge_tree_replica_set_max_lifetime_seconds, 300, R"(
-    How often replicas will try to update replica set in background.
-    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1781,9 +1777,6 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
-    DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
-    )", 0) \
     DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
@@ -1798,42 +1791,42 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
-    )", 0) \
+    )", BETA) \
     DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
     Activates rescheduling of coordinated merges tasks. It can be useful even when
     shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
     statistics and help with cold start.
-    )", 0) \
+    )", BETA) \
     DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
     Enables coordinated merges strategy
-    )", 0) \
+    )", BETA) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", 0) \
+    )", BETA) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
-    )", 0) \
+    )", BETA) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
     Time changing factor for delay of coordinator thread
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", 0) \
+    )", BETA) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
-    )", 0) \
+    )", BETA) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1938,7 +1931,7 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
+    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
@@ -2068,20 +2061,8 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
+    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
-    )", 0) \
-    DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
-    Minimal number of parts to activated distributed index analysis
-    )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
-    Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
-    )", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
-    Batch size for ZooKeeper multi-create get-part requests when cloning replica.
-    )", 0) \
-    DECLARE(Bool, table_readonly, false, R"(
-    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2557,10 +2538,6 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
-        /// Certain merge tree settings are unconditionally read-only
-        if (isReadonlySetting(setting_name))
-            writability = SettingConstraintWritability::CONST;
-
         /// These two columns can accept strings only.
         if (!min.isNull())
             min = MergeTreeSettings::valueToStringUtil(setting_name, min);
@@ -2674,7 +2651,6 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "enable_mixed_granularity_parts"
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
-        || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
     ;
 }

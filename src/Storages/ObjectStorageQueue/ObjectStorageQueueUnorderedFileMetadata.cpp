@@ -18,11 +18,9 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
-    const std::string & zookeeper_name_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        zookeeper_name_,
         /* processing_node_path */zk_path / "processing" / getNodeName(path_),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
         /* failed_node_path */zk_path / "failed" / getNodeName(path_),
@@ -43,7 +41,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
     Coordination::Requests & requests,
     const std::string & processing_id)
 {
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     processor_info = getProcessorInfo(processing_id);
 
     SetProcessingResponseIndexes result;
@@ -78,7 +76,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the requests.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.
@@ -130,10 +128,7 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
 }
 
 void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
-    std::vector<std::string> & paths,
-    const std::filesystem::path & zk_path_,
-    const std::string & zookeeper_name_,
-    LoggerPtr log_)
+    std::vector<std::string> & paths, const std::filesystem::path & zk_path_, LoggerPtr log_)
 {
     std::vector<std::string> check_paths;
     for (const auto & path : paths)
@@ -146,7 +141,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     zkutil::ZooKeeper::MultiTryGetResponse responses;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
     {
-        responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(check_paths);
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(check_paths);
     });
 
     auto check_code = [&](auto code, const std::string & path)

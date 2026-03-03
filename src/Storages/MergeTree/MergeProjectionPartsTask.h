@@ -14,6 +14,7 @@ namespace DB
 class MergeProjectionPartsTask : public MergeProjectionsIndexesTask
 {
 public:
+
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,
@@ -43,8 +44,6 @@ public:
         }
 
     void addToChecksums(MergeTreeDataPartChecksums &) override {}
-    MutableDataPartsVector extractTemporaryParts() override;
-
     void cancel() noexcept override
     {
         /// FIXME: See `executeHere` from MergeTask.h called in executeStep
@@ -74,7 +73,5 @@ private:
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
 };
-
-using MergeProjectionPartsTaskPtr = std::unique_ptr<MergeProjectionPartsTask>;
 
 }

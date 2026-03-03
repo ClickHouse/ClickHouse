@@ -139,16 +139,14 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
     FieldRef field_min;
     FieldRef field_max;
-    size_t range_start = *pos;
-    size_t range_end = *pos + rows_read;
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
-        const auto & column = block.getByName(index_column_name).column;
+        const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
+            column_nullable->getExtremesNullLast(field_min, field_max);
         else
-            column->getExtremes(field_min, field_max, range_start, range_end);
+            column->getExtremes(field_min, field_max);
 
         if (hyperrectangle.size() <= i)
         {
@@ -229,9 +227,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2"))
+    if (checksums.files.contains(relative_path_prefix + ".idx2"))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
 }

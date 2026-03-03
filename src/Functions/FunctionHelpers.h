@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <base/demangle.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
@@ -162,30 +160,6 @@ void validateFunctionArguments(const IFunction & func, const ColumnsWithTypeAndN
 void validateFunctionArguments(const String & function_name, const ColumnsWithTypeAndName & arguments,
                                const FunctionArgumentDescriptors & mandatory_args,
                                const FunctionArgumentDescriptors & optional_args = {});
-
-/// Validates that the user-provided arguments match the expected arguments and the variadic argument at the end of the argument list.
-///
-/// Checks that
-/// - the number of provided arguments is at least the number of mandatory arguments,
-/// - all mandatory arguments are present and have the right type,
-/// - all arguments provided in excess of the mandatory arguments match the variadic argument type.
-///
-/// With multiple variadic arguments, e.g. f(a, b, ...[c]), provided arguments must match left-to-right. E.g. these calls are considered valid:
-///     f(a, b)
-///     f(a, b, c)
-///     f(a, b, c, c)
-/// but these are NOT:
-///     f(a)
-///     f(a, b, b)
-///     f(a, c)
-void validateFunctionArgumentsWithVariadics(const IFunction & func, const ColumnsWithTypeAndName & arguments,
-                                            const FunctionArgumentDescriptors & mandatory_args,
-                                            const FunctionArgumentDescriptor & variadic_args);
-
-/// Validates that the number of provided arguments is within expected range.
-void validateNumberOfFunctionArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments,
-                                       size_t expected_min_args,
-                                       size_t expected_max_args);
 
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>

@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -34,6 +33,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+
 
 namespace DB
 {
@@ -106,19 +106,19 @@ StorageObjectStorage::StorageObjectStorage(
     bool distributed_processing_,
     ASTPtr partition_by_,
     ASTPtr order_by_,
-    bool is_table_function_,
+    bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
-    , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -169,11 +169,19 @@ StorageObjectStorage::StorageObjectStorage(
         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
 
+    /// We always update configuration on read for table engine,
+    /// but this is not needed for table function,
+    /// which exists only for the duration of a single query
+    /// (e.g. read always follows constructor immediately).
+    update_configuration_on_read_write = !is_table_function || !updated_configuration;
+
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    else
+        validateSupportedColumns(columns, *configuration);
 
     configuration->check(context);
 
@@ -202,25 +210,6 @@ StorageObjectStorage::StorageObjectStorage(
         columns_in_table_or_function_definition.empty(),
         format_settings,
         context);
-
-    bool validate_schema_with_remote = !need_resolve_columns_or_format
-        && !configuration->isDataLakeConfiguration()
-        && !columns_in_table_or_function_definition.empty()
-        && !is_table_function
-        && mode == LoadingStrictnessLevel::CREATE
-        && !do_lazy_init;
-
-    validateColumns(
-        columns,
-        configuration_,
-        validate_schema_with_remote,
-        object_storage_,
-        &format_settings,
-        &sample_path,
-        context,
-        &hive_partition_columns_to_read_from_file_path,
-        &columns_in_table_or_function_definition,
-        log);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -253,41 +242,19 @@ StorageObjectStorage::StorageObjectStorage(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
+    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    if (!do_lazy_init && is_table_function && configuration->isDataLakeConfiguration())
-    {
-        /// For datalake table functions, always pin the current snapshot version so that
-        /// query execution uses the same snapshot as query analysis (logical-race fix).
-        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
-        /// This is done eagerly because select queries for table functions may bypass
-        /// updateExternalDynamicMetadataIfExists.
-        configuration->update(object_storage, context, /* if_not_updated_before */true);
-        if (auto state = configuration->getTableStateSnapshot(context))
-        {
-            metadata.setDataLakeTableState(*state);
-
-            /// Reload schema state if needed.
-            /// Schema reload for consistency can be disabled, because
-            /// 1. user can want to define a table with only
-            ///    a subset of columns from remote delta table
-            /// 2. user want to override some data types
-            ///    (for example, LawCardinality<String> instead of just String)
-            if (configuration->shouldReloadSchemaForConsistency(context))
-            {
-                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context))
-                    metadata = *metadata_snapshot;
-            }
-        }
-    }
-
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
+
+    /// I am not sure this is actually required, but just in case
     if (configuration->partition_strategy)
+    {
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+    }
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
@@ -297,6 +264,15 @@ StorageObjectStorage::StorageObjectStorage(
         sample_path));
 
     setInMemoryMetadata(metadata);
+
+    /// This will update metadata for table function which contains specific information about table
+    /// state (e.g. for Iceberg). It is done because select queries for table functions are executed
+    /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
+    if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
+    {
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
+        setInMemoryMetadata(metadata_snapshot);
+    }
 }
 
 String StorageObjectStorage::getName() const
@@ -341,9 +317,6 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-        return nullptr;
-
     configuration->update(
         object_storage,
         query_context,
@@ -354,65 +327,39 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    if (!configuration->isDataLakeConfiguration())
-        return;
-
-    /// Always force an update to pick up the latest snapshot version.
-    /// Using if_not_updated_before=true would leave latest_snapshot_version
-    /// stale from the first query and silently omit new files.
-    configuration->update(object_storage, query_context, /* if_not_updated_before */ false);
-
-    auto state = configuration->getTableStateSnapshot(query_context);
-    if (!state)
-        return;
-
-    auto new_metadata = *getInMemoryMetadataPtr();
-    /// Always pin the current snapshot version to prevent logical races between query
-    /// analysis (which picks the schema) and query execution (which iterates files).
-    new_metadata.setDataLakeTableState(*state);
-
-    /// Optionally also refresh the columns (and other schema-derived fields such as the
-    /// Iceberg sort key) when the per-format reload setting is enabled.
-    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ true);
+    if (configuration->needsUpdateForSchemaConsistency())
     {
-        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
-            new_metadata = *metadata_snapshot;
+        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
+        setInMemoryMetadata(metadata_snapshot);
     }
-
-    setInMemoryMetadata(new_metadata);
 }
 
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    /// Trivial count optimization can be applied only on initiator replica.
-    /// (distributed_processing=true on non-initiator replicas).
-    /// This is needed only for old analyzer.
-    if (distributed_processing)
+    if (!configuration->supportsTotalRows())
         return std::nullopt;
 
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ is_table_function);
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
-    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
-        return std::nullopt;
-
-    if (distributed_processing)
+    if (!configuration->supportsTotalBytes())
         return std::nullopt;
 
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ is_table_function);
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -429,15 +376,15 @@ void StorageObjectStorage::read(
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    /// For data lake we did update in getExternalDynamicMetadata.
-    if (!is_table_function && !configuration->isDataLakeConfiguration())
+    /// We did configuration->update() in constructor,
+    /// so in case of table function there is no need to do the same here again.
+    if (update_configuration_on_read_write)
     {
         configuration->update(
             object_storage,
             local_context,
             /* if_not_updated_before */ false);
     }
-
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
@@ -536,8 +483,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    /// For data lake we did update in getExternalDynamicMetadata.
-    if (!is_table_function && !configuration->isDataLakeConfiguration())
+    if (update_configuration_on_read_write)
     {
         configuration->update(
             object_storage,

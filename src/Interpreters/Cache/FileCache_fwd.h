@@ -30,6 +30,5 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 
 struct FileCacheSettings;
 struct FileCacheKey;
-struct FileCacheUserInfo;
 
 }

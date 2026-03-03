@@ -46,7 +46,6 @@ public:
         MergeTreeData::DataPartsVector data_parts_,
         MergeTreeSettingsPtr table_settings_,
         const ASTPtr & predicate_,
-        const OptionalVectorSearchParameters & vector_search_parameters_,
         ContextPtr context_)
         : ISource(header_)
         , WithContext(context_)
@@ -56,7 +55,6 @@ public:
         , query_info(query_info_)
         , num_streams(num_streams_)
         , predicate(predicate_)
-        , vector_search_parameters(vector_search_parameters_)
         , data_parts(std::move(data_parts_))
         , table_settings(std::move(table_settings_))
     {
@@ -183,7 +181,7 @@ protected:
             filter_dag ? &filter_dag.value() : nullptr,
             *merge_tree_data,
             parts_ranges,
-            vector_search_parameters,
+            /*vector_search_parameters=*/ std::nullopt,
             /*top_k_filter_info=*/ std::nullopt,
             context,
             query_info,
@@ -220,7 +218,6 @@ private:
     SelectQueryInfo query_info;
     size_t num_streams;
     ASTPtr predicate;
-    OptionalVectorSearchParameters vector_search_parameters;
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
 
@@ -280,7 +277,6 @@ void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & 
         storage->data_parts,
         storage->table_settings,
         storage->predicate,
-        storage->vector_search_parameters,
         context)));
 }
 
@@ -293,12 +289,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
     const String & parts_regexp_,
-    const ASTPtr & predicate_,
-    const OptionalVectorSearchParameters & vector_search_parameters_)
+    const ASTPtr & predicate_)
     : IStorage(table_id_)
     , source_table(source_table_)
     , predicate(predicate_)
-    , vector_search_parameters(vector_search_parameters_)
 {
     const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree_data)

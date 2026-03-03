@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
@@ -56,7 +55,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool escape_index_filenames;
 }
@@ -393,7 +391,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
-    auto component_guard = Coordination::setCurrentComponent("registerStorageMergeTree::create");
     bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
 
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
@@ -644,7 +641,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
-            partition_by_key = args.storage_def->partition_by->ptr();
+            partition_by_key = args.storage_def->getChild(*args.storage_def->partition_by);
 
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
@@ -677,7 +674,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
+            args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, context, merging_param_key_arg);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
@@ -689,7 +686,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, context);
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
@@ -702,7 +699,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             columns, partition_key, minmax_columns, metadata.primary_key, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->sample_by), metadata.columns, context);
 
         bool allow_suspicious_ttl
             = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
@@ -710,7 +707,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
+                args.storage_def->getChild(*args.storage_def->ttl_table), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
         storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
@@ -720,12 +717,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            metadata.settings_changes = args.storage_def->getChild(*args.storage_def->settings);
         }
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
-        metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
         metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
@@ -734,9 +730,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns;
-                if (args.mode <= LoadingStrictnessLevel::CREATE && using_auto_minmax_index
+                if (args.mode <= LoadingStrictnessLevel::CREATE
+                    && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns)
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
@@ -761,21 +756,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
-                try
-                {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
-                    metadata.projections.add(std::move(projection));
-                }
-                catch (...)
-                {
-                    if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
-                        throw;
-                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
-                        "Cannot parse projection {} during server startup, skipping it. "
-                        "It may be caused by a dependency on a dropped dictionary or a missing object. "
-                        "Consider recreating the projection or dropping and recreating the table.",
-                        projection_ast->formatForErrorMessage()));
-                }
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
+                metadata.projections.add(std::move(projection));
             }
         }
 

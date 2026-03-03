@@ -1,9 +1,7 @@
 #include <string_view>
-
-#include <base/scope_guard.h>
+#include <unordered_map>
 
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -527,8 +525,8 @@ static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&.
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->setIsLambdaFunction(true);
-        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
+        ast_function->is_lambda_function = true;
+        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
     }
     return ast_function;
 }
@@ -881,18 +879,10 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
-    /// Look up token position from the map stored in Expected
-    if (!expected.literal_token_map)
-        return;
-
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
-        return;
-
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = literal->begin.value()->begin,
+       .end = literal->begin.value()->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1198,8 +1188,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->setIsCompoundName(is_compound_name);
-            function_node->setIsOperator(is_operator);
+            function_node->is_compound_name = is_compound_name;
+            function_node->is_operator = is_operator;
 
             if (parameters)
             {
@@ -1227,14 +1217,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
+                function_node->nulls_action = NullsAction::RESPECT_NULLS;
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
+                function_node->nulls_action = NullsAction::IGNORE_NULLS;
 
             if (over.ignore(pos, expected))
             {
-                function_node->setIsWindowFunction(true);
-                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
+                function_node->is_window_function = true;
+                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1290,17 +1280,10 @@ public:
 
             if (!is_tuple && elements.size() == 1)
             {
-                /// Special case for (('a', 'b')) = tuple(('a', 'b'))
-                /// This is needed for IN semantics: (field, value) IN (('foo', 'bar'))
-                /// should be a 1-element set, not a flat 2-element tuple.
-                /// But skip promotion when the element has an alias, because the
-                /// extra tuple() wrapper changes how the alias is formatted and
-                /// breaks AST formatting roundtrip (e.g. ON ((1, 0.648) AS a7)
-                /// would reparse as ON tuple((1, 0.648) AS a7)).
+                // Special case for (('a', 'b')) = tuple(('a', 'b'))
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
-                        if (elements[0]->tryGetAlias().empty())
-                            is_tuple = true;
+                        is_tuple = true;
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
@@ -2428,13 +2411,6 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Set up map to capture literal token positions for regex highlighting.
-    /// Only needed when highlighting is enabled and no map is already set.
-    LiteralTokenMap local_token_map;
-    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
-    if (expected.enable_highlighting && !expected.literal_token_map)
-        expected.literal_token_map = &local_token_map;
-
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
@@ -2484,7 +2460,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().setNoEmptyArgs(true);
+        node->as<ASTFunction &>().no_empty_args = true;
         return true;
     }
 
@@ -2703,7 +2679,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        layers.back()->pushOperator(cur_op->second);
+        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
+        }
+        else
+        {
+            layers.back()->pushOperator(cur_op->second);
+        }
         return Action::OPERAND;
     }
 
@@ -2765,10 +2750,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 return Action::OPERATOR;
             }
 
-            /// If subquery starts with a valid "SELECT" or "EXPLAIN", but failed later. It means there is a syntax error.
-            if (subquery_parser.startsWithValidSelectOrExplain())
-                return Action::NONE;
-
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
             return Action::OPERAND;
@@ -2803,7 +2784,6 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         return Action::NONE;
 
     /// Try to find operators from 'operators_table'
-    auto saved_pos = pos;
     auto cur_op = operators_table.begin();
     for (; cur_op != operators_table.end(); ++cur_op)
     {
@@ -2831,12 +2811,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (op.type == OperatorType::Lambda)
     {
         if (!layers.back()->parseLambda())
-        {
-            /// Restore the position: parseOperator already advanced past '->',
-            /// but parseLambda failed, so we must not consume the token.
-            pos = saved_pos;
             return Action::NONE;
-        }
 
         layers.back()->pushOperator(op);
         return Action::OPERAND;

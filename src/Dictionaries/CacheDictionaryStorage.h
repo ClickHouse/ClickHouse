@@ -589,7 +589,7 @@ private:
     template<typename ValueType>
     using ContainerType = std::conditional_t<
         std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
-        VectorWithMemoryTracking<ValueType>,
+        std::vector<ValueType>,
         PaddedPODArray<ValueType>>;
 
     struct Attribute
@@ -747,7 +747,7 @@ private:
 
     ArenaWithFreeLists arena;
 
-    VectorWithMemoryTracking<Attribute> attributes;
+    std::vector<Attribute> attributes;
 
     void setCellDeadline(Cell & cell, TimePoint now)
     {

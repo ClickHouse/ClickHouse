@@ -71,7 +71,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     }
     if (combination != 0)
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc);
+        gen.generateGroupBy(rg, 1, true, true, ssc->mutable_groupby());
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -100,8 +100,8 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
-    SelectStatementCore & ssc1 = *sel1.mutable_select_core();
+    Select & sel1 = const_cast<Select &>(sq1.single_query().explain().inner_query().select().sel());
+    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sel1.select_core());
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
@@ -115,7 +115,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_groupby()->mutable_having_expr()->mutable_expr();
+        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.groupby().having_expr().expr());
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
         ssc2->set_allocated_groupby(ssc1.release_groupby());
@@ -124,7 +124,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     }
     else
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_where()->mutable_expr();
+        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.where().expr());
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
@@ -254,12 +254,8 @@ void QueryOracle::dumpTableContent(
         case DumpOracleStrategy::INSERT_COUNT: {
             /// In the second step, just get the total count
             sq2.CopyFrom(sq1);
-            SelectStatementCore & scc = *sq2.mutable_single_query()
-                                             ->mutable_explain()
-                                             ->mutable_inner_query()
-                                             ->mutable_select()
-                                             ->mutable_sel()
-                                             ->mutable_select_core();
+            SelectStatementCore & scc
+                = const_cast<SelectStatementCore &>(sq2.single_query().explain().inner_query().select().sel().select_core());
             scc.clear_result_columns();
             scc.add_result_columns()
                 ->mutable_eca()
@@ -322,7 +318,8 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
+    ff->set_outformat(
+        rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : StatementGenerator::outFormats)));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -563,8 +560,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf
-        = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
+    const InFormat & inf = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
+                                                                                 : StatementGenerator::outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -726,6 +723,11 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
         ff->set_path(qsfile.generic_string());
+        if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
+        {
+            /// ClickHouse prints server version on Parquet file, making checksum incompatible between versions
+            outf = OutFormat::OUT_CSV;
+        }
         ff->set_outformat(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = query = sparen->mutable_select();
@@ -897,10 +899,8 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
     {
         /// Swap query parts
         std::vector<MatchHandler> rules;
-        SQLQueryInner * sq2inner = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query();
-        Select & nsel
-            = *(measure_performance ? sq2inner->mutable_select()->mutable_sel()
-                                    : sq2inner->mutable_insert()->mutable_select()->mutable_select());
+        const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
+        Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
 
         rules.push_back(
             MatchHandler{
@@ -951,7 +951,7 @@ void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
     for (const auto & entry : found_tables)
     {
         /// First truncate tables
-        other_steps_success &= gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
+        other_steps_sucess &= gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
     }
 }
 
@@ -962,10 +962,10 @@ void QueryOracle::optimizePeerTables(const StatementGenerator & gen)
         /// Lastly optimize tables
         const auto & ntable = gen.tables.at(entry);
 
-        other_steps_success &= gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
+        other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
         if (measure_performance)
         {
-            other_steps_success &= gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
+            other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
         }
     }
 }
@@ -978,9 +978,8 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    SQLQueryInner * sq2inner = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query();
-    Select & nsel = *(
-        measure_performance ? sq2inner->mutable_select()->mutable_sel() : sq2inner->mutable_insert()->mutable_select()->mutable_select());
+    const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
+    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
 
     /// Replace references
     rules.push_back(
@@ -995,8 +994,8 @@ void QueryOracle::replaceQueryWithTablePeers(
                 if (tos && tos->has_joined_table())
                 {
                     bool res = false;
-                    JoinedTableOrFunction & jtf = *tos->mutable_joined_table();
-                    TableOrFunction & tf = *jtf.mutable_tof();
+                    JoinedTableOrFunction & jtf = const_cast<JoinedTableOrFunction &>(tos->joined_table());
+                    TableOrFunction & tf = const_cast<TableOrFunction &>(jtf.tof());
 
                     if (tf.has_est())
                     {
@@ -1035,13 +1034,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
-        FileFunc & ff = *sq2.mutable_single_query()
-                             ->mutable_explain()
-                             ->mutable_inner_query()
-                             ->mutable_insert()
-                             ->mutable_tof()
-                             ->mutable_tfunc()
-                             ->mutable_file();
+        FileFunc & ff = const_cast<FileFunc &>(sq2.single_query().explain().inner_query().insert().tof().tfunc().file());
 
         const auto err = std::filesystem::remove(qfile_peer);
         UNUSED(err);
@@ -1092,7 +1085,7 @@ void QueryOracle::resetOracleValues()
     compare_explain = false;
     measure_performance = false;
     first_errcode = 0;
-    other_steps_success = true;
+    other_steps_sucess = true;
     can_test_oracle_result = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
@@ -1101,7 +1094,7 @@ void QueryOracle::resetOracleValues()
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
 {
-    other_steps_success &= success;
+    other_steps_sucess &= success;
 }
 
 void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
@@ -1112,7 +1105,7 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
         {
             if (measure_performance)
             {
-                other_steps_success &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+                other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
             }
             else
             {
@@ -1125,7 +1118,7 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
 {
-    if (other_steps_success && can_test_oracle_result)
+    if (other_steps_sucess && can_test_oracle_result)
     {
         if (((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))

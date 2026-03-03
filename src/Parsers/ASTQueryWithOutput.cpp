@@ -46,11 +46,11 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << s.nl_or_ws << indent_str << "INTO OUTFILE ";
         out_file->format(ostr, s, state, frame);
 
-        if (isOutfileAppend())
+        if (is_outfile_append)
             ostr << " APPEND";
-        if (isOutfileTruncate())
+        if (is_outfile_truncate)
             ostr << " TRUNCATE";
-        if (isIntoOutfileWithStdout())
+        if (is_into_outfile_with_stdout)
             ostr << " AND STDOUT";
         if (compression)
         {

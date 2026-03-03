@@ -1,6 +1,5 @@
 #include <Common/QueryFuzzer.h>
 
-#include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -51,11 +50,6 @@ namespace BuzzHouse
 extern std::unordered_map<String, CHSetting> performanceSettings;
 }
 #endif
-
-namespace CurrentMetrics
-{
-    extern const Metric ASTFuzzerAccumulatedFragments;
-}
 
 namespace DB
 {
@@ -457,29 +451,34 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
-NullsAction QueryFuzzer::fuzzNullsAction(NullsAction action)
+void QueryFuzzer::fuzzNullsAction(NullsAction & action)
 {
     /// If it's not using actions, then it's a high change it doesn't support it to begin with
     if ((action == NullsAction::EMPTY) && (fuzz_rand() % 100 == 0))
     {
         if (fuzz_rand() % 2 == 0)
-            return NullsAction::RESPECT_NULLS;
+            action = NullsAction::RESPECT_NULLS;
         else
-            return NullsAction::IGNORE_NULLS;
+            action = NullsAction::IGNORE_NULLS;
     }
     else if (fuzz_rand() % 20 == 0)
     {
         switch (fuzz_rand() % 3)
         {
-            case 0:
-                return NullsAction::EMPTY;
-            case 1:
-                return NullsAction::RESPECT_NULLS;
-            default:
-                return NullsAction::IGNORE_NULLS;
+            case 0: {
+                action = NullsAction::EMPTY;
+                break;
+            }
+            case 1: {
+                action = NullsAction::RESPECT_NULLS;
+                break;
+            }
+            default: {
+                action = NullsAction::IGNORE_NULLS;
+                break;
+            }
         }
     }
-    return action;
 }
 
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
@@ -1713,7 +1712,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     }
                 }
             }
-            fn->setNullsAction(fuzzNullsAction(fn->getNullsAction()));
+            fuzzNullsAction(fn->nulls_action);
         }
         else if (fuzz_rand() % 30 == 0)
         {
@@ -1821,7 +1820,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
-        if (fn->isWindowFunction() && fn->window_definition)
+        if (fn->is_window_function && fn->window_definition)
         {
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
             fuzzColumnLikeExpressionList(def.partition_by.get());
@@ -2199,8 +2198,6 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
 
     collectFuzzInfoMain(ast);
     fuzz(ast);
-
-    CurrentMetrics::set(CurrentMetrics::ASTFuzzerAccumulatedFragments, getAccumulatedStateSize());
 
     if (out_stream)
     {

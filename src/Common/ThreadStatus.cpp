@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>

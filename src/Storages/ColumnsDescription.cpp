@@ -551,12 +551,6 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
-        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
-        /// and no expression to compute them during SELECT.
-        auto it = columns.get<1>().find(col.name);
-        if (it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Ephemeral)
-            continue;
-
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
             subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);

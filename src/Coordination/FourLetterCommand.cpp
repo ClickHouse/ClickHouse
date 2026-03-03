@@ -37,8 +37,6 @@ String formatZxid(int64_t zxid)
     String hex = getHexUIntLowercase(zxid);
     /// without leading zeros
     trimLeft(hex, '0');
-    if (hex.empty())
-        hex = "0";
     return "0x" + hex;
 }
 

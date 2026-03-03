@@ -9,12 +9,12 @@ from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -80,7 +80,6 @@ def run_tests(
     extra_args="",
     rerun_count=1,
     random_order=False,
-    global_time_limit=0,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -92,12 +91,9 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    global_time_limit_option = (
-        f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
-    )
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
-                {extra_args} {global_time_limit_option} \
+                {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
@@ -107,7 +103,6 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
-    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -147,7 +142,6 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
-    is_llvm_coverage = False
     is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -158,27 +152,22 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
-            pass
+            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
+            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
         elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            pass
+            print(
+                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+            )
         else:
             assert False, f"Unknown option [{to}]"
-
-        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
-            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
-            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            else:
-                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
-                print(
-                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-                )
+            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
         if "targeted" in to:
             is_targeted_check = True
@@ -186,10 +175,9 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "amd_llvm_coverage" in to:
-            is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
+
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
@@ -219,20 +207,12 @@ def main():
         else:
             pass
 
-    workers = None
     if args.workers:
         print(f"Workers count set from --workers: {args.workers}")
-        workers = args.workers
+        runner_options += f" --jobs {args.workers}"
     else:
         print(f"Workers count set to optimal value: {nproc}")
-        workers = nproc
-
-    runner_options += f" --jobs {workers}"
-
-    if is_llvm_coverage:
-        # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
-        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
+        runner_options += f" --jobs {nproc}"
 
     rerun_count = 1
     if args.count:
@@ -247,12 +227,10 @@ def main():
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        azure_connection_string = Shell.get_output(
+        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
-            strict=True,
         )
-        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
@@ -360,11 +338,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
-                # Not a bugfix PR - run a simple sanity test
-                tests = ["00001_select_1"]
-            else:
-                tests = targeter.get_changed_tests()
+            tests = targeter.get_changed_tests()
 
         if tests:
             print(f"Test list: [{tests}]")
@@ -410,7 +384,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -433,7 +407,7 @@ def main():
             commands.append(CH.enable_thread_fuzzer_config)
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:
@@ -458,9 +432,6 @@ def main():
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
-                if not CH.start_kafka():
-                    print("WARNING: Failed to start Kafka")
-
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
                         info.add_workflow_report_message(
@@ -514,48 +485,20 @@ def main():
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
-        # For flaky check, set a soft time limit so that the test runner stops
-        # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
-        # (server shutdown, system table export, log collection — all slow under sanitizers).
-        job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 3600
-        global_time_limit = 0
-        if is_flaky_check or is_targeted_check:
-            global_time_limit = max(
-                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-            )
-            print(
-                f"Soft time limit for test runner: {global_time_limit}s"
-                f" (elapsed so far: {int(stop_watch.duration)}s)"
-            )
-
         # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
         collected_test_results = []
         seen_test_names = set()
-        # Track accumulated run time per test for the targeted check per-test time cap
-        test_time_accumulated: dict[str, float] = {}
-        TIME_CAP_PER_TEST_SEC = 10 * 60
-        tests_to_run = list(tests) if tests else tests
 
         for cnt in range(run_sets_cnt):
-            # For targeted checks with multiple iterations, recalculate
-            # the remaining time for each invocation of the test runner.
-            if global_time_limit > 0 and run_sets_cnt > 1:
-                global_time_limit = max(
-                    job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-                )
-
             run_tests(
-                batch_num=batch_num if not tests_to_run else 0,
-                batch_total=total_batches if not tests_to_run else 0,
-                tests=tests_to_run,
+                batch_num=batch_num if not tests else 0,
+                batch_total=total_batches if not tests else 0,
+                tests=tests,
                 extra_args=runner_options,
                 random_order=is_flaky_check
                 or is_targeted_check
                 or is_bugfix_validation,
                 rerun_count=rerun_count,
-                global_time_limit=global_time_limit,
             )
             test_result = ft_res_processor.run()
 
@@ -563,27 +506,6 @@ def main():
             # or all results on the final attempt
             if run_sets_cnt > 1:
                 is_final_run = cnt == run_sets_cnt - 1
-
-                # Accumulate per-test run time and filter tests that exceeded the time cap
-                if is_targeted_check:
-                    for test_case_result in test_result.results:
-                        if test_case_result.duration is not None:
-                            test_time_accumulated[test_case_result.name] = (
-                                test_time_accumulated.get(test_case_result.name, 0.0)
-                                + test_case_result.duration
-                            )
-                    if not is_final_run:
-                        tests_to_run = [
-                            t
-                            for t in tests_to_run
-                            if test_time_accumulated.get(t, 0.0)
-                            < TIME_CAP_PER_TEST_SEC
-                        ]
-                        if not tests_to_run:
-                            print(
-                                "NOTE: All tests exceeded the time cap; stopping early"
-                            )
-                            is_final_run = True
 
                 for test_case_result in test_result.results:
                     # Only collect each test once (first failure or final result)
@@ -598,7 +520,10 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
-                stop_by_elapsed_time = global_time_limit <= 0
+                # Control elapsed time for targeted checks: exit if >30 minutes
+                stop_by_elapsed_time = False
+                if is_targeted_check and cnt > 0:
+                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
 
                 # On final run, replace results with collected ones
                 if is_final_run or stop_by_elapsed_time:
@@ -624,17 +549,11 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = []
-        for t in test_result.results:
-            if t.is_failure() and t.name and t.name[0].isdigit():
-                failed_tests.append(t.name)
-            elif t.is_error():
-                failed_tests = []
-                print(
-                    "NOTE: Skipping retry stage because the main test run ended with errors"
-                )
-                break
-
+        failed_tests = [
+            t.name
+            for t in test_result.results
+            if t.is_failure() and t.name and t.name[0].isdigit()
+        ]
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -664,15 +583,7 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        if is_llvm_coverage:
-                            print(
-                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
-                            )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
-                        else:
-                            test_case.set_label(Result.Label.OK_ON_RETRY)
+                        test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
@@ -721,7 +632,7 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
-    if is_bugfix_validation and test_result and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and test_result:
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")
@@ -772,10 +683,6 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
             force_ok_exit = True
-    if is_llvm_coverage and test_result:
-        # do not block pipeline on amd_llvm_coverage job failures
-        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
-        force_ok_exit = True
 
     if test_result:
         test_result.sort()
@@ -786,60 +693,6 @@ def main():
         files=CH.logs + debug_files,
         info=job_info,
     )
-
-    if is_llvm_coverage:
-        print("Collecting and merging LLVM coverage files...")
-        Shell.get_output("pwd", verbose=True).strip().split("\n")
-        profraw_files = (
-            Shell.get_output("find . -name '*.profraw'", verbose=True)
-            .strip()
-            .split("\n")
-        )
-        profraw_files = [f.strip() for f in profraw_files if f.strip()]
-
-        if profraw_files:
-            print(f"Found {len(profraw_files)} .profraw files:")
-            for f in profraw_files:
-                try:
-                    size_bytes = os.path.getsize(f)
-                    print(f"  {size_bytes:>12} bytes | {f}")
-                except OSError:
-                    continue
-
-            # Auto-detect available LLVM profdata tool
-            llvm_profdata = None
-            for ver in ["21", "20", "18", "19", "17", "16", ""]:
-                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
-                if Shell.check(f"command -v {cmd}", verbose=False):
-                    llvm_profdata = cmd
-                    break
-
-            if not llvm_profdata:
-                print("ERROR: llvm-profdata not found in PATH")
-            else:
-                print(f"Using {llvm_profdata} to merge coverage files")
-
-                # Merge all profraw files to current directory
-                merged_file = f"./ft-{batch_num}.profdata"
-                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
-                merge_output = Shell.get_output(merge_cmd, verbose=True)
-
-                # Check for corrupted files in the output
-                corrupted_files = [
-                    line
-                    for line in merge_output.split("\n")
-                    if "invalid instrumentation profile" in line
-                    or "file header is corrupt" in line
-                ]
-                if corrupted_files:
-                    print(
-                        f"WARNING: Found {len(corrupted_files)} corrupted profraw files:"
-                    )
-                    for corrupted in corrupted_files:
-                        print(f"  {corrupted}")
-
-        else:
-            print("No .profraw files found for coverage")
 
     if reset_success:
         # coverage job ignores test failures

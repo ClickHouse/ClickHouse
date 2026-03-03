@@ -13,7 +13,6 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
-from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
@@ -25,7 +24,7 @@ from helpers.iceberg_utils import (
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark(log_dir=None):
+def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_disks")
         .config(
@@ -44,14 +43,6 @@ def get_spark(log_dir=None):
         )
         .master("local")
     )
-
-    if log_dir:
-        props_path = write_spark_log_config(log_dir)
-        builder = builder.config(
-            "spark.driver.extraJavaOptions",
-            f"-Dlog4j2.configurationFile=file:{props_path}",
-        )
-
     return builder.getOrCreate()
 
 
@@ -133,9 +124,7 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = ResilientSparkSession(
-            lambda: get_spark(cluster.instances_dir)
-        )
+        cluster.spark_session = get_spark()
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -257,20 +246,20 @@ def test_many_tables(started_cluster, format_version, storage_type):
 
     instance.query(
         f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
-        settings={"allow_insert_into_iceberg": 1},
+        settings={"allow_experimental_insert_into_iceberg": 1},
     )
     instance.query(
         f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
-        settings={"allow_insert_into_iceberg": 1},
+        settings={"allow_experimental_insert_into_iceberg": 1},
     )
 
     instance.query(
         f"INSERT INTO {table_name} VALUES (1);",
-        settings={"allow_insert_into_iceberg": 1},
+        settings={"allow_experimental_insert_into_iceberg": 1},
     )
     instance.query(
         f"INSERT INTO {table_name_2} VALUES (1);",
-        settings={"allow_insert_into_iceberg": 1},
+        settings={"allow_experimental_insert_into_iceberg": 1},
     )
 
     assert instance.query(f"SELECT * FROM {table_name}") == "1\n"

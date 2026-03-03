@@ -28,12 +28,12 @@ struct NameNotEmpty
     static constexpr auto name = "notEmpty";
 };
 
+/// Implements the empty function for JSON type.
+template <bool negative, class Name>
 class ExecutableFunctionJSONEmpty : public IExecutableFunction
 {
 public:
-    ExecutableFunctionJSONEmpty(bool negative_, const char * name_) : negative(negative_), function_name(name_) {}
-
-    std::string getName() const override { return function_name; }
+    std::string getName() const override { return Name::name; }
 
 private:
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -85,18 +85,15 @@ private:
 
         return res;
     }
-
-    bool negative;
-    const char * function_name;
 };
 
+template <bool negative, class Name>
 class FunctionEmptyJSON final : public IFunctionBase
 {
 public:
-    FunctionEmptyJSON(bool negative_, const char * name_, const DataTypes & argument_types_, const DataTypePtr & return_type_)
-        : negative(negative_), function_name(name_), argument_types(argument_types_), return_type(return_type_) {}
+    FunctionEmptyJSON(const DataTypes & argument_types_, const DataTypePtr & return_type_) : argument_types(argument_types_), return_type(return_type_) {}
 
-    String getName() const override { return function_name; }
+    String getName() const override { return Name::name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -105,27 +102,26 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSONEmpty>(negative, function_name);
+        return std::make_unique<ExecutableFunctionJSONEmpty<negative, Name>>();
     }
 
 private:
-    bool negative;
-    const char * function_name;
     DataTypes argument_types;
     DataTypePtr return_type;
 };
 
+template <bool negative, class Name>
 class FunctionEmptyOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
-    FunctionEmptyOverloadResolver(bool negative_, const char * name_) : negative(negative_), function_name(name_) {}
+    static constexpr auto name = Name::name;
 
-    static FunctionOverloadResolverPtr create(ContextPtr, bool negative, const char * name)
+    static FunctionOverloadResolverPtr create(ContextPtr)
     {
-        return std::make_unique<FunctionEmptyOverloadResolver>(negative, name);
+        return std::make_unique<FunctionEmptyOverloadResolver>();
     }
 
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -136,12 +132,9 @@ public:
             argument_types.push_back(arg.type);
 
         if (argument_types.size() == 1 && isObject(argument_types[0]))
-            return std::make_shared<FunctionEmptyJSON>(negative, function_name, argument_types, return_type);
+            return std::make_shared<FunctionEmptyJSON<negative, Name>>(argument_types, return_type);
 
-        if (negative)
-            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false>>(), argument_types, return_type);
-        else
-            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8, false>>(), argument_types, return_type);
+        return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<negative>, Name, UInt8, false>>(), argument_types, return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -162,10 +155,6 @@ public:
     {
         return std::make_shared<DataTypeUInt8>();
     }
-
-private:
-    bool negative;
-    const char * function_name;
 };
 
 }
@@ -247,8 +236,8 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
     FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, {}, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
     FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, {}, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
 
-    factory.registerFunction("notEmpty", [](ContextPtr){ return FunctionEmptyOverloadResolver::create({}, true, "notEmpty"); }, documentation_not_empty);
-    factory.registerFunction("empty", [](ContextPtr){ return FunctionEmptyOverloadResolver::create({}, false, "empty"); }, documentation_empty);
+    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_not_empty);
+    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);
 
 }
 

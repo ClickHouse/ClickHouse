@@ -52,13 +52,16 @@ public:
             delegate_disk->getName(), disk_path);
     }
 
-    void commit() override
+    /// Tries to commit all accumulated operations simultaneously.
+    /// If something fails rollback and throw exception.
+    void commit(const TransactionCommitOptionsVariant & options) override
     {
-        delegate_transaction->commit();
+        delegate_transaction->commit(options);
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"),
             "Commit DiskEncryptedTransaction for delegating disk {} at path {}",
             delegate_disk->getName(), disk_path);
     }
+    void commit() override { commit(NoCommitOptions{}); }
 
     void undo() noexcept override
     {

@@ -78,8 +78,7 @@ public:
         const StorageID & table_id,
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
-        UUID database_uuid = UUIDHelpers::Nil,
-        String * result_zookeeper_name = nullptr);
+        UUID database_uuid = UUIDHelpers::Nil);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
@@ -98,8 +97,7 @@ private:
 
     ObjectStorageType type;
     const std::string engine_name;
-    std::string zookeeper_name;
-    fs::path zk_path;
+    const fs::path zk_path;
     const bool enable_logging_to_queue_log;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
@@ -113,7 +111,6 @@ private:
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
     bool commit_on_select TSA_GUARDED_BY(mutex);
-    bool deduplication_v2 TSA_GUARDED_BY(mutex);
 
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);

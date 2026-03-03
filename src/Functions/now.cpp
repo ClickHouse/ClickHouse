@@ -6,7 +6,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
-#include <Common/ErrnoException.h>
 
 namespace DB
 {

@@ -5,7 +5,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -30,7 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
-#include <Storages/MergeTree/TextIndexSegment.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 
 namespace ProfileEvents
 {
@@ -55,10 +54,6 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 class BuildTextIndexTransform;
 using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
-
-class BuildStatisticsTransform;
-using BuildStatisticsTransformPtr = std::shared_ptr<BuildStatisticsTransform>;
-using BuildStatisticsTransformMap = std::unordered_map<String, BuildStatisticsTransformPtr>;
 
 /**
  * Overview of the merge algorithm
@@ -163,13 +158,6 @@ public:
         return res;
     }
 
-    PlainMarksByName releaseCachedIndexMarks() const
-    {
-        PlainMarksByName res;
-        std::swap(global_ctx->cached_index_marks, res);
-        return res;
-    }
-
     bool execute();
 
     void cancel() noexcept;
@@ -230,9 +218,8 @@ private:
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
-
-        MergedBlockOutputStream::GatheredData gathered_data{};
-        std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
+        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
+        ColumnsSubstreams gathered_columns_substreams{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -263,9 +250,8 @@ private:
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
-        WrittenOffsetSubstreams written_offset_substreams{};
+        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
         PlainMarksByName cached_marks;
-        PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
@@ -303,7 +289,6 @@ private:
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
-        BuildStatisticsTransformMap build_statistics_transforms;
 
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
@@ -400,7 +385,6 @@ private:
         {
             QueryPipeline pipeline;
             MergeTreeIndices indexes_to_recalc;
-            BuildStatisticsTransformMap build_statistics_transforms;
         };
 
         std::optional<PreparedColumnPipeline> prepared_pipeline;
@@ -410,7 +394,6 @@ private:
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
-        BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
     };
 
@@ -532,7 +515,7 @@ private:
         StageRuntimeContextPtr getContextForNextStage() override;
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool prepareProjections() const;
+        bool mergeMinMaxIndexAndPrepareProjections() const;
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
@@ -541,7 +524,7 @@ private:
 
         const MergeProjectionsStageSubtasks subtasks
         {
-            &MergeProjectionsStage::prepareProjections,
+            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
             &MergeProjectionsStage::executeProjections,
             &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
         };
@@ -573,8 +556,6 @@ private:
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
-    static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);
-    static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME

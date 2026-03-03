@@ -29,7 +29,6 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
-#include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
@@ -90,11 +89,6 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
-    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
@@ -155,6 +149,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -242,8 +240,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
-        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
 
     GlobalThreadPool::initialize(
@@ -411,7 +408,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
+    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 0);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
@@ -557,19 +554,6 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(getClientConfiguration().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(getClientConfiguration().getBool("allow_plaintext_password", true));
-
-    /// Enable all access control improvements by default; can be overridden via config.
-    auto & config = getClientConfiguration();
-    access_control.setEnabledUsersWithoutRowPoliciesCanReadRows(config.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
-    access_control.setOnClusterQueriesRequireClusterGrant(config.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
-    access_control.setSelectFromSystemDatabaseRequiresGrant(config.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
-    access_control.setSelectFromInformationSchemaRequiresGrant(config.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
-    access_control.setSettingsConstraintsReplacePrevious(config.getBool("access_control_improvements.settings_constraints_replace_previous", true));
-    access_control.setTableEnginesRequireGrant(config.getBool("access_control_improvements.table_engines_require_grant", true));
-    access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
-    access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
-    access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
-
     if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
         String config_path = getClientConfiguration().getString("config-file", "");

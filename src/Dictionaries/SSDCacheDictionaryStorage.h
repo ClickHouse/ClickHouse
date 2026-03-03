@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
-#include <Common/ErrnoException.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -1413,7 +1412,7 @@ private:
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 
-    VectorWithMemoryTracking<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
+    std::vector<SSDCacheMemoryBuffer<SSDCacheKeyType>> memory_buffer_partitions;
 
     pcg64 rnd_engine;
 

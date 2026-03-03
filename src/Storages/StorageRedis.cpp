@@ -351,14 +351,15 @@ void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
 
 namespace
 {
-    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context, const StorageID & table_id)
+    //  host:port, db_index, password, pool_size
+    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context)
     {
         RedisConfiguration configuration;
 
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments count when creating Redis table engine");
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, &table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             validateNamedCollection(
                 *named_collection,
@@ -401,7 +402,7 @@ namespace
 
     StoragePtr createStorageRedis(const StorageFactory::Arguments & args)
     {
-        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext(), args.table_id);
+        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext());
 
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
@@ -411,7 +412,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)

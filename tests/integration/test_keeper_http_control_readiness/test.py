@@ -36,7 +36,7 @@ node3 = cluster.add_instance(
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.start(connection_timeout=450.0)
+        cluster.start()
         yield cluster
     finally:
         cluster.shutdown()
@@ -83,6 +83,3 @@ def test_http_readiness_partitioned_cluster(started_cluster):
         assert readiness_data["status"] == "fail"
         assert readiness_data["details"]["role"] == "follower"
         assert readiness_data["details"]["hasLeader"] == False
-
-    # Wait for cluster to recover after partition is healed
-    keeper_utils.wait_nodes(cluster, [node1, node2, node3])

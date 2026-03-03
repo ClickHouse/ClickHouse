@@ -19,10 +19,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=[
-                "configs/users.xml",
-                "configs/insert_deduplication.xml",
-                ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,

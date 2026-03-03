@@ -19,11 +19,9 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
-#include <Processors/Port.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
@@ -185,7 +183,7 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    CurrentThread::QueryScope & query_scope,
+    std::optional<CurrentThread::QueryScope> & query_scope,
     const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
@@ -304,7 +302,7 @@ void HTTPHandler::processQuery(
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)
-    query_scope = CurrentThread::QueryScope::create(context);
+    query_scope.emplace(context);
 
     const auto & settings = context->getSettingsRef();
 
@@ -685,7 +683,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    CurrentThread::QueryScope query_scope;
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     Output used_output;
 

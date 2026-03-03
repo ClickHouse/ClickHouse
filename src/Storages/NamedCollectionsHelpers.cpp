@@ -100,11 +100,7 @@ std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts,
-    ContextPtr context,
-    bool throw_unknown_collection,
-    std::vector<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
 {
     if (asts.empty())
         return nullptr;
@@ -125,9 +121,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     if (!collection)
         return nullptr;
-
-    if (dependent_table_id)
-        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
 
     auto collection_copy = collection->duplicate();
 

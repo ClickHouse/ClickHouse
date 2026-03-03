@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-shared-merge-tree, no-object-storage
+# Tags: long, no-parallel, no-shared-merge-tree
 # - SMT/MinIO cannot handle this amount of parts in reasonable time
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

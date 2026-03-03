@@ -161,8 +161,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
-            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
-
             if (isConnected())
                 disconnect();
 
@@ -206,14 +204,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 if (async_callback)
                 {
-                    address_connect_timeout_expired = false;
                     socket->connectNB(*it);
                     while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
-                    {
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
-                        if (address_connect_timeout_expired)
-                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
-                    }
 
                     if (auto err = socket->impl()->socketError())
                         socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
@@ -226,37 +219,30 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
 
                 current_resolved_address = *it;
-                have_more_addresses_to_connect = false;
                 break;
             }
-            catch (DB::NetException & e)
+            catch (DB::NetException &)
             {
-                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::Net::NetException & e)
+            catch (Poco::Net::NetException &)
             {
-                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::TimeoutException & e)
+            catch (Poco::TimeoutException &)
             {
-                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
         }
 
-        /// Use handshake timeout as send and receive timeout. Note that in the case of secure sockets,
-        /// these timeouts also apply to the TLS handshake. The TLS handshake is deferred until the
-        /// first send/receive operation (sendHello in our case).
-        socket->setReceiveTimeout(timeouts.handshake_timeout);
-        socket->setSendTimeout(timeouts.handshake_timeout);
+        socket->setReceiveTimeout(timeouts.receive_timeout);
+        socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
         int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
         if (tcp_keep_alive_timeout_in_sec)
@@ -281,8 +267,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
-        sendHello();
-        receiveHello();
+        sendHello(timeouts.handshake_timeout);
+        receiveHello(timeouts.handshake_timeout);
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
@@ -341,10 +327,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
-
-        /// Now that the handshake is complete, use the regular timeouts
-        socket->setReceiveTimeout(timeouts.receive_timeout);
-        socket->setSendTimeout(timeouts.send_timeout);
     }
     catch (DB::NetException & e)
     {
@@ -426,7 +408,7 @@ void Connection::disconnect()
 }
 
 
-void Connection::sendHello()
+void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -479,7 +461,7 @@ void Connection::sendHello()
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth();
+        performHandshakeForSSHAuth(handshake_timeout);
     }
 #endif
 #if USE_JWT_CPP && USE_SSL
@@ -518,8 +500,10 @@ void Connection::sendAddendum()
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth()
+void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
+
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -536,7 +520,7 @@ void Connection::performHandshakeForSSHAuth()
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
+            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -559,8 +543,10 @@ void Connection::performHandshakeForSSHAuth()
 #endif
 
 
-void Connection::receiveHello()
+void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
+
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -639,7 +625,7 @@ void Connection::receiveHello()
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-        throwUnexpectedPacket(packet_type, "Hello or Exception");
+        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -771,7 +757,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(pong, "Pong", &timeout_setter);
+            throwUnexpectedPacket(timeout_setter, pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -810,7 +796,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(response_type, "TablesStatusResponse", &timeout_setter);
+        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -1037,18 +1023,7 @@ void Connection::sendQuery(
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
-
-    if (query_plan.isSerialized())
-    {
-        // Use cached serialization
-        auto serialized_data = query_plan.getSerializedData();
-        out->write(serialized_data.data(), serialized_data.size());
-    }
-    else
-    {
-        // Fallback: serialize on-the-fly
-        query_plan.serialize(*out, server_query_plan_serialization_version);
-    }
+    query_plan.serialize(*out, server_query_plan_serialization_version);
 }
 
 void Connection::sendCancel()
@@ -1623,11 +1598,10 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter)
+void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
 {
     /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
-    if (timeout_setter)
-        timeout_setter->reset();
+    timeout_setter.reset();
 
     /// Close connection, to avoid leaving it in an unsynchronised state.
     disconnect();
