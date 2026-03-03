@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 namespace DB
@@ -13,14 +12,12 @@ private:
     SerializationArrayOffsets() = default;
 
 public:
+    static UInt128 getHash();
+
     static SerializationPtr create()
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationArrayOffsets());
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(), [] { return new SerializationArrayOffsets(); });
     }
-
-    UInt128 getHash() const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,

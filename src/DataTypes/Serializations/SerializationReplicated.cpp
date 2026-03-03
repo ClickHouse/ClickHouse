@@ -23,11 +23,11 @@ SerializationReplicated::SerializationReplicated(const SerializationPtr & nested
 }
 
 
-UInt128 SerializationReplicated::getHash() const
+UInt128 SerializationReplicated::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Replicated");
-    hash.update(nested->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 

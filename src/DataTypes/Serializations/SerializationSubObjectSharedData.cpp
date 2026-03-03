@@ -28,26 +28,28 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
 {
 }
 
+UInt128 SerializationSubObjectSharedData::getHash(
+    SerializationObjectSharedData::SerializationVersion serialization_version_,
+    size_t buckets_,
+    const String & paths_prefix_,
+    const DataTypePtr & dynamic_type_)
+{
+    SipHash hash;
+    hash.update("SubObjectSharedData");
+    hash.update(static_cast<int>(serialization_version_.value));
+    hash.update(buckets_);
+    hash.update(paths_prefix_);
+    hash.update(dynamic_type_->getName());
+    return hash.get128();
+}
+
 SerializationPtr SerializationSubObjectSharedData::create(
     SerializationObjectSharedData::SerializationVersion serialization_version_,
     size_t buckets_,
     const String & paths_prefix_,
     const DataTypePtr & dynamic_type_)
 {
-    auto ptr = std::unique_ptr<ISerialization>(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_));
-    auto hash = ptr->getHash();
-    return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-}
-
-UInt128 SerializationSubObjectSharedData::getHash() const
-{
-    SipHash hash;
-    hash.update("SubObjectSharedData");
-    hash.update(static_cast<int>(serialization_version.value));
-    hash.update(buckets);
-    hash.update(paths_prefix);
-    hash.update(dynamic_type->getName());
-    return hash.get128();
+    return ISerialization::pooled(getHash(serialization_version_, buckets_, paths_prefix_, dynamic_type_), [&] { return new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_); });
 }
 
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState

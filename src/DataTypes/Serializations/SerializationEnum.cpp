@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 
 #include <Columns/ColumnVector.h>
@@ -218,6 +219,20 @@ void SerializationEnum<Type>::serializeTextMarkdown(
         writeMarkdownEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
+}
+
+template <typename Type>
+UInt128 SerializationEnum<Type>::getHash(const Values & values)
+{
+    SipHash hash;
+    hash.update("Enum");
+    hash.update(TypeName<Type>);
+    for (const auto & [name, value] : values)
+    {
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get128();
 }
 
 template class SerializationEnum<Int8>;

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <Common/Exception.h>
 
@@ -21,6 +22,15 @@ SerializationNamed::SerializationNamed(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationNamed doesn't support substream type {}", substream_type);
 }
 
+UInt128 SerializationNamed::getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
+{
+    SipHash hash;
+    hash.update("Named");
+    hash.update(nested_->getHash());
+    hash.update(name_);
+    hash.update(static_cast<int>(substream_type_));
+    return hash.get128();
+}
 
 void SerializationNamed::enumerateStreams(
     EnumerateStreamsSettings & settings,

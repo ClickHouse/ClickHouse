@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Common/DateLUT.h>
 
 class DateLUTImpl;
@@ -18,21 +17,17 @@ private:
     explicit SerializationTime64(UInt32 scale_, const DataTypeTime64 & /*time_type*/);
 
 public:
+    static UInt128 getHash(UInt32 scale_);
+
     static SerializationPtr create(UInt32 scale_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationTime64(scale_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(scale_), [=] { return new SerializationTime64(scale_); });
     }
 
     static SerializationPtr create(UInt32 scale_, const DataTypeTime64 & time_type)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationTime64(scale_, time_type));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(scale_), [&] { return new SerializationTime64(scale_, time_type); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

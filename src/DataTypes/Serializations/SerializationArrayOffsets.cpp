@@ -6,7 +6,7 @@ namespace DB
 {
 
 
-UInt128 SerializationArrayOffsets::getHash() const
+UInt128 SerializationArrayOffsets::getHash()
 {
     SipHash hash;
     hash.update("ArrayOffsets");

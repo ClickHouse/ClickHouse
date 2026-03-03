@@ -20,11 +20,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BOOL;
 }
 
-UInt128 SerializationBool::getHash() const
+UInt128 SerializationBool::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Bool");
-    hash.update(nested_serialization->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 

@@ -2,7 +2,6 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -24,14 +23,12 @@ private:
     explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
 public:
+    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
+
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationString(version_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

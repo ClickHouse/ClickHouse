@@ -34,14 +34,14 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
-UInt128 SerializationTuple::getHash() const
+UInt128 SerializationTuple::getHash(const ElementSerializations & elems_, bool has_explicit_names_)
 {
     SipHash hash;
     hash.update("Tuple");
-    hash.update(has_explicit_names);
-    for (const auto & elem : elems)
+    hash.update(has_explicit_names_);
+    for (const auto & elem : elems_)
     {
-        if (has_explicit_names)
+        if (has_explicit_names_)
             hash.update(elem->getElementName());
         hash.update(elem->getNested()->getHash());
     }

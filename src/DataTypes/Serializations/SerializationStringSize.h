@@ -14,14 +14,12 @@ private:
     explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
 
 public:
+    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
+
     static SerializationPtr create(MergeTreeStringSerializationVersion version_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationStringSize(version_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
     }
-
-    UInt128 getHash() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

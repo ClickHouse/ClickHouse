@@ -24,21 +24,21 @@ SerializationSubObject::SerializationSubObject(
 }
 
 
-UInt128 SerializationSubObject::getHash() const
+UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_)
 {
     SipHash hash;
     hash.update("SubObject");
-    hash.update(paths_prefix);
-    hash.update(dynamic_type->getName());
+    hash.update(paths_prefix_);
+    hash.update(dynamic_type_->getName());
     std::vector<String> sorted_paths;
-    sorted_paths.reserve(typed_paths_serializations.size());
-    for (const auto & [path, _] : typed_paths_serializations)
+    sorted_paths.reserve(typed_paths_serializations_.size());
+    for (const auto & [path, _] : typed_paths_serializations_)
         sorted_paths.push_back(path);
     std::sort(sorted_paths.begin(), sorted_paths.end());
     for (const auto & path : sorted_paths)
     {
         hash.update(path);
-        hash.update(typed_paths_serializations.at(path)->getHash());
+        hash.update(typed_paths_serializations_.at(path)->getHash());
     }
     return hash.get128();
 }

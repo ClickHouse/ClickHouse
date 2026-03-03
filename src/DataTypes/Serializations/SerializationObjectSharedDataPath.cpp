@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
@@ -33,6 +34,20 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , dynamic_serialization(dynamic_type_->getDefaultSerialization())
     , bucket(bucket_)
 {
+}
+
+UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket_)
+{
+    SipHash hash;
+    hash.update("ObjectSharedDataPath");
+    hash.update(nested_->getHash());
+    hash.update(static_cast<int>(serialization_version_.value));
+    hash.update(path_);
+    hash.update(path_subcolumn_);
+    hash.update(dynamic_type_->getName());
+    hash.update(subcolumn_type_->getName());
+    hash.update(bucket_);
+    return hash.get128();
 }
 
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState

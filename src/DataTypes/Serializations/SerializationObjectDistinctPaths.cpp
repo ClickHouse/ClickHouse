@@ -20,13 +20,14 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 }
 
 
-UInt128 SerializationObjectDistinctPaths::getHash() const
+UInt128 SerializationObjectDistinctPaths::getHash(const std::vector<String> & typed_paths_)
 {
     SipHash hash;
     hash.update("ObjectDistinctPaths");
-    for (const auto & path : typed_paths)
+    for (const auto & path : typed_paths_)
         hash.update(path);
-    hash.update(shared_data_paths_serialization->getHash());
+    const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
+    hash.update(shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization())->getHash());
     return hash.get128();
 }
 

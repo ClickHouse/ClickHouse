@@ -32,21 +32,19 @@ SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersio
 {
 }
 
-SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
-{
-    auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, buckets_));
-    auto hash = ptr->getHash();
-    return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-}
-
-UInt128 SerializationObjectSharedData::getHash() const
+UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
 {
     SipHash hash;
     hash.update("ObjectSharedData");
-    hash.update(static_cast<int>(serialization_version.value));
-    hash.update(dynamic_type->getName());
-    hash.update(buckets);
+    hash.update(static_cast<int>(serialization_version_.value));
+    hash.update(dynamic_type_->getName());
+    hash.update(buckets_);
     return hash.get128();
+}
+
+SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+{
+    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, buckets_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, buckets_); });
 }
 
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))

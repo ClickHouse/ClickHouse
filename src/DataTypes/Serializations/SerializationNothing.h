@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -13,14 +12,12 @@ private:
     SerializationNothing() = default;
 
 public:
+    static UInt128 getHash();
+
     static SerializationPtr create()
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationNothing());
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(), [] { return new SerializationNothing(); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }
     void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }

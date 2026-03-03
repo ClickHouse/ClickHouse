@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
@@ -20,14 +19,12 @@ private:
     explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
 
 public:
+    static UInt128 getHash(const std::vector<String> & typed_paths_);
+
     static SerializationPtr create(const std::vector<String> & typed_paths_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectDistinctPaths(typed_paths_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
     }
-
-    UInt128 getHash() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

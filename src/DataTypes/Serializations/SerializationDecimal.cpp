@@ -131,17 +131,14 @@ bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 }
 
 
-/// Override of SerializationDecimalBase::getHash() to add the "Decimal" prefix,
-/// which distinguishes SerializationDecimal from other SerializationDecimalBase
-/// derivatives (e.g. SerializationDateTime64) that share the same base hash logic.
 template <typename T>
-UInt128 SerializationDecimal<T>::getHash() const
+UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
 {
     SipHash hash;
     hash.update("Decimal");
     hash.update(TypeName<T>);
-    hash.update(this->precision);
-    hash.update(this->scale);
+    hash.update(precision_);
+    hash.update(scale_);
     return hash.get128();
 }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -15,14 +14,12 @@ private:
     explicit SerializationFixedString(size_t n_) : n(n_) {}
 
 public:
+    static UInt128 getHash(size_t n_);
+
     static SerializationPtr create(size_t n_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationFixedString(n_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
     }
-
-    UInt128 getHash() const override;
 
     size_t getN() const { return n; }
 

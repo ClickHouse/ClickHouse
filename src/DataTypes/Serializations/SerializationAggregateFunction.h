@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -21,14 +20,12 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
+    static UInt128 getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_);
+
     static SerializationPtr create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationAggregateFunction(function_, type_name_, version_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
     }
-
-    UInt128 getHash() const override;
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;

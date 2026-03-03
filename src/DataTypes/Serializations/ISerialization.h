@@ -65,10 +65,6 @@ protected:
 public:
     virtual ~ISerialization() = default;
 
-    /// Returns a hash that uniquely identifies this serialization object.
-    /// Used as the key in SerializationObjectPool for deduplication.
-    virtual UInt128 getHash() const = 0;
-
     enum class Kind : UInt8
     {
         DEFAULT = 0,
@@ -669,7 +665,17 @@ public:
     /// Perform insertion from column found in substreams cache.
     static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
+    /// Returns the hash that uniquely identifies this serialization object.
+    /// Set by pooled() or manually for non-pooled objects.
+    UInt128 getHash() const { return cached_hash; }
+
 protected:
+    UInt128 cached_hash{};
+
+    /// Look up the pool by hash; on cache miss call the creator to build
+    /// the object.  The creator is invoked at most once and only on miss.
+    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 
     template <typename State, typename StatePtr>

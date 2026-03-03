@@ -35,7 +35,7 @@ Pool & getPool()
     return *pool;
 }
 
-SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serialization)
+SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
 {
     auto & pool = getPool();
 
@@ -49,7 +49,7 @@ SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serializatio
         }
     }
 
-    std::unique_lock write_lock(pool.mutex);
+    std::lock_guard write_lock(pool.mutex);
     auto [it, inserted] = pool.map.emplace(key, std::weak_ptr<const ISerialization>());
     if (!inserted)
     {
@@ -60,10 +60,9 @@ SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serializatio
     CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
     CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, pool.map.capacity());
 
-    const ISerialization * raw = serialization.release();
     SerializationPtr ret
     (
-        raw,
+        creator(),
         [k = std::move(key)](const ISerialization * ptr)
         {
             auto & p = getPool();

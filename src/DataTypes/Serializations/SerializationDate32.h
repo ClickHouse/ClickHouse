@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Common/DateLUT.h>
 
 namespace DB
@@ -12,14 +11,12 @@ private:
     explicit SerializationDate32(const DateLUTImpl & time_zone_ = DateLUT::instance());
 
 public:
+    static UInt128 getHash(const DateLUTImpl & time_zone_);
+
     static SerializationPtr create(const DateLUTImpl & time_zone_ = DateLUT::instance())
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationDate32(time_zone_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate32(time_zone_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

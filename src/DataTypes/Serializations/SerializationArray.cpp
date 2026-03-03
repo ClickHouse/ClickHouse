@@ -30,11 +30,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-UInt128 SerializationArray::getHash() const
+UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Array");
-    hash.update(nested->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 

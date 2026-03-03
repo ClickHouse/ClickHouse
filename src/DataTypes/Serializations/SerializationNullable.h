@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -22,14 +21,12 @@ private:
     }
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
+
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
     }
-
-    UInt128 getHash() const override;
 
     const SerializationPtr & getNested() const { return nested; }
 

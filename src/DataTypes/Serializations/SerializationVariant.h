@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 
@@ -76,9 +75,9 @@ private:
     explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
 
 public:
-    static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
+    static UInt128 getHash(const String & variant_name_);
 
-    UInt128 getHash() const override;
+    static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

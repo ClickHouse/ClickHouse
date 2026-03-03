@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -26,22 +24,11 @@ private:
     }
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_);
+
     static SerializationPtr create(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update("DynamicElement");
-        hash.update(nested_serialization->getHash());
-        hash.update(dynamic_element_name);
-        hash.update(nested_subcolumn);
-        hash.update(is_null_map_subcolumn);
-        return hash.get128();
+        return ISerialization::pooled(getHash(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_), [&] { return new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_); });
     }
 
     void enumerateStreams(

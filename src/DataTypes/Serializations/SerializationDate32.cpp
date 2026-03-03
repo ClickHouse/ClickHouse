@@ -10,11 +10,11 @@
 namespace DB
 {
 
-UInt128 SerializationDate32::getHash() const
+UInt128 SerializationDate32::getHash(const DateLUTImpl & time_zone_)
 {
     SipHash hash;
     hash.update("Date32");
-    hash.update(time_zone.getTimeZone());
+    hash.update(time_zone_.getTimeZone());
     return hash.get128();
 }
 

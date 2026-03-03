@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -18,9 +17,9 @@ private:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
 public:
-    static SerializationPtr create(const DataTypePtr & dictionary_type);
+    static UInt128 getHash(const DataTypePtr & dictionary_type);
 
-    UInt128 getHash() const override;
+    static SerializationPtr create(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

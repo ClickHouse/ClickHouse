@@ -33,13 +33,13 @@ extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
-UInt128 SerializationQBit::getHash() const
+UInt128 SerializationQBit::getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
 {
     SipHash hash;
     hash.update("QBit");
-    hash.update(nested->getHash());
-    hash.update(element_size);
-    hash.update(dimension);
+    hash.update(nested_->getHash());
+    hash.update(element_size_);
+    hash.update(dimension_);
     return hash.get128();
 }
 

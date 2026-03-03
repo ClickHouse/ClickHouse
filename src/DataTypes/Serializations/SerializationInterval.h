@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 #include <DataTypes/DataTypeInterval.h>
 #include <Formats/FormatSettings.h>
@@ -16,14 +15,12 @@ private:
     explicit SerializationInterval(IntervalKind kind_);
 
 public:
+    static UInt128 getHash(IntervalKind kind_);
+
     static SerializationPtr create(IntervalKind kind_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationInterval(kind_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;

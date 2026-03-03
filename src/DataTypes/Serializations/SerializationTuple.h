@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -20,14 +19,13 @@ private:
     }
 
 public:
+    static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
+
     static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationTuple(std::move(elems_), has_explicit_names_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        auto hash = getHash(elems_, has_explicit_names_);
+        return ISerialization::pooled(hash, [elems = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(elems), has_explicit_names_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

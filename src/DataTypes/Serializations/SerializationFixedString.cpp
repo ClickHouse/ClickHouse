@@ -27,11 +27,11 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
-UInt128 SerializationFixedString::getHash() const
+UInt128 SerializationFixedString::getHash(size_t n_)
 {
     SipHash hash;
     hash.update("FixedString");
-    hash.update(n);
+    hash.update(n_);
     return hash.get128();
 }
 

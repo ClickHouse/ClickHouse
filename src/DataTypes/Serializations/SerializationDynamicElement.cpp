@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -18,6 +19,16 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+UInt128 SerializationDynamicElement::getHash(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_)
+{
+    SipHash hash;
+    hash.update("DynamicElement");
+    hash.update(nested_->getHash());
+    hash.update(dynamic_element_name_);
+    hash.update(nested_subcolumn_);
+    hash.update(is_null_map_subcolumn_);
+    return hash.get128();
+}
 
 struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::DeserializeBinaryBulkState
 {

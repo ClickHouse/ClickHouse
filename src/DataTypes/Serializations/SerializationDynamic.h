@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
@@ -18,14 +17,12 @@ private:
     }
 
 public:
+    static UInt128 getHash(size_t max_dynamic_types_);
+
     static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationDynamic(max_dynamic_types_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(max_dynamic_types_), [=] { return new SerializationDynamic(max_dynamic_types_); });
     }
-
-    UInt128 getHash() const override;
 
     struct SerializationVersion
     {

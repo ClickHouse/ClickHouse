@@ -13,7 +13,7 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
-UInt128 SerializationNothing::getHash() const
+UInt128 SerializationNothing::getHash()
 {
     SipHash hash;
     hash.update("Nothing");

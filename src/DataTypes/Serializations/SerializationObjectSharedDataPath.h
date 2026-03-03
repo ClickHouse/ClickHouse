@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 
@@ -15,25 +13,11 @@ private:
     SerializationObjectSharedDataPath(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket);
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket_);
+
     static SerializationPtr create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update("ObjectSharedDataPath");
-        hash.update(nested_serialization->getHash());
-        hash.update(static_cast<int>(serialization_version.value));
-        hash.update(path);
-        hash.update(path_subcolumn);
-        hash.update(dynamic_type->getName());
-        hash.update(subcolumn_type->getName());
-        hash.update(bucket);
-        return hash.get128();
+        return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket); });
     }
 
     void enumerateStreams(

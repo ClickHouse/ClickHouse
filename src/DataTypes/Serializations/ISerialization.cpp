@@ -48,6 +48,16 @@ void throwInvalidSerializationState(const ISerialization * serialization, const 
             demangle(got.name()));
 }
 
+SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
+{
+    return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *
+    {
+        auto * obj = c();
+        obj->cached_hash = hash;
+        return obj;
+    });
+}
+
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
 {
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))

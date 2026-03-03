@@ -21,11 +21,11 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 }
 
 
-UInt128 SerializationDetached::getHash() const
+UInt128 SerializationDetached::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Detached");
-    hash.update(nested->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 

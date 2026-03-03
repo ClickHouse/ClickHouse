@@ -26,12 +26,12 @@ SerializationDateTime64::SerializationDateTime64(
 {
 }
 
-UInt128 SerializationDateTime64::getHash() const
+UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & time_zone_)
 {
     SipHash hash;
     hash.update("DateTime64");
-    hash.update(scale);
-    hash.update(time_zone.getTimeZone());
+    hash.update(scale_);
+    hash.update(time_zone_.getTimeZone());
     return hash.get128();
 }
 

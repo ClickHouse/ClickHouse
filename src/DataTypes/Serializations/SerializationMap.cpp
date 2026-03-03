@@ -25,14 +25,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-UInt128 SerializationMap::getHash() const
+UInt128 SerializationMap::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Map");
-    /// We don't include the "key" and "value" in the hash
-    /// Hashing only Array(Tuple(key_type, value_type)) still
-    /// makes in unique and collision-free.
-    hash.update(nested->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -30,21 +28,11 @@ private:
     }
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+
     static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update("VariantElement");
-        hash.update(nested_serialization->getHash());
-        hash.update(variant_element_name);
-        hash.update(variant_discriminator);
-        return hash.get128();
+        return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_); });
     }
 
     void enumerateStreams(

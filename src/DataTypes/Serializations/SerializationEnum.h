@@ -2,8 +2,6 @@
 
 #include <memory>
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/EnumValues.h>
 #include <DataTypes/DataTypeEnum.h>
 
@@ -34,31 +32,16 @@ private:
     }
 
 public:
+    static UInt128 getHash(const Values & values);
+
     static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationEnum(enum_type));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
     }
 
     static SerializationPtr create(const Values & values_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationEnum(values_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update("Enum");
-        hash.update(TypeName<Type>);
-        for (const auto & [name, value] : ref_enum_values.getValues())
-        {
-            hash.update(name);
-            hash.update(value);
-        }
-        return hash.get128();
+        return ISerialization::pooled(getHash(values_), [&] { return new SerializationEnum(values_); });
     }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

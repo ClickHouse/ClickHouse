@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -53,14 +52,12 @@ private:
     }
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_);
+
     static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 

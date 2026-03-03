@@ -2,8 +2,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <base/TypeName.h>
 
 namespace DB
@@ -16,18 +14,11 @@ private:
     SerializationIP() = default;
 
 public:
+    static UInt128 getHash();
+
     static SerializationPtr create()
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationIP<IPv>());
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update(TypeName<IPv>);
-        return hash.get128();
+        return ISerialization::pooled(getHash(), [] { return new SerializationIP<IPv>(); });
     }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

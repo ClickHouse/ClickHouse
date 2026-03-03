@@ -15,12 +15,12 @@ namespace ErrorCodes
 }
 
 
-UInt128 SerializationObjectTypedPath::getHash() const
+UInt128 SerializationObjectTypedPath::getHash(const SerializationPtr & nested_, const String & path_)
 {
     SipHash hash;
     hash.update("ObjectTypedPath");
-    hash.update(nested_serialization->getHash());
-    hash.update(path);
+    hash.update(nested_->getHash());
+    hash.update(path_);
     return hash.get128();
 }
 

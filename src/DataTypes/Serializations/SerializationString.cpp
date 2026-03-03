@@ -30,11 +30,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-UInt128 SerializationString::getHash() const
+UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
 {
     SipHash hash;
     hash.update("String");
-    hash.update(static_cast<int>(version));
+    hash.update(static_cast<int>(version_));
     return hash.get128();
 }
 

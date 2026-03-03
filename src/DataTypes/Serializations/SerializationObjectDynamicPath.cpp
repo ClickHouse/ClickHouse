@@ -45,16 +45,16 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
 };
 
 
-UInt128 SerializationObjectDynamicPath::getHash() const
+UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_)
 {
     SipHash hash;
     hash.update("ObjectDynamicPath");
-    hash.update(nested_serialization->getHash());
-    hash.update(path);
-    hash.update(path_subcolumn);
-    hash.update(dynamic_serialization->getHash());
-    hash.update(dynamic_type->getName());
-    hash.update(subcolumn_type->getName());
+    hash.update(nested_->getHash());
+    hash.update(path_);
+    hash.update(path_subcolumn_);
+    hash.update(SerializationDynamic::getHash(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES));
+    hash.update(dynamic_type_->getName());
+    hash.update(subcolumn_type_->getName());
     return hash.get128();
 }
 

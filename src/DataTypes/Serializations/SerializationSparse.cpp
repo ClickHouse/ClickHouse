@@ -24,15 +24,15 @@ namespace ErrorCodes
 }
 
 
-UInt128 SerializationSparse::getHash() const
+UInt128 SerializationSparse::getHash(const SerializationPtr & nested_)
 {
     SipHash hash;
     hash.update("Sparse");
-    hash.update(nested->getHash());
+    hash.update(nested_->getHash());
     return hash.get128();
 }
 
-UInt128 SerializationSparseNullMap::getHash() const
+UInt128 SerializationSparseNullMap::getHash()
 {
     SipHash hash;
     hash.update("SparseNullMap");

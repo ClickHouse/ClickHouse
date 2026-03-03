@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,12 +38,12 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
 };
 
 
-UInt128 SerializationVariantElementNullMap::getHash() const
+UInt128 SerializationVariantElementNullMap::getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
 {
     SipHash hash;
     hash.update("VariantElementNullMap");
-    hash.update(variant_element_name);
-    hash.update(variant_discriminator);
+    hash.update(variant_element_name_);
+    hash.update(variant_discriminator_);
     return hash.get128();
 }
 

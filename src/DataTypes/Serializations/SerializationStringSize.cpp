@@ -14,11 +14,11 @@ SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVer
 }
 
 
-UInt128 SerializationStringSize::getHash() const
+UInt128 SerializationStringSize::getHash(MergeTreeStringSerializationVersion version_)
 {
     SipHash hash;
     hash.update("StringSize");
-    hash.update(static_cast<int>(version));
+    hash.update(static_cast<int>(version_));
     return hash.get128();
 }
 

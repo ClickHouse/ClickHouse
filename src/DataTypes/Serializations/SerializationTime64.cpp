@@ -32,11 +32,11 @@ SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /
 }
 
 
-UInt128 SerializationTime64::getHash() const
+UInt128 SerializationTime64::getHash(UInt32 scale_)
 {
     SipHash hash;
     hash.update("Time64");
-    hash.update(scale);
+    hash.update(scale_);
     return hash.get128();
 }
 

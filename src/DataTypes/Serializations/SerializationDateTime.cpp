@@ -20,15 +20,15 @@ namespace ErrorCodes
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-UInt128 SerializationDateTime::getHash() const
+UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
 {
     SipHash hash;
     hash.update("DateTime");
-    hash.update(time_zone.getTimeZone());
+    hash.update(time_zone_.getTimeZone());
     return hash.get128();
 }
 
-UInt128 SerializationTime::getHash() const
+UInt128 SerializationTime::getHash(const DataTypeTime & /*time_type*/)
 {
     SipHash hash;
     hash.update("Time");

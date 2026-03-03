@@ -11,7 +11,7 @@
 namespace DB
 {
 
-UInt128 SerializationUUID::getHash() const
+UInt128 SerializationUUID::getHash()
 {
     SipHash hash;
     hash.update("UUID");

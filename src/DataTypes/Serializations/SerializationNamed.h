@@ -1,6 +1,4 @@
 #pragma once
-#include <Common/SipHash.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -20,21 +18,11 @@ private:
     SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+
     static SerializationPtr create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationNamed(nested_, name_, substream_type_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
-    }
-
-    UInt128 getHash() const override
-    {
-        SipHash hash;
-        hash.update("Named");
-        hash.update(nested_serialization->getHash());
-        hash.update(name);
-        hash.update(static_cast<int>(substream_type));
-        return hash.get128();
+        return ISerialization::pooled(getHash(nested_, name_, substream_type_), [&] { return new SerializationNamed(nested_, name_, substream_type_); });
     }
 
     const String & getElementName() const { return name; }

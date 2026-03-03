@@ -26,13 +26,13 @@ namespace ErrorCodes
 }
 
 
-UInt128 SerializationAggregateFunction::getHash() const
+UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
 {
     SipHash hash;
     hash.update("AggregateFunction");
-    hash.update(function->getName());
-    hash.update(type_name);
-    hash.update(version);
+    hash.update(function_->getStateType()->getName());
+    hash.update(type_name_);
+    hash.update(version_);
     return hash.get128();
 }
 

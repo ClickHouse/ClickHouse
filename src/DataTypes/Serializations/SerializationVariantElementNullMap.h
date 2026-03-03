@@ -4,7 +4,6 @@
 #include <Columns/ColumnVariant.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
@@ -33,14 +32,12 @@ private:
     }
 
 public:
+    static UInt128 getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+
     static SerializationPtr create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_); });
     }
-
-    UInt128 getHash() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

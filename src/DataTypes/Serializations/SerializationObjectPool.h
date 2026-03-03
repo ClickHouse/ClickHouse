@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <functional>
 
 namespace DB
 {
@@ -10,7 +11,11 @@ namespace DB
 /// same type share one object.
 namespace SerializationObjectPool
 {
-    SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serialization);
+    using SerializationCreator = std::function<ISerialization *()>;
+
+    /// Look up the pool by key.  On cache miss the creator is called
+    /// (outside any pool lock) to build the object, which is then inserted.
+    SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator);
 }
 
 }

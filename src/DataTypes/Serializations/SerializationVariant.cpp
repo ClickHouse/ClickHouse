@@ -33,11 +33,11 @@ namespace ErrorCodes
 }
 
 
-UInt128 SerializationVariant::getHash() const
+UInt128 SerializationVariant::getHash(const String & variant_name_)
 {
     SipHash hash;
     hash.update("Variant");
-    hash.update(variant_name);
+    hash.update(variant_name_);
     return hash.get128();
 }
 
@@ -69,9 +69,7 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 
 SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const String & variant_name_)
 {
-    auto ptr = std::unique_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_name_));
-    auto hash = ptr->getHash();
-    return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+    return ISerialization::pooled(getHash(variant_name_), [&] { return new SerializationVariant(variant_types_, variant_name_); });
 }
 
 SerializationVariant::SerializationVariant(const DataTypes & variant_types_, const String & variant_name_) : variant_types(variant_types_), deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_)), variant_name(variant_name_)

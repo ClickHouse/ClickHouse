@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 
 namespace DB
@@ -19,14 +18,12 @@ private:
     }
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & path_);
+
     static SerializationPtr create(const SerializationPtr & nested_, const String & path_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectTypedPath(nested_, path_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(nested_, path_), [&] { return new SerializationObjectTypedPath(nested_, path_); });
     }
-
-    UInt128 getHash() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

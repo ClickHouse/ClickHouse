@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/TimezoneMixin.h>
 
@@ -14,14 +13,12 @@ private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
 
 public:
+    static UInt128 getHash(const TimezoneMixin & time_zone_);
+
     static SerializationPtr create(const TimezoneMixin & time_zone_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationDateTime(time_zone_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDateTime(time_zone_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -46,14 +43,12 @@ private:
     explicit SerializationTime(const DataTypeTime & /*time_type*/);
 
 public:
+    static UInt128 getHash(const DataTypeTime & time_type);
+
     static SerializationPtr create(const DataTypeTime & time_type)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationTime(time_type));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

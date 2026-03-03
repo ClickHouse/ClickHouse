@@ -25,11 +25,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationDynamic::getHash() const
+UInt128 SerializationDynamic::getHash(size_t max_dynamic_types_)
 {
     SipHash hash;
     hash.update("Dynamic");
-    hash.update(max_dynamic_types);
+    hash.update(max_dynamic_types_);
     return hash.get128();
 }
 

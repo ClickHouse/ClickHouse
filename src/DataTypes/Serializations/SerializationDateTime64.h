@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/TimezoneMixin.h>
 
 namespace DB
@@ -13,14 +12,12 @@ private:
     SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_);
 
 public:
+    static UInt128 getHash(UInt32 scale_, const TimezoneMixin & time_zone_);
+
     static SerializationPtr create(UInt32 scale_, const TimezoneMixin & time_zone_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationDateTime64(scale_, time_zone_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 
 namespace DB
 {
@@ -30,14 +29,12 @@ private:
     explicit SerializationSparse(const SerializationPtr & nested_);
 
 public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+
     static SerializationPtr create(const SerializationPtr & nested_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationSparse(nested_));
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(nested_), [&] { return new SerializationSparse(nested_); });
     }
-
-    UInt128 getHash() const override;
 
     KindStack getKindStack() const override;
 
@@ -150,14 +147,12 @@ private:
 public:
     using Base = SerializationNumber<UInt8>;
 
+    static UInt128 getHash();
+
     static SerializationPtr create()
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationSparseNullMap());
-        auto hash = ptr->getHash();
-        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
+        return ISerialization::pooled(getHash(), [] { return new SerializationSparseNullMap(); });
     }
-
-    UInt128 getHash() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,

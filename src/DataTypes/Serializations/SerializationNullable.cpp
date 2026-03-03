@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
@@ -25,12 +26,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationNullable::getHash() const
+UInt128 SerializationNullable::getHash(const SerializationPtr & nested_, bool use_default_null_map_)
 {
     SipHash hash;
     hash.update("Nullable");
-    hash.update(nested->getHash());
-    hash.update(use_default_null_map);
+    hash.update(nested_->getHash());
+    hash.update(use_default_null_map_);
     return hash.get128();
 }
 
