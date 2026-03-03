@@ -1,12 +1,13 @@
-#include <Interpreters/ITokenizer.h>
-#include <Common/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include <Common/StringUtils.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/Settings.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -14,8 +15,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <Common/OptimizedRegularExpression.h>
-#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
