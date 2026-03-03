@@ -1071,7 +1071,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-
+            {"replicated_fetches_min_part_level", 0, 0, "New setting"},
+            {"replicated_fetches_min_part_level_timeout_sec", 300, 300, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
