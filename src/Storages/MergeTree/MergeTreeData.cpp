@@ -7388,20 +7388,24 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
 PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
     if (auto num_asts = asts.size(); !num_asts)
-        return PartitionIds { };
+    {
+        /// unlikely possible
+        return PartitionIds{};
+    }
     else if (num_asts == 1)
     {
         const auto & ast = asts.front();
         return PartitionIds{getPartitionIDFromQuery(ast, local_context)};
     }
     else
-    {   /// add all elements all together to avoid moves inside plain_set
+    {
+        /// add all elements all together to avoid moves inside plain_set
         std::vector<String> area;
         area.reserve(num_asts);
         for (const auto & ast : asts)
             area.push_back(getPartitionIDFromQuery(ast, local_context));
 
-        return PartitionIds(area.begin(), area.end());
+        return PartitionIds{area.begin(), area.end()};
     }
 }
 
@@ -7409,14 +7413,14 @@ PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
     if (auto num_cmds = commands.size(); !num_cmds)
-        return PartitionIds { };
+        return PartitionIds{};
     else if (num_cmds == 1)
     {
         const auto & command = commands.front();
         if (!command.partition)
-            return PartitionIds { };
+            return PartitionIds{};
         else
-            return PartitionIds {getPartitionIDFromQuery(command.partition, query_context)};
+            return PartitionIds{getPartitionIDFromQuery(command.partition, query_context)};
     }
     else
     {
@@ -7426,12 +7430,12 @@ PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
         for (const auto & command : commands)
         {
             if (!command.partition)
-                return PartitionIds { };
+                return PartitionIds{};
 
             area.push_back(getPartitionIDFromQuery(command.partition, query_context));
         }
 
-        return PartitionIds {area.begin(), area.end()};
+        return PartitionIds{area.begin(), area.end()};
     }
 }
 

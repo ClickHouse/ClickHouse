@@ -1041,13 +1041,11 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        // auto versions_it = part_versions.begin();
         const PartVersionWithPartitionIdAndName needle{static_cast<Int64>(mutation_version), "", ""};
-        auto versions_it = std::lower_bound(
+        auto versions_end_it = std::lower_bound(
             part_versions.begin(), part_versions.end(), needle, lessVersion);
 
-
-        for (; versions_it != part_versions.end() && versions_it->version < static_cast<Int64>(mutation_version); ++versions_it)
+        for (auto versions_it = part_versions.begin(); versions_it != versions_end_it; ++versions_it)
         {
             if (entry.affectsPartition(versions_it->partition_id))
             {
