@@ -34,4 +34,21 @@ REGISTER_FUNCTION(ActionName)
     factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
+REGISTER_FUNCTION(AliasMarker)
+{
+    factory.registerFunction<FunctionAliasMarker>(FunctionDocumentation{
+        .description = R"(
+Internal function that marks ALIAS column expressions for the analyzer. Not intended for direct use.
+)",
+        .syntax = {"__aliasMarker(expr, alias_name)"},
+        .arguments = {
+            {"expr", "Expression to mark.", {"Any"}},
+            {"alias_name", "Alias name attached to the expression.", {"String"}},
+        },
+        .returned_value = {"Returns expr unchanged.", {"Any"}},
+        .introduced_in = {25, 8},
+        .category = FunctionDocumentation::Category::Other,
+    });
+}
+
 }

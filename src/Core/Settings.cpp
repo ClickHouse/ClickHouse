@@ -2337,6 +2337,11 @@ Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specif
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
     \
+    DECLARE(Bool, enable_alias_marker, true, R"(
+Enable __aliasMarker injection for ALIAS column expressions when using the analyzer.
+This stabilizes action node names across planner/analyzer stages without changing query semantics.
+)", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -7503,6 +7508,12 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_hybrid_table, false, R"(
+Allows creation of tables with the [Hybrid](../../engines/table-engines/special/hybrid.md) table engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, hybrid_table_auto_cast_columns, true, R"(
+Automatically cast columns to the schema defined in Hybrid tables when remote segments expose different physical types. Works only with analyzer. Enabled by default, does nothing if (experimental) Hybrid tables are disabled; disable it if it causes issues. Segment schemas are cached when the Hybrid table is created or attached; if a segment schema changes later, detach/attach or recreate the Hybrid table so the cached headers stay in sync.
+)", 0) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \

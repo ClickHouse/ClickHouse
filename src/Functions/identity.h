@@ -103,4 +103,38 @@ public:
     }
 };
 
+struct AliasMarkerName
+{
+    static constexpr auto name = "__aliasMarker";
+};
+
+class FunctionAliasMarker : public IFunction
+{
+public:
+    static constexpr auto name = AliasMarkerName::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAliasMarker>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker expects 2 arguments");
+
+        if (!WhichDataType(arguments[1]).isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+
+        return arguments.front();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        return arguments.front().column;
+    }
+};
+
 }

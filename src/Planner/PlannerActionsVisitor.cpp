@@ -16,6 +16,7 @@
 #include <Analyzer/WindowNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 
@@ -184,7 +185,25 @@ public:
             case QueryTreeNodeType::FUNCTION:
             {
                 const auto & function_node = node->as<FunctionNode &>();
-                if (function_node.getFunctionName() == "__actionName")
+                if (function_node.getFunctionName() == "__aliasMarker")
+                {
+                    /// Perform sanity check, because user may call this function with unexpected arguments
+                    const auto & function_argument_nodes = function_node.getArguments().getNodes();
+                    if (function_argument_nodes.size() == 2)
+                    {
+                        if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
+                        {
+                            if (isString(second_argument->getResultType()))
+                                result = second_argument->getValue().safeGet<String>();
+                        }
+                    }
+
+                    /// Empty node name is not allowed and leads to logical errors
+                    if (result.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+                    break;
+                }
+                else if (function_node.getFunctionName() == "__actionName")
                 {
                     /// Perform sanity check, because user may call this function with unexpected arguments
                     const auto & function_argument_nodes = function_node.getArguments().getNodes();
@@ -379,7 +398,7 @@ public:
             }
             default:
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {}", node->formatASTForErrorMessage());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {} (node_type: {})", node->formatASTForErrorMessage(), static_cast<int>(node_type));
             }
         }
 
@@ -627,6 +646,18 @@ public:
             return it->second;
 
         const auto * node = &actions_dag.addArrayJoin(*child, node_name);
+        node_name_to_node[node->result_name] = node;
+
+        return node;
+    }
+
+    const ActionsDAG::Node * addAliasIfNecessary(const std::string & node_name, const ActionsDAG::Node * child)
+    {
+        auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addAlias(*child, node_name);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -1101,6 +1132,38 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+
+    if (function_node.getFunctionName() == "__aliasMarker")
+    {
+        const auto & function_arguments = function_node.getArguments().getNodes();
+        if (function_arguments.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker expects 2 arguments");
+
+        const auto * alias_id_node = function_arguments.at(1)->as<ConstantNode>();
+        if (!alias_id_node || !isString(alias_id_node->getResultType()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+
+        const auto & alias_id = alias_id_node->getValue().safeGet<String>();
+        if (alias_id.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+
+        auto [child_name, levels] = visitImpl(function_arguments.at(0));
+        if (alias_id == child_name)
+            return {child_name, levels};
+
+        size_t level = levels.max();
+        const auto * child_node = actions_stack[level].getNodeOrThrow(child_name);
+        actions_stack[level].addAliasIfNecessary(alias_id, child_node);
+
+        size_t actions_stack_size = actions_stack.size();
+        for (size_t i = level + 1; i < actions_stack_size; ++i)
+        {
+            auto & actions_stack_node = actions_stack[i];
+            actions_stack_node.addInputColumnIfNecessary(alias_id, function_node.getResultType());
+        }
+
+        return {alias_id, levels};
+    }
 
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
