@@ -58,8 +58,8 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
 {
-    return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value, lhs->added_sequence_number)
-        <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->added_sequence_number);
+    return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value, lhs->sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->sequence_number);
 }
 
 String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
@@ -108,7 +108,7 @@ String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
         dumpPartitionSpecification(*common_partition_specification),
         dumpPartitionKeyValue(parsed_entry->partition_key_value),
-        added_sequence_number);
+        sequence_number);
 }
 }
 

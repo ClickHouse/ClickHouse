@@ -38,9 +38,9 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
-          data_manifest_file_entry_->schema_id,
+          data_manifest_file_entry_->resolved_schema_id,
           schema_id_relevant_to_iterator_,
-          data_manifest_file_entry_->added_sequence_number,
+          data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {}}
@@ -85,7 +85,7 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
         equality_delete_object->file_path,
         equality_delete_object->parsed_entry->file_format,
         equality_delete_object->parsed_entry->equality_ids,
-        equality_delete_object->schema_id);
+        equality_delete_object->resolved_schema_id);
 }
 
 #endif

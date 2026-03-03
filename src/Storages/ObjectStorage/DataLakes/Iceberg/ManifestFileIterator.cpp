@@ -325,9 +325,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
 
     Int64 resolved_snapshot_id;
-    if (parsed_entry->written_snapshot_id.has_value())
+    if (parsed_entry->parsed_snapshot_id.has_value())
     {
-        resolved_snapshot_id = *parsed_entry->written_snapshot_id;
+        resolved_snapshot_id = *parsed_entry->parsed_snapshot_id;
     }
     else if (parsed_entry->status == ManifestEntryStatus::EXISTING)
     {
@@ -365,13 +365,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     Int64 resolved_sequence_number = 0;
     if (format_version > 1)
     {
-        if (parsed_entry->written_sequence_number.has_value())
+        if (parsed_entry->parsed_sequence_number.has_value())
         {
-            resolved_sequence_number = *parsed_entry->written_sequence_number;
+            resolved_sequence_number = *parsed_entry->parsed_sequence_number;
         }
         else if (parsed_entry->status == ManifestEntryStatus::EXISTING)
         {
-            if (!parsed_entry->written_sequence_number.has_value())
+            if (!parsed_entry->parsed_sequence_number.has_value())
                 throw Exception(
                     DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Data sequence number is null for the file added in another snapshot");
         }
@@ -382,7 +382,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
-        parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_snapshot_id, resolved_schema_id);
+        parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_schema_id);
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
@@ -422,7 +422,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             }
         }
 
-        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->schema_id);
+        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
     insertRowToLogTable(

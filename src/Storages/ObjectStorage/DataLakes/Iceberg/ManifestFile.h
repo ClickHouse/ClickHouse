@@ -73,8 +73,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 row_number;
 
     ManifestEntryStatus status;
-    std::optional<Int64> written_sequence_number;
-    std::optional<Int64> written_snapshot_id;
+    std::optional<Int64> parsed_sequence_number;
+    std::optional<Int64> parsed_snapshot_id;
 
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
@@ -107,8 +107,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
         , status(status_)
-        , written_sequence_number(written_sequence_number_)
-        , written_snapshot_id(written_snapshot_id_)
+        , parsed_sequence_number(written_sequence_number_)
+        , parsed_snapshot_id(written_snapshot_id_)
         , partition_key_value(std::move(partition_key_value_))
         , columns_infos(std::move(columns_infos_))
         , value_bounds(std::move(value_bounds_))
@@ -130,9 +130,8 @@ struct ProcessedManifestFileEntry
     String file_path;
 
     // Always zero in case of format version 1
-    Int64 added_sequence_number;
-    Int64 added_snapshot_id;
-    Int32 schema_id;
+    Int64 sequence_number;
+    Int32 resolved_schema_id;
 
     String dumpDeletesMatchingInfo() const;
 };
