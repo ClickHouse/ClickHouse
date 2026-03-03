@@ -338,10 +338,15 @@ Unlike the `tokens` function, this function is aware of LIKE pattern semantics
 (such as leading and trailing wildcard characters) and applies tokenizer-specific
 rules to extract meaningful tokens for pattern matching.
 
+It supports the same argument sets as the `tokens` function; additional
+arguments after `tokenizer` are interpreted according to the selected
+tokenizer (for example, `n` for `ngrams`, `separators` for `splitByString`,
+and `min_length` / `max_length` [/ `min_cutoff_length`] for `sparseGrams`).
+
 This function is primarily intended for debugging and testing purposes,
 and is used internally to analyze tokenization behavior for LIKE patterns.
 )";
-        FunctionDocumentation::Syntax syntax_like = "tokensForLikePattern(value[, tokenizer[, ngrams[, separators]]])";
+        FunctionDocumentation::Syntax syntax_like = "tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])";
         FunctionDocumentation::Examples examples_like = {
             {
                 "Default tokenizer",

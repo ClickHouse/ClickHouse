@@ -210,6 +210,7 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
     {
         if (!escaped && (data[pos] == '%' || data[pos] == '_'))
         {
+            /// Unescaped wildcard: invalidates current token
             token.clear();
             bad_token = true;
             ++pos;
@@ -221,9 +222,10 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
         }
         else if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
         {
+            /// Non-alphanumeric ASCII is a separator (including escaped \_ and \%)
             if (!bad_token && !token.empty())
             {
-                ++pos;
+                ++pos; /// consume separator before returning
                 return true;
             }
 
