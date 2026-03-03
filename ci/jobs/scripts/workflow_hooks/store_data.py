@@ -31,9 +31,7 @@ if __name__ == "__main__":
         )
         commits = raw.splitlines()
 
-        for sha in commits:
-            if sha == info.sha:
-                break
+        while commits and commits[0] != info.sha:
             commits.pop(0)
 
         info.store_kv_data("master_track_commits_sha", commits)
@@ -49,7 +47,7 @@ if __name__ == "__main__":
             master_parent_commits = [
                 s.strip()
                 for s in Shell.get_output(
-                    f"git rev-list --max-count=30 {master_parent}", verbose=True
+                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
                 ).splitlines()
                 if len(s.strip()) == 40
             ]
