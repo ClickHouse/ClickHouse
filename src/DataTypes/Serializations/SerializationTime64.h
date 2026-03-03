@@ -21,13 +21,15 @@ public:
     static SerializationPtr create(UInt32 scale_)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationTime64(scale_));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     static SerializationPtr create(UInt32 scale_, const DataTypeTime64 & time_type)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationTime64(scale_, time_type));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override;

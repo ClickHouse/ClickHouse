@@ -29,7 +29,8 @@ public:
     static SerializationPtr create(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override

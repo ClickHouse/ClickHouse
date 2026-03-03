@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <Formats/JSONExtractTree.h>
 #include <Common/ObjectPool.h>
@@ -18,6 +17,7 @@ private:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
+        size_t max_dynamic_paths_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_);
 
 public:
@@ -26,10 +26,14 @@ public:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
+        size_t max_dynamic_paths_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
     {
-        auto ptr = std::unique_ptr<ISerialization>(new SerializationJSON(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, std::move(json_extract_tree_)));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        /// We intentionally do NOT pool SerializationJSON objects. The json_extract_tree
+        /// contains mutable caches (DynamicNode::json_extract_nodes_cache, variants_order_cache)
+        /// that accumulate state per-use. Sharing these across queries via the pool leads to
+        /// incorrect behaviour (e.g. timezone mismatches in cached DateTimeNode objects).
+        return std::shared_ptr<ISerialization>(new SerializationJSON(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, max_dynamic_paths_, std::move(json_extract_tree_)));
     }
 
     UInt128 getHash() const override;
@@ -57,6 +61,7 @@ public:
 private:
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
 
+    size_t max_dynamic_paths;
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree;
     /// Pool of parser objects to make SerializationJSON thread safe.
     mutable SimpleObjectPool<Parser> parsers_pool;

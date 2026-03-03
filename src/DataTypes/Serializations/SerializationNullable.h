@@ -25,7 +25,8 @@ public:
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override;

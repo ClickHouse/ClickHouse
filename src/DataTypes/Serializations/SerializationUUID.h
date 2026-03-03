@@ -15,7 +15,8 @@ public:
     static SerializationPtr create()
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationUUID());
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override;

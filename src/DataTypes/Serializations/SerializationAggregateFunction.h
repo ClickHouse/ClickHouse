@@ -24,7 +24,8 @@ public:
     static SerializationPtr create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationAggregateFunction(function_, type_name_, version_));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override;

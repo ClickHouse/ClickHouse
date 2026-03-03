@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SharedMutex.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <mutex>
@@ -17,23 +18,39 @@ namespace DB
 namespace SerializationObjectPool
 {
 
+struct Pool
+{
+    SharedMutex mutex;
+    absl::flat_hash_map<UInt128, std::weak_ptr<const ISerialization>> map;
+};
+
+/// Intentionally leaked to avoid static destruction order issues: the custom
+/// shared_ptr deleters reference the pool, but those deleters can fire from
+/// any thread (including during thread_local / static destruction of caches
+/// such as DataTypesCache or ColumnObject's getDynamicSerialization).  If the
+/// pool were a regular static it could already be destroyed at that point.
+Pool & getPool()
+{
+    static Pool * pool = new Pool;
+    return *pool;
+}
+
 SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serialization)
 {
-    static std::shared_mutex columns_description_pool_mutex;
-    static absl::flat_hash_map<UInt128, std::weak_ptr<const ISerialization>> columns_description_pool;
+    auto & pool = getPool();
 
     {
-        std::shared_lock<std::shared_mutex> read_lock(columns_description_pool_mutex);
-        auto it = columns_description_pool.find(key);
-        if (it != columns_description_pool.end())
+        std::shared_lock read_lock(pool.mutex);
+        auto it = pool.map.find(key);
+        if (it != pool.map.end())
         {
             if (auto res = it->second.lock())
                 return res;
         }
     }
 
-    std::unique_lock<std::shared_mutex> write_lock(columns_description_pool_mutex);
-    auto [it, inserted] = columns_description_pool.emplace(key, std::weak_ptr<const ISerialization>());
+    std::unique_lock write_lock(pool.mutex);
+    auto [it, inserted] = pool.map.emplace(key, std::weak_ptr<const ISerialization>());
     if (!inserted)
     {
         if (auto res = it->second.lock())
@@ -41,7 +58,7 @@ SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serializatio
     }
 
     CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
-    CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, columns_description_pool.capacity());
+    CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, pool.map.capacity());
 
     const ISerialization * raw = serialization.release();
     SerializationPtr ret
@@ -49,11 +66,16 @@ SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serializatio
         raw,
         [k = std::move(key)](const ISerialization * ptr)
         {
+            auto & p = getPool();
             {
-                std::unique_lock<std::shared_mutex> lock(columns_description_pool_mutex);
-                columns_description_pool.erase(k);
-                CurrentMetrics::sub(CurrentMetrics::SerializationCacheCount);
-                CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, columns_description_pool.capacity());
+                std::unique_lock lock(p.mutex);
+                auto map_it = p.map.find(k);
+                if (map_it != p.map.end() && map_it->second.expired())
+                {
+                    p.map.erase(map_it);
+                    CurrentMetrics::sub(CurrentMetrics::SerializationCacheCount);
+                    CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, p.map.capacity());
+                }
             }
             delete ptr;
         }
@@ -65,4 +87,3 @@ SerializationPtr getOrCreate(UInt128 key, SerializationUniquePtr && serializatio
 }
 
 }
-

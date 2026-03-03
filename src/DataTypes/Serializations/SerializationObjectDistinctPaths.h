@@ -23,7 +23,8 @@ public:
     static SerializationPtr create(const std::vector<String> & typed_paths_)
     {
         auto ptr = std::unique_ptr<ISerialization>(new SerializationObjectDistinctPaths(typed_paths_));
-        return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+        auto hash = ptr->getHash();
+        return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
     }
 
     UInt128 getHash() const override;

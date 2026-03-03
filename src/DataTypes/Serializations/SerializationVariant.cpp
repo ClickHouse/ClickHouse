@@ -70,7 +70,8 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const String & variant_name_)
 {
     auto ptr = std::unique_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_name_));
-    return SerializationObjectPool::getOrCreate(ptr->getHash(), std::move(ptr));
+    auto hash = ptr->getHash();
+    return SerializationObjectPool::getOrCreate(hash, std::move(ptr));
 }
 
 SerializationVariant::SerializationVariant(const DataTypes & variant_types_, const String & variant_name_) : variant_types(variant_types_), deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_)), variant_name(variant_name_)

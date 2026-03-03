@@ -25,8 +25,10 @@ SerializationJSON<Parser>::SerializationJSON(
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
+    size_t max_dynamic_paths_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
     : SerializationObject(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
+    , max_dynamic_paths(max_dynamic_paths_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -390,6 +392,7 @@ UInt128 SerializationJSON<Parser>::getHash() const
     for (const auto & path : path_regexps_to_skip)
         hash.update(path.pattern());
 
+    hash.update(max_dynamic_paths);
     hash.update(dynamic_type->getName());
     return hash.get128();
 }
