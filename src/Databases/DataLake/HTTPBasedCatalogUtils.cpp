@@ -3,10 +3,17 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -21,6 +28,10 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & method,
     std::function<void(std::ostream &)> out_stream_callaback)
 {
+    fiu_do_on(FailPoints::check_database_datalake_negative, {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database during catalog HTTP request");
+    });
+
     Poco::URI url(endpoint);
     if (!params.empty())
         url.setQueryParameters(params);

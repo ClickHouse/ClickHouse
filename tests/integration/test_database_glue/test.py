@@ -833,6 +833,14 @@ def test_check_database(started_cluster):
     # Run CHECK DATABASE and verify it completes without error
     node.query(f"CHECK DATABASE {CATALOG_NAME}")
 
+    node.query(
+        f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+    )
+
+    assert "fault when checking database" in node.query_and_get_error(
+        f"CHECK DATABASE {CATALOG_NAME}"
+    )
+
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
     node = started_cluster.instances["node1"]

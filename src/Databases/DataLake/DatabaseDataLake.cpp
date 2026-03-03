@@ -108,12 +108,6 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char check_database_datalake_negative[];
 }
 
 namespace FailPoints
@@ -877,9 +871,6 @@ void DatabaseDataLake::checkDatabase() const
     /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
     std::ignore = catalog->empty();
 
-    fiu_do_on(FailPoints::check_database_datalake_negative, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database '{}'", getDatabaseName());
-    });
 
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }

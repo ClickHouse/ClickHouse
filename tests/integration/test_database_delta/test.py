@@ -241,6 +241,14 @@ def test_check_database_unity(started_cluster):
     # Run CHECK DATABASE - should succeed without errors
     node1.query(f"CHECK DATABASE {db_name}")
 
+    node1.query(
+        f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+    )
+
+    assert "fault when checking database" in node1.query_and_get_error(
+        f"CHECK DATABASE {db_name}"
+    )
+
 
 def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
