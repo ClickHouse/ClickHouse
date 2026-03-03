@@ -420,6 +420,15 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
+enum class ParameterizedViewSchemaDefinitionMode : uint8_t
+{
+    OFF,
+    INSECURE,
+    THROWING,
+};
+
+DECLARE_SETTING_ENUM(ParameterizedViewSchemaDefinitionMode)
+
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
     NONE,

@@ -7634,6 +7634,28 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
+    DECLARE(ParameterizedViewSchemaDefinitionMode, use_declared_schema_for_parameterized_views, ParameterizedViewSchemaDefinitionMode::OFF, R"(
+Allow to show schemas declared in parameterized views.
+
+For example:
+
+```
+SET use_declared_schema_for_parameterized_views = 'insecure';
+CREATE VIEW first_n_numbers (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+
+SHOW COLUMNS IN first_n_numbers
+```
+returns
+```
+
+Possible values:
+
+ - 'off' - don't materialize declared parametrized view schema. Default.
+ - 'insecure' - schemas are materialized, but not checked.
+ - 'throwing' - declared and actual schemas are checked after parameters substitiutution and if they don't fit -- throw an error.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
