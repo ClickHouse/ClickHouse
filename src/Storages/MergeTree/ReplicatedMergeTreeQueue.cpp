@@ -36,6 +36,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
     extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level;
+    extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level_timeout_sec;
 }
 
 namespace ErrorCodes
@@ -1685,10 +1686,27 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             const auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
             if (part_info.level < min_level)
             {
-                out_postpone_reason = fmt::format(
-                    "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
-                    entry.new_part_name, part_info.level, min_level);
-                return false;
+                const auto timeout_sec = (*data.getSettings())[MergeTreeSetting::replicated_fetches_min_part_level_timeout_sec];
+                if (timeout_sec > 0 && entry.create_time > 0)
+                {
+                    auto elapsed = time(nullptr) - entry.create_time;
+                    if (elapsed < static_cast<time_t>(timeout_sec))
+                    {
+                        auto remaining = static_cast<time_t>(timeout_sec) - elapsed;
+                        out_postpone_reason = fmt::format(
+                            "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}"
+                            " ({} seconds remaining until force fetch)",
+                            entry.new_part_name, part_info.level, min_level, remaining);
+                        return false;
+                    }
+                }
+                else
+                {
+                    out_postpone_reason = fmt::format(
+                        "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
+                        entry.new_part_name, part_info.level, min_level);
+                    return false;
+                }
             }
         }
     }
