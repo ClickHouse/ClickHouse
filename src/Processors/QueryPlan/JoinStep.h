@@ -68,15 +68,12 @@ private:
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
-    std::string join_readable_relation_name;
 
     JoinPtr join;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
-    size_t locality;
-    size_t result_rows;
 
     const NameSet required_output;
     std::set<size_t> columns_to_remove;
