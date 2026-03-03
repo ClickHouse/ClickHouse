@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -219,6 +220,9 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
     if (settings.pretty)
     {
+        if (!join_readable_relation_name.empty())
+            settings.out << prefix << join_readable_relation_name << '\n';
+
         settings.out << prefix;
         for (size_t i = 0; settings.pretty && i < inline_count; ++i)
         {
@@ -228,6 +232,10 @@ void JoinStep::describeActions(FormatSettings & settings) const
             settings.out << name << ": " << value;
         }
         settings.out << '\n';
+        settings.out << prefix << "ResultRows: "
+        << (result_rows_estimation ? toString(*result_rows_estimation) : "unknown") << '\n';
+
+        settings.out << prefix << "Locality: " << toString(locality) << '\n';
     }
 
     for (size_t i = inline_count; i < description.size(); ++i)
@@ -281,6 +289,13 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     swap_streams = swap_streams_;
     join = std::move(join_);
     updateOutputHeader();
+}
+
+void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
+{
+    join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
+    result_rows_estimation = logical_join_info.result_rows_estimation;
+    locality = logical_join_info.locality;
 }
 
 void JoinStep::updateOutputHeader()

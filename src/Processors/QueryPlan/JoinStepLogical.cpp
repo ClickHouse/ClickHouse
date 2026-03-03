@@ -907,7 +907,6 @@ static void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
-
 static void constructPhysicalStep(
     QueryPlanNode & node,
     ActionsDAG left_pre_join_actions,
@@ -949,7 +948,8 @@ static void constructPhysicalStep(
     const QueryPlanOptimizationSettings & optimization_settings,
     const JoinSettings & join_settings,
     const SortingStep::Settings & sorting_settings,
-    QueryPlan::Nodes & nodes)
+    QueryPlan::Nodes & nodes,
+    LogicalJoinInfo && logical_join_info)
 {
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
@@ -980,6 +980,7 @@ static void constructPhysicalStep(
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
         false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
+    join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
     join_step->setOptimized();
     node.step = std::move(join_step);
@@ -1002,7 +1003,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SortingStep::Settings sorting_settings,
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
-    QueryPlan::Nodes & nodes)
+    QueryPlan::Nodes & nodes,
+    LogicalJoinInfo && logical_join_info)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
@@ -1301,7 +1303,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         constructPhysicalStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
-            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes);
+            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes, std::move(logical_join_info));
     }
     else
     {
@@ -1322,7 +1324,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
             std::move(join_algorithm_ptr),
             join_settings,
-            nodes);
+            nodes
+        );
     }
     return node;
 }
@@ -1372,6 +1375,12 @@ void JoinStepLogical::buildPhysicalJoin(
         }
     }
 
+    LogicalJoinInfo logical_join_info{
+        .readable_relation_name = join_step->getReadableRelationName(),
+        .result_rows_estimation = join_step->result_rows_estimation,
+        .locality = join_step->join_operator.locality
+    };
+
     auto new_node = buildPhysicalJoinImpl(
         node.children,
         join_step->join_operator,
@@ -1381,7 +1390,9 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->sorting_settings,
         join_step->actions_after_join,
         optimization_settings,
-        nodes);
+        nodes,
+        std::move(logical_join_info)
+    );
 
     node = std::move(new_node);
 }

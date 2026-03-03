@@ -209,6 +209,7 @@ protected:
     TemporaryDataOnDiskScopePtr tmp_data;
 
 private:
+
     bool disjunctions_optimization_applied = false;
 };
 
