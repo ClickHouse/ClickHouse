@@ -758,9 +758,6 @@ bool KeeperServer::isExceedingMemorySoftLimit() const
 
 KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
 {
-    if (!raft_instance->is_leader())
-        return {};
-
     return raft_instance->getRespondingCounts();
 }
 
@@ -1318,12 +1315,19 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
     result.is_follower = !result.is_leader && !result.is_observer;
     result.has_leader = result.is_leader || isLeaderAlive();
-    auto counts = getRespondingCounts();
-    result.is_standalone = !result.is_follower && counts.followers == 0;
-    result.learner_count = counts.learners;
-    result.follower_count = counts.followers;
-    result.synced_follower_count = counts.synced_followers;
-    result.synced_non_voting_follower_count = counts.synced_non_voting_followers;
+    result.learner_count = 0;
+    result.follower_count = 0;
+    result.synced_follower_count = 0;
+    result.synced_non_voting_follower_count = 0;
+    if (result.is_leader)
+    {
+        auto counts = getRespondingCounts();
+        result.learner_count = counts.learners;
+        result.follower_count = counts.followers;
+        result.synced_follower_count = counts.synced_followers;
+        result.synced_non_voting_follower_count = counts.synced_non_voting_followers;
+    }
+    result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     return result;
 }
