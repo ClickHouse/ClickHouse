@@ -8156,6 +8156,27 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
+    DECLARE(ParameterizedViewSchemaDefinitionMode, use_declared_schema_for_parameterized_views, ParameterizedViewSchemaDefinitionMode::OFF, R"(
+Allow to show schemas declared in parameterized views.
+
+For example:
+
+```
+SET use_declared_schema_for_parameterized_views = 'insecure';
+CREATE VIEW first_n_numbers (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+
+SHOW COLUMNS IN first_n_numbers
+```
+returns
+```
+
+Possible values:
+
+ - 'off' - don't materialize declared parametrized view schema. Default.
+ - 'insecure' - schemas are materialized, but not checked.
+ - 'throwing' - declared and actual schemas are checked after parameters substitiutution and if they don't fit -- throw an error.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
