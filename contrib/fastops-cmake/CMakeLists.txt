@@ -1,4 +1,5 @@
-if((ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
+# ops_plain.cpp uses exp10 and exp10f which are GNU extensions and not available in FreeBSD
+if((ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)) AND NOT OS_FREEBSD)
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 elseif(ENABLE_FASTOPS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 and aarch64 (with NEON) only")
