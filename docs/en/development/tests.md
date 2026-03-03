@@ -14,7 +14,7 @@ doc_type: 'guide'
 There are following tests in ClickHouse:
 - [Functional tests](#functional-tests) - a set of queries and scripts which include the following intersecting subsets
   - [Fast test](#running-fast-tests) - the minimal subset
-  - [Stateless tests](#running-stateless-tests) which do not require populating databased with data
+  - [Stateless tests](#running-stateless-tests) which do not require populating databases with data
   - Sequential tests which cannot be run in parallel
 - [Integration tests](#integration-tests), run by `pytest` in a cluster
 - [Unit tests](#unit-tests)
