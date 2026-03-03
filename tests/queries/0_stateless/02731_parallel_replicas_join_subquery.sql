@@ -58,7 +58,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -90,7 +90,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -192,7 +192,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (
@@ -241,7 +241,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
 WHERE
-      event_date >= yesterday()
+      event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id IN
       (

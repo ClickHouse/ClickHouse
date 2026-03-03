@@ -1530,7 +1530,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
                     for (uint32_t i = 0; i < nclauses; i++)
                     {
-                        addWhereSide(rg, available_cols, elist->mutable_expr());
+                        addWhereSide(rg, available_cols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
                     }
                 }
                 else
@@ -1941,13 +1941,17 @@ void StatementGenerator::generateOrderBy(
                     {
                         generateExpression(rg, eowf->mutable_staleness_expr());
                     }
-                    if (rg.nextSmallNumber() < 4)
+                    /// STALENESS is mutually exclusive with TO/STEP
+                    if (nopt < 4 || nopt >= 7)
                     {
-                        generateExpression(rg, eowf->mutable_to_expr());
-                    }
-                    if (rg.nextSmallNumber() < 4)
-                    {
-                        generateExpression(rg, eowf->mutable_step_expr());
+                        if (rg.nextSmallNumber() < 4)
+                        {
+                            generateExpression(rg, eowf->mutable_to_expr());
+                        }
+                        if (rg.nextSmallNumber() < 4)
+                        {
+                            generateExpression(rg, eowf->mutable_step_expr());
+                        }
                     }
                 }
             }

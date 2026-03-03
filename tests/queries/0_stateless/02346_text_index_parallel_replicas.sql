@@ -34,6 +34,6 @@ SELECT
     sum(ProfileEvents['ParallelReplicasUsedCount']) > 0,
     sum(ProfileEvents['TextIndexUsedEmbeddedPostings']) > 0
 FROM system.query_log
-WHERE (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (current_database = currentDatabase() OR position(query, currentDatabase()) > 0) AND query LIKE '%SELECT%tab%hasAnyTokens%' AND type = 'QueryFinish';
 
 DROP TABLE tab;

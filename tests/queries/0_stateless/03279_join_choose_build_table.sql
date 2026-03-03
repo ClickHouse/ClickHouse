@@ -54,7 +54,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%products, sales%'
 AND log_comment = '03279_join_choose_build_table_no_idx'
 ORDER BY event_time DESC
@@ -66,7 +66,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%sales, products%'
 AND log_comment = '03279_join_choose_build_table_no_idx'
 ORDER BY event_time DESC
@@ -80,7 +80,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%products, sales%'
 AND log_comment = '03279_join_choose_build_table_idx'
 ORDER BY event_time DESC
@@ -92,7 +92,7 @@ SELECT
     if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND query like '%sales, products%'
 AND log_comment = '03279_join_choose_build_table_idx'
 ORDER BY event_time DESC

@@ -99,10 +99,16 @@ String generateNextCodecString(RandomGenerator & rg)
             res += std::to_string(rg.randomInt<uint32_t>(1, 22));
             res += ")";
         }
-        else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta" || choices[i] == "Gorilla") && rg.nextBool())
+        else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta") && rg.nextBool())
         {
             res += "(";
-            res += std::to_string(rg.randomInt<uint32_t>(0, 8));
+            res += std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
+            res += ")";
+        }
+        else if (choices[i] == "Gorilla" && rg.nextBool())
+        {
+            res += "(";
+            res += std::to_string(rg.nextBool() ? 4 : 8);
             res += ")";
         }
         else if (choices[i] == "FPC" && rg.nextBool())
@@ -247,6 +253,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"prefer_global_in_and_join", trueOrFalseSetting},
        {"prefer_localhost_replica", trueOrFalseSetting},
        {"query_plan_aggregation_in_order", trueOrFalseSetting},
+       {"query_plan_convert_any_join_to_semi_or_anti_join", trueOrFalseSetting},
        {"query_plan_convert_join_to_in", trueOrFalseSetting},
        {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
        {"query_plan_direct_read_from_text_index", trueOrFalseSetting},
@@ -331,6 +338,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
        /// ClickHouse cloud setting
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
+       {"use_partition_pruning", trueOrFalseSetting},
        {"use_primary_key", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
@@ -383,6 +391,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
     {"apply_patch_parts", trueOrFalseSetting},
+    {"apply_patch_parts_join_cache_buckets",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 64)); },
+         {"0", "1", "2", "4", "16", "64"},
+         false)},
     {"apply_prewhere_after_final", trueOrFalseSettingNoOracle},
     {"apply_row_policy_after_final", trueOrFalseSettingNoOracle},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
@@ -832,7 +845,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 2, 32)); }, {}, false)},
     {"join_runtime_bloom_filter_hash_functions",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 20)); },
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 10)); },
          {"0", "1", "2", "3", "4", "10"},
          false)},
     {"join_runtime_bloom_filter_max_ratio_of_set_bits", probRangeSetting},
@@ -960,7 +973,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalseSettingNoOracle},
-    {"output_format_arrow_date_as_uint16", trueOrFalseSettingNoOracle},
     {"output_format_avro_codec",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1312,9 +1324,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
     {"zstd_window_log_max",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); },
-         {},
-         false)}};
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 31)); }, {}, false)}};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 
@@ -1711,7 +1721,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         {{"bool_false_representation", CHSetting(nastyStrings, {}, false)},
          {"bool_true_representation", CHSetting(nastyStrings, {}, false)},
          {"format_binary_max_array_size", CHSetting(rowsRange, {}, false)},
-         {"format_binary_max_object_size,", CHSetting(bytesRange, {}, false)},
+         {"format_binary_max_object_size", CHSetting(bytesRange, {}, false)},
          {"format_binary_max_string_size", CHSetting(rowsRange, {}, false)},
          {"format_capn_proto_enum_comparising_mode",
           CHSetting(

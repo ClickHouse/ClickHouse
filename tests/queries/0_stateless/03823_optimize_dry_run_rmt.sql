@@ -38,10 +38,10 @@ SELECT
     ProfileEvents['MergeSourceParts'],
     ProfileEvents['MergeWrittenRows']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run DRY RUN PARTS%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run DRY RUN PARTS%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 SELECT 'part log should not cotain merge in dry run';
-SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = 't_dry_run' AND event_type = 'MergeParts';
+SELECT count() FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_dry_run' AND event_type = 'MergeParts';
 
 DROP TABLE t_dry_run;
