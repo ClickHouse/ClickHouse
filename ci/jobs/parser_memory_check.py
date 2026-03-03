@@ -507,9 +507,6 @@ def run_profiler_collect_heap(
     """
     env = os.environ.copy()
     malloc_conf = "prof:true,prof_active:true,prof_thread_active_init:true,lg_prof_sample:0"
-    # macOS: jemalloc uses je_ prefix -> JE_MALLOC_CONF
-    # Linux: jemalloc without prefix -> MALLOC_CONF
-    # Set both to be safe (only the matching one takes effect)
     env["JE_MALLOC_CONF"] = malloc_conf
     env["MALLOC_CONF"] = malloc_conf
 
@@ -557,8 +554,9 @@ def run_profiler_collect_heap(
 
 def batch_symbolize(binary_path: str, heap_files: list) -> bool:
     """
-    Run batch symbolization: collects all unique addresses from all heap files,
-    symbolizes once, writes .heap.sym for each.
+    Run batch symbolization: invokes --symbolize-batch on all heap files.
+    The tool's global LRU cache deduplicates addresses across files.
+    Writes .heap.sym for each input file.
     Returns True on success.
     """
     if not heap_files:
@@ -571,7 +569,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
             args,
             capture_output=True,
             text=True,
-            timeout=600,  # batch may take longer
+            timeout=600,
         )
     except subprocess.TimeoutExpired:
         print("ERROR: batch symbolization timed out")
@@ -605,72 +603,6 @@ def analyze_heap_profiles(heap_before: str, heap_after: str) -> dict:
         heap_diff, stack_diffs = compute_diff(stacks_before, stacks_after)
 
     return {"heap_diff": heap_diff, "stack_diffs": stack_diffs}
-
-
-# Keep the old single-file API for backward compatibility (e.g. local testing)
-def run_profiler_with_heap(
-    binary_path: str, query: str, profile_prefix: str, symbolize: bool = True
-) -> dict:
-    """
-    Run parser_memory_profiler with heap profiling on a single query.
-    Optionally symbolizes inline (slower for many queries — prefer batch_symbolize).
-    Returns dict with keys: jemalloc_diff, heap_diff, stack_diffs, error
-    """
-    env = os.environ.copy()
-    malloc_conf = "prof:true,prof_active:true,prof_thread_active_init:true,lg_prof_sample:0"
-    env["JE_MALLOC_CONF"] = malloc_conf
-    env["MALLOC_CONF"] = malloc_conf
-
-    args = [binary_path, "--profile", profile_prefix]
-    if symbolize:
-        args.append("--symbolize")
-
-    try:
-        result = subprocess.run(
-            args,
-            input=query,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return {"error": "timeout"}
-    except Exception as e:
-        return {"error": str(e)}
-
-    if result.returncode != 0:
-        return {"error": f"exit code {result.returncode}: {result.stderr[:200]}"}
-
-    # Parse stdout: query_length \t before \t after \t diff
-    parts = result.stdout.strip().split("\t")
-    jemalloc_diff = 0
-    if len(parts) == 4:
-        jemalloc_diff = int(parts[3])
-
-    # Parse stderr to find symbolized file paths
-    sym_before = ""
-    sym_after = ""
-    for line in result.stderr.split("\n"):
-        if line.startswith("Symbolized before: "):
-            sym_before = line.split(": ", 1)[1].strip()
-        elif line.startswith("Symbolized after: "):
-            sym_after = line.split(": ", 1)[1].strip()
-
-    # Parse symbolized heap profiles and compute diff
-    heap_diff = 0
-    stack_diffs = []
-    if sym_before and sym_after:
-        stacks_before = parse_symbolized_heap(sym_before)
-        stacks_after = parse_symbolized_heap(sym_after)
-        heap_diff, stack_diffs = compute_diff(stacks_before, stacks_after)
-
-    return {
-        "jemalloc_diff": jemalloc_diff,
-        "heap_diff": heap_diff,
-        "stack_diffs": stack_diffs,
-        "error": None,
-    }
 
 
 def load_queries(queries_file: str) -> list:
@@ -741,13 +673,11 @@ def main():
         query_num = i + 1
         query_display = query[:60].replace("\n", " ").replace("\t", " ")
 
-        # Run master profiler (no symbolize)
         master_prefix = f"{profiles_dir}/q{query_num}_master_"
         master_data = run_profiler_collect_heap(
             master_profiler, query, master_prefix
         )
 
-        # Run PR profiler (no symbolize)
         pr_prefix = f"{profiles_dir}/q{query_num}_pr_"
         pr_data = run_profiler_collect_heap(
             pr_profiler, query, pr_prefix
@@ -755,7 +685,6 @@ def main():
 
         raw_results.append((query_num, query, query_display, master_data, pr_data))
 
-        # Collect heap file paths for batch symbolization
         if not master_data.get("error"):
             if master_data.get("heap_before"):
                 master_heap_files.append(master_data["heap_before"])
