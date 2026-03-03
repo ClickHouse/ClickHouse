@@ -1,14 +1,20 @@
--- Test that CREATE TABLE ... EMPTY COMMENT ... AS SELECT formats correctly for AST roundtrip.
--- The parser expects COMMENT before EMPTY AS for tables, and EMPTY before COMMENT for views.
+-- Test that CREATE TABLE/VIEW with EMPTY and COMMENT accepts both orderings
+-- and formats consistently (EMPTY before COMMENT) for AST roundtrip.
 
--- Table with EMPTY AS SELECT and COMMENT: parser expects COMMENT then EMPTY AS
+-- Table: COMMENT then EMPTY (original parser order)
 SELECT formatQuery('CREATE TABLE t (c Int8) ENGINE = MergeTree ORDER BY c COMMENT \'test\' EMPTY AS SELECT 1');
 
--- Table with EMPTY AS SELECT, no COMMENT
+-- Table: EMPTY then COMMENT (formatter output order)
+SELECT formatQuery('CREATE TABLE t (c Int8) ENGINE = MergeTree ORDER BY c EMPTY COMMENT \'test\' AS SELECT 1');
+
+-- Table: EMPTY without COMMENT
 SELECT formatQuery('CREATE TABLE t (c Int8) ENGINE = MergeTree ORDER BY c EMPTY AS SELECT 1');
 
--- Table with COMMENT, no EMPTY
+-- Table: COMMENT without EMPTY
 SELECT formatQuery('CREATE TABLE t (c Int8) ENGINE = MergeTree ORDER BY c COMMENT \'test\' AS SELECT 1');
 
--- Materialized view with EMPTY and COMMENT
+-- Materialized view: EMPTY then COMMENT
 SELECT formatQuery('CREATE MATERIALIZED VIEW v (c Int8) ENGINE = MergeTree ORDER BY c EMPTY COMMENT \'test\' AS SELECT 1');
+
+-- Materialized view: COMMENT then EMPTY
+SELECT formatQuery('CREATE MATERIALIZED VIEW v (c Int8) ENGINE = MergeTree ORDER BY c COMMENT \'test\' EMPTY AS SELECT 1');
