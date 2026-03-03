@@ -1,0 +1,54 @@
+Row 1:
+name:               x
+type:               UInt32
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
+Row 2:
+name:               secret
+type:               String
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
+Row 1:
+name:               x
+type:               UInt32
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
+Row 2:
+name:               secret
+type:               String
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
+Row 1:
+name:               x
+type:               UInt32
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
+Row 2:
+name:               secret
+type:               String
+default_type:
+default_expression:
+comment:
+codec_expression:
+ttl_expression:
+
