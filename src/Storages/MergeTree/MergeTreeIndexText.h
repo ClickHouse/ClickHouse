@@ -320,8 +320,9 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
-    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);

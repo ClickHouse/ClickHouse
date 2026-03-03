@@ -436,7 +436,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
     const auto & pattern_tokens = granule_text.getPatternTokens();
     PostingsMap result;
 
-    const auto read_postings_if_needed = [&](const String & token, const TokenPostingsInfo & token_info)
+    const auto read_postings_if_needed = [&](const String & token, const TokenPostingsInfoPtr & token_info)
     {
         if (!useful_tokens.contains(token))
             return;
@@ -503,7 +503,7 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
     const auto & remaining_tokens = granule_text.getRemainingTokens();
     const auto & pattern_tokens = granule_text.getPatternTokens();
 
-    const auto cleanup_postings = [&](const String & token, const TokenPostingsInfo & token_info)
+    const auto cleanup_postings = [&](const String & token, const TokenPostingsInfoPtr & token_info)
     {
         auto it = postings_blocks.find(token);
         if (it == postings_blocks.end())
