@@ -2,6 +2,8 @@
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set enable_analyzer = 1;
+--- Ignore warnings when replica does not respond, and analysis is done on initiator
+set send_logs_level='error';
 
 DROP TABLE IF EXISTS tab;
 
