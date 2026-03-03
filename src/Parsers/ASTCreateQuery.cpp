@@ -564,7 +564,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (is_populate)
         ostr << " POPULATE";
 
-    add_empty_if_needed();
+    /// For views, the parser expects: POPULATE/EMPTY, SQL_SECURITY, COMMENT, AS SELECT
+    /// For tables, the parser expects: COMMENT, EMPTY AS SELECT (where `EMPTY AS` is a compound keyword)
+    bool is_view = is_ordinary_view || is_materialized_view || is_window_view;
+
+    if (is_view)
+        add_empty_if_needed();
 
     if (sql_security && supportSQLSecurity() && sql_security->as<ASTSQLSecurity &>().type.has_value())
     {
@@ -577,6 +582,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << settings.nl_or_ws << "COMMENT ";
         comment->format(ostr, settings, state, frame);
     }
+
+    if (!is_view)
+        add_empty_if_needed();
 
     if (select)
     {
