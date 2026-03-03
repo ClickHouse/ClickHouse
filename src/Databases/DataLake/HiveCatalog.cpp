@@ -5,12 +5,12 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
-#include <Common/Exception.h>
-#include <Core/Names.h>
-#include <Databases/DataLake/ICatalog.h>
 
+#include <Common/Exception.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
@@ -73,7 +73,6 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
     : ICatalog(warehouse_)
     , base_url(base_url_)
 {
-    // Initialize connection
     reconnect();
 }
 
@@ -81,7 +80,6 @@ void HiveCatalog::reconnect() const
 {
     std::lock_guard lock(client_mutex);
 
-    // Close existing connection if any
     if (transport && transport->isOpen())
     {
         try
@@ -90,15 +88,12 @@ void HiveCatalog::reconnect() const
         }
         catch (const std::exception & ex)
         {
-            // Ignore errors during close, but log them
             LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Error closing transport: {}", ex.what());
         }
     }
 
-    // Parse host and port from base_url
     auto [host, port] = parseHostPort(base_url);
 
-    // Create new connection
     socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
     transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
     protocol = std::make_shared<apache::thrift::protocol::TBinaryProtocol>(transport);
@@ -111,10 +106,9 @@ template <typename Func>
 void HiveCatalog::executeWithRetry(Func && func) const
 {
     constexpr int max_retries = 3;
-    String err_msg;
+    String last_err_msg;
 
-    int i = 0;
-    for (; i < max_retries; ++i)
+    for (int i = 0; i < max_retries; ++i)
     {
         try
         {
@@ -124,23 +118,22 @@ void HiveCatalog::executeWithRetry(Func && func) const
         }
         catch (apache::thrift::transport::TTransportException & e)
         {
-            err_msg = e.what();
+            last_err_msg = e.what();
 
-            // Reconnect for next attempt
             try
             {
                 reconnect();
             }
             catch (const std::exception & ex)
             {
-                // If reconnect fails, log and continue to next attempt
-                LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Reconnect failed: {}", ex.what());
+                LOG_TRACE(
+                    &Poco::Logger::get("HiveCatalog"), "Reconnect failed in iteration {}/{} with error: {}", i, max_retries, ex.what());
             }
         }
     }
 
     throw DB::Exception(
-        DB::ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore connection failed after {} attempts. Last error: {}", max_retries, err_msg);
+        DB::ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore connection failed after {} attempts. Last error: {}", max_retries, last_err_msg);
 }
 
 bool HiveCatalog::empty() const
