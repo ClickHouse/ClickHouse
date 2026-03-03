@@ -1521,6 +1521,10 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
     If true, lightweight delete is optimized on vertical merge.
     )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
+    If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
+    the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
+    )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
     )", 0) \
@@ -1784,7 +1788,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
