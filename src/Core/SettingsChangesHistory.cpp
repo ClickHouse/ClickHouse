@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_statistics", false, true, "Statistics are now GA"},
             {"allow_experimental_statistics", false, true, "Statistics are now GA"},
             {"allow_experimental_statistic", false, true, "Statistics are now GA"},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
