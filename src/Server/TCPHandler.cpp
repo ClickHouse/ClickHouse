@@ -764,8 +764,10 @@ void TCPHandler::runImpl()
                         getFormatSettings(query_state->query_context));
                 });
 
-            query_state->query_context->setInteractiveCancelCallback(
-                [this, &query_state]()
+            /// Helper lambda to create cancel callbacks with optional progress sending
+            auto make_cancel_callback = [this, &query_state](bool send_progress)
+            {
+                return [this, &query_state, send_progress]()
                 {
                     std::lock_guard lock(*callback_mutex);
 
@@ -775,11 +777,20 @@ void TCPHandler::runImpl()
                     if (query_state->stop_read_return_partial_result)
                         return true;
 
-                    sendProgress(*query_state);
+                    if (send_progress)
+                        sendProgress(*query_state);
                     sendSelectProfileEvents(*query_state);
                     sendLogs(*query_state);
                     return false;
-                });
+                };
+            };
+
+            /// Full callback with progress sending for main query execution
+            query_state->query_context->setInteractiveCancelCallback(make_cancel_callback(true));
+
+            /// Lightweight callback without progress sending for subquery execution
+            /// (avoids resetting progress counters during scalar subquery execution)
+            query_state->query_context->setSubqueryCancelCallback(make_cancel_callback(false));
 
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);

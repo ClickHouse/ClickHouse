@@ -93,7 +93,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
     auto & context = scope.context;
-    auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
+    auto cancel_callback = context->getQueryContext()->getSubqueryCancelCallback();
     const UInt64 interactive_delay_ms = context->getSettingsRef()[Setting::interactive_delay] / 1000;
 
     Block scalar_block;
