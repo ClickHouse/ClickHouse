@@ -3072,8 +3072,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
             /// enough_space is created before runner and outlives it
             /// caches is passed as const-ref to the method and outlives the runner
             /// part belongs to data_parts, which is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
                 if (enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
@@ -3085,8 +3086,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.mark_cache && enough_space(caches.mark_cache, marks_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.mark_cache, marks_ratio_to_prewarm))
                     part->loadMarksToCache(columns_to_prewarm_marks, caches.mark_cache.get());
             });
@@ -3096,8 +3098,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.index_mark_cache && enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
                     part->loadIndexMarksToCache(caches.index_mark_cache.get());
             });
