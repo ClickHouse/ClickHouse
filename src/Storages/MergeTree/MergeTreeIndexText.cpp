@@ -448,14 +448,14 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state)
 {
-    auto sparse_index = loadSparseIndex(header_stream, state);
-    if (sparse_index->empty())
-        return;
-
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const auto & all_search_patterns = condition_text.getAllSearchPatterns();
 
     if (all_search_patterns.empty())
+        return;
+
+    auto sparse_index = loadSparseIndex(header_stream, state);
+    if (sparse_index->empty())
         return;
 
     const auto read_dictionary_block_tokens = [&](ReadBuffer & istr)

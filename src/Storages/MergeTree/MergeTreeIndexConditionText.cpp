@@ -56,22 +56,24 @@ SipHash TextSearchQuery::getHash() const
     for (const auto & token : tokens)
         hash.update(token);
 
-    hash.update(patterns.size());
-    for (const auto & pattern : patterns)
-    {
-        if (const auto & re2 = pattern.getRE2())
+    if (!patterns.empty()) {
+        hash.update(patterns.size());
+        for (const auto & pattern : patterns)
         {
-            hash.update(re2->pattern());
-        }
-        else
-        {
-            std::string required_substring;
-            bool is_trivial;
-            bool required_substring_is_prefix;
-            pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-            hash.update(required_substring);
-            hash.update(is_trivial);
-            hash.update(required_substring_is_prefix);
+            if (const auto & re2 = pattern.getRE2())
+            {
+                hash.update(re2->pattern());
+            }
+            else
+            {
+                std::string required_substring;
+                bool is_trivial;
+                bool required_substring_is_prefix;
+                pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+                hash.update(required_substring);
+                hash.update(is_trivial);
+                hash.update(required_substring_is_prefix);
+            }
         }
     }
 
@@ -754,10 +756,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
 
         std::vector<String> exact_tokens = stringLikeToTokens(value_field);
-
-        /// If exact tokens are empty, do not use the text index at all.
-        if (exact_tokens.empty())
-            return false;
 
         out.function = function_name == "like" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
