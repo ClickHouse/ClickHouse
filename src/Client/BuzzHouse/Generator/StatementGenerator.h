@@ -153,6 +153,7 @@ enum class TableRequirement
     RequireMergeTree = 1,
     RequireReplaceable = 2,
     RequireProjection = 3,
+    RequireIndex = 4
 };
 
 class StatementGenerator
@@ -345,15 +346,16 @@ private:
         SystemTable,
         MergeUDF,
         ClusterUDF,
-        MergeIndexUDF,
         LoopUDF,
         ValuesUDF,
         RandomDataUDF,
         Dictionary,
         URLEncodedTable,
         TableEngineUDF,
-        MergeProjectionUDF,
         RandomTableUDF,
+        MergeIndexUDF,
+        MergeProjectionUDF,
+        MergeTextIndexUDF,
         MergeIndexAnalyzeUDF
     };
 

@@ -136,15 +136,16 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
-              {0.02, 0.05}, /// MergeIndexUDF
               {0.01, 0.05}, /// LoopUDF
               {0.03, 0.10}, /// ValuesUDF
               {0.01, 0.05}, /// RandomDataUDF
               {0.10, 0.30}, /// Dictionary
               {0.02, 0.10}, /// URLEncodedTable
               {0.10, 0.50}, /// TableEngineUDF
-              {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.05}, /// RandomTableUDF
+              {0.02, 0.05}, /// MergeIndexUDF
+              {0.01, 0.10}, /// MergeProjectionUDF
+              {0.01, 0.10}, /// MergeTextIndexUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
           }},
           "SQL queries"))

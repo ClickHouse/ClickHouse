@@ -494,6 +494,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_enable_engine_predicate", trueOrFalseSetting},
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
     {"delta_lake_log_metadata", trueOrFalseSettingNoOracle},
+    {"delta_lake_reload_schema_for_consistency", trueOrFalseSettingNoOracle},
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
@@ -935,6 +936,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mutations_execute_nondeterministic_on_initiator", trueOrFalseSetting},
     {"mutations_execute_subqueries_on_initiator", trueOrFalseSetting},
     {"mutations_sync", CHSetting(zeroToThree, {}, false)},
+    {"mysql_datatypes_support_level",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         { return settingCombinations(rg, {"decimal", "datetime64", "date2Date32", "date2String"}); },
+         {},
+         false)},
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
@@ -1814,7 +1821,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 }
 
-std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
+std::unique_ptr<SQLType> size_tp, null_tp, string_tp, uint8_tp;
 
 std::vector<SystemTable> systemTables;
 
@@ -1823,6 +1830,7 @@ void loadSystemTables(FuzzConfig & fc)
     size_tp = std::make_unique<IntType>(64, true);
     null_tp = std::make_unique<BoolType>();
     string_tp = std::make_unique<StringType>(1);
+    uint8_tp = std::make_unique<IntType>(8, false);
 
     fc.loadSystemTables(systemTables);
 }

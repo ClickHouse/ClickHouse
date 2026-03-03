@@ -2787,6 +2787,11 @@ message MergeTreeProjectionFunc {
     required Projection proj = 2;
 }
 
+message MergeTreeTextIndexFunc {
+    required ExprSchemaTable est = 1;
+    required Index idx = 2;
+}
+
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
@@ -2822,19 +2827,20 @@ message TableFunction {
         ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
-        MergeTreeIndexFunc mtindex = 11;
-        TableOrFunction loop = 12;
-        GenerateRandomFunc grandom = 13;
-        ValuesStatement values = 14;
-        ExprSchemaTable dictionary = 15;
-        URLFunc url = 16;
-        RedisFunc redis = 17;
-        MongoDBFunc mongodb = 18;
-        MergeTreeProjectionFunc mtproj = 19;
-        Expr nullf = 20;
-        ArrowFlightFunc flight = 21;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
-        SQLTableFuncCall func = 23;
+        TableOrFunction loop = 11;
+        GenerateRandomFunc grandom = 12;
+        ValuesStatement values = 13;
+        ExprSchemaTable dictionary = 14;
+        URLFunc url = 15;
+        RedisFunc redis = 16;
+        MongoDBFunc mongodb = 17;
+        Expr nullf = 18;
+        ArrowFlightFunc flight = 19;
+        MergeTreeIndexFunc mtindex = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        MergeTreeTextIndexFunc mttxtidx = 22;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
+        SQLTableFuncCall func = 24;
     }
 }
 
