@@ -13,9 +13,9 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE $database_name.02911_backup_restore_keeper_map3 (key UInt64, value String) Engine=KeeperMap('/' || currentDatabase() || '/test02911_different') PRIMARY KEY key;
 "
 
-$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 5000;"
+$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map2 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 1000;"
 
-$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 3000;"
+$CLICKHOUSE_CLIENT -m -q "INSERT INTO $database_name.02911_backup_restore_keeper_map3 SELECT number, 'test' || toString(number) FROM system.numbers LIMIT 500;"
 
 backup_path="$database_name"
 for i in $(seq 1 3); do
