@@ -438,21 +438,21 @@ LLVM_FT_ARTIFACTS_LIST = [
     for batch in range(1, total_batches + 1)
 ]
 
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profraw files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+]
+
 LLVM_IT_ARTIFACTS_LIST = [
     # default.profraw files for 5 batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
-]
-
-LLVM_IT_ARTIFACTS_LIST += [
-    # default.profraw files for 6 jobs from Integration tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_it_s3_async_sequential",
 ]
 
 LLVM_ARTIFACTS_LIST = (
