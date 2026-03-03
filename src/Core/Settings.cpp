@@ -7056,6 +7056,9 @@ Uses replicas from cluster_for_parallel_replicas.
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \
+    DECLARE(Bool, database_iceberg_purge_on_drop, false, R"(
+If enabled, DROP TABLE on an Iceberg catalog database will request the catalog to also purge underlying data files (purgeRequested=true). Otherwise only the local table entry is removed.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 )", BETA, allow_database_iceberg) \

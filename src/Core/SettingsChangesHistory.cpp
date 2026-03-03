@@ -300,6 +300,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
+            {"database_iceberg_purge_on_drop", false, false, "New setting."},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"allow_database_iceberg", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"},

@@ -635,7 +635,7 @@ void StorageObjectStorage::drop()
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
+        catalog->dropTable(namespace_name, table_name, false);
     }
     /// We cannot use query context here, because drop is executed in the background.
     configuration->drop(Context::getGlobalContextInstance());

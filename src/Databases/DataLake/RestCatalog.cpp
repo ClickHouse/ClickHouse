@@ -1189,9 +1189,10 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string purge_str = purge ? "true" : "false";
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested={}", base_url, namespace_name, table_name, purge_str);
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try

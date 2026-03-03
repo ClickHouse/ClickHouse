@@ -686,12 +686,16 @@ def test_not_specified_catalog_type(started_cluster):
 def test_create_table_as(started_cluster):
     node = started_cluster.instances["node1"]
 
-    test_id = uuid.uuid4().hex
-    namespace = f"test_ctas_{test_id}_ns"
-    src_table = f"src_ctas_{test_id}"
+    namespace = "test_ctas_ns"
+    src_table = "src_ctas"
     catalog = load_catalog_impl(started_cluster)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.from_as` SETTINGS allow_database_iceberg=1"
+    )
 
     node.query(
         f"""
@@ -723,18 +727,25 @@ def test_create_table_as(started_cluster):
     col_names = [f.name for f in tbl.schema().fields]
     assert col_names == ["id", "name", "dt", "value"]
 
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.from_as` SETTINGS allow_database_iceberg=1"
+    )
     node.query(f"DROP TABLE default.{src_table}")
 
 
 def test_create_table_as_with_override(started_cluster):
     node = started_cluster.instances["node1"]
 
-    test_id = uuid.uuid4().hex
-    namespace = f"test_ctov_{test_id}_ns"
-    src_table = f"src_ctov_{test_id}"
+    namespace = "test_ctov_ns"
+    src_table = "src_ctov"
     catalog = load_catalog_impl(started_cluster)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.override` SETTINGS allow_database_iceberg=1"
+    )
 
     node.query(
         f"""
@@ -773,17 +784,23 @@ def test_create_table_as_with_override(started_cluster):
     col_names = [f.name for f in tbl.schema().fields]
     assert col_names == ["id", "name", "dt", "value"]
 
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.override` SETTINGS allow_database_iceberg=1"
+    )
     node.query(f"DROP TABLE default.{src_table}")
 
 
 def test_create_table_explicit_columns(started_cluster):
     node = started_cluster.instances["node1"]
 
-    test_id = uuid.uuid4().hex
-    namespace = f"test_ctex_{test_id}_ns"
+    namespace = "test_ctex_ns"
     catalog = load_catalog_impl(started_cluster)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
 
     node.query(
         f"""
@@ -811,6 +828,94 @@ def test_create_table_explicit_columns(started_cluster):
     assert iceberg_types["id"] == "long"
     assert iceberg_types["name"] == "string"
     assert iceberg_types["value"] == "double"
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.to_drop` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.to_drop`
+        (
+            id Int64,
+            name String
+        )
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_drop" in table_names
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_drop` SETTINGS allow_database_iceberg=1"
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_drop" not in table_names
+
+
+def test_drop_table_if_exists(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_ie_ns"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.nonexistent` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_drop_table_purge(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_purge_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.to_purge` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.to_purge`
+        (
+            id Int64,
+            name String
+        )
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_purge" in table_names
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_purge` SETTINGS allow_database_iceberg=1, database_iceberg_purge_on_drop=1"
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_purge" not in table_names
 
 
 def test_gcs(started_cluster):

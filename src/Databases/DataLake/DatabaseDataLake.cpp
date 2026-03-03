@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool database_iceberg_purge_on_drop;
 
 }
 
@@ -800,11 +801,13 @@ void DatabaseDataLake::dropTable( /// NOLINT
     const String & name,
     bool /*sync*/)
 {
-    auto table = tryGetTable(name, context_);
-    if (table)
-        table->drop();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
+    auto catalog = getCatalog();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    bool purge = context_->getSettingsRef()[Setting::database_iceberg_purge_on_drop];
+    catalog->dropTable(namespace_name, table_name, purge);
+
+    LOG_TRACE(log, "Dropped table {}.{} (purge={})", namespace_name, table_name, purge);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
