@@ -19,7 +19,16 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
+    for attempt in range(3):
+        try:
+            node.exec_in_container(
+                ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
+            )
+            return
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2)
 
 
 def stop_zookeeper():
