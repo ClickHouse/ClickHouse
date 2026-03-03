@@ -4,6 +4,8 @@
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;
 
+SET enable_analyzer = 1;
+
 CREATE TABLE tab (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
 
 INSERT INTO tab VALUES (1, 'aaa', 1), (2, 'bbb', 1);
