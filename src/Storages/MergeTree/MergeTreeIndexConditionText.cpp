@@ -514,114 +514,59 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     return tokenizer->compactTokens(tokens);
 }
 
-std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, std::vector<String> & exact_tokens) const
+std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field) const
 {
+    /// Only handles the pure '%value%' form: one leading '%', a non-empty alphanumeric token immediately following,
+    /// then one trailing '%' immediately after the token, and nothing else.
+    /// Returns a single-element vector on success, empty on anything more complex.
+    /// Only this form is eligible for direct read mode.
+
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
         return {};
 
-    std::vector<OptimizedRegularExpression> patterns;
     const char * data = value.data();
     const size_t length = value.size();
+    size_t pos = 0;
 
     const auto is_token_char = [](unsigned char c) { return isASCII(c) && isAlphaNumericASCII(static_cast<char>(c)); };
 
-    /// We do a single forward pass, maintaining a "current group" that accumulates content
-    /// for one sub-pattern. A group is split (emitted and restarted) when an unescaped
-    /// wildcard ('%' or '_') or a regular non-alpha separator is encountered.
-    ///
-    /// Escape sequences ('\%', '\_', '\\') are treated as literal characters and are
-    /// included as-is in the group content — they do NOT cause a split.
-    ///
-    /// Examples:
-    ///   %foobar%   → [%foobar%]       '%' splits; 'foobar' is one group
-    ///   %foo bar%  → [%foo, bar%]     space splits; two groups
-    ///   %foo%bar%  → [%foo%, %bar%]   '%' splits; two groups
-    ///   %foo_b%    → [%foo, b%]       '_' splits; two groups
-    ///   %foo\_%bar% → [%foo\_%, %bar%] '\_%' = literal '_' then '%' wildcard; the '%' splits
-    ///   %foo\%bar% → [%foo\%bar%]     '\%' is literal, stays in group; one group
-    ///   %foo\_bar% → [%foo\_bar%]     '\_' is literal, stays in group; one group
+    /// Must start with at least one '%'.
+    if (data[pos] != '%')
+        return {};
 
-    bool left_free = false; /// current group is preceded by an unescaped '%'
-    bool group_has_content = false; /// current group contains at least one alphanumeric char
-    size_t group_start = 0; /// start of the current group's content in 'data'
-    size_t group_end = 0; /// end of the current group's content (exclusive)
-
-    const auto emit_group = [&](bool right_free)
-    {
-        if (!group_has_content)
-            return;
-        /// A group bounded on both sides (no free wildcards) is an exact token:
-        /// it can be looked up directly via posting lists instead of pattern matching.
-        if (!left_free && !right_free)
-        {
-            exact_tokens.emplace_back(data + group_start, group_end - group_start);
-            return;
-        }
-        String sub_pattern;
-        if (left_free)
-            sub_pattern += '%';
-        sub_pattern.append(data + group_start, group_end - group_start);
-        if (right_free)
-            sub_pattern += '%';
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(sub_pattern));
-    };
-
-    const auto reset_group = [&](bool new_left_free, size_t new_start)
-    {
-        left_free = new_left_free;
-        group_has_content = false;
-        group_start = new_start;
-        group_end = new_start;
-    };
-
-    for (size_t pos = 0; pos < length;)
-    {
-        unsigned char c = static_cast<unsigned char>(data[pos]);
-
-        if (c == '\\' && pos + 1 < length)
-        {
-            /// Escape sequence: include both chars as literal content in the current group.
-            pos += 2;
-            group_end = pos;
-            continue;
-        }
-
-        if (is_token_char(c))
-        {
-            group_has_content = true;
-            ++pos;
-            group_end = pos;
-            continue;
-        }
-
-        if (c == '%')
-        {
-            emit_group(/* right_free = */ true);
-            reset_group(/* left_free = */ true, pos + 1);
-            ++pos;
-            continue;
-        }
-
-        if (c == '_')
-        {
-            emit_group(/* right_free = */ false);
-            reset_group(/* left_free = */ false, pos + 1);
-            ++pos;
-            continue;
-        }
-
-        /// Regular non-alpha separator (space, punctuation, …): split the group.
-        emit_group(/* right_free = */ false);
-        reset_group(/* left_free = */ false, pos + 1);
+    while (pos < length && data[pos] == '%')
         ++pos;
-    }
 
-    emit_group(/* right_free = */ false);
+    /// Alphanumeric content must follow immediately.
+    if (pos >= length || !is_token_char(static_cast<unsigned char>(data[pos])))
+        return {};
 
-    if (patterns.empty() && exact_tokens.empty())
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(value));
+    const size_t start = pos;
 
+    while (pos < length && is_token_char(static_cast<unsigned char>(data[pos])))
+        ++pos;
+
+    const size_t end = pos;
+
+    /// Trailing '%' must follow immediately after the content.
+    if (pos >= length || data[pos] != '%')
+        return {};
+
+    while (pos < length && data[pos] == '%')
+        ++pos;
+
+    /// Nothing else may follow.
+    if (pos < length)
+        return {};
+
+    String pattern;
+    pattern += '%';
+    pattern.append(data + start, end - start);
+    pattern += '%';
+
+    std::vector<OptimizedRegularExpression> patterns;
+    patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
     return patterns;
 }
 
@@ -766,20 +711,23 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
         if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha)
         {
-            /// TODO(ahmadov): FIX!
+            /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
+            /// Add support for multiple patterns later with hint mode:
             /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
             /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
             /// 3. Fall-back to the brute-force search for short patterns e.g. %a% -> reading postings for tokens containing 'a' is expensive.
             /// 4. Fall-back to the brute-force search for other cases for now.
             /// Follow-up:
             /// 1. Handle more complex patterns e.g. %foo%bar% -> (postings_pattern(%foo%) && postings_pattern(%bar%)) || postings_pattern(%foo%bar%)
-            std::vector<String> like_tokens;
-            auto patterns = stringLikeToPatterns(value_field, like_tokens);
-            like_tokens = tokenizer->compactTokens(like_tokens);
-
-            out.function = function_name == "like" ? RPNElement::FUNCTION_LIKE : RPNElement::FUNCTION_NOT_LIKE;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(like_tokens), std::move(patterns)));
-            return true;
+            auto patterns = stringLikeToPatterns(value_field);
+            if (patterns.size() == 1)
+            {
+                out.function = function_name == "like" ? RPNElement::FUNCTION_LIKE : RPNElement::FUNCTION_NOT_LIKE;
+                out.text_search_queries.emplace_back(
+                    std::make_shared<TextSearchQuery>(
+                        function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                return true;
+            }
         }
 
         std::vector<String> exact_tokens = stringLikeToTokens(value_field);

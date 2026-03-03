@@ -35,12 +35,6 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
-struct TextSearchPatternGroup
-{
-    std::vector<OptimizedRegularExpression> patterns;
-    TextSearchMode mode = TextSearchMode::Any;
-};
-
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -148,7 +142,7 @@ private:
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, std::vector<String> & exact_tokens) const;
+    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
     static TextSearchMode getTextSearchMode(const RPNElement & element);
