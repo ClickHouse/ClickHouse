@@ -343,10 +343,10 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     /* A few times generate empty strings */
     if (this->nextMediumNumber() > 2)
     {
-        /// ~5% chance: repeated single character (stresses compression, string functions like repeat/position/like)
+        /// ~3% chance: repeated single character (stresses compression, string functions like repeat/position/like)
         if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
-            static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '\n', '%', '_', '\\', '"', '/', '-'};
+            static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '%', '_', '\\', '"', '/', '-'};
 
             ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), this->pickRandomly(repeat_chars));
         }
