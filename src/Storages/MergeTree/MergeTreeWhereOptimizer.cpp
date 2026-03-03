@@ -69,7 +69,7 @@ static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, con
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (columns_description.hasSubcolumn(column))
+        if (columns_description.hasSubcolumn(GetColumnsOptions::All, column))
             table_columns.insert(column);
     }
 
