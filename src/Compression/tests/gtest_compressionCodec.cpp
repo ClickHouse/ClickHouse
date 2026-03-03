@@ -813,6 +813,9 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("DoubleDelta"),
     Codec("DoubleDelta, LZ4"),
     Codec("DoubleDelta, ZSTD"),
+    Codec("DoubleDeltaVarInt"),
+    Codec("DoubleDeltaVarInt, LZ4"),
+    Codec("DoubleDeltaVarInt, ZSTD"),
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
     Codec("Gorilla, ZSTD")
@@ -1354,6 +1357,151 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
             memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
 
             auto codec = makeCodec("DoubleDelta", type);
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
+}
+
+/// DoubleDeltaVarInt-specific tests
+
+/// DoubleDeltaVarInt uses varint encoding, so the corner points differ from DoubleDelta.
+/// Varint encoding boundaries: [-63,64] (1 byte), [-8191,8192] (2 bytes),
+/// [-1048575,1048576] (3 bytes), [-2^31,2^31] (5 bytes), else 9 bytes.
+template <typename ValueType>
+auto DDVarIntCompatibilityTestSequence()
+{
+    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
+    {
+        const auto curr = dd + prev + prev_delta;
+        prev = curr;
+        prev_delta = dd + prev_delta;
+        return curr;
+    };
+
+    auto ret = generateSeq<ValueType>(G(SameValueGenerator(42)), 0, 3);
+
+    /// Varint boundary points
+    const Int64 dd_corner_points[] = {-63, 64, -8191, 8192, -1048575, 1048576, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max()};
+    for (const auto & p : dd_corner_points)
+    {
+        if (std::abs(p) > std::numeric_limits<ValueType>::max())
+            break;
+
+        ret.append(generateSeq<ValueType>(G(dd_generator), p - 4, p + 2));
+    }
+
+    return ret;
+}
+
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaVarInt,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("DoubleDeltaVarInt"),
+            Codec("DoubleDeltaVarInt, LZ4"),
+            Codec("DoubleDeltaVarInt, ZSTD")
+        ),
+        ::testing::ValuesIn(std::vector<CodecTestSequence>{
+            DDVarIntCompatibilityTestSequence<Int8>(),
+            DDVarIntCompatibilityTestSequence<UInt8>(),
+            DDVarIntCompatibilityTestSequence<Int16>(),
+            DDVarIntCompatibilityTestSequence<UInt16>(),
+            DDVarIntCompatibilityTestSequence<Int32>(),
+            DDVarIntCompatibilityTestSequence<UInt32>(),
+            DDVarIntCompatibilityTestSequence<Int64>(),
+            DDVarIntCompatibilityTestSequence<UInt64>()
+        })
+    )
+);
+
+/// DoubleDeltaVarInt overflow: deltas out of bounds for target type
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaVarIntOverflow,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("DoubleDeltaVarInt", 1.2),
+            Codec("DoubleDeltaVarInt, LZ4", 1.0)
+        ),
+        ::testing::Values(
+            generateSeq<UInt32>(G(MinMaxGenerator())),
+            generateSeq<Int32>(G(MinMaxGenerator())),
+            generateSeq<UInt64>(G(MinMaxGenerator())),
+            generateSeq<Int64>(G(MinMaxGenerator()))
+        )
+    )
+);
+
+/// ZSTD output is not aligned, may break DoubleDeltaVarInt.
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaVarIntUnalignedTranscode,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ZSTD, DoubleDeltaVarInt")
+        ),
+        ::testing::Values(
+            makeSeq<Float64>(0, 1),
+            makeSeq<Float64>(1, 0)
+        )
+    )
+);
+
+/// Time-series specific test: regular timestamp intervals (the primary use case).
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaVarIntTimeSeries,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("DoubleDeltaVarInt"),
+            Codec("DoubleDeltaVarInt, ZSTD")
+        ),
+        ::testing::Values(
+            /// Regular 15s scrape intervals (Prometheus-like)
+            generateSeq<UInt64>(G(SequentialGenerator(15000)), 0, 1000),
+            /// Regular 10s intervals
+            generateSeq<UInt64>(G(SequentialGenerator(10000)), 0, 1000),
+            /// Constant values (all delta-of-deltas are 0)
+            generateSeq<UInt64>(G(SameValueGenerator(1000000)), 0, 500),
+            /// Monotonic counters
+            generateSeq<UInt64>(G(SequentialGenerator(1)), 0, 10000)
+        )
+    )
+);
+
+TEST(DoubleDeltaVarIntTest, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            DB::Memory<> memory_for_compression;
+            memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+
+            auto codec = makeCodec("DoubleDeltaVarInt", type);
 
             auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
 
