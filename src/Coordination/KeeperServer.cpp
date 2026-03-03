@@ -42,6 +42,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
@@ -344,33 +345,53 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         serving_req_ = value;
     }
 
-    /// Returns the number of alive (responding) followers.
-    size_t getRespondingFollowerCount()
+    /// Collect IDs of learner (non-voting) servers from the cluster config.
+    std::unordered_set<int32_t> getLearnerIds()
     {
-        size_t responding = 0;
-        int32_t expiry = get_current_params().heart_beat_interval_ * raft_server::raft_limits_.response_limit_;
-        for_each_voting_members([&](const nuraft::ptr<nuraft::peer> & /* peer */, int32_t resp_elapsed_ms)
-        {
-            if (resp_elapsed_ms <= expiry)
-                ++responding;
-        });
-        return responding;
+        std::vector<nuraft::ptr<nuraft::srv_config>> configs;
+        get_srv_config_all(configs);
+        std::unordered_set<int32_t> learner_ids;
+        for (const auto & cfg : configs)
+            if (cfg->is_learner())
+                learner_ids.insert(cfg->get_id());
+        return learner_ids;
     }
 
-    /// Returns the number of alive followers that are also in sync (not lagging by more than `stale_log_gap`).
-    size_t getRespondingSyncedFollowerCount()
+    /// Returns alive (responding) learner and follower counters.
+    /// Follower counters include only voting peers; learners include all peers.
+    /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
+    KeeperServer::RespondingCounts getRespondingCounts()
     {
-        size_t count = 0;
+        auto peers = get_peer_info_all();
+        auto learner_ids = getLearnerIds();
         auto params = get_current_params();
-        int32_t expiry = params.heart_beat_interval_ * raft_server::raft_limits_.response_limit_;
+        uint64_t expiry_us = static_cast<uint64_t>(params.heart_beat_interval_) * raft_server::raft_limits_.response_limit_ * 1000;
         uint64_t stale_gap = params.stale_log_gap_;
         uint64_t last_log = get_last_log_idx();
-        for_each_voting_members([&](const nuraft::ptr<nuraft::peer> & peer, int32_t resp_elapsed_ms)
+
+        KeeperServer::RespondingCounts counts;
+        for (const auto & peer : peers)
         {
-            if (resp_elapsed_ms <= expiry && !(last_log > peer->get_last_accepted_log_idx() + stale_gap))
-                ++count;
-        });
-        return count;
+            if (peer.last_succ_resp_us_ > expiry_us)
+                continue;
+
+            ++counts.learners;
+
+            bool synced = last_log <= peer.last_log_idx_ + stale_gap;
+
+            if (learner_ids.contains(peer.id_))
+            {
+                if (synced)
+                    ++counts.synced_non_voting_followers;
+                continue;
+            }
+
+            ++counts.followers;
+            if (synced)
+                ++counts.synced_followers;
+        }
+
+        return counts;
     }
 
     using nuraft::raft_server::raft_server;
@@ -735,14 +756,12 @@ bool KeeperServer::isExceedingMemorySoftLimit() const
     return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
-uint64_t KeeperServer::getFollowerCount() const
+KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
 {
-    return raft_instance->getRespondingFollowerCount();
-}
+    if (!raft_instance->is_leader())
+        return {};
 
-uint64_t KeeperServer::getSyncedFollowerCount() const
-{
-    return raft_instance->getRespondingSyncedFollowerCount();
+    return raft_instance->getRespondingCounts();
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
@@ -1299,12 +1318,12 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
     result.is_follower = !result.is_leader && !result.is_observer;
     result.has_leader = result.is_leader || isLeaderAlive();
-    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
-    if (result.is_leader)
-    {
-        result.follower_count = getFollowerCount();
-        result.synced_follower_count = getSyncedFollowerCount();
-    }
+    auto counts = getRespondingCounts();
+    result.is_standalone = !result.is_follower && counts.followers == 0;
+    result.learner_count = counts.learners;
+    result.follower_count = counts.followers;
+    result.synced_follower_count = counts.synced_followers;
+    result.synced_non_voting_follower_count = counts.synced_non_voting_followers;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     return result;
 }
