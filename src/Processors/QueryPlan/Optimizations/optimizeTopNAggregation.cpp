@@ -198,26 +198,23 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Check if we can do early termination (mode 1) by checking if ReadFromMergeTree exists
     /// and its sorting key matches the aggregate argument.
+    /// Mode 1 requires the ORDER BY aggregate's output to be monotonically ordered by the sort key
+    /// (true for min/max, but not for argMin/argMax or any where the output is a different column).
     bool sorted_input = false;
     ReadFromMergeTree * read_from_mt = nullptr;
 
-    if (agg_node->children.size() == 1)
+    if (order_info.output_ordered_by_sort_key && agg_node->children.size() == 1)
     {
         read_from_mt = findReadFromMergeTree(*agg_node->children[0]);
     }
 
     if (read_from_mt)
     {
-        /// Check if the ORDER BY aggregate's argument matches a prefix of the table's sorting key.
-        /// For max(col): argument is col. For argMax(val, col): argument is col (last argument).
         const auto & order_arg_name = order_agg.argument_names.back();
-
-        /// Get the table's sorting key column names.
         const auto & sorting_key_columns = read_from_mt->getStorageMetadata()->getSortingKeyColumns();
 
         if (!sorting_key_columns.empty() && sorting_key_columns[0] == order_arg_name)
         {
-            /// Request reading in order matching the aggregate direction.
             int read_direction = required_direction;
             if (read_from_mt->requestReadingInOrder(1, read_direction, limit_value))
                 sorted_input = true;

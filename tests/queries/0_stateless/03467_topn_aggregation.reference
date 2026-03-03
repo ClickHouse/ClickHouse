@@ -104,3 +104,79 @@ f	150
 b	\N
 d	200
 f	150
+-- collation: optimized
+3	a
+1	ä
+5	b
+-- collation: reference
+3	a
+1	ä
+5	b
+-- mode 1 EXPLAIN sorted input
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    TopNAggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_topn)
+-- mode 1 small limit: optimized
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+-- mode 1 small limit: reference
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+-- argMin ASC: optimized
+g0	payload_0
+g1	payload_1
+g10	payload_10
+g11	payload_11
+g12	payload_12
+-- argMin ASC: reference
+g0	payload_0
+g1	payload_1
+g10	payload_10
+g11	payload_11
+g12	payload_12
+-- argMax DESC: optimized
+g49	payload_499
+g48	payload_498
+g47	payload_497
+g46	payload_496
+g45	payload_495
+-- argMax DESC: reference
+g49	payload_499
+g48	payload_498
+g47	payload_497
+g46	payload_496
+g45	payload_495
+-- ties: optimized
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- ties: reference
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- multi-agg max+argMax: optimized
+g49	2024-01-01 00:08:19	payload_499
+g48	2024-01-01 00:08:18	payload_498
+g47	2024-01-01 00:08:17	payload_497
+g46	2024-01-01 00:08:16	payload_496
+g45	2024-01-01 00:08:15	payload_495
+-- multi-agg max+argMax: reference
+g49	2024-01-01 00:08:19	payload_499
+g48	2024-01-01 00:08:18	payload_498
+g47	2024-01-01 00:08:17	payload_497
+g46	2024-01-01 00:08:16	payload_496
+g45	2024-01-01 00:08:15	payload_495
+-- EXPLAIN argMin (should optimize)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    TopNAggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_topn_argminmax)

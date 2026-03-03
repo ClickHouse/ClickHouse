@@ -205,7 +205,157 @@ ORDER BY m DESC NULLS FIRST
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 0;
 
+-- Collation-sensitive ordering test (Mode 2, unsorted by aggregate arg)
+DROP TABLE IF EXISTS t_topn_collation;
+CREATE TABLE t_topn_collation (key UInt32, val String)
+ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t_topn_collation VALUES (1, 'ä'), (2, 'z'), (3, 'a'), (4, 'ö'), (5, 'b');
+
+SELECT '-- collation: optimized';
+SELECT key, min(val) AS m
+FROM t_topn_collation
+GROUP BY key
+ORDER BY m ASC COLLATE 'en'
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- collation: reference';
+SELECT key, min(val) AS m
+FROM t_topn_collation
+GROUP BY key
+ORDER BY m ASC COLLATE 'en'
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+-- Mode 1 early termination: verify TopNAggregating is used and reads in reverse order
+SELECT '-- mode 1 EXPLAIN sorted input';
+EXPLAIN PLAN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+-- Mode 1: correctness with small limit
+SELECT '-- mode 1 small limit: optimized';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- mode 1 small limit: reference';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+-- argMin / argMax tests
+DROP TABLE IF EXISTS t_topn_argminmax;
+CREATE TABLE t_topn_argminmax (grp String, ts DateTime, payload String)
+ENGINE = MergeTree ORDER BY ts;
+
+INSERT INTO t_topn_argminmax SELECT
+    'g' || toString(number % 50),
+    toDateTime('2024-01-01') + number,
+    'payload_' || toString(number)
+FROM numbers(500);
+
+SELECT '-- argMin ASC: optimized';
+SELECT grp, argMin(payload, ts) AS earliest
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY earliest ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- argMin ASC: reference';
+SELECT grp, argMin(payload, ts) AS earliest
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY earliest ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- argMax DESC: optimized';
+SELECT grp, argMax(payload, ts) AS latest
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY latest DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- argMax DESC: reference';
+SELECT grp, argMax(payload, ts) AS latest
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY latest DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- Tie-heavy dataset: many rows per group, same aggregate value for many groups
+DROP TABLE IF EXISTS t_topn_ties;
+CREATE TABLE t_topn_ties (grp String, val UInt64)
+ENGINE = MergeTree ORDER BY val;
+
+-- 100 groups, 10 rows each; max(val) for each group = grp_num * 100 + 9
+INSERT INTO t_topn_ties SELECT
+    'group_' || leftPad(toString(number % 100), 3, '0'),
+    (number % 100) * 100 + (number / 100)
+FROM numbers(1000);
+
+SELECT '-- ties: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_ties
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- ties: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_ties
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- Multiple aggregates: max + argMax together
+SELECT '-- multi-agg max+argMax: optimized';
+SELECT grp, max(ts) AS latest_ts, argMax(payload, ts) AS latest_payload
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY latest_ts DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- multi-agg max+argMax: reference';
+SELECT grp, max(ts) AS latest_ts, argMax(payload, ts) AS latest_payload
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY latest_ts DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- EXPLAIN: verify argMin uses TopNAggregating
+SELECT '-- EXPLAIN argMin (should optimize)';
+EXPLAIN PLAN
+SELECT grp, argMin(payload, ts) AS earliest
+FROM t_topn_argminmax
+GROUP BY grp
+ORDER BY earliest ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;
 DROP TABLE t_topn_unsorted;
 DROP TABLE t_topn_nullable;
+DROP TABLE t_topn_collation;
+DROP TABLE t_topn_argminmax;
+DROP TABLE t_topn_ties;

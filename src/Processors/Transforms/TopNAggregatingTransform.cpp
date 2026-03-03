@@ -313,16 +313,34 @@ Chunk TopNAggregatingTransform::generateMode2()
     std::vector<size_t> indices(num_groups_total);
     std::iota(indices.begin(), indices.end(), 0);
 
-    int nulls_dir = sort_description.front().nulls_direction;
-    std::partial_sort(
-        indices.begin(),
-        indices.begin() + static_cast<std::ptrdiff_t>(std::min(limit, num_groups_total)),
-        indices.end(),
-        [&](size_t a, size_t b)
-        {
-            int cmp = order_col->compareAt(a, b, *order_col, nulls_dir);
-            return (sort_direction < 0) ? (cmp > 0) : (cmp < 0);
-        });
+    const auto & sort_col_desc = sort_description.front();
+    int nulls_dir = sort_col_desc.nulls_direction;
+    const auto & collator = sort_col_desc.collator;
+
+    if (collator)
+    {
+        std::partial_sort(
+            indices.begin(),
+            indices.begin() + static_cast<std::ptrdiff_t>(std::min(limit, num_groups_total)),
+            indices.end(),
+            [&](size_t a, size_t b)
+            {
+                int cmp = order_col->compareAtWithCollation(a, b, *order_col, nulls_dir, *collator);
+                return (sort_direction < 0) ? (cmp > 0) : (cmp < 0);
+            });
+    }
+    else
+    {
+        std::partial_sort(
+            indices.begin(),
+            indices.begin() + static_cast<std::ptrdiff_t>(std::min(limit, num_groups_total)),
+            indices.end(),
+            [&](size_t a, size_t b)
+            {
+                int cmp = order_col->compareAt(a, b, *order_col, nulls_dir);
+                return (sort_direction < 0) ? (cmp > 0) : (cmp < 0);
+            });
+    }
 
     size_t output_size = std::min(limit, num_groups_total);
 

@@ -5,6 +5,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 
 #include <unordered_map>
 
@@ -64,8 +65,14 @@ private:
     size_t num_groups = 0;
     bool generated = false;
 
-    /// Hash map: serialized group key -> row index in result_columns.
-    std::unordered_map<std::string, size_t> group_indices;
+    struct UInt128Hash
+    {
+        size_t operator()(UInt128 x) const { return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]}); }
+    };
+
+    /// Hash map: SipHash-128 of group key columns -> list of group indices with that hash.
+    /// On lookup, exact column comparison confirms the match (collision-safe).
+    std::unordered_multimap<UInt128, size_t, UInt128Hash> group_indices;
 
     struct GroupState
     {
@@ -83,7 +90,12 @@ private:
     Chunk generateMode1();
     Chunk generateMode2();
 
-    std::string serializeGroupKey(const Columns & columns, size_t row) const;
+    UInt128 hashGroupKey(const Columns & columns, size_t row) const;
+
+    /// Find group index for the given row, or return num_groups (not found).
+    /// Performs exact key-column comparison against stored keys in result_columns.
+    size_t findGroupIndex(UInt128 hash, const Columns & columns, size_t row) const;
+
     void createAggregateStates(AggregateDataPtr place) const;
     void destroyAggregateStates(AggregateDataPtr place) const;
     void addRowToAggregateStates(AggregateDataPtr place, const Columns & columns, size_t row);
