@@ -228,7 +228,13 @@ def build_and_push_image(
             if uses_deb:
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
-                urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                # For keeper tgz builds (alpine/ubuntu), only pass the keeper tgz.
+                # Excluding clickhouse-common-static.tgz avoids a very large unnecessary download.
+                tgz_urls = [url for url in direct_urls[arch] if ".tgz" in url]
+                if "keeper" in image.name:
+                    urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
+                else:
+                    urls = tgz_urls
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -390,7 +396,9 @@ def main():
                     "clickhouse-common-static",
                 ]
             elif "clickhouse-keeper" in image_repo:
-                PACKAGES = ["clickhouse-keeper"]
+                # clickhouse-common-static provides the actual binary (required for distroless).
+                # clickhouse-keeper provides the standalone binary/symlink for alpine/ubuntu.
+                PACKAGES = ["clickhouse-common-static", "clickhouse-keeper"]
             else:
                 assert False, "BUG"
             urls = read_build_urls(build_name)
