@@ -1,0 +1,89 @@
+=== Testing FLAT Dictionary ===
+1	Alice	{'age':'30','city':'New York','country':'USA'}	{'hobbies':['reading','swimming'],'skills':['python','sql']}	{'math':95.5,'english':88}
+2	Bob	{'age':'25','city':'London','country':'UK'}	{'hobbies':['gaming','music'],'skills':['java','javascript']}	{'math':87.5,'english':92}
+3	Charlie	{'age':'35','city':'Tokyo','country':'Japan'}	{'hobbies':['cooking','travel'],'skills':['c++','go']}	{'math':90,'english':85.5}
+=== Testing HASHED Dictionary ===
+1	Alice	{'age':'30','city':'New York','country':'USA'}	{'hobbies':['reading','swimming'],'skills':['python','sql']}	{'math':95.5,'english':88}
+2	Bob	{'age':'25','city':'London','country':'UK'}	{'hobbies':['gaming','music'],'skills':['java','javascript']}	{'math':87.5,'english':92}
+3	Charlie	{'age':'35','city':'Tokyo','country':'Japan'}	{'hobbies':['cooking','travel'],'skills':['c++','go']}	{'math':90,'english':85.5}
+=== Testing Map Key Access ===
+1	Alice	New York	30	95.5
+2	Bob	London	25	87.5
+3	Charlie	Tokyo	35	90
+=== Testing Nested Map ===
+1	Alice	['reading','swimming']	['python','sql']
+2	Bob	['gaming','music']	['java','javascript']
+3	Charlie	['cooking','travel']	['c++','go']
+=== Testing getColumn (Batch Query) ===
+1	{'age':'30','city':'New York','country':'USA'}
+2	{'age':'25','city':'London','country':'UK'}
+3	{'age':'35','city':'Tokyo','country':'Japan'}
+=== Dictionary Info ===
+map_test_flat	Flat	UInt64	['name','metadata','tags','scores']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)']
+map_test_hashed	Hashed	UInt64	['name','metadata','tags','scores']	['String','Map(String, String)','Map(String, Array(String))','Map(String, Float64)']
+=== Testing FLAT Dictionary (JSON/Object) ===
+2	Bob	{"age":25,"city":"London","country":"UK","hobbies":["gaming","music"],"skills":{"languages":["english","french"],"programming":["java","javascript"]}}	{"auto_save":true,"notifications":false,"theme":"light"}	{"display":{"color_scheme":"green","font_size":12},"privacy":{"share_data":true}}	{"created_at":19773,"last_login":20055,"status":"active"}
+1	Alice	{"age":30,"city":"New York","country":"USA","hobbies":["reading","swimming"],"skills":{"languages":["english","spanish"],"programming":["python","sql"]}}	{"auto_save":false,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"blue","font_size":14},"privacy":{"share_data":false}}	{"created_at":19737,"last_login":20058,"status":"active"}
+3	Charlie	{"age":35,"city":"Tokyo","country":"Japan","hobbies":["cooking","travel"],"skills":{"languages":["japanese","english"],"programming":["c++","go"]}}	{"auto_save":true,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"red","font_size":16},"privacy":{"share_data":false}}	{"created_at":19792,"last_login":20059,"status":"inactive"}
+=== Testing HASHED Dictionary (JSON/Object) ===
+1	Alice	{"age":30,"city":"New York","country":"USA","hobbies":["reading","swimming"],"skills":{"languages":["english","spanish"],"programming":["python","sql"]}}	{"auto_save":false,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"blue","font_size":14},"privacy":{"share_data":false}}	{"created_at":19737,"last_login":20058,"status":"active"}
+2	Bob	{"age":25,"city":"London","country":"UK","hobbies":["gaming","music"],"skills":{"languages":["english","french"],"programming":["java","javascript"]}}	{"auto_save":true,"notifications":false,"theme":"light"}	{"display":{"color_scheme":"green","font_size":12},"privacy":{"share_data":true}}	{"created_at":19773,"last_login":20055,"status":"active"}
+3	Charlie	{"age":35,"city":"Tokyo","country":"Japan","hobbies":["cooking","travel"],"skills":{"languages":["japanese","english"],"programming":["c++","go"]}}	{"auto_save":true,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"red","font_size":16},"privacy":{"share_data":false}}	{"created_at":19792,"last_login":20059,"status":"inactive"}
+=== Testing JSON Field Access ===
+3	Charlie	35	Tokyo	Japan	dark	inactive
+2	Bob	25	London	UK	light	active
+1	Alice	30	New York	USA	dark	active
+=== Testing Nested JSON Access ===
+1	Alice	['reading','swimming']	\N	\N	\N
+2	Bob	['gaming','music']	\N	\N	\N
+3	Charlie	['cooking','travel']	\N	\N	\N
+=== Testing JSON Array Access ===
+1	Alice	['reading','swimming']	reading	\N
+2	Bob	['gaming','music']	gaming	\N
+3	Charlie	['cooking','travel']	cooking	\N
+=== Testing getColumn (Batch Query JSON/Object) ===
+1	{"age":30,"city":"New York","country":"USA","hobbies":["reading","swimming"],"skills":{"languages":["english","spanish"],"programming":["python","sql"]}}	{"auto_save":false,"notifications":true,"theme":"dark"}
+2	{"age":25,"city":"London","country":"UK","hobbies":["gaming","music"],"skills":{"languages":["english","french"],"programming":["java","javascript"]}}	{"auto_save":true,"notifications":false,"theme":"light"}
+3	{"age":35,"city":"Tokyo","country":"Japan","hobbies":["cooking","travel"],"skills":{"languages":["japanese","english"],"programming":["c++","go"]}}	{"auto_save":true,"notifications":true,"theme":"dark"}
+=== Testing Multiple JSON Fields ===
+2	Bob	{"age":25,"city":"London","country":"UK","hobbies":["gaming","music"],"skills":{"languages":["english","french"],"programming":["java","javascript"]}}	{"auto_save":true,"notifications":false,"theme":"light"}	{"display":{"color_scheme":"green","font_size":12},"privacy":{"share_data":true}}	{"created_at":19773,"last_login":20055,"status":"active"}
+1	Alice	{"age":30,"city":"New York","country":"USA","hobbies":["reading","swimming"],"skills":{"languages":["english","spanish"],"programming":["python","sql"]}}	{"auto_save":false,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"blue","font_size":14},"privacy":{"share_data":false}}	{"created_at":19737,"last_login":20058,"status":"active"}
+3	Charlie	{"age":35,"city":"Tokyo","country":"Japan","hobbies":["cooking","travel"],"skills":{"languages":["japanese","english"],"programming":["c++","go"]}}	{"auto_save":true,"notifications":true,"theme":"dark"}	{"display":{"color_scheme":"red","font_size":16},"privacy":{"share_data":false}}	{"created_at":19792,"last_login":20059,"status":"inactive"}
+=== JSON/Object Dictionary Info ===
+json_test_flat	Flat	UInt64	['name','profile','settings','preferences','metadata']	['String','JSON','JSON','JSON','JSON']
+json_test_hashed	Hashed	UInt64	['name','profile','settings','preferences','metadata']	['String','JSON','JSON','JSON','JSON']
+=== Combined Test: Map and JSON/Object ===
+2	Bob	London	Bob	London
+1	Alice	New York	Alice	New York
+3	Charlie	Tokyo	Charlie	Tokyo
+=== Testing Deep Nested JSON (Multiple Depths) ===
+1	DeepTest1	\N	\N	\N	\N	\N	\N	\N	\N
+2	DeepTest2	\N	\N	\N	\N	\N	\N	\N	\N
+3	DeepTest3	\N	\N	\N	\N	\N	\N	\N	\N
+=== Testing Deep Nested JSON with Arrays and Objects ===
+1	DeepTest1	\N	\N	\N	\N	\N	\N
+3	DeepTest3	\N	\N	\N	\N	\N	\N
+2	DeepTest2	\N	\N	\N	\N	\N	\N
+=== Testing Complex Hierarchy (Multiple Nested Levels) ===
+2	DeepTest2	\N	\N	\N	\N	\N	\N	\N
+3	DeepTest3	\N	\N	\N	\N	\N	\N	\N
+1	DeepTest1	\N	\N	\N	\N	\N	\N	\N
+=== Testing Nested Arrays within Nested Objects ===
+1	DeepTest1	\N	\N	\N	\N
+3	DeepTest3	\N	\N	\N	\N
+2	DeepTest2	\N	\N	\N	\N
+=== Testing Deeply Nested Complex Hierarchy Structures ===
+2	DeepTest2	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+1	DeepTest1	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+3	DeepTest3	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+=== Testing HASHED Dictionary with Deep Nested JSON ===
+3	DeepTest3	\N	\N	\N
+1	DeepTest1	\N	\N	\N
+2	DeepTest2	\N	\N	\N
+=== Testing Batch Query with Deep Nested JSON ===
+1	DeepTest1	{"level1":{"level2":{"level3":{"level4":{"level5":{"nested":{"key":"nested_value_1"},"numbers":[1,2,3],"value":"deep_value_1"}}}}}}	{"company":{"departments":[{"name":"Engineering","teams":[{"members":[{"name":"Alice","projects":[{"details":{"budget":100000,"start_date":19723},"name":"Project A","status":"active"}],"role":"Senior"}],"name":"Backend"}]},{"name":"Product","teams":[{"members":[{"name":"Bob","projects":[{"name":"Project B","status":"planning"}],"role":"Lead"}],"name":"Design"}]}]}}
+2	DeepTest2	{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"array":[{"item":"a","sub":{"data":"x"}},{"item":"b","sub":{"data":"y"}}],"value":"very_deep_value"}}}}}}}	{"organization":{"divisions":{"tech":{"teams":{"backend":{"members":[{"id":2,"name":"Bob","skills":{"databases":{"cache":"Redis","primary":"PostgreSQL"},"languages":["Python","Go"]}}]},"frontend":{"members":[{"id":1,"name":"Alice","skills":{"frameworks":{"react":{"projects":[{"features":["feature1","feature2"],"name":"App1"}],"version":"18"}},"languages":["JS","TS"]}}]}}}}}}
+3	DeepTest3	{"a":{"b":{"c":{"d":{"e":{"f":{"metadata":{"created":19723,"nested_obj":{"key1":"val1","key2":"val2"},"tags":["tag1","tag2"]},"value":"extremely_deep"}}}}}}}	{"root":{"branch1":{"leaf1":{"children":[{"attributes":{"color":"red","details":{"material":"wood","origin":{"country":"USA","state":"CA"}},"size":"large"},"id":1,"name":"child1"},{"attributes":{"color":"blue","size":"medium"},"id":2,"name":"child2"}],"data":"value1"},"leaf2":{"children":[{"id":3,"name":"child3"}],"data":"value2"}},"branch2":{"leaf3":{"data":"value3"}}}}
+=== Deep JSON Dictionary Info ===
+deep_json_test_hashed	Hashed	UInt64	['name','deep_data','nested_structure','complex_hierarchy']	['String','JSON','JSON','JSON']
+deep_json_test_flat	Flat	UInt64	['name','deep_data','nested_structure','complex_hierarchy']	['String','JSON','JSON','JSON']

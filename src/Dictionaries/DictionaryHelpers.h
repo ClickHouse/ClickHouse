@@ -6,11 +6,16 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
@@ -260,8 +265,10 @@ class DictionaryAttributeColumnProvider
 public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
-            std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
+            std::conditional_t<std::is_same_v<DictionaryAttributeType, Map>, ColumnMap,
+                std::conditional_t<std::is_same_v<DictionaryAttributeType, Object>, ColumnObject,
+                    std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
+                        ColumnVectorOrDecimal<DictionaryAttributeType>>>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -276,6 +283,44 @@ public:
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+        }
+        if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
+        {
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
+            {
+                auto key_column = map_type->getKeyType()->createColumn();
+                auto value_column = map_type->getValueType()->createColumn();
+                MutableColumns tuple_columns;
+                tuple_columns.push_back(std::move(key_column));
+                tuple_columns.push_back(std::move(value_column));
+                auto tuple_column = ColumnTuple::create(std::move(tuple_columns));
+                // ColumnMap requires ColumnArray containing ColumnTuple
+                auto array_column = ColumnArray::create(std::move(tuple_column));
+                return ColumnMap::create(std::move(array_column));
+            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
+        }
+        if constexpr (std::is_same_v<DictionaryAttributeType, Object>)
+        {
+            if (const auto * object_type = typeid_cast<const DataTypeObject *>(dictionary_attribute.type.get()))
+            {
+                // Create shared_data: ColumnArray containing ColumnTuple with two ColumnString columns (paths and values)
+                MutableColumns paths_and_values;
+                paths_and_values.emplace_back(ColumnString::create());
+                paths_and_values.emplace_back(ColumnString::create());
+                auto shared_data = ColumnArray::create(ColumnTuple::create(std::move(paths_and_values)));
+
+                return ColumnObject::create(
+                    std::unordered_map<String, MutableColumnPtr>{},
+                    std::unordered_map<String, MutableColumnPtr>{},
+                    std::move(shared_data),
+                    object_type->getMaxDynamicPaths(),
+                    object_type->getMaxDynamicPaths(),
+                    object_type->getMaxDynamicTypes());
+            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -376,6 +421,16 @@ public:
         {
             Field field = (*default_values_column)[row];
             return field.safeGet<Array>();
+        }
+        else if constexpr (std::is_same_v<DefaultColumnType, ColumnMap>)
+        {
+            Field field = (*default_values_column)[row];
+            return field.safeGet<Map>();
+        }
+        else if constexpr (std::is_same_v<DefaultColumnType, ColumnObject>)
+        {
+            Field field = (*default_values_column)[row];
+            return field.safeGet<Object>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
