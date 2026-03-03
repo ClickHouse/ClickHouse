@@ -56,7 +56,8 @@ SipHash TextSearchQuery::getHash() const
     for (const auto & token : tokens)
         hash.update(token);
 
-    if (!patterns.empty()) {
+    if (!patterns.empty())
+    {
         hash.update(patterns.size());
         for (const auto & pattern : patterns)
         {
