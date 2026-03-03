@@ -243,36 +243,52 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     size_t total_replicas = shard.getAllNodeCount();
     size_t max_active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
 
-    /// Establish connections to remote replicas upfront, before distributing parts
-    /// with consistent hashing. This lets us detect dead replicas early and avoid
-    /// assigning parts to them (which would require a timeout + local fallback).
+    ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
+                    CurrentMetrics::DistributedIndexAnalysisThreadsActive,
+                    CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
+                    /// TODO: limit amount of threads (maybe shared thread pool)
+                    total_replicas);
+
+    /// Establish connections to remote replicas upfront in parallel, before
+    /// distributing parts with consistent hashing. This lets us detect dead
+    /// replicas early and avoid assigning parts to them.
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     std::vector<ConnectionPool::Entry> connections(total_replicas);
+    {
+        ThreadPoolCallbackRunnerLocal<void> connect_runner(pool, DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
+        for (size_t i = 0; i < total_replicas; ++i)
+        {
+            if (i == local_replica_index)
+                continue;
+            /// Each thread writes to its own connections[i] slot, no synchronization needed.
+            connect_runner.enqueueAndKeepTrack([i, &connections, &connection_pools, &timeouts, &settings, &logger]()
+            {
+                try
+                {
+                    connections[i] = connection_pools[i]->get(timeouts, settings);
+                }
+                catch (...)
+                {
+                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
+                    const auto & replica_address = connection_pools[i]->getAddress();
+                    tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). It will not participate in distributed index analysis", replica_address, i), LogsLevel::warning);
+                }
+            }, Priority{});
+        }
+        connect_runner.waitForAllToFinishAndRethrowFirstError();
+    }
 
     /// Local replica is always active (no connection needed).
+    /// Fill remaining slots with the first successfully connected remote replicas (by index order).
     std::vector<size_t> active_replica_indexes;
     active_replica_indexes.reserve(max_active_replicas);
     active_replica_indexes.push_back(local_replica_index);
-
-    /// Fill remaining slots with successfully connected remote replicas.
     for (size_t i = 0; i < total_replicas && active_replica_indexes.size() < max_active_replicas; ++i)
     {
-        if (i == local_replica_index)
-            continue;
-        try
-        {
-            connections[i] = connection_pools[i]->get(timeouts, settings);
+        if (i != local_replica_index && !connections[i].isNull())
             active_replica_indexes.push_back(i);
-        }
-        catch (...)
-        {
-            ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
-            const auto & replica_address = connection_pools[i]->getAddress();
-            tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). It will not participate in distributed index analysis", replica_address, i), LogsLevel::warning);
-        }
     }
-
-    /// Sort to maintain deterministic part distribution regardless of connection order.
+    /// Sort because local_replica_index may not be the smallest.
     std::sort(active_replica_indexes.begin(), active_replica_indexes.end());
 
     LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, local replica index: {}, active replicas: {} ({}))",
@@ -311,11 +327,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
             filter_query = filter_ast->formatWithSecretsOneLine();
     }
 
-    ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
-                    CurrentMetrics::DistributedIndexAnalysisThreadsActive,
-                    CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
-                    /// TODO: limit amount of threads (maybe shared thread pool)
-                    active_replica_indexes.size());
     ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
     for (const auto i : active_replica_indexes)
     {
