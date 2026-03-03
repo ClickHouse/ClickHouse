@@ -42,11 +42,16 @@ class Job:
         command: str
 
         # What job requires
-        #   May be phony or physical names
+        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
         requires: List[str] = field(default_factory=list)
 
+        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
+        # hard dependencies: they must run (and cannot be skipped as unaffected)
+        # unless their artifacts are already cached by CI.
+        needs_jobs_from_requires: bool = False
+
         # What job provides
-        #   May be phony or physical names
+        #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None
@@ -66,11 +71,6 @@ class Job:
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
-
-        # If True, the job runs without AWS credentials (e.g. on GitHub-hosted macOS runners).
-        # Skips S3 report upload, CIDB, artifact download, open issues check, etc.
-        # The job result is communicated solely via GitHub Actions status.
-        no_aws: bool = False
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""

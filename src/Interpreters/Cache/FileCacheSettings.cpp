@@ -180,7 +180,7 @@ void FileCacheSettings::loadFromConfig(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
-    std::set<std::string> ignore_keys = {"type", "disk", "name"};
+    std::set<std::string> ignore_keys = {"type", "disk", "name", "data_background_cleanup"};
     for (const std::string & key : config_keys)
     {
         if (ignore_keys.contains(key))

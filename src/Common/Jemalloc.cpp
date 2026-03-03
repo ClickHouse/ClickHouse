@@ -2,36 +2,23 @@
 
 #if USE_JEMALLOC
 
-#include <Common/FramePointers.h>
-#include <Common/StringUtils.h>
-#include <Common/getExecutablePath.h>
-#include <Common/Exception.h>
-#include <Common/StackTrace.h>
-#include <Common/Stopwatch.h>
-#include <Common/TraceSender.h>
-#include <Common/MemoryTracker.h>
-#include <Common/logger_useful.h>
-#include <Core/ServerSettings.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <ranges>
-#include <base/hex.h>
+#    include <Common/Exception.h>
+#    include <Common/FramePointers.h>
+#    include <Common/MemoryTracker.h>
+#    include <Common/StackTrace.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/TraceSender.h>
+#    include <Common/logger_useful.h>
 
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
-
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#    define STRINGIFY_HELPER(x) #x
+#    define STRINGIFY(x) STRINGIFY_HELPER(x)
 
 namespace ProfileEvents
 {
-    extern const Event MemoryAllocatorPurge;
-    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
-    extern const Event JemallocFailedAllocationSampleTracking;
-    extern const Event JemallocFailedDeallocationSampleTracking;
+extern const Event MemoryAllocatorPurge;
+extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+extern const Event JemallocFailedAllocationSampleTracking;
+extern const Event JemallocFailedDeallocationSampleTracking;
 }
 
 namespace DB
@@ -39,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Jemalloc
@@ -66,23 +53,7 @@ void checkProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
-void setProfileActive(bool value)
-{
-    checkProfilingEnabled();
-    bool active = true;
-    size_t active_size = sizeof(active);
-    mallctl("prof.active", &active, &active_size, nullptr, 0);
-    if (active == value)
-    {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is already {}", active ? "enabled" : "disabled");
-        return;
-    }
-
-    setValue("prof.active", value);
-    LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
-}
-
-std::string_view flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
@@ -112,196 +83,15 @@ void setMaxBackgroundThreads(size_t max_threads)
     setValue("max_background_threads", max_threads);
 }
 
-namespace
+void setProfileSamplingRate(size_t lg_prof_sample)
 {
-
-/// Helper to parse hex address from string_view and advance it
-std::optional<UInt64> parseHexAddress(std::string_view & src)
-{
-    /// Skip "0x" prefix if present
-    if (src.size() >= 2 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X'))
-        src.remove_prefix(2);
-
-    if (src.empty())
-        return std::nullopt;
-
-    UInt64 address = 0;
-    size_t processed = 0;
-
-    /// Parse hex digits
-    for (size_t i = 0; i < src.size() && processed < 16; ++i)
-    {
-        char c = src[i];
-        if (isHexDigit(c))
-        {
-            address = (address << 4) | unhex(c);
-            ++processed;
-        }
-        else
-            break;
-    }
-
-    if (processed == 0)
-        return std::nullopt;
-
-    src.remove_prefix(processed);
-    return address;
-}
-
-/// Collect unique addresses from a heap profile, also returning raw profile data
-void collectAddressesFromHeapProfile(
-    const std::string & input_filename,
-    std::unordered_set<UInt64> & addresses,
-    std::string & profile_data)
-{
-    ReadBufferFromFile in(input_filename);
-    std::string line;
-
-    while (!in.eof())
-    {
-        line.clear();
-        readStringUntilNewlineInto(line, in);
-        in.tryIgnore(1); /// skip EOL (if not EOF)
-
-        profile_data += line;
-        profile_data += '\n';
-
-        if (line.empty())
-            continue;
-
-        /// Stack traces start with '@' followed by hex addresses
-        if (line[0] == '@')
-        {
-            std::string_view line_addresses(line.data() + 1, line.size() - 1);
-
-            bool first = true;
-            while (!line_addresses.empty())
-            {
-                trimLeft(line_addresses);
-                if (line_addresses.empty())
-                    break;
-
-                auto address = parseHexAddress(line_addresses);
-                if (!address.has_value())
-                    break;
-
-                /// Need to subtract 1 for non first addresses to apply the same fix as in jeprof::FixCallerAddresses()
-                addresses.insert(first ? address.value() : address.value() - 1);
-
-                first = false;
-            }
-        }
-    }
-}
-
-/// Symbolize a set of addresses into a map: address -> "sym1--sym2--..."
-std::unordered_map<UInt64, std::string> symbolizeAddresses(const std::unordered_set<UInt64> & addresses)
-{
-    std::unordered_map<UInt64, std::string> result;
-    result.reserve(addresses.size());
-
-    for (UInt64 address : addresses)
-    {
-        FramePointers fp;
-        fp[0] = reinterpret_cast<void *>(address);
-
-        /// Note, callback calls inlines first, while jeprof needs the opposite
-        /// Note, cannot use frame.virtual_addr since it is empty for inlines
-        std::vector<std::string> symbols;
-        auto symbolize_callback = [&](const StackTrace::Frame & frame)
-        {
-            symbols.push_back(frame.symbol.value_or("??"));
-        };
-
-        /// Note, @fatal (handling inlines) is slow (few milliseconds per address)
-        StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ true);
-
-        /// Reverse, since forEachFrame() adds inline frames first
-        std::string combined;
-        std::string_view separator = "";
-        for (const auto & symbol : std::ranges::reverse_view(symbols))
-        {
-            combined += separator;
-            combined += symbol;
-            separator = "--";
-        }
-        result[address] = std::move(combined);
-    }
-
-    return result;
-}
-
-/// Write a symbolized .sym file using a pre-built symbol map
-void writeSymbolizedHeapProfile(
-    const std::string & output_filename,
-    const std::unordered_map<UInt64, std::string> & symbol_map,
-    const std::string & profile_data)
-{
-    WriteBufferFromFile out(output_filename);
-
-    /// Symbolized profile header
-    writeString("--- symbol\n", out);
-    if (auto binary_path = getExecutablePath(); !binary_path.empty())
-    {
-        writeString("binary=", out);
-        writeString(binary_path, out);
-        writeChar('\n', out);
-    }
-
-    /// Write symbol table: only addresses that appear in the profile_data
-    /// (We write all symbols from the map; callers can share maps across files)
-    for (const auto & [address, symbols] : symbol_map)
-    {
-        writePointerHex(reinterpret_cast<const void *>(address), out);
-        writeChar(' ', out);
-        writeString(symbols, out);
-        writeChar('\n', out);
-    }
-
-    writeString("---\n", out);
-    writeString("--- heap\n", out);
-    writeString(profile_data, out);
-
-    out.finalize();
-}
-
-}
-
-
-void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename)
-{
-    std::unordered_set<UInt64> addresses;
-    std::string profile_data;
-
-    collectAddressesFromHeapProfile(input_filename, addresses, profile_data);
-    auto symbol_map = symbolizeAddresses(addresses);
-    writeSymbolizedHeapProfile(output_filename, symbol_map, profile_data);
-}
-
-
-void symbolizeHeapProfilesBatch(const std::vector<std::pair<std::string, std::string>> & input_output_pairs)
-{
-    if (input_output_pairs.empty())
+    size_t current = getValue<size_t>("prof.lg_sample");
+    if (current == lg_prof_sample)
         return;
 
-    /// Phase 1: Collect all unique addresses from ALL input files
-    std::unordered_set<UInt64> all_addresses;
-    std::vector<std::string> all_profile_data(input_output_pairs.size());
-
-    for (size_t i = 0; i < input_output_pairs.size(); ++i)
-    {
-        collectAddressesFromHeapProfile(input_output_pairs[i].first, all_addresses, all_profile_data[i]);
-    }
-
-    /// Phase 2: Symbolize all unique addresses once
-    auto symbol_map = symbolizeAddresses(all_addresses);
-
-    /// Phase 3: Write all output files using the shared symbol map
-    for (size_t i = 0; i < input_output_pairs.size(); ++i)
-    {
-        writeSymbolizedHeapProfile(input_output_pairs[i].second, symbol_map, all_profile_data[i]);
-    }
+    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
 }
+
 
 namespace
 {
@@ -380,7 +170,8 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log)
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
 {
     if (enable_global_profiler)
     {
@@ -393,10 +184,41 @@ void setup(
     if (max_background_threads_num)
         setValue("max_background_threads", max_background_threads_num);
 
+    if (profiler_sampling_rate != default_profiler_sampling_rate)
+        setProfileSamplingRate(profiler_sampling_rate);
+
     collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
     setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
     setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
+}
+
+void verifySetup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
+{
+    /// Verify that the settings match what was configured by the earlier `setup` call.
+    /// Catch mismatches between server settings defaults and the manually defined config names in `BaseDaemon`.
+    auto log_warning = [](std::string_view setting)
+    {
+        chassert(false, fmt::format("Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting));
+        LOG_WARNING(
+            &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
+    };
+
+    if (getThreadProfileInitMib().getValue() != enable_global_profiler)
+        log_warning(config_enable_global_profiler);
+    if (getValue<bool>("background_thread") != enable_background_threads)
+        log_warning(config_enable_background_threads);
+    if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
+        log_warning(config_max_background_threads_num);
+    if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
+        log_warning(config_profiler_sampling_rate);
+    if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
+        log_warning(config_collect_global_profile_samples_in_trace_log);
 }
 
 
@@ -404,7 +226,6 @@ const MibCache<bool> & getThreadProfileActiveMib()
 {
     static MibCache<bool> thread_profile_active("thread.prof.active");
     return thread_profile_active;
-
 }
 
 const MibCache<bool> & getThreadProfileInitMib()

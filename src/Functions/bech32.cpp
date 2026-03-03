@@ -99,6 +99,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Encode string to Bech32 or Bech32m address
@@ -277,6 +278,24 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
             uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
+
+            /** Witness version is a versioning mechanism for Bitcoin SegWit addresses:
+              * - Version 0: Original SegWit (BIP-141, BIP-173), uses Bech32 encoding
+              * - Version 1: Taproot (BIP-341, BIP-350), uses Bech32m encoding
+              * - Versions 2-16: Reserved for future protocol upgrades
+              *
+              * The witness version must be in range [0, 16] per the SegWit specification.
+              * It also must fit in the bech32 charset which is 5 bits (0-31), otherwise
+              * indexing into the CHARSET array in bech32::encode will cause a buffer overflow.
+              */
+            if (witness_version > 16)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid witness version {} for function {}, expected value in range [0, 16]",
+                    witness_version,
+                    name);
+            }
 
             bech32_data input_5bit;
             input_5bit.push_back(witness_version);

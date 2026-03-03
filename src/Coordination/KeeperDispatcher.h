@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -90,7 +91,8 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
+    bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
@@ -164,7 +166,7 @@ public:
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const
@@ -175,6 +177,17 @@ public:
     bool isFollower() const
     {
         return server->isFollower();
+    }
+
+    const char * getRoleString() const
+    {
+        if (isLeader())
+            return "leader";
+        if (isFollower())
+            return "follower";
+        if (isObserver())
+            return "observer";
+        return "unknown";
     }
 
     bool hasLeader() const

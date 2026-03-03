@@ -317,8 +317,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         allocation_traced = true;
     }
 
-    std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
+    double current_fault_probability = fault_probability.load(std::memory_order_relaxed);
+    std::bernoulli_distribution fault(current_fault_probability);
+    if (unlikely(current_fault_probability > 0.0 && fault(thread_local_rng)))
     {
         if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {
@@ -509,7 +510,13 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             logMemoryUsage(will_be);
 
 #if USE_JEMALLOC
-        if (level == VariableContext::Global && jemalloc_flush_profile_interval_bytes)
+        /// Skip jemalloc profile flushing if allocations are denied in the current scope
+        /// (e.g., in signal handlers or MergeTreeBackgroundExecutor), because flushProfile allocates.
+        if (level == VariableContext::Global && jemalloc_flush_profile_interval_bytes
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            && !memory_tracker_always_throw_logical_error_on_allocation
+#endif
+            )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             if (DB::Jemalloc::getValue<bool>("prof.active"))

@@ -16,6 +16,7 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Databases/DataLake/StorageCredentials.h>
 
 namespace DB
 {
@@ -56,6 +57,8 @@ struct StorageObjectStorageQuerySettings
 class StorageObjectStorageConfiguration
 {
 public:
+    using CredentialsConfigurationCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
+
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
 
@@ -81,7 +84,8 @@ public:
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -134,24 +138,19 @@ public:
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
-    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual bool supportsTotalRows() const { return false; }
+    virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
-    virtual bool supportsTotalBytes() const { return false; }
+    virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
     /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
-
-    // This function is used primarily for datalake storages to check if we need to update metadata
-    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
-    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
-    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -179,7 +178,9 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
+    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
+    virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }

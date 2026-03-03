@@ -158,6 +158,11 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     }
 }
 
+String DataTypeObject::getSchemaFormatString() const
+{
+    return String{magic_enum::enum_name(schema_format)};
+}
+
 String DataTypeObject::doGetName() const
 {
     WriteBufferFromOwnString out;

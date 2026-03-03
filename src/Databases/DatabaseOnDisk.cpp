@@ -29,6 +29,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -209,6 +211,7 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     auto db_disk = getDisk();
     createDirectories();
 
@@ -350,6 +353,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::dropTable");
     waitDatabaseStarted();
 
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -750,6 +754,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     bool throw_on_error /*= true*/,
     bool remove_empty /*= false*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::parseQueryFromMetadata");
     if (!disk->existsFile(metadata_file_path))
     {
         if (!throw_on_error)
@@ -874,6 +879,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::modifySettingsMetadata");
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;

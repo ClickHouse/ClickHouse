@@ -174,8 +174,6 @@ public:
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
-    bool hasBoundsInfoInManifests() const;
-    const std::set<Int32> & getColumnsIDsWithBounds() const;
     const String & getPathToManifestFile() const { return path_to_manifest_file; }
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;

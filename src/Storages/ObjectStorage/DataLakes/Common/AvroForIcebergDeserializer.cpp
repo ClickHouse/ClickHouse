@@ -6,6 +6,9 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Common/SharedLockGuard.h>
+#include <Common/UniqueLock.h>
+
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -76,16 +79,30 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
+    // First, try to read from cache with shared lock (for concurrent reads)
+    {
+        SharedLockGuard lock(cache_mutex);
+        auto it = cache_extracted_subcolumns_with_types.find(path);
+        if (it != cache_extracted_subcolumns_with_types.end())
+            return it->second;
+    }
+
+    // Not in cache, acquire exclusive lock to populate cache
+    UniqueLock lock(cache_mutex);
+
+    // Double-check: another thread might have populated the cache while we were waiting for the lock
     auto it = cache_extracted_subcolumns_with_types.find(path);
     if (it != cache_extracted_subcolumns_with_types.end())
         return it->second;
 
+    // Populate cache
     if (parsed_column_data_type->hasSubcolumn(path))
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);
         cache_extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
-    } else
+    }
+    else
     {
         cache_extracted_subcolumns_with_types[path] = std::nullopt;
     }
@@ -141,20 +158,35 @@ String removeAllSlashes(const String & input)
 
 }
 
-String AvroForIcebergDeserializer::getContent(size_t row_number) const
+String AvroForIcebergDeserializer::formatRowAsJSON(const ColumnsWithTypeAndName & parsed_columns, size_t row_number) const
 {
-    if (!cache_parsed_columns)
-        cache_parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
     WriteBufferFromOwnString buf;
     FormatSettings settings;
     settings.write_statistics = false;
-    JSONEachRowRowOutputFormat output_format
-        = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(cache_parsed_columns.value()), settings);
+    JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(parsed_columns), settings);
     output_format.writeRow({parsed_column}, row_number);
     output_format.finalize();
     auto result_json = buf.str();
     /// result_json looks like '{"":<some_json>}\n'. We need to extract just <some_json>
     return result_json.substr(4, result_json.size() - 6);
+}
+
+String AvroForIcebergDeserializer::getContent(size_t row_number) const
+{
+    // First check with shared lock if cache is already initialized
+    {
+        SharedLockGuard shared_lock(cache_mutex);
+        if (cache_parsed_columns)
+            return formatRowAsJSON(cache_parsed_columns.value(), row_number);
+    }
+
+    UniqueLock exclusive_lock(cache_mutex);
+
+    // Double-check: another thread might have initialized while we were waiting
+    if (!cache_parsed_columns)
+        cache_parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
+
+    return formatRowAsJSON(cache_parsed_columns.value(), row_number);
 }
 
 String AvroForIcebergDeserializer::getMetadataContent() const

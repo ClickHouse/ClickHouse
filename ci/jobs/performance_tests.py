@@ -22,21 +22,19 @@ perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
-select test, query_index,
+SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-from query_metrics_v2
+    any(query_display_name) AS query_display_name
+FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
 -- some time to notice that something is wrong.
--- TODO: switch 3 month to 1 month once we have data in the table
-where event_date between now() - interval 3 month - interval 1 week
-    and now() - interval 1 week
-    and metric = 'client_time'
-    and pr_number = 0
-group by test, query_index, query_display_name
-having count(*) > 100"""
+WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+    AND metric = 'client_time'
+    AND pr_number = 0
+GROUP BY test, query_index
+HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
@@ -454,10 +452,25 @@ def main():
             cidb = CIDBCluster(
                 url="https://play.clickhouse.com?user=play", user="", pwd=""
             )
-            assert cidb.is_ready()
+            if not cidb.is_ready():
+                print(
+                    "WARNING: CIDB is not ready, will proceed without historical thresholds"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
             )
+            if result is None:
+                print(
+                    "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                Shell.check(
+                    f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
+                )
+                return True
             with open(
                 f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
             ) as f:
@@ -526,6 +539,8 @@ def main():
             f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
+            # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
+            f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
             restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead

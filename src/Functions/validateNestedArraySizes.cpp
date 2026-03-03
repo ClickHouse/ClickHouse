@@ -119,7 +119,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
 
 REGISTER_FUNCTION(ValidateNestedArraySizes)
 {
-    factory.registerFunction<FunctionValidateNestedArraySizes>();
+    factory.registerFunction<FunctionValidateNestedArraySizes>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

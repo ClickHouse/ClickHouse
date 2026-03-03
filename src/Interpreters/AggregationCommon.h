@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <Columns/IColumn.h>
