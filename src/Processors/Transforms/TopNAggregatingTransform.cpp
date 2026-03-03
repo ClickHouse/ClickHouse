@@ -2,10 +2,10 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn.h>
-#include <Common/SipHash.h>
 #include <Processors/Port.h>
 
 #include <algorithm>
+#include <limits>
 #include <numeric>
 
 namespace DB
@@ -81,16 +81,33 @@ void TopNAggregatingTransform::initColumnIndices(const Block & input_header_)
     }
 }
 
-std::string TopNAggregatingTransform::serializeGroupKey(const Columns & columns, size_t row) const
+UInt128 TopNAggregatingTransform::hashGroupKey(const Columns & columns, size_t row) const
 {
     SipHash hash;
     for (size_t idx : key_column_indices)
         columns[idx]->updateHashWithValue(row, hash);
+    return hash.get128();
+}
 
-    auto hash_result = hash.get128();
-    std::string key(sizeof(hash_result), '\0');
-    memcpy(key.data(), &hash_result, sizeof(hash_result));
-    return key;
+size_t TopNAggregatingTransform::findGroupIndex(UInt128 hash, const Columns & columns, size_t row) const
+{
+    auto [it, end] = group_indices.equal_range(hash);
+    for (; it != end; ++it)
+    {
+        size_t group_idx = it->second;
+        bool match = true;
+        for (size_t k = 0; k < key_column_indices.size(); ++k)
+        {
+            if (result_columns[k]->compareAt(group_idx, row, *columns[key_column_indices[k]], 0) != 0)
+            {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+            return group_idx;
+    }
+    return num_groups;
 }
 
 void TopNAggregatingTransform::createAggregateStates(AggregateDataPtr place) const
@@ -178,17 +195,17 @@ void TopNAggregatingTransform::consumeMode1(Chunk & chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        auto key = serializeGroupKey(columns, row);
+        UInt128 hash = hashGroupKey(columns, row);
+        size_t existing = findGroupIndex(hash, columns, row);
 
-        if (group_indices.contains(key))
+        if (existing < num_groups)
             continue;
 
-        group_indices[key] = num_groups;
+        group_indices.emplace(hash, num_groups);
 
         for (size_t k = 0; k < key_names.size(); ++k)
             result_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
 
-        /// For each aggregate, create a temporary state, add one row, extract result, destroy.
         for (size_t i = 0; i < aggregates.size(); ++i)
         {
             const auto & agg = aggregates[i];
@@ -233,18 +250,39 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        auto key = serializeGroupKey(columns, row);
+        UInt128 hash = hashGroupKey(columns, row);
 
-        auto it = group_indices.find(key);
-        if (it != group_indices.end())
+        size_t found = std::numeric_limits<size_t>::max();
         {
-            size_t group_idx = it->second;
-            addRowToAggregateStates(group_states[group_idx].state, columns, row);
+            auto [it, end] = group_indices.equal_range(hash);
+            for (; it != end; ++it)
+            {
+                size_t group_idx = it->second;
+                bool match = true;
+                for (size_t k = 0; k < key_column_indices.size(); ++k)
+                {
+                    if (result_columns[k]->compareAt(group_idx, row, *columns[key_column_indices[k]], 0) != 0)
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    found = group_idx;
+                    break;
+                }
+            }
+        }
+
+        if (found != std::numeric_limits<size_t>::max())
+        {
+            addRowToAggregateStates(group_states[found].state, columns, row);
         }
         else
         {
             size_t group_idx = group_states.size();
-            group_indices[key] = group_idx;
+            group_indices.emplace(hash, group_idx);
 
             for (size_t k = 0; k < key_names.size(); ++k)
                 result_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
@@ -293,7 +331,6 @@ Chunk TopNAggregatingTransform::generateMode2()
     size_t num_groups_total = group_states.size();
     size_t num_keys = key_names.size();
 
-    /// First, build a temporary block with all groups' results to extract the ORDER BY column value.
     const auto & out_header = getOutputPort().getHeader();
     MutableColumns all_columns = out_header.cloneEmptyColumns();
 
@@ -305,11 +342,9 @@ Chunk TopNAggregatingTransform::generateMode2()
         insertResultsFromStates(group_states[g].state, all_columns);
     }
 
-    /// Get the ORDER BY aggregate's column.
     size_t order_col_idx = num_keys + order_by_agg_index;
     const auto & order_col = all_columns[order_col_idx];
 
-    /// Build indices and sort by the ORDER BY column.
     std::vector<size_t> indices(num_groups_total);
     std::iota(indices.begin(), indices.end(), 0);
 
