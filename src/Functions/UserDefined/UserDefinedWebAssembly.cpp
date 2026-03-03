@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/formatBlock.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
@@ -58,6 +59,14 @@ namespace DB
 {
 
 using namespace WebAssembly;
+
+namespace Setting
+{
+extern const SettingsUInt64 webassembly_udf_max_fuel;
+extern const SettingsUInt64 webassembly_udf_max_memory;
+extern const SettingsUInt64 webassembly_udf_max_input_block_size;
+extern const SettingsUInt64 webassembly_udf_max_instances;
+}
 
 namespace ErrorCodes
 {
@@ -453,30 +462,32 @@ private:
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfigFromFunctionSettings(const WebAssemblyFunctionSettings & function_settings)
+WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
 {
     WebAssembly::WasmModule::Config cfg;
 
-    UInt64 max_fuel = function_settings.getValue("max_fuel").safeGet<UInt64>();
+    UInt64 max_fuel = context->getSettingsRef()[Setting::webassembly_udf_max_fuel];
     if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))
         cfg.fuel_limit = std::numeric_limits<UInt64>::max();
 
-    cfg.memory_limit = function_settings.getValue("max_memory").safeGet<UInt64>();
+    cfg.memory_limit = context->getSettingsRef()[Setting::webassembly_udf_max_memory];
+
     return cfg;
 }
 
 class FunctionUserDefinedWasm : public IFunction
 {
 public:
-    FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_)
+    FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
         : user_defined_function(std::move(udf_))
         , wasm_module(user_defined_function->getModule())
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
+        , context(std::move(context_))
         , compartment_pool(
-              static_cast<UInt32>(user_defined_function->getSettings().getValue("max_instances").safeGet<UInt64>()),
+              static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfigFromFunctionSettings(user_defined_function->getSettings()))
+              getWasmModuleConfig(context))
     {
     }
 
@@ -540,11 +551,10 @@ private:
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
-        size_t block_size = user_defined_function->getSettings().getValue("max_input_block_size").safeGet<UInt64>();
+        size_t block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
         if (block_size == 0)
             block_size = input_rows_count;
 
-        auto context = Context::getGlobalContextInstance();
         for (size_t start_idx = 0; start_idx < input_rows_count; start_idx += block_size)
         {
             size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
@@ -583,6 +593,7 @@ private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     String function_name;
     Strings argument_names;
+    ContextPtr context;
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
@@ -638,7 +649,7 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name)
     return registry.contains(function_name);
 }
 
-FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name)
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
 {
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
     {
@@ -655,7 +666,7 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
         wasm_func = it->second;
     }
 
-    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func));
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
 
@@ -685,29 +696,6 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         std::function<void(std::string_view, const Field &)> check;
     };
 
-    struct SettingUInt64Range
-    {
-        SettingDefinition withDefault(UInt64 default_value) const
-        {
-            return SettingDefinition(
-                [min_ = this->min, max_ = this->max](std::string_view name, const Field & value) // NOLINT
-                {
-                    if (value.getType() != Field::Types::UInt64)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected UInt64, got '{}'", value.getTypeName());
-                    UInt64 val = value.safeGet<UInt64>();
-                    if (min_ > val || val > max_)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Value {} for setting '{}' is out of range [{}, {}]",
-                            val, name, min_, max_ == std::numeric_limits<UInt64>::max() ? "inf" : std::to_string(max_));
-                },
-                Field(default_value));
-        }
-
-        UInt64 min = 0;
-        UInt64 max = std::numeric_limits<UInt64>::max();
-    };
-
     struct SettingStringFromSet
     {
         SettingDefinition withDefault(String default_value) const
@@ -731,16 +719,8 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
     };
 
     const std::unordered_map<String, SettingDefinition> settings_def = {
-        /// Fuel limit for a single instance
-        {"max_fuel", SettingUInt64Range{}.withDefault(100'000)},
-        /// Memory limit for a single instance
-        {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
-        /// Limit for the number of rows in a single block
-        {"max_input_block_size", SettingUInt64Range{0, DEFAULT_BLOCK_SIZE * 10}.withDefault(0)},
-        /// Maximum number of instances of the webassembly module can be run in parallel for a single function
-        {"max_instances", SettingUInt64Range{1, 1024}.withDefault(128)},
     };
 
     std::vector<String> getAllRegisteredNames() const override
