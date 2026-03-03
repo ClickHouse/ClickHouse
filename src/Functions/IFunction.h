@@ -293,6 +293,11 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /** Indicates whether this function is suitable for being pushed down before a filter operation.
+      * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
+      */
+    virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -532,6 +537,11 @@ public:
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /** Indicates whether this function is suitable for being pushed down before a filter operation.
+      * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
+      */
+    virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }

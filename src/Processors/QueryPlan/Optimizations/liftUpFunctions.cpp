@@ -1,3 +1,4 @@
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -66,6 +67,21 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
+
+    /// Do not lift volume-reducing functions above sorting — they should stay closer to
+    /// the data source so that large columns are replaced by small results before sorting.
+    /// Without this, `tryExecuteFunctionsAfterSorting` and `tryPushDownVolumeReducingFunctions`
+    /// would fight each other in an infinite loop.
+    for (const auto * output : expression_step->getExpression().getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base && node->function_base->isSuitableForPushDownBeforeFilter())
+            sort_columns.insert(output->result_name);
+    }
+
     auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.

@@ -99,6 +99,7 @@ public:
     String getName() const override { return function_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForPushDownBeforeFilter() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -139,9 +140,9 @@ public:
             return std::make_shared<FunctionEmptyJSON>(negative, function_name, argument_types, return_type);
 
         if (negative)
-            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false>>(), argument_types, return_type);
+            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false, true>>(), argument_types, return_type);
         else
-            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8, false>>(), argument_types, return_type);
+            return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8, false, true>>(), argument_types, return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
