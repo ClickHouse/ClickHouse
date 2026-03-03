@@ -103,16 +103,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
+        FunctionArgumentDescriptors mandatory_arguments{};
+        FunctionArgumentDescriptors optional_arguments{
+            {"timezone", &isStringOrFixedString, nullptr, "String"}
+        };
 
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
         if (arguments.size() == 1)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
