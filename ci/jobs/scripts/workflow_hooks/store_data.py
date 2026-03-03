@@ -31,10 +31,11 @@ if __name__ == "__main__":
         )
         commits = raw.splitlines()
 
-        for sha in commits:
-            if sha == info.sha:
-                break
-            commits.pop(0)
+        try:
+            idx = commits.index(info.sha)
+            commits = commits[idx:]
+        except ValueError:
+            pass
 
         info.store_kv_data("previous_commits_sha", commits)
 
@@ -48,6 +49,38 @@ if __name__ == "__main__":
                     verbose=True,
                 )
         info.store_kv_data("file_diff", file_diff)
+
+        # Store merge-base commits for performance comparison in PRs
+        # so that the perf job compares against the branch point, not latest master HEAD
+        if info.repo_name == "ClickHouse/ClickHouse":
+            base_branch = info.base_branch or "master"
+            merge_base_sha = Shell.get_output(
+                f"gh api 'repos/ClickHouse/ClickHouse/compare/{base_branch}...{info.sha}' -q '.merge_base_commit.sha'",
+                verbose=True,
+            )
+            if merge_base_sha and len(merge_base_sha.strip()) == 40:
+                merge_base_sha = merge_base_sha.strip()
+                # Get the merge-base and its predecessors on master to find one with a build
+                raw = Shell.get_output(
+                    f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base_sha}&per_page=50' -q '.[].sha' | head -n50",
+                    verbose=True,
+                )
+                commits = [
+                    c.strip() for c in raw.splitlines() if len(c.strip()) == 40
+                ]
+                if commits:
+                    info.store_kv_data("previous_commits_sha", commits)
+                    print(
+                        f"Stored merge-base commits for PR perf comparison (merge-base: {merge_base_sha}): {commits[:5]}"
+                    )
+                else:
+                    print(
+                        f"WARNING: Could not fetch commits from merge-base {merge_base_sha}"
+                    )
+            else:
+                print(
+                    f"WARNING: Could not determine merge-base for PR (base_branch={base_branch}, sha={info.sha})"
+                )
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later
