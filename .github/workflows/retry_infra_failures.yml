@@ -59,8 +59,7 @@ jobs:
             # Each failed job emits "true" (infrastructure) or "false" (real failure).
             # A job is considered an infrastructure failure if:
             # - it is the "Config Workflow" or "Finish Workflow" job (pipeline plumbing,
-            #   not actual tests; "Finish Workflow" runs in ~15s so the <120s heuristic
-            #   would always misclassify it as infra), or
+            #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
@@ -68,7 +67,7 @@ jobs:
             #   test failure
             verdicts=$(echo "$jobs_raw" | jq -r '
               .jobs[] | select(.conclusion == "failure") |
-              if .name == "Config Workflow" or .name == "Finish Workflow" then empty
+              if .name == "Config Workflow" or .name == "Finish Workflow" then true
               else
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
