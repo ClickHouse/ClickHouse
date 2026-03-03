@@ -385,7 +385,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_snapshot_id, resolved_schema_id);
 
 
-    PruningReturnStatus pruning_status;
+    PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
     {
         /// Compute per-column hyperrectangles for DATA files
