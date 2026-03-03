@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <IO/WriteHelpers.h>
 
+#include <climits>
+
 
 namespace DB
 {
@@ -148,6 +150,11 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to, this->result_type);
+    }
+
+    IAggregateFunction::TopKAggregateInfo getTopKAggregateInfo() const override
+    {
+        return {.determined_by_first_row_direction = INT_MAX};
     }
 
 #if USE_EMBEDDED_COMPILER

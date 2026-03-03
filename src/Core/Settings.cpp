@@ -3816,6 +3816,17 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
+    DECLARE(Bool, optimize_topn_aggregation, false, R"(
+Enables fused TopN aggregation optimization for queries of the form GROUP BY ... ORDER BY aggregate LIMIT K.
+When enabled, combines aggregation, sorting, and limiting into a single pass. Supports early termination
+when the table sorting key matches the ORDER BY aggregate argument.
+Only applies when all aggregate functions are min/max/any/argMin/argMax family.
+
+Possible values:
+
+- 0 — TopN aggregation optimization is disabled.
+- 1 — TopN aggregation optimization is enabled.
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \

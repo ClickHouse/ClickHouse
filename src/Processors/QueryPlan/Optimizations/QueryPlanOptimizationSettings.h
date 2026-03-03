@@ -78,6 +78,7 @@ struct QueryPlanOptimizationSettings
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
+    bool topn_aggregation;
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;

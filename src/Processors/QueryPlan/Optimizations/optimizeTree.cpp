@@ -318,6 +318,9 @@ void optimizeTreeSecondPass(
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+
+                if (optimization_settings.topn_aggregation)
+                    optimizeTopNAggregation(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.

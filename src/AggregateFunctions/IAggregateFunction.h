@@ -97,6 +97,17 @@ public:
     /// See AggregateFunctionAny for example.
     virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
 
+    struct TopKAggregateInfo
+    {
+        /// Sort direction on the argument column where the first row determines the aggregate result.
+        /// -1 = DESC (max, argMax), 1 = ASC (min, argMin), 0 = not supported.
+        int determined_by_first_row_direction = 0;
+    };
+
+    /// For TopN aggregation optimization: returns info about whether the aggregate result
+    /// is determined by the first row when input is sorted in a specific direction.
+    virtual TopKAggregateInfo getTopKAggregateInfo() const { return {}; }
+
     ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */
