@@ -784,27 +784,36 @@ class Utils:
                 )
         return path_out
 
+    AES_KEY = "aes.key"
+    AES_KEY_RSA = f"{AES_KEY}.rsa"
+
     @classmethod
     def encode(cls, path: str) -> str:
-        Shell.run(
-            f"""
+        if not Path(Utils.AES_KEY_RSA).exists():
+            Shell.run(f"""
 cat <<EOF >public.pem
 -----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1UbfE9ncXjxKpDaFwbzw
-GL4m+3BmNx+PSIGbjkOxO5OZzgM9Qhlod2fKf8/R0b3e7+kM2eJTCWgZUCKvW1Un
-cfwE2uVAggzVX+vZV8j5tZlHtxALvoYbZQhJ4+3Yx/x4ugt8QoZAKbSPhgNT9H+G
-tzNqFlrEiWni1xlV1mfE95GFKwpAekvKkAMQbaZz9hfBIlOnflVloKA9/LqXd+4j
-9+ErD2/oTj2/EhWAdaAkAhj+eZtoJ3sCmUlJVXGgPhrrZBxlN/U35Ncjv1DemzQ3
-WLB5nUj/cihbdG2cDfaXmwalhlGfwdF28vIYcvnQzjXOS8F7JL25PkGXnEZOmBG3
-TQIDAQAB
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA0XxREB0KhpRYBt7LbvuX
+VFtVSc3pG8K856M3qkmgDOgyMPLLo4gD+1kuzjk78EhKubV0hIehZYoMMffE569O
+CK4QbbL3z+ADQ+7aETjhBG9m1kpZB3MvFgMWQbHgJAte67yAlT5RJwNP4qqjchRa
+H5lLfYsnA1oL6AIFeoQw5KHcw3Ki48eBmakcguwqg02HqMTW1kV6w88mroNicN/o
+9fG3vnAeBZXe1Wfa27FAljbrpElUm5LfZw5oNccvKQRHXvgKsu3WOHVxZP0I5Bga
+iVGhIZA80iqcRZySXbLTNt/6FIxGuoP1My1Ew8i7HgDDBeW4ffh01GhEC+kA2mCZ
+nlKrREvZnMLmus6yXEOAiTXknXQ+KFOAojDoqNU7AV98KAHUUug85EVW/c5+1FQi
+/7+x1XJSfVOkIxUgL9DdbJaicts8leoz4aQEy5UfcerC9BdJLk+6ke2NW3qzdXXm
+PkTPxPY1B6PeK+5scV67KxZ24PBc5aJYNBxXXwBiHpTT2gN4Y1ABW0k/EzxcM6XC
+ONbT0rPWirpglqI4bH/QUQYa1k8ZPgOB867TU50raXnYjIKbEXSECiE60Xc0g/tY
+jGvAUkdLypqnmGuQTvaixlzADQ0TG7EWNjQtVeS5N344ROtDFziHsvPhZjsJumm0
+JWO5SkCtnJ5vVIHG3nxQCHkCAwEAAQ==
 -----END PUBLIC KEY-----
 EOF
 
-openssl pkeyutl -encrypt -pubin -inkey public.pem -in {path} -out {path}.rsa \
+openssl rand 32 >{Utils.AES_KEY}
+openssl pkeyutl -encrypt -pubin -inkey public.pem -in {Utils.AES_KEY} -out {Utils.AES_KEY_RSA} \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
-""",
-            verbose=True,
-        )
+""")
+
+        Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{Utils.AES_KEY}")
         return path + ".rsa"
 
     @classmethod

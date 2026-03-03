@@ -82,7 +82,7 @@ class ClickHouseProc:
         self.pid_file_replica_2 = (
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
-        Shell.run(f"echo test >{temp_dir}/test.txt") #REMOVEMVE
+        Shell.run(f"echo test >{temp_dir}/test.txt")  # REMOVEMVE
         Utils.encode(f"{temp_dir}/test.txt")
         self.pid_0 = 0
         self.pid_1 = 0
@@ -167,9 +167,7 @@ class ClickHouseProc:
             self.kafka_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
-        )
+        print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
             res = Shell.check(
@@ -567,9 +565,7 @@ profiles:
             )
             # Wait for minio to be ready
             for _ in range(30):
-                if Shell.check(
-                    "/mc ls clickminio/test", verbose=False
-                ):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
                     status = "success"
                     break
                 time.sleep(1)
@@ -774,12 +770,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
     def prepare_logs(self, info, all=False):
-        res = [f"{temp_dir}/test.txt.rsa"]
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
             if Path(self.GDB_LOG).exists():
                 res.append(self.GDB_LOG)
+            if Path(Utils.AES_KEY_RSA).exists():
+                res.append(Utils.AES_KEY_RSA)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
@@ -808,7 +805,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        return [Utils.encode(Utils.compress_zst(f)) for f in Path(temp_dir).glob("run_r*/core.*")]
+        return [
+            Utils.encode(Utils.compress_zst(f))
+            for f in Path(temp_dir).glob("run_r*/core.*")
+        ]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
