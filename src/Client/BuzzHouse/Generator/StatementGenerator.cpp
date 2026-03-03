@@ -2527,7 +2527,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {5 * static_cast<uint32_t>(!fc.failpoints.empty()), [&] { sc->set_disable_failpoint(rg.pickRandomly(fc.failpoints)); }},
         {5, [&] { sc->set_reconnect_keeper(true); }},
         /// Text index caches
-        {3, [&] { sc->set_drop_text_index_dictionary_cache(true); }},
+        {3, [&] { sc->set_drop_text_index_tokens_cache(true); }},
         {3, [&] { sc->set_drop_text_index_header_cache(true); }},
         {3, [&] { sc->set_drop_text_index_postings_cache(true); }},
         {3, [&] { sc->set_drop_text_index_caches(true); }},

@@ -3292,12 +3292,13 @@ message ColumnDef {
 enum IndexType {
     IDX_set = 1;
     IDX_minmax = 2;
-    IDX_bloom_filter = 3;
-    IDX_vector_similarity = 4;
-    IDX_ngrambf_v1 = 5;
-    IDX_tokenbf_v1 = 6;
-    IDX_text = 7;
-    IDX_basic = 8;
+    reserved 3;
+    IDX_bloom_filter = 4;
+    IDX_vector_similarity = 5;
+    IDX_ngrambf_v1 = 6;
+    IDX_tokenbf_v1 = 7;
+    IDX_text = 8;
+    IDX_basic = 9;
 }
 
 message IndexDef {
@@ -4152,7 +4153,7 @@ message SystemCommand {
         string disable_failpoint = 69;
         bool iceberg_metadata_cache = 70;
         bool reconnect_keeper = 71;
-        bool drop_text_index_dictionary_cache = 72;
+        bool drop_text_index_tokens_cache = 72;
         bool drop_text_index_header_cache = 73;
         bool drop_text_index_postings_cache = 74;
         bool drop_text_index_caches = 75;

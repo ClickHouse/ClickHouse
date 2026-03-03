@@ -14,7 +14,7 @@ function were_parallel_replicas_used ()
             initial_query_id,
             'Used parallel replicas: ' || (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String
         FROM system.query_log
-    WHERE event_date >= yesterday()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND query_id = '$1' AND type = 'QueryFinish'
     FORMAT TSV"
 }
