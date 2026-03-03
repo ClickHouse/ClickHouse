@@ -112,3 +112,11 @@ SELECT 'toDateTime(DateTime64): pre-epoch filter';
 SELECT groupArray(id) FROM t_dt64_todatetime WHERE ts >= '1969-12-31 12:00:00';
 
 DROP TABLE t_dt64_todatetime;
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (id UInt8, ts DateTime64(0))
+ENGINE=MergeTree PARTITION BY toUnixTimestamp(ts) ORDER BY id;
+INSERT INTO test VALUES (1, '2026-02-21 10:00:00');
+
+SELECT id FROM test WHERE ts >= '1969-12-31 12:00:00';
+DROP TABLE IF EXISTS test;
