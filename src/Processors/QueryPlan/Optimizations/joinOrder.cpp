@@ -63,6 +63,56 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }
 
+void QueryGraph::buildColumnEquivalences()
+{
+    for (const auto & edge : edges)
+    {
+        if (!edge)
+            continue;
+
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        const auto * lhs_node = lhs.getNode();
+        while (lhs_node->type == ActionsDAG::ActionType::ALIAS)
+            lhs_node = lhs_node->children.at(0);
+        const auto * rhs_node = rhs.getNode();
+        while (rhs_node->type == ActionsDAG::ActionType::ALIAS)
+            rhs_node = rhs_node->children.at(0);
+
+        if (lhs_node->type != ActionsDAG::ActionType::INPUT || rhs_node->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        auto lhs_rel = lhs.getSourceRelations().getSingleBit();
+        auto rhs_rel = rhs.getSourceRelations().getSingleBit();
+        if (!lhs_rel || !rhs_rel)
+            continue;
+
+        column_equivalences.add(
+            RelColumn{*lhs_rel, lhs_node->result_name},
+            RelColumn{*rhs_rel, rhs_node->result_name});
+    }
+}
+
+bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
+{
+    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    {
+        if (!left.test(member.first))
+            continue;
+
+        auto equiv_class = column_equivalences.getClass(member);
+        if (!equiv_class)
+            continue;
+
+        for (const auto & other : *equiv_class)
+            if (right.test(other.first))
+                return true;
+    }
+    return false;
+}
+
 String DPJoinEntry::dump() const
 {
     if (isLeaf())
@@ -97,6 +147,7 @@ private:
 
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
     /// Peridically called from potentially long running optimization to check time limits and send progress
@@ -168,6 +219,44 @@ double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *>
     double selectivity = 1.0;
     for (const auto & edge : edges)
         selectivity = std::min(selectivity, computeSelectivity(*edge));
+    return selectivity;
+}
+
+/// Compute selectivity combining direct edges and transitive equivalence classes.
+/// Direct edges and transitive equivalences may cover different columns between
+/// the two relation sets, so both contribute to the overall selectivity.
+double JoinOrderOptimizer::computeSelectivity(
+    const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+{
+    double selectivity = computeSelectivity(edges);
+
+    /// Also account for transitively-equivalent columns spanning both sides.
+    using ConstClassPtr = EquivalenceClasses<RelColumn, RelColumnHash>::ConstClassPtr;
+    std::set<ConstClassPtr> visited;
+
+    for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
+    {
+        if (!left.test(member.first))
+            continue;
+
+        auto equiv_class = query_graph.column_equivalences.getClass(member);
+        if (!equiv_class || !visited.insert(equiv_class).second)
+            continue;
+
+        for (const auto & other : *equiv_class)
+        {
+            if (!right.test(other.first))
+                continue;
+
+            UInt64 lhs_ndv = getColumnStats(BitSet().set(member.first), member.second);
+            UInt64 rhs_ndv = getColumnStats(BitSet().set(other.first), other.second);
+            UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
+            if (max_ndv > 0)
+                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+            break;
+        }
+    }
+
     return selectivity;
 }
 
@@ -310,14 +399,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && best_plan)
+                bool connected = !edge.empty()
+                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(edge);
+                auto selectivity = computeSelectivity(edge, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (!edge.empty() && join_kind == JoinKind::Cross)
+                    if (connected && join_kind == JoinKind::Cross)
                         join_kind = JoinKind::Inner;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
@@ -475,18 +566,22 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
-                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
+                    bool connected = !edge.empty()
+                        || query_graph.areTransitivelyConnected(left->relations, right->relations);
 
-                    if (edge.empty())
+                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
+                        left->dump(), right->dump(), edge.size(), connected);
+
+                    if (!connected)
                         continue;
 
-                    auto selectivity = computeSelectivity(edge);
+                    auto selectivity = computeSelectivity(edge, left->relations, right->relations);
                     auto new_cost = computeJoinCost(left, right, selectivity);
 
                     auto current_best = dp_table.find(combined_relations);
                     if (current_best == dp_table.end() || new_cost < current_best->second->cost)
                     {
-                        if (!edge.empty() && join_kind == JoinKind::Cross)
+                        if (connected && join_kind == JoinKind::Cross)
                             join_kind = JoinKind::Inner;
                         auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                         JoinOperator join_operator(
