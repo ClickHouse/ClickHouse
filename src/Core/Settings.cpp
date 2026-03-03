@@ -7057,7 +7057,7 @@ Uses replicas from cluster_for_parallel_replicas.
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \
     DECLARE(Bool, database_iceberg_purge_on_drop, false, R"(
-If enabled, DROP TABLE on an Iceberg catalog database will request the catalog to also purge underlying data files (purgeRequested=true). Otherwise only the local table entry is removed.
+If enabled, DROP TABLE on an Iceberg catalog database will request the catalog to also purge underlying data files (purgeRequested=true). Otherwise only the table metadata is removed from the catalog.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'

@@ -55,7 +55,7 @@ public:
     void createTable(
         ContextPtr context,
         const String & name,
-        const StoragePtr &  /*table*/,
+        const StoragePtr & /*table*/,
         const ASTPtr & query) override;
 
     void dropTable( /// NOLINT

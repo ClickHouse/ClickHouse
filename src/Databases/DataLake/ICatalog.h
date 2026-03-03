@@ -179,7 +179,7 @@ public:
 
     /// Drop table from catalog.
     /// If purge, the catalog is requested to also delete underlying data files.
-    /// Otherwise the table entry is removed from local metadata.
+    /// Otherwise the table entry is removed from catalog metadata.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool purge) const;
 
     /// Does the catalog support transactions or anything like that?
