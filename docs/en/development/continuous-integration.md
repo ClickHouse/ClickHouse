@@ -98,7 +98,7 @@ No dependencies other than Python 3 and Docker are required.
 
 A locally installed ClickHouse with default settings may work for specific test cases, but cannot run all test queries correctly. In CI, each job installs a specific ClickHouse configuration (e.g., S3 storage, Parallel Replicas) which can be cumbersome to reproduce manually. To avoid this, you can reproduce any CI job locally using the same orchestration as CI — no manual configuration needed.
 
-#### Prerequisites
+#### Prerequisites {#ci-prerequisites}
 - Python 3 (standard library only)
 - Docker
 
@@ -116,7 +116,7 @@ EOF
 sudo systemctl restart docker
 ```
 
-#### Run a CI Job Locally
+#### Run a CI Job Locally {#run-ci-job-locally}
 Pick any job name from a CI report and run it locally:
 ```bash
 python -m ci.praktika run "<JOB_NAME>"
@@ -129,7 +129,7 @@ python -m ci.praktika run "<JOB_NAME>"
   python -m ci.praktika run "Fast test"
   ```
 
-#### Run Specific Tests Within a CI Job
+#### Run Specific Tests Within a CI Job {#run-specific-tests-within-ci-job}
 With `--test`, the job prepares an identical ClickHouse setup as used in CI but runs only the selected tests:
 ```bash
 python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
@@ -145,7 +145,7 @@ python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
   python -m ci.praktika run functional --test 00001_select1
   ```
 
-#### Additional Customization Options
+#### Additional Customization Options {#additional-customization-options}
 - `--path PATH` — custom path to the ClickHouse binary. By default, the runner searches in order: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`.
 - `--count N` — repeat each test N times.
 - `--workers N` — override the automatic calculation of parallel workers derived from machine capacity.
