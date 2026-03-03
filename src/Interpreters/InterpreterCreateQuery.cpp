@@ -31,6 +31,7 @@
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1937,6 +1938,68 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
+    }
+
+    if (database->isDatalakeCatalog())
+    {
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+
+        /// Extract partition/order from the source table if CREATE TABLE ... AS was used
+        if (!as_table_saved.empty())
+        {
+            String as_database_name = getContext()->resolveDatabase(as_database_saved);
+            StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+            auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
+
+            if (!create_query.storage)
+            {
+                auto storage_ast = make_intrusive<ASTStorage>();
+                create_query.set(create_query.storage, storage_ast);
+            }
+
+            if (!create_query.storage->partition_by
+                && as_storage_metadata->isPartitionKeyDefined()
+                && as_storage_metadata->hasPartitionKey())
+            {
+                create_query.storage->set(
+                    create_query.storage->partition_by,
+                    as_storage_metadata->getPartitionKeyAST()->clone());
+            }
+
+            if (!create_query.storage->order_by
+                && as_storage_metadata->isSortingKeyDefined()
+                && as_storage_metadata->hasSortingKey())
+            {
+                create_query.storage->set(
+                    create_query.storage->order_by,
+                    as_storage_metadata->getSortingKeyAST()->clone());
+            }
+        }
+
+        /// Ensure columns are in the query AST
+        if (!create_query.columns_list
+            || !create_query.columns_list->columns
+            || create_query.columns_list->columns->children.empty())
+        {
+            auto columns_declare_list = make_intrusive<ASTColumns>();
+            auto columns_expression_list = make_intrusive<ASTExpressionList>();
+            columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
+            create_query.set(create_query.columns_list, columns_declare_list);
+
+            for (const auto & column : properties.columns)
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Default)
+                    continue;
+
+                const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
+                column_declaration->name = column.name;
+                column_declaration->setType(makeASTDataType(column.type->getName()));
+                columns_expression_list->children.emplace_back(column_declaration);
+            }
+        }
+
+        database->createTable(getContext(), create.getTable(), nullptr, query_ptr);
+        return true;
     }
 
     data_path = database->getTableDataPath(create);

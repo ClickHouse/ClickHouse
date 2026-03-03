@@ -53,10 +53,10 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
     void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
-        const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
+        ContextPtr context,
+        const String & name,
+        const StoragePtr &  /*table*/,
+        const ASTPtr & query) override;
 
     void dropTable( /// NOLINT
         ContextPtr context_,
