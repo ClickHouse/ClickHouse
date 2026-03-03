@@ -1,7 +1,5 @@
 DROP TABLE IF EXISTS test_auto_stats_replacing;
 
-SET materialize_statistics_on_insert = 1;
-
 CREATE TABLE test_auto_stats_replacing
 (
     id UInt64,
