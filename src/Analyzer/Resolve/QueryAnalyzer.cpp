@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_lateral_join;
     extern const SettingsString implicit_table_at_top_level;
 }
 
@@ -102,6 +103,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
@@ -4381,13 +4383,22 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpression()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            "Correlated subqueries are not supported in the left side of JOINs, but found in expression: {}",
             join_node_typed.getLeftTableExpression()->formatASTForErrorMessage());
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpression()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
-            join_node_typed.getRightTableExpression()->formatASTForErrorMessage());
+    {
+        if (!join_node_typed.isLateral())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported in JOINs. Use LATERAL JOIN to allow "
+                "the right side of a JOIN to reference columns from the left side. "
+                "Found in expression: {}",
+                join_node_typed.getRightTableExpression()->formatASTForErrorMessage());
+
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_lateral_join])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "LATERAL JOIN is experimental. Set 'allow_experimental_lateral_join = 1' to enable it");
+    }
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);

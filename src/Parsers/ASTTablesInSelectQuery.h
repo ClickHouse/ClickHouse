@@ -72,6 +72,7 @@ struct ASTTableJoin : public IAST
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
+    bool lateral = false;
 
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;

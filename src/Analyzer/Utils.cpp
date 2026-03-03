@@ -747,7 +747,10 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
         {
             auto & join_node = join_tree_node->as<JoinNode &>();
             buildTableExpressionsStackImpl(join_node.getLeftTableExpression(), result);
-            buildTableExpressionsStackImpl(join_node.getRightTableExpression(), result);
+            /// For LATERAL JOINs, skip the right side — it's a correlated subquery
+            /// that will be handled via decorrelation during plan building.
+            if (!join_node.isLateral())
+                buildTableExpressionsStackImpl(join_node.getRightTableExpression(), result);
             result.push_back(join_tree_node);
             break;
         }

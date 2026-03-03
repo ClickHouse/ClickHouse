@@ -125,6 +125,18 @@ public:
         return kind;
     }
 
+    /// Returns true if join is LATERAL, false otherwise
+    bool isLateral() const
+    {
+        return lateral;
+    }
+
+    /// Set join lateral flag
+    void setLateral(bool lateral_value)
+    {
+        lateral = lateral_value;
+    }
+
     /// Convert join node to ASTTableJoin
     ASTPtr toASTTableJoin() const;
 
@@ -156,6 +168,7 @@ private:
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
     bool is_using_join_expression;
+    bool lateral = false;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;

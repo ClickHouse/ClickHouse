@@ -33,7 +33,9 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -458,6 +460,56 @@ QueryPlan decorrelateQueryPlan(
 
         return decorrelated_query_plan;
     }
+    if (auto * sorting_step = typeid_cast<SortingStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        /// Prepend correlated columns to the sort description so that sorting
+        /// happens within each group of correlated values.
+        SortDescription new_description;
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            new_description.push_back(SortColumnDescription{correlated_column_identifier});
+
+        for (const auto & col : sorting_step->getSortDescription())
+            new_description.push_back(col);
+
+        const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
+        /// Do not pass the original limit — in the decorrelated plan, the limit
+        /// semantics change from "global top N" to "top N per group" which is
+        /// handled by the subsequent LimitByStep.
+        auto result_step = std::make_unique<SortingStep>(
+            input_header,
+            std::move(new_description),
+            /*limit_=*/0,
+            SortingStep::Settings(settings));
+        result_step->setStepDescription(*sorting_step);
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+        return decorrelated_query_plan;
+    }
+    if (auto * limit_step = typeid_cast<LimitStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        /// Convert `LIMIT N` into `LIMIT N BY correlated_columns`.
+        /// This gives us "top N per group" semantics after decorrelation.
+        Names limit_by_columns;
+        limit_by_columns.reserve(context.correlated_subquery.correlated_column_identifiers.size());
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            limit_by_columns.push_back(correlated_column_identifier);
+
+        auto result_step = std::make_unique<LimitByStep>(
+            input_header,
+            limit_step->getLimit(),
+            /*group_offset_=*/0,
+            std::move(limit_by_columns));
+        result_step->setStepDescription("LIMIT BY for decorrelated LATERAL JOIN");
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+        return decorrelated_query_plan;
+    }
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Cannot decorrelate query, because '{}' step is not supported",
@@ -519,6 +571,173 @@ void buildExistsResultExpression(
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
     query_plan.addStep(std::move(expression_step));
+}
+
+/// For LATERAL JOIN: project the decorrelated plan to only the subquery's projection columns
+/// (renamed to outer planner identifiers) and the correlated columns (renamed with prefix).
+/// This bridges the gap between the subquery planner's internal identifiers and the outer
+/// planner's expected column identifiers.
+void buildProjectionForLateralSubquery(
+    QueryPlan & query_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    const PlannerContextPtr & planner_context
+)
+{
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
+    auto * union_node_ptr = correlated_subquery.query_tree->as<UnionNode>();
+
+    NamesAndTypes projection_columns;
+    if (query_node)
+        projection_columns = query_node->getProjectionColumns();
+    else if (union_node_ptr)
+        projection_columns = union_node_ptr->computeProjectionColumns();
+
+    const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(correlated_subquery.query_tree);
+
+    ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
+    auto & outputs = dag.getOutputs();
+
+    /// Build lookup for correlated column names
+    std::unordered_set<std::string_view> correlated_names(
+        correlated_subquery.correlated_column_identifiers.begin(),
+        correlated_subquery.correlated_column_identifiers.end());
+
+    /// Build lookup from output node name to the DAG node
+    std::unordered_map<std::string, const ActionsDAG::Node *> name_to_output_node;
+    for (const auto * output : outputs)
+        name_to_output_node[output->result_name] = output;
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+
+    /// Add projection columns, renamed to outer planner identifiers.
+    /// The subquery planner produces output columns with bare projection names (e.g., `id`, `amount`).
+    /// The outer planner expects them with qualified identifiers (e.g., `__table2.id`, `__table2.amount`).
+    for (const auto & col : projection_columns)
+    {
+        const auto * identifier = table_expression_data.getColumnIdentifierOrNull(col.name);
+        if (!identifier)
+            continue; /// Column not referenced by outer query, skip
+
+        auto it = name_to_output_node.find(col.name);
+        if (it != name_to_output_node.end())
+        {
+            new_outputs.push_back(&dag.addAlias(*it->second, *identifier));
+        }
+    }
+
+    /// Add correlated columns with prefix for the join condition
+    for (const auto * output : outputs)
+    {
+        if (correlated_names.contains(output->result_name))
+        {
+            new_outputs.push_back(&dag.addAlias(*output,
+                fmt::format("{}.{}", correlated_subquery.action_node_name, output->result_name)));
+        }
+    }
+
+    dag.getOutputs() = std::move(new_outputs);
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    expression_step->setStepDescription("Project and rename LATERAL JOIN subquery columns");
+    query_plan.addStep(std::move(expression_step));
+}
+
+/// Build the final logical join for LATERAL JOIN.
+/// Similar to buildLogicalJoin but uses ALL strictness and includes all subquery columns.
+QueryPlan buildLogicalJoinForLateral(
+    const PlannerContextPtr & planner_context,
+    QueryPlan input_stream_plan,
+    QueryPlan decorrelated_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    bool referenced_input_subplan,
+    JoinKind lateral_join_kind
+)
+{
+    auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
+    auto rhs_plan_header = input_stream_plan.getCurrentHeader();
+
+    using ColumnNameGetter = std::function<String(const String &)>;
+    ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
+        return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);
+    };
+    ColumnNameGetter get_rhs_column_name = [&](const String & column_name) -> String {
+        return column_name;
+    };
+
+    auto lhs_plan = std::move(decorrelated_plan);
+    auto rhs_plan = std::move(input_stream_plan);
+
+    /// Include all columns from both sides
+    NameSet output_columns;
+    output_columns.insert_range(rhs_plan_header->getNames());
+    output_columns.insert_range(lhs_plan_header->getNames());
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+    {
+        std::swap(lhs_plan, rhs_plan);
+        std::swap(lhs_plan_header, rhs_plan_header);
+        std::swap(get_lhs_column_name, get_rhs_column_name);
+    }
+
+    JoinExpressionActions join_expression_actions(
+        lhs_plan_header->getColumnsWithTypeAndName(),
+        rhs_plan_header->getColumnsWithTypeAndName());
+
+    std::vector<JoinActionRef> predicates;
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        std::vector<JoinActionRef> eq_arguments;
+        eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        predicates.push_back(std::move(eq_node));
+    }
+
+    /// Determine the physical join kind based on the LATERAL JOIN semantics:
+    /// - INNER LATERAL: use INNER join (drop outer rows without matches)
+    /// - LEFT LATERAL: use LEFT or RIGHT based on decorrelation direction (preserve all outer rows)
+    JoinKind join_kind_to_use;
+    bool use_nulls;
+    if (lateral_join_kind == JoinKind::Inner)
+    {
+        join_kind_to_use = JoinKind::Inner;
+        use_nulls = false;
+    }
+    else
+    {
+        join_kind_to_use = settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT
+            ? JoinKind::Right : JoinKind::Left;
+        use_nulls = true;
+    }
+    auto result_join = std::make_unique<JoinStepLogical>(
+        lhs_plan_header,
+        rhs_plan_header,
+        JoinOperator(join_kind_to_use, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
+        std::move(join_expression_actions),
+        output_columns,
+        std::unordered_map<String, const ActionsDAG::Node *>{},
+        use_nulls,
+        JoinSettings(settings),
+        SortingStep::Settings(settings));
+    result_join->setStepDescription("LATERAL JOIN");
+
+    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    {
+        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        result_join->setOptimized();
+    }
+
+    QueryPlan result_plan;
+
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
+
+    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+    return result_plan;
 }
 
 QueryPlan buildLogicalJoin(
@@ -796,6 +1015,37 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(decorrelated_plan),
                 correlated_subquery,
                 context.referenced_input_subplan);
+            break;
+        }
+        case CorrelatedSubqueryKind::LATERAL_JOIN:
+        {
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            auto & correlated_query_plan = subquery_planner.getQueryPlan();
+
+            auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
+
+            DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
+                .planner_context = planner_context,
+                .query_plan = std::move(query_plan),
+                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .equivalence_class_stack = { EquivalenceClasses{} }
+            };
+
+            auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+
+            /// Project to only needed columns and rename to outer planner identifiers
+            buildProjectionForLateralSubquery(decorrelated_plan, correlated_subquery, planner_context);
+
+            /// Use ALL OUTER JOIN to produce the result plan (LATERAL can return multiple rows per left row)
+            query_plan = buildLogicalJoinForLateral(
+                planner_context,
+                std::move(context.query_plan),
+                std::move(decorrelated_plan),
+                correlated_subquery,
+                context.referenced_input_subplan,
+                correlated_subquery.lateral_join_kind);
             break;
         }
     }

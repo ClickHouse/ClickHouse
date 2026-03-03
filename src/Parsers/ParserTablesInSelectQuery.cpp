@@ -271,6 +271,9 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
+        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected))
+            table_join->lateral = true;
+
         if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
             return false;
 

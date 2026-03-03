@@ -78,6 +78,7 @@
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -2736,7 +2737,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// The distributed table on the right side would be wrapped into a subquery,
             /// causing parallel replicas to incorrectly choose the left table for parallel reading.
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
-            if (join_kind == JoinKind::Right)
+            if (join_kind == JoinKind::Right && !join_node.isLateral())
             {
                 const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
@@ -2866,25 +2867,77 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
         else if (table_expression_node_type == QueryTreeNodeType::JOIN)
         {
-            if (query_plans_stack.size() < 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
-                    query_plans_stack.size());
+            const auto & join_node = table_expression->as<JoinNode &>();
 
-            auto right_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+            if (join_node.isLateral())
+            {
+                /// For LATERAL JOIN, the right side was skipped during stack building
+                /// (in buildTableExpressionsStack). Only the left side plan is on the stack.
+                if (query_plans_stack.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 1 query plan on stack before LATERAL JOIN processing. Actual {}",
+                        query_plans_stack.size());
 
-            auto left_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(
-                table_expression,
-                std::move(left_query_plan),
-                std::move(right_query_plan),
-                table_expressions_outer_scope_columns[i],
-                planner_context,
-                select_query_info,
-                select_query_options.max_step_description_length));
+                /// Extract correlated column identifiers from the right-side subquery
+                const auto & right_table_expression = join_node.getRightTableExpression();
+                auto * query_node_right = right_table_expression->as<QueryNode>();
+                auto * union_node_right = right_table_expression->as<UnionNode>();
+
+                if (!query_node_right && !union_node_right)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN right side must be a subquery");
+
+                const QueryTreeNodes & correlated_columns = query_node_right
+                    ? query_node_right->getCorrelatedColumns().getNodes()
+                    : union_node_right->getCorrelatedColumns().getNodes();
+
+                ColumnIdentifiers correlated_column_identifiers;
+                correlated_column_identifiers.reserve(correlated_columns.size());
+                for (const auto & column : correlated_columns)
+                {
+                    correlated_column_identifiers.push_back(
+                        calculateActionNodeName(column, *planner_context));
+                }
+
+                /// Build the LATERAL JOIN using correlated subquery decorrelation
+                String action_node_name = fmt::format("__lateral_join_{}", i);
+                CorrelatedSubquery correlated_subquery(
+                    right_table_expression,
+                    CorrelatedSubqueryKind::LATERAL_JOIN,
+                    action_node_name,
+                    std::move(correlated_column_identifiers));
+                correlated_subquery.lateral_join_kind = join_node.getKind();
+
+                buildQueryPlanForCorrelatedSubquery(
+                    planner_context, left_query_plan.query_plan, correlated_subquery, select_query_options);
+
+                query_plans_stack.push_back(std::move(left_query_plan));
+            }
+            else
+            {
+                if (query_plans_stack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
+                        query_plans_stack.size());
+
+                auto right_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                query_plans_stack.push_back(buildQueryPlanForJoinNode(
+                    table_expression,
+                    std::move(left_query_plan),
+                    std::move(right_query_plan),
+                    table_expressions_outer_scope_columns[i],
+                    planner_context,
+                    select_query_info,
+                    select_query_options.max_step_description_length));
+            }
         }
         else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
         {
