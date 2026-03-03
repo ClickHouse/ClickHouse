@@ -1206,14 +1206,14 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
     const std::vector<size_t> & matched_indices,
     PostingsSerialization & postings_serialization)
 {
-    chassert(matched_indices.back() < num_tokens);
-    chassert(std::is_sorted(matched_indices.begin(), matched_indices.end()));
-
     std::vector<TokenPostingsInfoPtr> result;
     result.reserve(matched_indices.size());
 
     if (matched_indices.empty())
         return result;
+
+    chassert(matched_indices.back() < num_tokens);
+    chassert(std::is_sorted(matched_indices.begin(), matched_indices.end()));
 
     for (size_t i = 0, j = 0; i < num_tokens && j < matched_indices.size(); ++i)
     {
