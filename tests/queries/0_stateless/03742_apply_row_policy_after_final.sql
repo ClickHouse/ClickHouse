@@ -190,12 +190,12 @@ ENGINE = ReplacingMergeTree(version) PARTITION BY x ORDER BY x;
 INSERT INTO tab_safe VALUES (1, 'aaa', 1), (2, 'bbb', 1);
 INSERT INTO tab_safe VALUES (1, 'ccc', 2);
 
-SELECT '';
-
 SELECT '--- FINAL WHERE x != 1 (partition pruning is safe here)';
 SELECT * FROM tab_safe FINAL WHERE x != 1 ORDER BY x;
 
 DROP TABLE tab_safe;
+
+SELECT '';
 
 SELECT '= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =';
 
