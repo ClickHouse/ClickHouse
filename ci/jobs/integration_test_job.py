@@ -166,7 +166,8 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print("No profraw files found", flush=True)
         return
 
-    final_file = f"./it-{" ".join(job_params)}.profdata"
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    final_file = f"./it-{joined_job_params}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(

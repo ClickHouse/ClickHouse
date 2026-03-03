@@ -828,7 +828,8 @@ def main():
                 print(f"Using {llvm_profdata} to merge coverage files")
 
                 # Merge all profraw files to current directory
-                merged_file = f"./ft-{" ".join(test_options)}.profdata"
+                joined_test_options = "_".join(test_options) if test_options else "all"
+                merged_file = f"./ft-{joined_test_options}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
 
