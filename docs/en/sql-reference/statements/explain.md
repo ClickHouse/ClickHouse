@@ -469,7 +469,7 @@ With `actions` = 1 and `verbose` = 0, the `Actions` and `Positions` lines are hi
 EXPLAIN actions = 1, verbose = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
 ```
 
-```
+```text
 Expression ((Project names + Projection))
   Aggregating
   Keys: modulo(__table1.number, 4_UInt8)
@@ -532,7 +532,7 @@ With `pretty` = 1, the plan tree is displayed using line-drawing characters inst
 EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
 ```
 
-```
+```text
 ┌Expression (Project names)
 └─┬Aggregating
   └─┬Expression (Before GROUP BY)
