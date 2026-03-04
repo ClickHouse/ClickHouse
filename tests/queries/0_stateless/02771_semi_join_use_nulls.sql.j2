@@ -1,5 +1,7 @@
 -- { echoOn }
 
+SET enable_analyzer = 1;
+
 {% for join_use_nulls in [0, 1] -%}
 {% for kind in ['LEFT', 'RIGHT'] -%}
 {% for strictness in ['SEMI', 'ANTI'] -%}
