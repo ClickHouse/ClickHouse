@@ -106,6 +106,7 @@ SETTINGS paimon_target_snapshot_id = 1;
 - Incremental read requires `paimon_keeper_path` to be set and unique per table.
 - `paimon_replica_name` must be unique per replica within the same Keeper path.
 - The table engine is read-only; data modification is not supported.
+- Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
 
 ## Aliases {#aliases}
 

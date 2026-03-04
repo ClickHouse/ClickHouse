@@ -20,6 +20,7 @@ struct PaimonTableState
     const Int64 schema_id;
     const String base_manifest_list_path;
     const String delta_manifest_list_path;
+    const String commit_kind;
     const Int64 commit_time_millis;
 
     /// Optional pre-computed values for quick checks
@@ -33,6 +34,7 @@ struct PaimonTableState
         Int64 schema_id_,
         String base_manifest_list_path_,
         String delta_manifest_list_path_,
+        String commit_kind_,
         Int64 commit_time_millis_,
         std::optional<Int64> total_record_count_ = std::nullopt,
         std::optional<Int64> delta_record_count_ = std::nullopt,
@@ -42,6 +44,7 @@ struct PaimonTableState
         , schema_id(schema_id_)
         , base_manifest_list_path(std::move(base_manifest_list_path_))
         , delta_manifest_list_path(std::move(delta_manifest_list_path_))
+        , commit_kind(std::move(commit_kind_))
         , commit_time_millis(commit_time_millis_)
         , total_record_count(total_record_count_)
         , delta_record_count(delta_record_count_)
@@ -49,6 +52,8 @@ struct PaimonTableState
         , watermark(watermark_)
     {
     }
+
+    bool isCompact() const { return commit_kind == "COMPACT"; }
 
     bool operator==(const PaimonTableState & other) const
     {
