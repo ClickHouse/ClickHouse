@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromFile.h>
@@ -31,7 +32,14 @@ class FunctionFile : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
+
+    static FunctionPtr create(ContextPtr context_)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        return std::make_shared<FunctionFile>(context_);
+    }
     explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
 
     bool isVariadic() const override { return true; }
