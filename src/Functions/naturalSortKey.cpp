@@ -8,6 +8,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TOO_LARGE_STRING_SIZE;
 }
 
 class FunctionNaturalSortKey : public IFunction
@@ -154,7 +155,7 @@ private:
     }
 
     /**
-     * Encode the length of the digit sequence (max supporter len is 79).
+     * Encode the length of the digit sequence.
      */
     static void appendNumberPrefixToResult(const size_t digits, ColumnString::Chars & res_data)
     {
@@ -177,7 +178,7 @@ private:
         }
         else if (likely(p < 99))
         {
-            // 3 bytes encoding: '920' ... '998' for 21..100 digits.
+            // 3 bytes encoding: '920' ... '998' for 21..99 digits.
             p += 900;
 
             res_data.push_back(static_cast<UInt8>('0' + p / 100));
@@ -186,26 +187,29 @@ private:
         }
         else
         {
-            // Encode as '999' + length(to_string(p)) + to_string(p)
+            // Encode as '999' + length(to_string(digits)) + to_string(digits)
 
-            size_t p_len = 3; // Length is at least 3 for p >= 100
-            size_t p_power10 = 100;
-            for (auto t = p / 1000; t > 0; t /= 10)
+            size_t digits_len = 3; // Length is at least 3 for digits >= 100
+            size_t digits_power10 = 100;
+            for (auto t = digits / 1000; t > 0; t /= 10)
             {
-                ++p_len;
-                p_power10 *= 10;
+                ++digits_len;
+                digits_power10 *= 10;
             }
 
+            if (digits_len > 9)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long sequence of digits to encode for natural sorting, current length is {}, maximum length is 999999999", digits);
+
             res_data.push_back(UInt8{'9'});
             res_data.push_back(UInt8{'9'});
             res_data.push_back(UInt8{'9'});
 
-            res_data.push_back(static_cast<UInt8>('0' + p_len % 10)); // Encode 'length(to_string(digits - 1))' as a single digit
+            res_data.push_back(static_cast<UInt8>('0' + digits_len % 10)); // Encode 'length(to_string(digits))' as a single digit
 
-            while (p_len-- > 0)
+            while (digits_len-- > 0)
             {
-                res_data.push_back(static_cast<UInt8>('0' + (p / p_power10) % 10));
-                p_power10 /= 10;
+                res_data.push_back(static_cast<UInt8>('0' + (digits / digits_power10) % 10));
+                digits_power10 /= 10;
             }
         }
     }
