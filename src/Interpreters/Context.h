@@ -669,7 +669,7 @@ protected:
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
-    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+    std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1135,8 +1135,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
     void cancelAllBackupsAndRestores() const;
-    BackupsInMemoryHolder & getBackupsInMemory();
-    const BackupsInMemoryHolder & getBackupsInMemory() const;
+    std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
+    std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
