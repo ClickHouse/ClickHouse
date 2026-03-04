@@ -158,7 +158,20 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
-        rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
+        /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
+        /// update the existing entry to map A directly to C instead of having two separate entries.
+        bool chained = false;
+        for (auto & entry : rename_map)
+        {
+            if (entry.rename_to == command.column_name)
+            {
+                entry.rename_to = command.rename_to;
+                chained = true;
+                break;
+            }
+        }
+        if (!chained)
+            rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
     }
     else if (command.type == DROP_COLUMN)
     {
