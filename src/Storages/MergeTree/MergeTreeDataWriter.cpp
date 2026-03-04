@@ -821,6 +821,51 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             column.column = recursiveRemoveSparse(column.column);
     }
 
+    /// Detect columns that are entirely type-default values and exclude them from
+    /// the columns list, so they are not written to data files (neither Wide .bin
+    /// files nor the Compact shared data file).  The block itself is kept intact:
+    /// skip indices, projections, primary index, and min-max index are computed from
+    /// the full block by the writer independently of the columns list.
+    ///
+    /// Reading a part that lacks a column fills it with type defaults automatically
+    /// (the same mechanism as ALTER ADD COLUMN on existing parts).  Key columns
+    /// (sorting, partition, primary) are also safe to omit: primary.idx and
+    /// minmax_*.idx already contain the baked-in values, and the merge reader fills
+    /// defaults for missing column data.
+    ///
+    /// Patch parts (created by lightweight UPDATE) are excluded: their metadata
+    /// requires specific system columns (_block_number, _block_offset) to exist
+    /// for secondary min-max indices, so removing them would cause a crash.
+    bool has_empty_columns = false;
+    if (!new_data_part->info.isPatch())
+    {
+        NameSet empty_columns;
+        for (const auto & col : block)
+        {
+            if (col.column->hasOnlyDefaults())
+                empty_columns.insert(col.name);
+        }
+        /// At least one column must remain in the part — a part with zero
+        /// data columns would have no marks and trigger assertion failures.
+        /// We check against the `columns` list (metadata-derived), not the
+        /// block, because the block may contain virtual columns like
+        /// _block_number / _block_offset that are not in `columns`.
+        if (!empty_columns.empty())
+        {
+            auto filtered = columns.eraseNames(empty_columns);
+            if (!filtered.empty())
+            {
+                columns = std::move(filtered);
+                has_empty_columns = true;
+                /// Remove serialization infos for the skipped columns so that
+                /// setColumns() and the persisted serialization.json stay
+                /// consistent with the part's columns.txt.
+                for (const auto & name : empty_columns)
+                    infos.erase(name);
+            }
+        }
+    }
+
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
@@ -883,46 +928,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
-
-    /// Detect columns that are entirely type-default values and exclude them from
-    /// the columns list, so they are not written to data files (neither Wide .bin
-    /// files nor the Compact shared data file).  The block itself is kept intact:
-    /// skip indices, projections, primary index, and min-max index are computed from
-    /// the full block by the writer independently of the columns list.
-    ///
-    /// Reading a part that lacks a column fills it with type defaults automatically
-    /// (the same mechanism as ALTER ADD COLUMN on existing parts).  Key columns
-    /// (sorting, partition, primary) are also safe to omit: primary.idx and
-    /// minmax_*.idx already contain the baked-in values, and the merge reader fills
-    /// defaults for missing column data.
-    ///
-    /// Patch parts (created by lightweight UPDATE) are excluded: their metadata
-    /// requires specific system columns (_block_number, _block_offset) to exist
-    /// for secondary min-max indices, so removing them would cause a crash.
-    bool has_empty_columns = false;
-    if (!new_data_part->info.isPatch())
-    {
-        NameSet empty_columns;
-        for (const auto & col : block)
-        {
-            if (col.column->hasOnlyDefaults())
-                empty_columns.insert(col.name);
-        }
-        /// At least one column must remain in the part — a part with zero
-        /// data columns would have no marks and trigger assertion failures.
-        /// We check against the `columns` list (metadata-derived), not the
-        /// block, because the block may contain virtual columns like
-        /// _block_number / _block_offset that are not in `columns`.
-        if (!empty_columns.empty())
-        {
-            auto filtered = columns.eraseNames(empty_columns);
-            if (!filtered.empty())
-            {
-                columns = std::move(filtered);
-                has_empty_columns = true;
-            }
-        }
-    }
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
