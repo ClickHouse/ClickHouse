@@ -47,17 +47,17 @@ namespace
         const SelectQueryInfo & query_info,
         ContextPtr context)
     {
-        auto select_query = make_intrusive<ASTSelectQuery>();
+        auto select_query = std::make_shared<ASTSelectQuery>();
 
-        auto select_expr_list = make_intrusive<ASTExpressionList>();
+        auto select_expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & col_name : column_names)
-            select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+            select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(col_name));
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
         select_query->replaceDatabaseAndTable(database, table);
 
-        auto select_ast = make_intrusive<ASTSelectWithUnionQuery>();
-        select_ast->list_of_selects = make_intrusive<ASTExpressionList>();
+        auto select_ast = std::make_shared<ASTSelectWithUnionQuery>();
+        select_ast->list_of_selects = std::make_shared<ASTExpressionList>();
         select_ast->list_of_selects->children.push_back(select_query);
         select_ast->children.push_back(select_ast->list_of_selects);
 
