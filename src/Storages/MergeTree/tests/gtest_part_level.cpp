@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <ctime>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
 using namespace DB;
