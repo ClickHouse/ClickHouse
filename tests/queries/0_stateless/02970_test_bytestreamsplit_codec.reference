@@ -1,0 +1,17 @@
+F64
+F32
+I64
+I32
+I16
+U64
+U32
+U16
+Compression:
+valueF32	Float32	CODEC(ByteStreamSplit, LZ4)
+valueF64	Float64	CODEC(ByteStreamSplit, LZ4)
+valueI16	Int16	CODEC(ByteStreamSplit, LZ4)
+valueI32	Int32	CODEC(ByteStreamSplit, LZ4)
+valueI64	Int64	CODEC(ByteStreamSplit, LZ4)
+valueU16	UInt16	CODEC(ByteStreamSplit, LZ4)
+valueU32	UInt32	CODEC(ByteStreamSplit, LZ4)
+valueU64	UInt64	CODEC(ByteStreamSplit, LZ4)
