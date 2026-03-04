@@ -1,3 +1,4 @@
+#include <Columns/ColumnBLOB.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
@@ -66,7 +67,15 @@ static Chunk prepareTotals(Chunk chunk)
         /// Skip rows except the first one.
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
+        {
+            /// ColumnBLOB stores serialized/compressed column data for network transfer.
+            /// It cannot be cut directly because its cloneEmpty returns the wrapped column type.
+            /// Convert it back to the regular column before cutting.
+            if (const auto * col_blob = typeid_cast<const ColumnBLOB *>(column.get()))
+                column = col_blob->getWrappedColumn();
+
             column = column->cut(0, 1);
+        }
 
         chunk.setColumns(std::move(columns), 1);
     }
