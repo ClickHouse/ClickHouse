@@ -44,7 +44,7 @@ You can exclude any user or role by using the `EXCEPT` expression. For example, 
 
 ## DATABASE NAMESPACE Clause {#database-namespace-clause}
 
-Sets or changes the database namespace for a user. See [CREATE USER — DATABASE NAMESPACE](../create/user.md#database-namespace-clause) for details on how database namespaces work.
+Sets or changes the database namespace for a user. Requires the `database_namespace_separator` server setting to be configured. See [CREATE USER — DATABASE NAMESPACE](../create/user.md#database-namespace-clause) for details on how database namespaces work.
 
 ```sql
 ALTER USER tenant1_user DATABASE NAMESPACE tenant1;

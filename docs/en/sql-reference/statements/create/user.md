@@ -213,7 +213,16 @@ You can exclude any user or role by using the `EXCEPT` expression. For example, 
 
 ## DATABASE NAMESPACE Clause {#database-namespace-clause}
 
-Assigns a database namespace to the user for multi-tenant database isolation. When a user has a database namespace set, all non-system database references are transparently prefixed with `{namespace}__` (double underscore separator). This allows multiple tenants to use the same logical database names (e.g., `mydb`) while physically operating on separate databases (`tenant1__mydb`, `tenant2__mydb`).
+Assigns a database namespace to the user for multi-tenant database isolation. When a user has a database namespace set, all non-system database references are transparently prefixed with `{namespace}{separator}` where the separator is configured by the `database_namespace_separator` server setting.
+
+**Prerequisites:** The `database_namespace_separator` server setting must be configured (non-empty) before using this clause. When the separator is not set, the feature is disabled and `DATABASE NAMESPACE` will be rejected.
+
+```xml
+<!-- In config.xml or config.d/*.xml -->
+<database_namespace_separator>__</database_namespace_separator>
+```
+
+When the separator is configured, database names containing the separator string cannot be created manually, eliminating any ambiguity between namespaced and non-namespaced databases.
 
 The namespace is a user-level property — users cannot change their own namespace at runtime.
 
