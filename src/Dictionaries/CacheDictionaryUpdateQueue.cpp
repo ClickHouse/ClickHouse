@@ -1,3 +1,5 @@
+#include "CacheDictionaryUpdateQueue.h"
+
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 #include <Common/CurrentMetrics.h>
@@ -134,7 +136,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 {
-    setThreadName(ThreadName::CACHE_DICTIONARY_UPDATE_QUEUE);
+    setThreadName("UpdQueue");
 
     while (!update_queue.isFinished())
     {

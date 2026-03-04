@@ -30,7 +30,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -64,7 +64,7 @@ MySQLSource::MySQLSource(
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
@@ -75,7 +75,7 @@ MySQLSource::MySQLSource(
 
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    : ISource(sample_block_.cloneEmpty())
     , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
@@ -103,11 +103,7 @@ void MySQLWithFailoverSource::onStart()
     {
         try
         {
-            mysqlxx::PoolWithFailover::Entry entry = pool->get();
-            mysqlxx::Connection & mysql_conn = entry;
-            mysql_connection_id = mysql_conn.getDriverThreadID();
-            LOG_TEST(log, "Get data from database");
-            connection = std::make_unique<Connection>(entry, query_str);
+            connection = std::make_unique<Connection>(pool->get(), query_str);
             break;
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
@@ -136,80 +132,16 @@ void MySQLWithFailoverSource::onStart()
 
 Chunk MySQLWithFailoverSource::generate()
 {
-    try
+    if (!is_initialized)
     {
-        if (!is_initialized.load())
-        {
-            onStart();
-            is_initialized = true;
-        }
-
-        return MySQLSource::generate();
+        onStart();
+        is_initialized = true;
     }
-    catch (const mysqlxx::BadQuery & e)
-    {
-        LOG_ERROR(log, "Error in MySQLWithFailoverSource::generate(): {}", e.displayText());
 
-        if (!isCancelled())
-            throw;
-
-        return {};
-    }
+    return MySQLSource::generate();
 }
 
-void MySQLWithFailoverSource::onCancel() noexcept
-{
-    try
-    {
-        /// The code is executed only if onStart() was not finished because of freezing
-        if (is_initialized.load())
-        {
-            return;
-        }
 
-        uint64_t connection_id = mysql_connection_id.load();
-        if (connection_id == 0)
-        {
-            LOG_DEBUG(log, "No valid MySQL connection ID to cancel");
-            return;
-        }
-
-        LOG_DEBUG(log, "Attempting to cancel MySQL query with connection ID {}", connection_id);
-
-        std::string kill_query = "KILL QUERY " + std::to_string(connection_id);
-
-        try
-        {
-            auto cancel_connection = std::make_unique<Connection>(pool->get(), kill_query);
-            cancel_connection->query.execute();
-            LOG_DEBUG(log, "Successfully cancelled MySQL query with connection ID {}", connection_id);
-        }
-        catch (const mysqlxx::ConnectionFailed & e)
-        {
-            LOG_WARNING(log, "Failed to connect for cancel query: {}", e.displayText());
-        }
-        catch (const mysqlxx::BadQuery & e)
-        {
-            LOG_WARNING(log, "Failed to execute cancel query: {}", e.displayText());
-        }
-        catch (const mysqlxx::Exception & e)
-        {
-            LOG_WARNING(log, "MySQL exception during cancellation: {}", e.displayText());
-        }
-        catch (const Poco::Exception & e)
-        {
-            LOG_WARNING(log, "Poco exception during cancellation: {}", e.displayText());
-        }
-        catch (const std::exception & e)
-        {
-            LOG_WARNING(log, "std::exception during cancellation: {}", e.what());
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
-    }
-}
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -219,11 +151,11 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value.getUInt()));
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value.getUInt()));
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
@@ -256,11 +188,11 @@ namespace
                 break;
             }
             case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value.getInt()));
+                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value.getInt()));
+                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
@@ -303,11 +235,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>()));
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>()));
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:
@@ -398,7 +330,6 @@ namespace
 
 Chunk MySQLSource::generate()
 {
-    LOG_TEST(log, "Generate a chunk");
     auto row = connection->result.fetch();
     if (!row)
     {
@@ -415,7 +346,7 @@ Chunk MySQLSource::generate()
     size_t num_rows = 0;
     size_t read_bytes_size = 0;
 
-    while (row && !isCancelled())
+    while (row)
     {
         for (size_t index = 0; index < position_mapping.size(); ++index)
         {

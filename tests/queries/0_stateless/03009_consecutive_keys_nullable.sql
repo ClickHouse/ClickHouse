@@ -46,11 +46,11 @@ SELECT x, count(), countIf(x IS NULL) FROM t_nullable_keys_6 GROUP BY x ORDER BY
 
 DROP TABLE t_nullable_keys_6;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     splitByChar('.', tables[1])[2] AS table,
     ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query LIKE '%SELECT%FROM%t_nullable_keys_%'
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query LIKE '%SELECT%FROM%t_nullable_keys_%'
 ORDER BY table;

@@ -1,4 +1,3 @@
-#include <memory>
 #include <Server/HTTP/HTTPServerRequest.h>
 
 #include <IO/EmptyReadBuffer.h>
@@ -6,7 +5,6 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -19,7 +17,7 @@
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <Poco/Net/X509Certificate.h>
 #endif
 
 static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
@@ -58,15 +56,11 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
     if (getChunkedTransferEncoding())
-    {
-        stream = std::make_shared<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
-        stream_is_bounded = true;
-    }
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
-        stream_is_bounded = true;
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {
@@ -76,11 +70,8 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
                 "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
     }
     else
-    {
         /// We have to distinguish empty buffer and nullptr.
-        stream = std::make_shared<EmptyReadBuffer>();
-        stream_is_bounded = true;
-    }
+        stream = std::make_unique<EmptyReadBuffer>();
 }
 
 bool HTTPServerRequest::checkPeerConnected() const
@@ -115,16 +106,15 @@ bool HTTPServerRequest::havePeerCertificate() const
     return secure_socket->havePeerCertificate();
 }
 
-X509Certificate HTTPServerRequest::peerCertificate() const
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
 {
-    if (!secure)
-        throw Poco::Net::SSLException("No certificate available");
-
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
-    if (!secure_socket)
-        throw Poco::Net::SSLException("No certificate available");
-
-    return X509Certificate(secure_socket->peerCertificate());
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
 }
 #endif
 
@@ -180,19 +170,6 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
     setMethod(method);
     setURI(uri);
     setVersion(version);
-}
-
-std::string HTTPServerRequest::toStringForLogging() const
-{
-    return fmt::format(
-        "Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        getMethod(),
-        clientAddress().toString(),
-        get("User-Agent", "(none)"),
-        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
-        getContentType(),
-        getTransferEncoding(),
-        get("X-Forwarded-For", "(none)"));
 }
 
 }

@@ -3,7 +3,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/logger_useful.h>
-#include <Server/TCPProtocolStackData.h>
+#include "Server/TCPProtocolStackData.h"
 #include <Server/IServer.h>
 #include <Server/TCPHandler.h>
 #include <Server/TCPServerConnectionFactory.h>
@@ -47,7 +47,7 @@ public:
         server_display_name = server.config().getString("display_name", host_name);
     }
 
-    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         try
         {
@@ -61,7 +61,7 @@ public:
         }
     }
 
-    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data) override
     {
         try
         {

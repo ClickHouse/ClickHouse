@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-const DB::SharedHeader & getChildOutputHeader(DB::QueryPlan::Node & node)
+const DB::Header & getChildOutputHeader(DB::QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getName());
@@ -43,7 +43,7 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     return true;
 }
 
-size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -66,22 +66,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-
-    /// Check that all sorting columns are present in the expression's outputs.
-    /// They may be missing if the plan was transformed by another optimization
-    /// (e.g. `convertJoinToIn` can introduce qualified column names like `ty.c0`
-    /// that are not in the expression DAG).
-    const auto & expression = expression_step->getExpression();
-    {
-        NameSet output_names;
-        for (const auto * output : expression.getOutputs())
-            output_names.insert(output->result_name);
-        for (const auto & sort_column : sort_columns)
-            if (!output_names.contains(sort_column))
-                return 0;
-    }
-
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression.splitActionsBySortingDescription(sort_columns);
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())
@@ -96,7 +81,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     child_node->children = {&node_with_needed};
 
     node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting));
-    node_with_needed.step->setStepDescription(*child_step);
+    node_with_needed.step->setStepDescription(child_step->getStepDescription());
     // Sorting (parent_node) -> so far the origin Expression (child_node) -> NeededCalculations (node_with_needed)
 
     std::swap(parent_step, child_step);
@@ -105,9 +90,8 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
     auto description = parent_step->getStepDescription();
-    auto new_expression_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
-    new_expression_step->setStepDescription(fmt::format("{} [lifted up part]", description), settings.max_step_description_length);
-    parent_step = std::move(new_expression_step);
+    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
+    parent_step->setStepDescription(description + " [lifted up part]");
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
     return 3;

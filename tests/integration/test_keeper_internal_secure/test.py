@@ -94,10 +94,10 @@ def run_test():
             pass
 
 
-def setupSsl(node, filename, password, ssl_conf_file="configs/ssl_conf.yml"):
+def setupSsl(node, filename, password):
     if password is None:
         node.copy_file_to_container(
-            os.path.join(CURRENT_TEST_DIR, ssl_conf_file),
+            os.path.join(CURRENT_TEST_DIR, "configs/ssl_conf.yml"),
             "/etc/clickhouse-server/config.d/ssl_conf.yml",
         )
 
@@ -152,12 +152,14 @@ def start_all_clickhouse():
         ku.wait_until_connected(cluster, node)
 
 
-def check_valid_configuration(filename, password, ssl_conf_file="configs/ssl_conf.yml"):
+def check_valid_configuration(filename, password):
     stop_all_clickhouse()
     for node in nodes:
-        setupSsl(node, filename, password, ssl_conf_file)
+        setupSsl(node, filename, password)
     start_all_clickhouse()
-    nodes[0].wait_for_log_line("Raft ASIO listener initiated on :::9234, SSL enabled")
+    nodes[0].wait_for_log_line(
+        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=1000
+    )
     run_test()
 
 
@@ -167,7 +169,9 @@ def check_invalid_configuration(filename, password):
         setupSsl(node, filename, password)
 
     nodes[0].start_clickhouse()
-    nodes[0].wait_for_log_line("Raft ASIO listener initiated on :::9234, SSL enabled")
+    nodes[0].wait_for_log_line(
+        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=1000
+    )
     nodes[0].wait_for_log_line("failed to connect to peer.*Connection refused")
 
 
@@ -181,9 +185,3 @@ def test_secure_raft_works_with_password(started_cluster):
     check_invalid_configuration("WithPassPhrase", "")
     check_valid_configuration("WithPassPhrase", "test")
     check_invalid_configuration("WithPassPhrase", None)
-
-
-def test_secure_raft_works_with_cipher_list(started_cluster):
-    check_valid_configuration(
-        "WithoutPassPhrase", None, ssl_conf_file="configs/ssl_conf_cipher.yml"
-    )

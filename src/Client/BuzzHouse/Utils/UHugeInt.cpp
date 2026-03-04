@@ -314,7 +314,7 @@ static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
     UHugeInt remainder;
     /// Here it is interested in the remainder only
-    const auto u = divMod(lhs, rhs, remainder);
+    auto u = divMod(lhs, rhs, remainder);
     UNUSED(u);
     return remainder;
 }

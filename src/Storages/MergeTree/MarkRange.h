@@ -1,17 +1,15 @@
 #pragma once
 
 #include <cstddef>
-#include <Common/AllocatorWithMemoryTracking.h>
-#include <Processors/Chunk.h>
-#include <boost/container/devector.hpp>
+#include <deque>
+
 #include <fmt/format.h>
-#include <base/types.h>
+
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
-
-class ReadBuffer;
-class WriteBuffer;
 
 
 /** A pair of marks that defines the range of rows in a part. Specifically,
@@ -23,7 +21,7 @@ struct MarkRange
     size_t end;
 
     MarkRange() = default;
-    MarkRange(size_t begin_, size_t end_);
+    MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) { chassert(begin <= end); }
 
     size_t getNumberOfMarks() const;
 
@@ -31,16 +29,9 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>
+struct MarkRanges : public std::deque<MarkRange>
 {
-    enum class SearchAlgorithm : uint8_t
-    {
-        Unknown,
-        BinarySearch,
-        GenericExclusionSearch,
-    };
-
-    using boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>::devector; /// NOLINT(modernize-type-traits)
+    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
@@ -48,8 +39,6 @@ struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMe
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
-
-    SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
 
 /** Get max range.end from ranges.
@@ -60,29 +49,8 @@ std::string toString(const MarkRanges & ranges);
 
 void assertSortedAndNonIntersecting(const MarkRanges & ranges);
 
-/// Lineage information: from which table, part and mark range does the chunk come from?
-/// This information is needed by the query condition cache.
-class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
-{
-public:
-    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_);
-    void appendMarkRanges(const MarkRanges & mark_ranges_);
-
-    UUID table_uuid;
-    String part_name;
-    size_t marks_count;
-    bool has_final_mark;
-    MarkRanges mark_ranges;
-};
-
-using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
-
-struct MarkRangeHash
-{
-    size_t operator()(const MarkRange & range) const;
-};
-
 }
+
 
 template <>
 struct fmt::formatter<DB::MarkRange>

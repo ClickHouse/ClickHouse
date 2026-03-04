@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -11,7 +12,7 @@ namespace DB
 
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_,
+    const Block & header_,
     const FormatSettings & settings_,
     bool pretty_json_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(
@@ -104,18 +105,13 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         factory.registerOutputFormat(format, [serialize_as_strings, pretty_json](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
+            const FormatSettings & _format_settings)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;
-            return std::make_shared<JSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, pretty_json);
+            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, settings, pretty_json);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
-        factory.setContentType(format, [](const std::optional<FormatSettings> & settings)
-        {
-            return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";
-        });
     };
 
     register_function("JSONEachRow", false, false);

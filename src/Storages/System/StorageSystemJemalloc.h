@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class Context;
+
 class StorageSystemJemallocBins final : public IStorage
 {
 public:

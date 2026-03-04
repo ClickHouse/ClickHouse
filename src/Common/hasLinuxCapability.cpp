@@ -1,6 +1,6 @@
 #if defined(OS_LINUX)
 
-#include <Common/hasLinuxCapability.h>
+#include "hasLinuxCapability.h"
 
 #include <syscall.h>
 #include <unistd.h>
@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB

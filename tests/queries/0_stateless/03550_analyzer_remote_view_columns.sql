@@ -20,22 +20,21 @@ AS SELECT *
 FROM test;
 
 SET prefer_localhost_replica = 0;
-SET serialize_query_plan = 0;
 
 SELECT max(i1)
 FROM remote('localhost', currentDatabase(), test_view)
 SETTINGS log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT columns
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
     initial_query_id = (
         SELECT query_id
         FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-            AND current_database = currentDatabase()
+        WHERE
+            current_database = currentDatabase()
             AND log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY'
         LIMIT 1)
     AND type = 'QueryFinish'

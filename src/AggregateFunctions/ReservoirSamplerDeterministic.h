@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -33,10 +32,21 @@ namespace ErrorCodes
 /// That is, it makes sense to first add, then get quantiles without adding.
 
 
+namespace DB
+{
+struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+}
+
+
 namespace detail
 {
     const size_t DEFAULT_MAX_SAMPLE_SIZE = 8192;
-    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8 - 1;
+    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
@@ -115,7 +125,7 @@ public:
 
         sortIfNeeded();
 
-        const double index = std::max(0., std::min(static_cast<double>(samples.size() - 1), level * static_cast<double>(samples.size() - 1)));
+        const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
         /// To get a value from a fractional index, we linearly interpolate between adjacent values.
         size_t left_index = static_cast<size_t>(index);
@@ -123,8 +133,8 @@ public:
         if (right_index == samples.size())
             return static_cast<double>(samples[left_index].first);
 
-        const double left_coef = static_cast<double>(right_index) - index;
-        const double right_coef = index - static_cast<double>(left_index);
+        const double left_coef = right_index - index;
+        const double right_coef = index - left_index;
 
         return static_cast<double>(samples[left_index].first) * left_coef + static_cast<double>(samples[right_index].first) * right_coef;
     }
@@ -185,8 +195,7 @@ public:
 #pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
 #pragma clang diagnostic pop
-            elem.first = samples[i].first;
-            elem.second = samples[i].second;
+            elem = samples[i];
 
             DB::transformEndianness<std::endian::little>(elem);
             DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
@@ -235,9 +244,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                "Skip degree in `quantileDeterministic` exceeds the maximum value of {}, which indicates an incorrect usage",
-                detail::MAX_SKIP_DEGREE);
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

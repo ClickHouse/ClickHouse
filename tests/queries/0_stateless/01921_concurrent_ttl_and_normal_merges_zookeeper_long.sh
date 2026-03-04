@@ -31,8 +31,7 @@ done
 
 function optimize_thread
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
     done
@@ -40,8 +39,7 @@ function optimize_thread
 
 function insert_thread
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
         $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
@@ -50,18 +48,21 @@ function insert_thread
 }
 
 
+export -f insert_thread;
+export -f optimize_thread;
+
 TIMEOUT=20
 
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do
@@ -71,7 +72,7 @@ done
 check_replication_consistency "ttl_table" "count(), sum(toUInt64(key))"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception != '' FORMAT Vertical"
-$CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
+$CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
 
 
 for i in $(seq 1 $NUM_REPLICAS); do

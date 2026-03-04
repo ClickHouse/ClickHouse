@@ -15,11 +15,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/TableNode.h>
-
-#include <Storages/IStorage.h>
-#include <Storages/ProjectionsDescription.h>
 
 #include <numeric>
 
@@ -29,7 +24,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_syntax_fuse_functions;
-    extern const SettingsBool optimize_use_projections;
 }
 
 namespace ErrorCodes
@@ -40,50 +34,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-bool canFuseToSumCount(const DataTypePtr & type)
-{
-    WhichDataType t(type);
-    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
-}
-
-bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const ContextPtr & context)
-{
-    auto * table_node = source->as<TableNode>();
-    if (!table_node)
-        return false;
-
-    if (!context->getSettingsRef()[Setting::optimize_use_projections])
-        return false;
-
-    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr();
-    for (const auto & projection : metadata->projections)
-    {
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            return true;
-    }
-    return false;
-}
-
-class CollectColumnSourcesVisitor : public InDepthQueryTreeVisitor<CollectColumnSourcesVisitor, true>
-{
-public:
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        auto * column_node = node->as<ColumnNode>();
-        if (!column_node)
-            return;
-
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (!column_source)
-            return;
-
-        column_sources.insert(column_source);
-    }
-
-    std::unordered_set<QueryTreeNodePtr> column_sources;
-};
 
 class FuseFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>
 {
@@ -114,35 +64,11 @@ public:
             /// Do not apply for `count()` with without arguments or `count(*)`, only `count(x)` is supported.
             return;
 
-        auto argument_with_source = createArgumentWithSource(argument_nodes[0]);
-        if (!argument_with_source)
-            return;
-
-        argument_to_functions_mapping[*argument_with_source].insert(&node);
+        argument_to_functions_mapping[argument_nodes[0]].insert(&node);
     }
 
-    using ArgumentWithSource = std::pair<QueryTreeNodePtrWithHash, QueryTreeNodePtr>;
-
-    std::optional<ArgumentWithSource> createArgumentWithSource(const QueryTreeNodePtr & argument)
-    {
-        CollectColumnSourcesVisitor visitor;
-        visitor.visit(argument);
-        if (visitor.column_sources.size() != 1)
-            return std::nullopt;
-        return std::make_pair(argument, *visitor.column_sources.begin());
-    }
-
-    struct ArgumentWithSourceHash
-    {
-        size_t operator()(const ArgumentWithSource & p) const noexcept
-        {
-            return p.first.hash.low64 ^ std::hash<const void *>{}(p.second.get());
-        }
-    };
-
-    /// (argument, source) -> {list of sum/count/avg functions with this argument}
-    using NodePtrSet = std::unordered_set<QueryTreeNodePtr *>;
-    std::unordered_map<ArgumentWithSource, NodePtrSet, ArgumentWithSourceHash> argument_to_functions_mapping;
+    /// argument -> list of sum/count/avg functions with this argument
+    QueryTreeNodePtrWithHashMap<std::unordered_set<QueryTreeNodePtr *>> argument_to_functions_mapping;
 
 private:
     std::unordered_set<String> names_to_collect;
@@ -201,10 +127,6 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     String function_name = node->as<const FunctionNode &>().getFunctionName();
 
-    /// Preserve the original column name so that consumers that match columns by name
-    /// (e.g. StorageBuffer union, Distributed queries) see the same names regardless of fusion.
-    auto original_column_name = node->formatConvertedASTForErrorMessage();
-
     if (function_name == "sum")
     {
         assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
@@ -227,8 +149,6 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported function '{}'", function_name);
     }
-
-    node->setAlias(original_column_name);
 }
 
 /// Reorder nodes according to the value of the quantile level parameter.
@@ -301,30 +221,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (nodes.size() < 2)
             continue;
 
-        /// Require at least 2 distinct function names (e.g. sum + count, sum + avg).
-        /// ORDER BY ALL can duplicate a single aggregate function node, making nodes.size() >= 2
-        /// even though there is only one unique function — fusing in that case is wrong.
-        {
-            std::unordered_set<String> distinct_names;
-            for (auto * node : nodes)
-                distinct_names.insert((*node)->as<const FunctionNode &>().getFunctionName());
-            if (distinct_names.size() < 2)
-                continue;
-        }
-
-        if (isNullableOrLowCardinalityNullable(argument.first.node->getResultType()))
-            /// Do not apply to functions with Nullable/LowCardinality(Nullable) arguments, because `sumCount` handles it different from `sum` and `avg`.
-            continue;
-
-        if (!canFuseToSumCount(argument.first.node->getResultType()))
-            /// Only allow types supported by the `sumCount` aggregate function: Int, UInt, Float, Decimal.
-            continue;
-
-        if (sourceHasAggregateProjections(argument.second, context))
-            /// Fusion breaks projection matching because the optimizer cannot match `sumCount` to projections defined with `sum`, `count`, or `avg`.
-            continue;
-
-        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
+        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.node);
         for (auto * node : nodes)
         {
             assert(node);
@@ -346,7 +243,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
         std::vector<QueryTreeNodePtr *> nodes(nodes_set.begin(), nodes_set.end());
 
-        auto quantiles_node = createFusedQuantilesNode(nodes, argument.first.node);
+        auto quantiles_node = createFusedQuantilesNode(nodes, argument.node);
         auto result_array_type = std::dynamic_pointer_cast<const DataTypeArray>(quantiles_node->getResultType());
         if (!result_array_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -355,10 +252,8 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
         for (size_t i = 0; i < nodes_set.size(); ++i)
         {
-            auto original_column_name = (*nodes[i])->formatConvertedASTForErrorMessage();
             size_t array_index = i + 1;
             *nodes[i] = createArrayElementFunction(context, quantiles_node, array_index);
-            (*nodes[i])->setAlias(original_column_name);
         }
     }
 }

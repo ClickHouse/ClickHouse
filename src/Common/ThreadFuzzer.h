@@ -52,7 +52,7 @@ public:
     }
 
     bool isEffective() const;
-    void setup() const;
+    bool needsSetup() const;
 
     static void stop();
     static void start();
@@ -71,12 +71,12 @@ private:
     double explicit_sleep_probability = 0;
     double explicit_memory_exception_probability = 0;
 
-    inline static std::atomic<bool> started{false};
+    inline static std::atomic<bool> started{true};
 
     ThreadFuzzer();
 
     void initConfiguration();
-    bool needsSetup() const;
+    void setup() const;
 
     static void signalHandler(int);
 };

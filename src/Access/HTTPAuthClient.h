@@ -5,7 +5,6 @@
 #include <base/sleep.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
-#include <set>
 
 namespace DB
 {
@@ -31,7 +30,7 @@ public:
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
         , retry_max_backoff_ms{params.retry_max_backoff_ms}
-        , forward_headers{params.forward_headers.begin(), params.forward_headers.end()}
+        , forward_headers{params.forward_headers}
         , uri{params.uri}
         , parser{parser_}
     {
@@ -65,29 +64,14 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
-
-    struct ci_less
-    {
-        bool operator()(const std::string & a, const std::string & b) const
-        {
-            return std::lexicographical_compare(
-                a.begin(), a.end(),
-                b.begin(), b.end(),
-                [](unsigned char ac, unsigned char bc)
-                {
-                    return std::tolower(ac) < std::tolower(bc);
-                });
-        }
-    };
-
-    const std::set<String, ci_less> & getForwardHeaders() const { return forward_headers; }
+    const std::vector<String> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::set<String, ci_less> forward_headers;
+    const std::vector<String> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -105,10 +89,11 @@ public:
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
 
-        for (const auto & k : headers)
+        for (const auto & k : this->getForwardHeaders())
         {
-            if (this->getForwardHeaders().contains(k.first))
-                request.add(k.first, k.second);
+            auto it = headers.find(k);
+            if (it != headers.end())
+                request.add(k, it->second);
         }
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};

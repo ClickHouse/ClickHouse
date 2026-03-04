@@ -52,10 +52,6 @@ public:
     /// The default implementation does nothing.
 
     virtual void log(const Message & msg) = 0;
-    virtual void log(Message && msg)
-    {
-        log(static_cast<const Message &>(msg));
-    }
     /// Logs the given message to the channel. Must be
     /// overridden by subclasses.
     ///
