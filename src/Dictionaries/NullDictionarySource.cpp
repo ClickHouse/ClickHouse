@@ -18,12 +18,10 @@ NullDictionarySource::NullDictionarySource(const NullDictionarySource & other) :
 {
 }
 
-BlockIO NullDictionarySource::loadAll()
+QueryPipeline NullDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<NullSource>(sample_block));
-    return io;
+    return QueryPipeline(std::make_shared<NullSource>(sample_block));
 }
 
 

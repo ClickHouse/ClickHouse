@@ -1,19 +1,16 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Common/escapeForFileName.h>
-#include <Common/SipHash.h>
 
 #include <numeric>
 
 namespace DB
 {
-
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace ErrorCodes
 {
@@ -21,48 +18,17 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-bool indexFileExistsInChecksums(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & path_prefix,
-    const std::string & extension)
-{
-    if (checksums.files.contains(path_prefix + extension))
-        return true;
-
-    /// Also check for hashed version of the filename
-    auto hash = sipHash128String(path_prefix);
-    return checksums.files.contains(hash + extension);
-}
-
-String getIndexFileName(const String & index_name, bool escape_filename)
-{
-    if (escape_filename)
-        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
-    return INDEX_FILE_PREFIX + index_name;
-}
-
-String IMergeTreeIndex::getFileName() const
-{
-    return getIndexFileName(index.name, index.escape_filenames);
-}
-
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat
+IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
-    return {0 /*unknown*/, {}};
-}
-
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    serializeBinary(stream->compressed_hashing);
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -77,11 +43,6 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
-void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
-{
-    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    deserializeBinary(*stream->getDataBuffer(), state.version);
-}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
@@ -172,25 +133,19 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
-    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
-
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
+
+    registerCreator("hypothesis", hypothesisIndexCreator);
+    registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("text", textIndexCreator);
-    registerValidator("text", textIndexValidator);
-
-    /// Index type 'hypothesis' is no longer supported.
-    /// To allow loading tables with old indexes, register a dummy index which allows attach but
-    /// throws an exception when the user attempts to create or use it.
-    registerCreator("hypothesis", legacyHypothesisIndexCreator);
-    registerValidator("hypothesis", legacyHypothesisIndexValidator);
+    registerCreator("text", ginIndexCreator);
+    registerValidator("text", ginIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

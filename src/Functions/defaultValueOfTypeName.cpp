@@ -66,43 +66,7 @@ public:
 
 REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the default value for the given type name.
-    )";
-    FunctionDocumentation::Syntax syntax = "defaultValueOfTypeName(type)";
-    FunctionDocumentation::Arguments arguments = {
-        {"type", "A string representing a type name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the default value for the given type name: `0` for numbers, an empty string for strings, or `NULL` for Nullable", {"UInt8", "String", "NULL"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT defaultValueOfTypeName('Int8');
-        )",
-        R"(
-┌─defaultValueOfTypeName('Int8')─┐
-│                              0 │
-└────────────────────────────────┘
-        )"
-    },
-    {
-        "Nullable example",
-        R"(
-SELECT defaultValueOfTypeName('Nullable(Int8)');
-        )",
-        R"(
-┌─defaultValueOfTypeName('Nullable(Int8)')─┐
-│                                     ᴺᵁᴸᴸ │
-└──────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation);
+    factory.registerFunction<FunctionDefaultValueOfTypeName>();
 }
 
 }

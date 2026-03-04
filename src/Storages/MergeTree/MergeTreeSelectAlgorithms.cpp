@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 
-#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
-
 namespace DB
 {
 
@@ -53,12 +51,6 @@ MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
     res = std::move(chunks.back());
     chunks.pop_back();
     return res;
-}
-
-MergeTreeReadTaskPtr
-MergeTreeProjectionIndexSelectAlgorithm::getNewTask(IMergeTreeReadPool & /* pool */, MergeTreeReadTask * /* previous_task */)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeProjectionIndexSelectAlgorithm cannot be used to generate new tasks");
 }
 
 }

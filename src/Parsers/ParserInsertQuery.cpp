@@ -43,7 +43,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p{false, true};
+    ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
@@ -112,30 +112,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    Pos before_lparen = pos;
-
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-        {
-            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
-            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
-            columns.reset();
-            pos = before_lparen;
-        }
-        else
-        {
-            /// Optional trailing comma
-            ParserToken(TokenType::Comma).ignore(pos);
+            return false;
 
-            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
-            if (!s_rparen.ignore(pos, expected))
-            {
-                columns.reset();
-                pos = before_lparen;
-            }
-        }
+        /// Optional trailing comma
+        ParserToken(TokenType::Comma).ignore(pos);
+
+        if (!s_rparen.ignore(pos, expected))
+            return false;
     }
 
     /// Check if file is a source of data.
@@ -186,10 +173,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected))
     {
-        /// If SELECT is defined (possibly in parentheses), return to position before select and parse
-        /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
+        /// If SELECT is defined, return to position before select and parse
+        /// rest of query as SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
@@ -206,7 +193,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Only one WITH should be presented, either before INSERT or SELECT.");
                     child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        ASTPtr(with_expression_list));
+                        std::move(with_expression_list));
                 }
             }
         }
@@ -284,7 +271,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Create query and fill its fields.
-    auto query = make_intrusive<ASTInsertQuery>();
+    auto query = std::make_shared<ASTInsertQuery>();
     node = query;
 
     if (infile)

@@ -59,7 +59,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finalFlushBefore()
+void Bzip2WriteBuffer::finalizeBefore()
 {
     next();
 

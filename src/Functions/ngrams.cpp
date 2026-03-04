@@ -4,7 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenizer.h>
+#include <Interpreters/ITokenExtractor.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -68,16 +68,16 @@ public:
         arguments[1].column->get(0, ngram_argument_value);
         auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramsTokenizer tokenizer(ngram_value);
+        NgramTokenExtractor extractor(ngram_value);
 
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(extractor, *column_string, *result_column_string, *column_offsets, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }
@@ -86,7 +86,7 @@ private:
 
     template <typename ExtractorType, typename StringColumnType, typename ResultStringColumnType>
     void executeImpl(
-        const ExtractorType & tokenizer,
+        const ExtractorType & extractor,
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,
         ColumnArray::ColumnOffsets & offsets_column,
@@ -101,16 +101,15 @@ private:
         {
             auto data = input_data_column.getDataAt(i);
 
-            forEachToken(
-                tokenizer,
-                data.data(),
-                data.size(),
-                [&](const char * token_start, size_t token_length)
-                {
-                    result_data_column.insertData(token_start, token_length);
-                    ++current_tokens_size;
-                    return false;
-                });
+            size_t cur = 0;
+            size_t token_start = 0;
+            size_t token_length = 0;
+
+            while (cur < data.size && extractor.nextInString(data.data, data.size, &cur, &token_start, &token_length))
+            {
+                result_data_column.insertData(data.data + token_start, token_length);
+                ++current_tokens_size;
+            }
 
             offsets_data[i] = current_tokens_size;
         }
@@ -120,12 +119,12 @@ private:
 REGISTER_FUNCTION(Ngrams)
 {
     FunctionDocumentation::Description description = R"(
-Splits a UTF-8 string into n-grams of length `N`.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 )";
-    FunctionDocumentation::Syntax syntax = "ngrams(s, N)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, ngram_size)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string.", {"String", "FixedString"}},
-        {"N", "The n-gram length.", {"const UInt8/16/32/64"}}
+        {"ngram_size", "The size of an n-gram.", {"const UInt8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
@@ -139,7 +138,7 @@ Splits a UTF-8 string into n-grams of length `N`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNgrams>(documentation);
 }

@@ -6,7 +6,6 @@ keywords: ['SQLInsert']
 output_format: true
 slug: /interfaces/formats/SQLInsert
 title: 'SQLInsert'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

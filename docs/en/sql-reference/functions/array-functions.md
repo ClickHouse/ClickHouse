@@ -3,7 +3,6 @@ description: 'Documentation for Array Functions'
 sidebar_label: 'Arrays'
 slug: /sql-reference/functions/array-functions
 title: 'Array Functions'
-doc_type: 'reference'
 ---
 
 # Array functions

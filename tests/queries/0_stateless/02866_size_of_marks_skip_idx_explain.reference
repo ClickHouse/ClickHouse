@@ -5,16 +5,14 @@ Expression ((Project names + Projection))
       Skip
         Name: name_idx_g2
         Description: minmax GRANULARITY 2
-        Condition: (id in (-Inf, 1])
         Parts: 1/1
         Granules: 2/5
       Skip
         Name: name_idx_g1
         Description: minmax GRANULARITY 1
-        Condition: (id in (-Inf, 1])
         Parts: 1/1
         Granules: 1/2
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx)
@@ -22,13 +20,11 @@ Expression ((Project names + Projection))
       Skip
         Name: name_idx_g2
         Description: minmax GRANULARITY 2
-        Condition: (id in (-Inf, 2])
         Parts: 1/1
         Granules: 2/5
       Skip
         Name: name_idx_g1
         Description: minmax GRANULARITY 1
-        Condition: (id in (-Inf, 2])
         Parts: 1/1
         Granules: 2/2
-      Ranges: 1
+        Ranges: 1

@@ -42,23 +42,16 @@ class Job:
         command: str
 
         # What job requires
-        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
+        #   May be phony or physical names
         requires: List[str] = field(default_factory=list)
 
-        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
-        # hard dependencies: they must run (and cannot be skipped as unaffected)
-        # unless their artifacts are already cached by CI.
-        needs_jobs_from_requires: bool = False
-
         # What job provides
-        #   May be only `Artifact.Config.name`
+        #   May be phony or physical names
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None
 
         timeout: int = 5 * 3600
-
-        timeout_shell_cleanup: Optional[str] = None
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
@@ -69,8 +62,6 @@ class Job:
         allow_merge_on_failure: bool = False
 
         enable_commit_status: bool = False
-
-        enable_gh_auth: bool = False
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
@@ -139,11 +130,6 @@ class Job:
             """
             return copy.deepcopy(self)
 
-        def set_name(self, name):
-            res = copy.deepcopy(self)
-            res.name = name
-            return res
-
         def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
@@ -178,16 +164,6 @@ class Job:
                     )
             return res
 
-        def set_runs_on(self, runs_on):
-            res = copy.deepcopy(self)
-            res.runs_on = runs_on
-            return res
-
-        def set_command(self, command):
-            res = copy.deepcopy(self)
-            res.command = command
-            return res
-
         def unset_provides(self, artifact_keyword):
             """
             removes artifact matching artifact_keyword
@@ -202,14 +178,9 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_merge_on_failure(self, value=True):
+        def set_allow_merge_on_failure(self, value):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
-            return res
-
-        def set_post_hooks(self, post_hooks):
-            res = copy.deepcopy(self)
-            res.post_hooks = post_hooks
             return res
 
         @staticmethod
@@ -260,10 +231,3 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
-
-        def __post_init__(self):
-            if self.timeout_shell_cleanup:
-                return
-            if self.run_in_docker:
-                # the container name is always the same (praktika) for every image
-                self.timeout_shell_cleanup = "docker rm -f praktika"
