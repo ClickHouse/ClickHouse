@@ -1,3 +1,4 @@
+from itertools import product
 import os
 import random
 import re
@@ -514,6 +515,29 @@ def test_create_database_datalake():
         must_contain=must_contain_a,
         must_not_contain=[password],
     )
+
+    for secret_key, password_toggle in product(enumerate(secret_keys), enumerate(["[HIDDEN]", password])):
+        i, key = secret_key
+        toggle, secret = password_toggle
+        assert (
+            node.query(f"SHOW CREATE DATABASE datalake_db_a{i} {show_secrets}={toggle}")
+            == f"CREATE DATABASE datalake_db_a{i}\\n"
+            f"ENGINE = DataLakeCatalog(datalake_nc, {key} = \\'{secret}\\')\n"
+        )
+
+        assert (
+            node.query(
+                f"SELECT engine_full FROM system.databases WHERE name = 'datalake_db_a{i}' "
+                f"{show_secrets}={toggle}"
+            )
+            == TSV(
+                [
+                    [
+                        "",
+                    ],
+                ]
+            )
+        )
 
     for database_name, query in test_cases_a:
         node.query(f"DROP DATABASE IF EXISTS {database_name}")
