@@ -3278,7 +3278,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             if (!query_info.input_order_info)
                 return CoordinationMode::Default;
 
-            return result.read_type == ReadType::InOrder
+            if (!query_info.input_order_info->direction)
+                return CoordinationMode::Default;
+
+            return query_info.input_order_info->direction > 0
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };
