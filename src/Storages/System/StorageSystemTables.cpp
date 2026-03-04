@@ -123,7 +123,7 @@ ColumnPtr getFilteredTables(
                 {
                     const auto & table = table_it->table();
                     if (!table)
-                        continue; // Table was concurrently dropped and should be skipped
+                        continue; /// Table was concurrently dropped and should be skipped
                     table_column->insert(table_it->name());
                     if (engine_column)
                         engine_column->insert(table->getName());
@@ -523,7 +523,7 @@ protected:
 
                 StoragePtr table = tables_it->table();
                 if (!table)
-                    continue; // Table was concurrently dropped between iterator snapshot and table() call so we should skip it
+                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
 
                 TableLockHolder lock;
 
