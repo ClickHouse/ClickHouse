@@ -163,6 +163,11 @@ public:
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests reset processing without marking as failed.
+    void finalizeResetProcessing();
+    /// Whether prepareFailedRequests just reset processing
+    /// without actually marking the file as failed.
+    bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
@@ -208,6 +213,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// Whether prepareFailedRequests just reset processing without actually
+    /// marking the file as failed (when reduce_retry_count was false).
+    bool processing_reset_without_failure = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;

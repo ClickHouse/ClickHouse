@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -316,7 +317,16 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     }
 
     if (index_read_result || lazy_materializing_rows)
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+    {
+        bool can_read_incomplete_granules = readers.main->canReadIncompleteGranules()
+            && std::ranges::all_of(readers.prewhere, [](const auto & reader)
+            {
+                return reader->canReadIncompleteGranules();
+            });
+
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows, can_read_incomplete_granules);
+    }
+
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const
@@ -361,6 +371,7 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
     if (size_predictor)
         size_predictor->startBlock();
 

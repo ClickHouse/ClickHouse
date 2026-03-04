@@ -26,7 +26,7 @@ Example: The table contains discounts for each advertiser in the format:
 └───────────────┴─────────────────────┴───────────────────┴────────┘
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../keys-and-fields.md#dictionary-key-and-fields). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../attributes.md#composite-key). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
 :::note
 Values of `range_min` and `range_max` should fit in `Int64` type.
@@ -259,7 +259,7 @@ select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
 
 ## complex_key_range_hashed {#complex_key_range_hashed}
 
-The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range_hashed)). This type of storage is for use with composite [keys](../keys-and-fields.md#dictionary-key-and-fields).
+The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range_hashed)). This type of storage is for use with composite [keys](../attributes.md#composite-key).
 
 Configuration example:
 

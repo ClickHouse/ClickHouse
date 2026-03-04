@@ -1533,7 +1533,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (use_compiled_functions)
                 {
                     const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                    callJITFunction(compiled_aggregate_functions.create_aggregate_states_function, aggregate_data);
                     if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
                     {
                         static constexpr bool skip_compiled_aggregate_functions = true;
@@ -1637,12 +1637,12 @@ void Aggregator::executeAggregateInstructions(
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
+            callJITFunction(add_into_aggregate_states_function_single_place, row_begin, row_end, columns_data.data(), places[key_start]);
         }
         else
         {
             auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
-            add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places);
+            callJITFunction(add_into_aggregate_states_function, row_begin, row_end, columns_data.data(), places);
         }
     }
 #endif
@@ -1708,7 +1708,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         }
 
         auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-        add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), res);
+        callJITFunction(add_into_aggregate_states_function_single_place, row_begin, row_end, columns_data.data(), res);
     }
 #endif
 
@@ -2580,7 +2580,7 @@ Block Aggregator::insertResultsIntoColumns(
             }
 
             auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
-            insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
+            callJITFunction(insert_aggregates_into_columns_function, 0, places.size(), columns_data.data(), places.data());
         }
 #endif
 
@@ -3165,7 +3165,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-        compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+        callJITFunction(compiled_functions.merge_aggregate_states_function, dst_places.data(), src_places.data(), dst_places.size());
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {

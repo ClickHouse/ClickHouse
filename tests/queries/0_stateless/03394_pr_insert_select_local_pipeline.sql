@@ -17,7 +17,7 @@ TRUNCATE TABLE t_rmt_target;
 INSERT INTO t_rmt_target SELECT * FROM t_mt_source SETTINGS log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=1, parallel_replicas_insert_select_local_pipeline=1;
 
 SYSTEM FLUSH LOGS query_log;
-select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16' and event_date >= yesterday();
+select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='c1fcb43d-1703-4ddb-b353-c8079b405c16' and event_date >= yesterday() AND event_time >= now() - 600;
 
 select count() from t_rmt_target;
 select * from t_rmt_target order by k
