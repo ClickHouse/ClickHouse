@@ -7511,7 +7511,7 @@ This setting does not control whether extracted tuple subcolumns can be `Nullabl
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
-Controls whether extracted `Tuple(...)` subcolumns can be typed as `Nullable(Tuple(...))`.
+Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
 - `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
 - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
