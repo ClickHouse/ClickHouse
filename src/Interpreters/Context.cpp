@@ -334,6 +334,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
+    extern const ParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
 }
 
 namespace MergeTreeSetting
@@ -2922,6 +2923,31 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+
+    if (Setting::use_declared_schema_for_parameterized_views == ParameterizedViewSchemaDefinitionMode::THROWING)
+    {
+        auto actual_names_and_types = sample_block->getNamesAndTypesList();
+        const auto original_defined_columns = original_view_metadata->getColumns();
+        if (!original_defined_columns.empty())
+        {
+            auto throw_schema_mismatch = [table_name]()
+            {
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
+                    backQuoteIfNeed(table_name));
+            };
+            if (original_defined_columns.size() != actual_names_and_types.size())
+                throw_schema_mismatch();
+
+            for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
+            {
+                if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
+                    throw_schema_mismatch();
+            }
+        }
+    }
+
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
                                                 ColumnsDescription(sample_block->getNamesAndTypesList()),

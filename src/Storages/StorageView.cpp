@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const ParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
 }
 
 namespace ErrorCodes
@@ -128,7 +129,10 @@ StorageView::StorageView(
     if (!is_parameterized_view_)
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
+        if (
+            (Setting::use_declared_schema_for_parameterized_views != ParameterizedViewSchemaDefinitionMode::OFF && !columns_.empty())
+            || !query.isParameterizedView()
+        )
             storage_metadata.setColumns(columns_);
     }
     else

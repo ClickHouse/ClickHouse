@@ -7639,22 +7639,29 @@ Allow to show schemas declared in parameterized views.
 
 For example:
 
-```
-SET use_declared_schema_for_parameterized_views = 'insecure';
-CREATE VIEW first_n_numbers (n UInt64) AS
-SELECT number AS n
-FROM numbers({upper_bound:UInt64});
+```sql
+CREATE VIEW v_nums
+(
+    `n` UInt64
+)
+AS SELECT number AS n
+FROM numbers({upper_border:UInt64});
 
-SHOW COLUMNS IN first_n_numbers
+SHOW COLUMNS FROM v_nums;
 ```
+
 returns
+
+```text
+   ┌─field─┬─type───┬─null─┬─key─┬─default─┬─extra─┐
+1. │ n     │ UInt64 │ NO   │     │ ᴺᵁᴸᴸ    │       │
+   └───────┴────────┴──────┴─────┴─────────┴───────┘
 ```
 
-Possible values:
-
- - 'off' - don't materialize declared parametrized view schema. Default.
- - 'insecure' - schemas are materialized, but not checked.
- - 'throwing' - declared and actual schemas are checked after parameters substitiutution and if they don't fit -- throw an error.
+Available values:
+ - 'off' - Don't materialize the columns
+ - 'insecure' - Materialize the columns, ignore schema mismatches
+ - 'throwing' - Throw TYPE_MISMATCH error on schema mismatches after parameters substitution
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
