@@ -44,6 +44,8 @@ def setup_cluster():
             "tenant1__srcdb",
             "tenant3__altdb",
             "tenant1__sneakydb",
+            "tenant1__renamedb",
+            "tenant1__renamedb2",
         ]:
             node.query(f"DROP DATABASE IF EXISTS {db}")
         for user in [
@@ -500,3 +502,28 @@ def test_namespace_with_separator():
     )
     assert "BAD_ARGUMENTS" in error
     q("DROP USER IF EXISTS bad_ns_user")
+
+
+# ============================================================
+# Test 34: RENAME DATABASE target name cannot contain separator
+# ============================================================
+def test_rename_database_separator_rejected():
+    # Create a database as tenant1 (physical: tenant1__renamedb)
+    q1("CREATE DATABASE renamedb")
+    # Admin tries to rename it to a name containing separator — must fail
+    error = node.query_and_get_error(
+        "RENAME DATABASE `tenant1__renamedb` TO `bad__name`"
+    )
+    assert "BAD_ARGUMENTS" in error
+    # Tenant user tries to rename to a logical name containing separator — must fail
+    error = node.query_and_get_error(
+        "RENAME DATABASE renamedb TO `new__name`", user="tenant1_user"
+    )
+    assert "BAD_ARGUMENTS" in error
+    # Tenant user CAN rename to a name without separator
+    q1("RENAME DATABASE renamedb TO renamedb2")
+    # Verify rename succeeded (physical: tenant1__renamedb2)
+    assert q("SELECT count() FROM system.databases WHERE name = 'tenant1__renamedb2'").strip() == "1"
+    assert q("SELECT count() FROM system.databases WHERE name = 'tenant1__renamedb'").strip() == "0"
+    # Cleanup
+    q1("DROP DATABASE renamedb2")
