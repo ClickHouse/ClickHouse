@@ -221,7 +221,9 @@ public:
                             merged = "/";
                         } else {
                             size_t last = base_url_path.find_last_of('/');
-                            if (last != std::string::npos) merged = std::string(base_url_path.substr(0, last + 1));
+                            if (last != std::string::npos) { 
+                                merged = std::string(base_url_path.substr(0, last + 1));
+                            }
                         }
                         merged.append(relative_url_path);
                         target_url_path = removeDotSegements(merged);
