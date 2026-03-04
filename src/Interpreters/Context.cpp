@@ -355,6 +355,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
+    extern const ServerSettingsString database_namespace_separator;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
@@ -3265,13 +3266,7 @@ String Context::stripDatabaseNamespace(const String & physical_database_name) co
 
 String Context::getDatabaseNamespaceSeparator() const
 {
-    /// Read from the live Poco config rather than shared->server_settings,
-    /// because SYSTEM RELOAD CONFIG updates the Poco config but does not
-    /// call loadSettingsFromConfig() on shared->server_settings.
-    const auto & config = getConfigRef();
-    if (config.has("database_namespace_separator"))
-        return config.getString("database_namespace_separator");
-    return "";
+    return getServerSettings()[ServerSetting::database_namespace_separator].toString();
 }
 
 void Context::validateDatabaseNameNoSeparator(const String & database_name) const
