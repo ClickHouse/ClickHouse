@@ -24,6 +24,10 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace ProfileEvents
@@ -357,6 +361,33 @@ QueryResultCache::Key::Key(
 {
 }
 
+QueryResultCache::Key::Key(
+    DeserializeTag,
+    IASTHash ast_hash_,
+    SharedHeader header_,
+    std::optional<UUID> user_id_,
+    std::vector<UUID> current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    String query_string_,
+    String query_id_,
+    String tag_)
+    : ast_hash(ast_hash_)
+    , header(std::move(header_))
+    , user_id(std::move(user_id_))
+    , current_user_roles(std::move(current_user_roles_))
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string(std::move(query_string_))
+    , query_id(std::move(query_id_))
+    , tag(std::move(tag_))
+{
+}
+
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash;
@@ -381,6 +412,203 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
+
+// ---------------------------------------------------------------------------
+// Key serialization
+// ---------------------------------------------------------------------------
+
+String QueryResultCache::Key::encodeToRedisKey() const
+{
+    /// Format: {tag}{high64:016x}{low64:016x}
+    /// The tag prefix enables namespace-scoped deletion via SCAN MATCH {tag}*.
+    return fmt::format("{}{:016x}{:016x}", tag, ast_hash.high64, ast_hash.low64);
+}
+
+void QueryResultCache::Key::serializeTo(WriteBuffer & buf) const
+{
+    /// ast_hash
+    writeIntBinary(ast_hash.high64, buf);
+    writeIntBinary(ast_hash.low64, buf);
+
+    /// header (column definitions, stored as an empty Block using NativeWriter)
+    {
+        NativeWriter writer(buf, /*client_revision=*/0, header);
+        /// Write an empty block to persist the schema only (zero rows).
+        writer.write(header->cloneEmpty());
+    }
+
+    /// user_id (optional UUID)
+    const UInt8 has_user_id = user_id.has_value() ? 1 : 0;
+    writeIntBinary(has_user_id, buf);
+    if (user_id.has_value())
+        writeUUIDBinary(*user_id, buf);
+
+    /// current_user_roles
+    const UInt64 roles_count = current_user_roles.size();
+    writeVarUInt(roles_count, buf);
+    for (const auto & role : current_user_roles)
+        writeUUIDBinary(role, buf);
+
+    /// flags
+    writeIntBinary(static_cast<UInt8>(is_shared), buf);
+    writeIntBinary(static_cast<UInt8>(is_compressed), buf);
+
+    /// timestamps as Unix seconds (Int64)
+    const Int64 expires_at_sec = std::chrono::system_clock::to_time_t(expires_at);
+    const Int64 created_at_sec = std::chrono::system_clock::to_time_t(created_at);
+    writeIntBinary(expires_at_sec, buf);
+    writeIntBinary(created_at_sec, buf);
+
+    /// strings
+    writeStringBinary(query_string, buf);
+    writeStringBinary(query_id, buf);
+    writeStringBinary(tag, buf);
+}
+
+QueryResultCache::Key QueryResultCache::Key::deserializeFrom(ReadBuffer & buf)
+{
+    /// ast_hash
+    UInt64 high64 = 0;
+    UInt64 low64 = 0;
+    readIntBinary(high64, buf);
+    readIntBinary(low64, buf);
+
+    /// header: read the empty Block that carries the schema
+    Block header_block;
+    {
+        NativeReader reader(buf, /*server_revision=*/0);
+        header_block = reader.read();
+    }
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    /// user_id
+    UInt8 has_user_id = 0;
+    readIntBinary(has_user_id, buf);
+    std::optional<UUID> user_id;
+    if (has_user_id)
+    {
+        UUID id;
+        readUUIDBinary(id, buf);
+        user_id = id;
+    }
+
+    /// current_user_roles
+    UInt64 roles_count = 0;
+    readVarUInt(roles_count, buf);
+    std::vector<UUID> current_user_roles;
+    current_user_roles.reserve(roles_count);
+    for (UInt64 i = 0; i < roles_count; ++i)
+    {
+        UUID role;
+        readUUIDBinary(role, buf);
+        current_user_roles.push_back(role);
+    }
+
+    /// flags
+    UInt8 is_shared_raw = 0;
+    UInt8 is_compressed_raw = 0;
+    readIntBinary(is_shared_raw, buf);
+    readIntBinary(is_compressed_raw, buf);
+
+    /// timestamps
+    Int64 expires_at_sec = 0;
+    Int64 created_at_sec = 0;
+    readIntBinary(expires_at_sec, buf);
+    readIntBinary(created_at_sec, buf);
+    auto expires_at = std::chrono::system_clock::from_time_t(expires_at_sec);
+    auto created_at = std::chrono::system_clock::from_time_t(created_at_sec);
+
+    /// strings
+    String query_string;
+    String query_id;
+    String tag;
+    readStringBinary(query_string, buf);
+    readStringBinary(query_id, buf);
+    readStringBinary(tag, buf);
+
+    /// Reconstruct the Key using the private DeserializeTag constructor — bypasses calculateASTHash.
+    return Key(
+        Key::DeserializeTag{},
+        IASTHash{high64, low64},
+        std::move(header),
+        std::move(user_id),
+        std::move(current_user_roles),
+        static_cast<bool>(is_shared_raw),
+        created_at,
+        expires_at,
+        static_cast<bool>(is_compressed_raw),
+        std::move(query_string),
+        std::move(query_id),
+        std::move(tag));
+}
+
+// ---------------------------------------------------------------------------
+// Entry serialization
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+/// Write a single Chunk as a Block to buf using NativeWriter.
+void writeChunkAsBlock(const Chunk & chunk, const Block & header, WriteBuffer & buf)
+{
+    Block block = header.cloneEmpty();
+    block.setColumns(chunk.getColumns());
+    NativeWriter writer(buf, /*client_revision=*/0, std::make_shared<const Block>(header));
+    writer.write(block);
+}
+
+/// Read one Block from buf using NativeReader and convert to Chunk.
+Chunk readBlockAsChunk(const Block & header, ReadBuffer & buf)
+{
+    NativeReader reader(buf, header, /*server_revision=*/0);
+    Block block = reader.read();
+    return Chunk(block.getColumns(), block.rows());
+}
+
+} // namespace
+
+void QueryResultCache::Entry::serializeTo(WriteBuffer & buf, const Block & header) const
+{
+    const UInt32 chunks_count = static_cast<UInt32>(chunks.size());
+    writeIntBinary(chunks_count, buf);
+    for (const auto & chunk : chunks)
+        writeChunkAsBlock(chunk, header, buf);
+
+    const UInt8 has_totals = totals.has_value() ? 1 : 0;
+    writeIntBinary(has_totals, buf);
+    if (totals.has_value())
+        writeChunkAsBlock(*totals, header, buf);
+
+    const UInt8 has_extremes = extremes.has_value() ? 1 : 0;
+    writeIntBinary(has_extremes, buf);
+    if (extremes.has_value())
+        writeChunkAsBlock(*extremes, header, buf);
+}
+
+QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(ReadBuffer & buf, const Block & header)
+{
+    Entry entry;
+
+    UInt32 chunks_count = 0;
+    readIntBinary(chunks_count, buf);
+    entry.chunks.reserve(chunks_count);
+    for (UInt32 i = 0; i < chunks_count; ++i)
+        entry.chunks.push_back(readBlockAsChunk(header, buf));
+
+    UInt8 has_totals = 0;
+    readIntBinary(has_totals, buf);
+    if (has_totals)
+        entry.totals = readBlockAsChunk(header, buf);
+
+    UInt8 has_extremes = 0;
+    readIntBinary(has_extremes, buf);
+    if (has_extremes)
+        entry.extremes = readBlockAsChunk(header, buf);
+
+    return entry;
+}
+
 
 QueryResultCacheWriter::QueryResultCacheWriter(
     IQueryResultCacheStorage & storage_,

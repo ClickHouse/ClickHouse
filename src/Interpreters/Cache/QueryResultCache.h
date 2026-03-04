@@ -15,6 +15,13 @@
 
 namespace DB
 {
+class ReadBuffer;
+class WriteBuffer;
+}
+// Forward declarations for serialization (defined here to avoid including heavy IO headers in this header).
+
+namespace DB
+{
 
 struct Settings;
 
@@ -113,6 +120,36 @@ struct QueryResultCache
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
+
+        /// Encode this key as a Redis key string: {tag}{high64_hex}{low64_hex}
+        String encodeToRedisKey() const;
+
+        /// Serialize Key metadata (all non-hashed fields) to a binary buffer.
+        /// Format: ast_hash(16) | header(NativeWriter) | user_id flag(1) | [user_id(16)] |
+        ///         roles_count(varuint) | [roles(16 each)] | is_shared(1) | is_compressed(1) |
+        ///         expires_at(8) | created_at(8) | query_string | query_id | tag
+        void serializeTo(WriteBuffer & buf) const;
+
+        /// Deserialize Key metadata from binary buffer. The returned Key has a dummy ast_hash that
+        /// matches the one embedded in the buffer — callers must not use it as a cache lookup key.
+        static Key deserializeFrom(ReadBuffer & buf);
+
+    private:
+        /// Private constructor used only by deserializeFrom to reconstruct a Key
+        /// without going through calculateASTHash. All fields are set directly.
+        struct DeserializeTag {};
+        Key(DeserializeTag,
+            IASTHash ast_hash_,
+            SharedHeader header_,
+            std::optional<UUID> user_id_,
+            std::vector<UUID> current_user_roles_,
+            bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_,
+            bool is_compressed_,
+            String query_string_,
+            String query_id_,
+            String tag_);
     };
 
     struct Entry
@@ -120,6 +157,13 @@ struct QueryResultCache
         Chunks chunks;
         std::optional<Chunk> totals = std::nullopt;
         std::optional<Chunk> extremes = std::nullopt;
+
+        /// Serialize all chunks (and optional totals/extremes) using NativeWriter format.
+        /// header is needed by NativeWriter to write column type information.
+        void serializeTo(WriteBuffer & buf, const Block & header) const;
+
+        /// Deserialize from binary buffer. header provides column type context for NativeReader.
+        static Entry deserializeFrom(ReadBuffer & buf, const Block & header);
     };
 
     struct KeyHasher
