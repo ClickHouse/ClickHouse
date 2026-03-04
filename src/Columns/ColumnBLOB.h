@@ -150,6 +150,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
+    bool hasOnlyDefaults() const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
