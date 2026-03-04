@@ -13,6 +13,12 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"
 
 db="rdb_$CLICKHOUSE_DATABASE"
 
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "drop database if exists $db" 2>/dev/null
+}
+trap cleanup EXIT
+
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -nq "
     create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1');
     create view ${db}.refreshes as
@@ -25,16 +31,20 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -nq "
 "
 
 # Wait for the first refresh to succeed.
-while [ "$($CLICKHOUSE_CLIENT -q "select last_success_time is null from ${db}.refreshes -- $LINENO" | xargs)" != '0' ]
-do
+for _ in $(seq 1 60); do
+    if [ "$($CLICKHOUSE_CLIENT -q "select last_success_time is null from ${db}.refreshes -- $LINENO" | xargs)" = '0' ]; then
+        break
+    fi
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "select '<1: running>', status from ${db}.refreshes"
 
 # Stop the view globally via Keeper.
 $CLICKHOUSE_CLIENT -q "system stop replicated view ${db}.rmv"
-while [ "$($CLICKHOUSE_CLIENT -q "select status from ${db}.refreshes -- $LINENO" | xargs)" != 'Disabled' ]
-do
+for _ in $(seq 1 60); do
+    if [ "$($CLICKHOUSE_CLIENT -q "select status from ${db}.refreshes -- $LINENO" | xargs)" = 'Disabled' ]; then
+        break
+    fi
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "select '<2: stopped>', status from ${db}.refreshes"
@@ -58,5 +68,3 @@ done
 
 $CLICKHOUSE_CLIENT -q "select '<3: restarted>', status != 'Disabled' from ${db}.refreshes"
 $CLICKHOUSE_CLIENT -q "select '<4: new rows>', count() > $cnt_before from ${db}.rmv"
-
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "drop database $db"
