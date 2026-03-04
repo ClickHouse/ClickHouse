@@ -772,12 +772,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            if Path(Utils.AES_KEY_RSA).exists():
-                res.append(Utils.AES_KEY_RSA)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                if Path(Utils.AES_KEY_RSA).exists():
+                    res.append(Utils.AES_KEY_RSA)
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)

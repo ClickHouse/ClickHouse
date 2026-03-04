@@ -747,7 +747,8 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            #CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            CH.prepare_logs(all=True, info=info) #REMOVEME
 
         results.append(
             Result.from_commands_run(
