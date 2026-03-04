@@ -1,4 +1,3 @@
--- Tags: no-fast-test
 -- derivative of 02883_array_scalar_mult_div_modulo
 
 SET serialize_query_plan=1;
