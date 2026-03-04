@@ -6,6 +6,10 @@
 
 #if USE_PARQUET
 
+#if USE_DELTA_KERNEL_RS
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#endif
+
 #include <Common/logger_useful.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
