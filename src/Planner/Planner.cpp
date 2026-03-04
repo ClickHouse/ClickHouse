@@ -1594,8 +1594,12 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findTableForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options))))
 {
-    const auto & context = planner_context->getQueryContext();
-    const Settings & settings = context->getSettingsRef();
+    /// Use getSettingsCopy (reads under shared lock) instead of getSettingsRef (no lock) to avoid
+    /// a data race when multiple Planner instances run concurrently on the same context, e.g. from
+    /// RecursiveCTESource in parallel pipeline threads. The write via setSetting is already serialized
+    /// by the context's exclusive lock; concurrent writes are idempotent (all set the same value to 0).
+    auto & mutable_context = planner_context->getMutableQueryContext();
+    const auto settings = mutable_context->getSettingsCopy();
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && settings[Setting::automatic_parallel_replicas_mode] != 0)
@@ -1604,7 +1608,6 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             log,
             "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
             "To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-        auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 }
