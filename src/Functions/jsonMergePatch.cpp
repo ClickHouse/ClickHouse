@@ -171,7 +171,7 @@ REGISTER_FUNCTION(JSONMergePatch)
     FunctionDocumentation::Description description = R"(
 Returns the merged JSON object string which is formed by merging multiple JSON objects.
     )";
-    FunctionDocumentation::Syntax syntax = "jsonMergePatch(json1[, json2, ...])";
+    FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
     FunctionDocumentation::Arguments arguments = {
         {"json1[, json2, ...]", "One or more strings with valid JSON.", {"String"}}
     };
@@ -180,7 +180,7 @@ Returns the merged JSON object string which is formed by merging multiple JSON o
     {
         "Usage example",
         R"(
-SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
+SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
         )",
         R"(
 ┌─res───────────────────┐

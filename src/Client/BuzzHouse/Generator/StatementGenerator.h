@@ -17,12 +17,29 @@ class SQLRelationCol
 public:
     String rel_name;
     DB::Strings path;
+    SQLType * tp = nullptr; /// Non-owning; nullptr when type is unknown (subqueries, CTEs, virtual columns)
+    ColumnSpecial special = ColumnSpecial::NONE;
 
     SQLRelationCol() = default;
 
     SQLRelationCol(const String & rname, const DB::Strings & names)
         : rel_name(rname)
         , path(names)
+    {
+    }
+
+    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t)
+        : rel_name(rname)
+        , path(names)
+        , tp(t)
+    {
+    }
+
+    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t, const ColumnSpecial sp)
+        : rel_name(rname)
+        , path(names)
+        , tp(t)
+        , special(sp)
     {
     }
 
@@ -64,6 +81,10 @@ public:
         , gexpr(g)
     {
     }
+
+    SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
+
+    ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
 };
 
 class QueryLevel
@@ -160,6 +181,7 @@ private:
     bool allow_subqueries = true;
     bool enforce_final = false;
     bool allow_engine_udf = true;
+    bool chain_views = false; ///< When set, next joinedTableOrFunction call picks a view (for MV chaining)
 
     uint32_t depth = 0;
     uint32_t width = 0;
@@ -171,6 +193,7 @@ private:
     uint32_t cache_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
+    uint32_t freeze_counter = 0;
 
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
@@ -576,7 +599,7 @@ private:
         std::vector<GroupCol> & gcols,
         Expr * expr);
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
-    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, ColumnSpecial special, Expr * expr);
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
@@ -588,7 +611,7 @@ private:
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
-    void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
+    void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
     void generateDerivedTable(
         RandomGenerator & rg,
         SQLRelation & rel,
@@ -822,6 +845,10 @@ public:
     const std::function<bool(const SQLTable &)> detached_tables = [](const SQLTable & t) { return t.isDettached(); };
     const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return v.isDettached(); };
     const std::function<bool(const SQLDictionary &)> detached_dictionaries = [](const SQLDictionary & d) { return d.isDettached(); };
+    const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases
+        = [](const std::shared_ptr<SQLDatabase> & db) { return db->isAttached() && (db->shard_counter > 0 || db->replica_counter > 0); };
+    const std::function<bool(const SQLTable &)> replicated_tables
+        = [](const SQLTable & t) { return t.isAttached() && (t.shard_counter > 0 || t.replica_counter > 0); };
 
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
