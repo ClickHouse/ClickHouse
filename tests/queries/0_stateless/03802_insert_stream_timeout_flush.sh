@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, no-fasttest
+# no-fasttest: Too slow for fast test (~14s), covered by regular stateless runs.
 # no-async-insert: Test expects new part for each time interval
 
 
