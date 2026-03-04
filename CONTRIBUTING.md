@@ -15,9 +15,18 @@ If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal
 
 ## Technical Information
 
-See [ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) and [Architecture](https://clickhouse.com/docs/development/architecture/) for an overview of ClickHouse's internals.
+For an overview of ClickHouse internals, see:
+- [VLDB 2024 research paper (PDF): ClickHouse - Lightning Fast Analytics for Everyone](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)
+- [Architecture Overview](https://clickhouse.com/docs/development/architecture/)
 
-[This](https://clickhouse.com/docs/development/developer-instruction) and [this](https://clickhouse.com/docs/development/build) document describe how to check out and compile the source code of ClickHouse.
+For an overview of the contributor-facing development documentation, start here: [Development and contributing](https://clickhouse.com/docs/development/)
+
+Common entry points:
+- [Developer prerequisites and setup](https://clickhouse.com/docs/development/developer-instruction)
+- [Build on Linux](https://clickhouse.com/docs/development/build)
+- [Build on macOS for macOS](https://clickhouse.com/docs/development/build-osx)
+- [Testing ClickHouse](https://clickhouse.com/docs/development/tests)
+- [C++ Style Guide](https://clickhouse.com/docs/development/style)
 
 If you want to contribute to documentation, please see the [documentation repository](https://github.com/ClickHouse/clickhouse-docs).
 
