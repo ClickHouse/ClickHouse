@@ -1,12 +1,18 @@
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Columns/ColumnsCommon.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Core/Field.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateStatisticsLog.h>
+#include <Storages/IStorage.h>
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -22,6 +28,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 predicate_statistics_sample_rate;
+}
 
 namespace ErrorCodes
 {
@@ -105,6 +116,24 @@ FilterTransform::FilterTransform(
 
     if (condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+
+    /// predicate statistics collection
+    if (auto global_context = Context::getGlobalContextInstance()) 
+    {
+        predicate_stats_sample_rate = global_context->getServerSettings()[ServerSetting::predicate_statistics_sample_rate];
+        if (predicate_stats_sample_rate > 0)
+        {
+            predicate_stats_log = global_context->getPredicateStatisticsLog();
+            if (predicate_stats_log && expression)
+            {
+                const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+                while (node->type == ActionsDAG::ActionType::ALIAS)
+                    node = node->children[0];
+                predicate_atoms = extractPredicateAtoms(node);
+                collect_predicate_stats = !predicate_atoms.empty();
+            }
+        }
+    }
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -144,8 +173,11 @@ void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
     doTransform(chunk);
+    auto chunk_rows_after = chunk.getNumRows();
     if (rows_filtered)
-        *rows_filtered += chunk_rows_before - chunk.getNumRows();
+        *rows_filtered += chunk_rows_before - chunk_rows_after;
+    if (collect_predicate_stats && chunk_rows_before > 0)
+        collectPredicateStatistics(chunk_rows_before, chunk_rows_after, chunk);
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -316,6 +348,49 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         {
             buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
         }
+    }
+}
+
+void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_filtered_rows, const Chunk & chunk)
+{
+    ++chunk_counter;
+    if (chunk_counter % predicate_stats_sample_rate != 0)
+        return;
+
+    time_t now = time(nullptr);
+    UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    Float64 selectivity = static_cast<Float64>(num_filtered_rows) / static_cast<Float64>(num_rows_before_filtration);
+    String query_id(CurrentThread::getQueryId());
+
+    /// try to resolve database/table from MarkRangesInfo (MergeTree tables attach this to chunks)
+    String database;
+    String table;
+    if (auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>())
+    {
+        auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(mark_ranges_info->table_uuid);
+        if (db_and_table.first && db_and_table.second)
+        {
+            auto storage_id = db_and_table.second->getStorageID();
+            database = storage_id.database_name;
+            table = storage_id.table_name;
+        }
+    }
+
+    for (const auto & atom : predicate_atoms)
+    {
+        PredicateStatisticsLogElement elem;
+        elem.event_date = today;
+        elem.event_time = now;
+        elem.database = database;
+        elem.table = table;
+        elem.column_name = atom.column_name;
+        elem.predicate_class = atom.predicate_class;
+        elem.function_name = atom.function_name;
+        elem.input_rows = num_rows_before_filtration;
+        elem.passed_rows = num_filtered_rows;
+        elem.selectivity = selectivity;
+        elem.query_id = query_id;
+        predicate_stats_log->add(std::move(elem));
     }
 }
 

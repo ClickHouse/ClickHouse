@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
+#include <Interpreters/PredicateAtomExtractor.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -11,6 +12,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 class QueryConditionCache;
+class PredicateStatisticsLog;
 
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
@@ -59,10 +61,19 @@ private:
 
     bool are_prepared_sets_initialized = false;
 
+    /// Predicate statistics collection (optional, enabled by server setting)
+    std::vector<PredicateAtom> predicate_atoms;
+    bool collect_predicate_stats = false;
+    std::shared_ptr<PredicateStatisticsLog> predicate_stats_log;
+    UInt64 predicate_stats_sample_rate = 0;
+    UInt64 chunk_counter = 0;
+
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
+
+    void collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_filtered_rows, const Chunk & chunk);
 };
 
 }
