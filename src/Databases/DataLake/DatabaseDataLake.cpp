@@ -47,11 +47,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
-<<<<<<< HEAD
-=======
 #include <Common/SettingsChanges.h>
 #include <Storages/NamedCollectionsHelpers.h>
->>>>>>> 587ccddcc66 (Add named collection support for DataLakeCatalog)
 
 namespace DB
 {
@@ -957,7 +954,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         std::string url;
         bool from_named_collection = false;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, false))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, /* throw_unknown_collection */false))
         {
             from_named_collection = true;
             url = named_collection->getOrDefault<String>("url", "");
@@ -975,8 +972,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             auto settings_overrides = database_settings.allChanged();
             database_settings.applyChanges(collection_changes);
             database_settings.applyChanges(settings_overrides);
-
-            engine_args.clear();
         }
         else
         {
