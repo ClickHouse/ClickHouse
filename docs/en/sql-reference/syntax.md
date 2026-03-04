@@ -115,6 +115,12 @@ If you want to use identifiers the same as keywords or you want to use other sym
 The same rules that apply for escaping in quoted identifiers also apply for string literals. See [String](#string) for more details.
 :::
 
+:::warning Dots in column names
+The dot (`.`) character has special meaning in column names — it is used internally to denote sub-columns of the [`Nested`](/sql-reference/data-types/nested-data-structures/nested) data type. Even when quoted (e.g., `` `my.column` ``), dots in column names can cause unexpected behavior: columns sharing a common dot-prefix (e.g., `foo.a` and `foo.b`) may be implicitly grouped into a `Nested` structure when [`flatten_nested`](/operations/settings/settings#flatten_nested) is enabled (the default), leading to type-cast errors on insert, array-length enforcement, and inability to rename such columns.
+
+Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
+:::
+
 ## Literals {#literals}
 
 In ClickHouse, a literal is a value which is directly represented in a query.
