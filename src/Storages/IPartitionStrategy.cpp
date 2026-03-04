@@ -281,17 +281,13 @@ ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
 }
 
-std::string WildcardPartitionStrategy::getPathForRead(
-    const std::string & prefix)
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(Block & block)
 {
-    return prefix;
-}
-
-std::string WildcardPartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    return PartitionedSink::replaceWildcards(prefix, partition_key);
+    ASTs arguments(1, partition_key_description.definition_ast);
+    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
+    auto actions_with_column = getPartitionExpressionActions(partition_by_string);
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(
@@ -313,41 +309,6 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
 }
 
-std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
-{
-    return prefix + "**." + Poco::toLower(file_format);
-}
-
-std::string HiveStylePartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    std::string path;
-
-    if (!prefix.empty())
-    {
-        path += prefix;
-        if (path.back() != '/')
-        {
-            path += '/';
-        }
-    }
-
-    /// Not adding '/' because buildExpressionHive() always adds a trailing '/'
-    path += partition_key;
-
-    /*
-     * File extension is toLower(format)
-     * This isn't ideal, but I guess multiple formats can be specified and introduced.
-     * So I think it is simpler to keep it this way.
-     *
-     * Or perhaps implement something like `IInputFormat::getFileExtension()`
-     */
-    path += std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
-
-    return path;
-}
-
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
     auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
@@ -358,6 +319,14 @@ ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
     actions_with_column.actions->execute(block_with_partition_by_expr);
 
     return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
+}
+
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(Block & block)
+{
+    auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
+    auto actions_with_column = getPartitionExpressionActions(hive_ast);
+    actions_with_column.actions->execute(block);
+    return block.getByName(actions_with_column.column_name).column;
 }
 
 ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)

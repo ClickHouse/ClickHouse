@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/ExportList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -38,6 +39,8 @@
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/MergeTreePartExportStatus.h>
+#include <Storages/MergeTree/MergeTreePartExportManifest.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1041,6 +1044,31 @@ public:
     /// Moves partition to specified Table
     void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
 
+    void exportPartToTable(const PartitionCommand & command, ContextPtr query_context);
+
+    void exportPartToTable(
+        const std::string & part_name,
+        const StoragePtr & destination_storage,
+        const String & transaction_id,
+        ContextPtr query_context,
+        bool allow_outdated_parts = false,
+        std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback = {});
+
+    void exportPartToTable(
+        const std::string & part_name,
+        const StorageID & destination_storage_id,
+        const String & transaction_id,
+        ContextPtr query_context,
+        bool allow_outdated_parts = false,
+        std::function<void(MergeTreePartExportManifest::CompletionCallbackResult)> completion_callback = {});
+
+    void killExportPart(const String & transaction_id);
+
+    virtual void exportPartitionToTable(const PartitionCommand &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPORT PARTITION is not implemented for engine {}", getName());
+    }
+
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
@@ -1123,6 +1151,7 @@ public:
         const WriteSettings & write_settings);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
+    std::vector<MergeTreeExportStatus> getExportsStatus() const;
 
     /// Returns true if table can create new parts with adaptive granularity
     /// Has additional constraint in replicated version
@@ -1305,6 +1334,10 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
+    mutable std::mutex export_manifests_mutex;
+
+    std::set<MergeTreePartExportManifest> export_manifests;
+
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules job to move parts between disks/volumes and so on.
@@ -1397,6 +1430,7 @@ protected:
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
     friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
+    friend class ExportPartTask;
 
     bool require_part_metadata;
 
@@ -1443,6 +1477,8 @@ public:
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
+    void startBackgroundMoves();
+
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
@@ -1706,7 +1742,8 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-        const Strings & mutation_ids = {});
+        const Strings & mutation_ids = {},
+        const ExportsListEntry * exports_entry = nullptr);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1923,8 +1960,6 @@ private:
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
-
-    virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key = false;
     bool allow_reverse_key = false;

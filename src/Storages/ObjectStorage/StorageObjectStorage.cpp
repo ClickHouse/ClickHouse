@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -29,11 +30,13 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
+#include <Common/parseGlobs.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/MultiFileStorageObjectStorageSink.h>
 
 
 namespace DB
@@ -53,6 +56,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -563,7 +567,8 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        auto sink_creator = std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedSink>(configuration->partition_strategy, sink_creator, local_context, sample_block);
     }
 
     auto paths = configuration->getPaths();
@@ -594,6 +599,76 @@ bool StorageObjectStorage::optimize(
     [[maybe_unused]] ContextPtr context)
 {
     return configuration->optimize(metadata_snapshot, context, format_settings);
+}
+
+bool StorageObjectStorage::supportsImport() const
+{
+    if (!configuration->partition_strategy)
+        return false;
+
+    if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::WILDCARD)
+        return configuration->getRawPath().hasExportFilenameWildcard();
+
+    return configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+}
+
+
+SinkToStoragePtr StorageObjectStorage::import(
+    const std::string & file_name,
+    Block & block_with_partition_values,
+    const std::function<void(const std::string &)> & new_file_path_callback,
+    bool overwrite_if_exists,
+    std::size_t max_bytes_per_file,
+    std::size_t max_rows_per_file,
+    const std::optional<FormatSettings> & format_settings_,
+    ContextPtr local_context)
+{
+    std::string partition_key;
+
+    if (configuration->partition_strategy)
+    {
+        const auto column_with_partition_key = configuration->partition_strategy->computePartitionKey(block_with_partition_values);
+
+        if (!column_with_partition_key->empty())
+        {
+            partition_key = column_with_partition_key->getDataAt(0);
+        }
+    }
+
+    const auto base_path = configuration->getPathForWrite(partition_key, file_name).path;
+
+    return std::make_shared<MultiFileStorageObjectStorageSink>(
+        base_path,
+        /* transaction_id= */ file_name, /// not pretty, but the sink needs some sort of id to generate the commit file name. Using the source part name should be enough
+        object_storage,
+        configuration,
+        max_bytes_per_file,
+        max_rows_per_file,
+        overwrite_if_exists,
+        new_file_path_callback,
+        format_settings_ ? format_settings_ : format_settings,
+        std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+        local_context);
+}
+
+void StorageObjectStorage::commitExportPartitionTransaction(const String & transaction_id, const String & partition_id, const Strings & exported_paths, ContextPtr local_context)
+{
+    const String commit_object = configuration->getRawPath().path + "/commit_" + partition_id + "_" + transaction_id;
+
+    /// if file already exists, nothing to be done
+    if (object_storage->exists(StoredObject(commit_object)))
+    {
+        LOG_DEBUG(getLogger("StorageObjectStorage"), "Commit file already exists, nothing to be done: {}", commit_object);
+        return;
+    }
+
+    auto out = object_storage->writeObject(StoredObject(commit_object), WriteMode::Rewrite, /* attributes= */ {}, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
+    for (const auto & p : exported_paths)
+    {
+        out->write(p.data(), p.size());
+        out->write("\n", 1);
+    }
+    out->finalize();
 }
 
 void StorageObjectStorage::truncate(
@@ -793,6 +868,5 @@ void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, 
 {
     configuration->checkAlterIsPossible(commands);
 }
-
 
 }

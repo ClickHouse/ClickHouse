@@ -152,6 +152,7 @@ public:
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
+    NamesAndTypesList getReadable() const; /// ordinary + materialized + aliases (no ephemeral)
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getEphemeral() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.

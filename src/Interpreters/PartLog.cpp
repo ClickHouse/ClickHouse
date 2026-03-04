@@ -72,6 +72,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             {"MovePart",      static_cast<Int8>(MOVE_PART)},
             {"MergePartsStart", static_cast<Int8>(MERGE_PARTS_START)},
             {"MutatePartStart", static_cast<Int8>(MUTATE_PART_START)},
+            {"ExportPart",      static_cast<Int8>(EXPORT_PART)},
         }
     );
 
@@ -113,7 +114,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart)."
             "MutatePartStart — Mutating of a data part has started, "
             "MutatePart — Mutating of a data part has finished, "
-            "MovePart — Moving the data part from the one disk to another one."},
+            "MovePart — Moving the data part from the one disk to another one."
+            "ExportPart — Exporting the data part from a MergeTree table into a target table that represents external storage (e.g., object storage or a data lake).."},
         {"merge_reason", std::move(merge_reason_datatype),
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
@@ -137,6 +139,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
+        {"remote_file_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "In case of an export operation to remote storages, the file paths a given export generated"},
 
         {"rows", std::make_shared<DataTypeUInt64>(), "The number of rows in the data part."},
         {"size_in_bytes", std::make_shared<DataTypeUInt64>(), "Size of the data part on disk in bytes."},
@@ -194,6 +197,12 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(part_format.storage_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
+
+    Array remote_file_paths_array;
+    remote_file_paths_array.reserve(remote_file_paths.size());
+    for (const auto & remote_file_path : remote_file_paths)
+        remote_file_paths_array.push_back(remote_file_path);
+    columns[i++]->insert(remote_file_paths_array);
 
     columns[i++]->insert(rows);
     columns[i++]->insert(bytes_compressed_on_disk);

@@ -72,6 +72,8 @@ public:
         FREEZE_ALL,
         UNFREEZE_PARTITION,
         UNFREEZE_ALL,
+        EXPORT_PART,
+        EXPORT_PARTITION,
 
         DELETE,
         UPDATE,
@@ -221,6 +223,9 @@ public:
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
+    /// EXPORT PART/PARTITION to TABLE FUNCTION (e.g., s3())
+    IAST * to_table_function = nullptr;
+    IAST * partition_by_expr = nullptr;
 
     String snapshot_name;
     IAST * snapshot_desc;
@@ -269,6 +274,8 @@ public:
     bool isDropPartitionAlter() const;
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
+
+    bool isExportPartOrExportPartitionAlter() const;
 
     bool isCommentAlter() const;
 

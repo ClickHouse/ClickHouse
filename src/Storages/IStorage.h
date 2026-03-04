@@ -475,6 +475,39 @@ public:
         ContextPtr /*context*/,
         bool /*async_insert*/);
 
+    virtual bool supportsImport() const
+    {
+      return false;
+    }
+
+    /*
+It is currently only implemented in StorageObjectStorage.
+      It is meant to be used to import merge tree data parts into object storage. It is similar to the write API,
+      but it won't re-partition the data and should allow the filename to be set by the caller.
+    */
+    virtual SinkToStoragePtr import(
+        const std::string & /* file_name */,
+        Block & /* block_with_partition_values */,
+        const std::function<void(const std::string &)> & /* new_file_path_callback */,
+        bool /* overwrite_if_exists */,
+        std::size_t /* max_bytes_per_file */,
+        std::size_t /* max_rows_per_file */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */)
+    {
+      throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Import is not implemented for storage {}", getName());
+    }
+
+    virtual void commitExportPartitionTransaction(
+      const String & /* transaction_id */,
+      const String & /* partition_id */,
+      const Strings & /* exported_paths */,
+      ContextPtr /* local_context */)
+  {
+      throw Exception(ErrorCodes::NOT_IMPLEMENTED, "commitExportPartitionTransaction is not implemented for storage type {}", getName());
+  }
+    
+
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
       * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.
@@ -582,6 +615,9 @@ public:
     virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/);
 
     virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/);
+
+    /// Cancel a replicated partition export by transaction id.
+    virtual CancellationCode killExportPartition(const String & /*transaction_id*/);
 
     /// Cancel a part move to shard.
     virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/);

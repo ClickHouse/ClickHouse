@@ -496,6 +496,15 @@ NamesAndTypesList ColumnsDescription::getInsertable() const
     return ret;
 }
 
+NamesAndTypesList ColumnsDescription::getReadable() const
+{
+    NamesAndTypesList ret;
+    for (const auto & col : columns)
+        if (col.default_desc.kind != ColumnDefaultKind::Ephemeral)
+            ret.emplace_back(col.name, col.type);
+    return ret;
+}
+
 NamesAndTypesList ColumnsDescription::getMaterialized() const
 {
     NamesAndTypesList ret;
@@ -868,7 +877,6 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 
     return {};
 }
-
 
 bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
