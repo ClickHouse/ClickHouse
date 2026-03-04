@@ -166,9 +166,9 @@ String getBestPartitionToOptimizeEntire(
     if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
         return {};
 
-    int64_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-    int64_t max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
-    int64_t optimize_entire_partition_threshold = (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition];
+    Int64 occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    Int64 max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
+    Int64 optimize_entire_partition_threshold = (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition];
     if (occupied > 1 && max_tasks_count - occupied < optimize_entire_partition_threshold)
     {
         LOG_INFO(log,
