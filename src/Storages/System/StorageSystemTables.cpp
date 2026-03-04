@@ -43,12 +43,6 @@ namespace Setting
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 namespace detail
 {
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
