@@ -1,0 +1,36 @@
+Test results are same with/without the optimization
+-- without optimization
+[1,3]
+[2,4]
+[5]
+[]
+[2,4,5]
+[1,3,5]
+[1,2,3,4]
+[1,2,3,4,5]
+-- with optimization
+[1,3]
+[2,4]
+[5]
+[]
+[2,4,5]
+[1,3,5]
+[1,2,3,4]
+[1,2,3,4,5]
+Text index analysis
+-- Text index for LIKE function should choose none for non-existent token
+Description: text GRANULARITY 100000000
+Parts: 0/4
+Granules: 0/4096
+-- Text index for LIKE function should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 1024/4096
+-- Text index for LIKE function should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 100000000
+Parts: 2/4
+Granules: 2048/4096
+-- Text index for LIKE function should choose all 4 parts and 4096 granules
+Description: text GRANULARITY 100000000
+Parts: 4/4
+Granules: 4096/4096
