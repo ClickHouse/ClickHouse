@@ -1022,6 +1022,14 @@ struct ContextSharedPart : boost::noncopyable
         if (delete_zookeeper)
             delete_zookeeper->finalize("shutdown");
 
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
+
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
         /// - before storage startup (because of some streaming of, i.e. Kafka, to
