@@ -621,26 +621,22 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
     {
-        TableEngine * te = cv->mutable_engine();
-        const uint32_t nopt = rg.nextSmallNumber();
-
-        if (nopt < 4)
-        {
-            getNextTableEngine(rg, false, next);
-            te->set_engine(next.teng);
-        }
-        else
-        {
-            next.teng = MergeTree;
-        }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
+        next.teng = MergeTree;
         if (!has_to)
         {
+            TableEngine * te = cv->mutable_engine();
+
+            if (rg.nextSmallNumber() < 4)
+            {
+                getNextTableEngine(rg, false, next);
+                te->set_engine(next.teng);
+            }
             chassert(this->entries.empty());
             for (uint32_t i = 0; i < view_ncols; i++)
             {
