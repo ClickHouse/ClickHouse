@@ -20,7 +20,6 @@
 #include <Common/assert_cast.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
-#include <IO/ReadHelpers.h>
 
 namespace CurrentMetrics
 {
