@@ -1,21 +1,16 @@
-import json
 import os
 import re
 import shlex
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
-from ci.praktika.mangle import _get_workflows
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-import ci.praktika.cidb as CIDB
-from ci.praktika.settings import Settings
 from ci.praktika.gh import GH
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 
-WORKFLOW = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
 
@@ -130,66 +125,6 @@ def get_git_info() -> tuple[str, str, str, str, str, str]:
         repo_name,
         pr_number,
     )
-
-
-def save_date_into_ci_db(
-    date_str: str,
-    pr_number: int,
-    current_commit_sha: str,
-    branch: str,
-    merge_base_commit_sha: str,
-    base_branch: str,
-    b_line_cov: float,
-    b_function_cov: float,
-    b_branch_cov: float,
-    c_line_cov: float,
-    c_function_cov: float,
-    c_branch_cov: float,
-    delta: float,
-    status: str,
-    coverage_report_url: str = "",
-    diff_coverage_report_url: str = "",
-    uncovered_code_url: str = "",
-):
-    cidb = CIDB.CIDB(
-        WORKFLOW.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-        WORKFLOW.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
-        WORKFLOW.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
-    )
-    is_ok, error = cidb.check()
-    if not is_ok:
-        raise RuntimeError(f"CI DB connection check failed: {error}")
-
-    row = json.dumps(
-        {
-            "check_start_time": date_str,
-            "pull_request_number": pr_number,
-            "commit_sha": current_commit_sha,
-            "base_commit_sha": merge_base_commit_sha,
-            "branch": branch,
-            "base_branch": base_branch,
-            "status": status,
-            "baseline_line_cov": b_line_cov,
-            "baseline_func_cov": b_function_cov,
-            "baseline_branch_cov": b_branch_cov,
-            "current_line_cov": c_line_cov,
-            "current_func_cov": c_function_cov,
-            "current_branch_cov": c_branch_cov,
-            "delta_line_cov": delta,
-            "coverage_report_url": coverage_report_url,
-            "diff_coverage_report_url": diff_coverage_report_url,
-            "uncovered_code_url": uncovered_code_url,
-        }
-    )
-
-    # Temporarily point insert_rows at our custom database/table.
-    _orig_db, _orig_table = Settings.CI_DB_DB_NAME, Settings.CI_DB_TABLE_NAME
-    try:
-        Settings.CI_DB_DB_NAME = "coverage_ci"
-        Settings.CI_DB_TABLE_NAME = "coverage_data"
-        cidb.insert_rows([row])
-    finally:
-        Settings.CI_DB_DB_NAME, Settings.CI_DB_TABLE_NAME = _orig_db, _orig_table
 
 
 if __name__ == "__main__":
@@ -309,31 +244,32 @@ if __name__ == "__main__":
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
-            _env = _Environment.get()
-            _s3_base = (
-                f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
-            )
+            _s3_prefix = f"PRs/{pr_number}/{current_commit_sha}" if int(pr_number) > 0 else f"REFs/{branch}/{current_commit_sha}"
+            _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
 
-            save_date_into_ci_db(
-                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                pr_number,
-                current_commit_sha,
-                branch,
-                merge_base_commit_sha,
-                base_branch,
-                b_line_cov,
-                b_function_cov,
-                b_branch_cov,
-                c_line_cov,
-                c_function_cov,
-                c_branch_cov,
-                delta,
-                diff_res.status,
-                coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
-                diff_coverage_report_url=f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
-                uncovered_code_url=uncovered_code_url,
+            CIDBCluster().insert_json(
+                table="coverage_ci.coverage_data",
+                json_str={
+                    "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "pull_request_number": pr_number,
+                    "commit_sha": current_commit_sha,
+                    "base_commit_sha": merge_base_commit_sha,
+                    "branch": branch,
+                    "base_branch": base_branch,
+                    "status": diff_res.status,
+                    "baseline_line_cov": b_line_cov,
+                    "baseline_func_cov": b_function_cov,
+                    "baseline_branch_cov": b_branch_cov,
+                    "current_line_cov": c_line_cov,
+                    "current_func_cov": c_function_cov,
+                    "current_branch_cov": c_branch_cov,
+                    "delta_line_cov": delta,
+                    "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                    "diff_coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
+                    "uncovered_code_url": uncovered_code_url,
+                },
             )
 
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
@@ -367,8 +303,8 @@ if __name__ == "__main__":
     # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
     if not info.is_local_run:
-        _env = _Environment.get()
-        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_env.get_s3_prefix()}"
+        _s3_prefix = f"PRs/{pr_number}/{current_commit_sha}" if int(pr_number) > 0 else f"REFs/{branch}/{current_commit_sha}"
+        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
         report_links.append(
             f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
         )

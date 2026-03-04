@@ -200,6 +200,11 @@ class GH:
                 except Exception:
                     pass
 
+    '''
+    TODO: @maxknv
+    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
+    '''
     @classmethod
     def post_fresh_comment(
         cls,
