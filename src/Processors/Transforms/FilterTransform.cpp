@@ -30,6 +30,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+struct PredicateAtomsHolder
+{
+    std::vector<PredicateAtom> atoms;
+};
+
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 predicate_statistics_sample_rate;
@@ -133,7 +138,7 @@ FilterTransform::FilterTransform(
                 auto atoms = extractPredicateAtoms(node);
                 if (!atoms.empty())
                 {
-                    predicate_atoms = std::make_unique<std::vector<PredicateAtom>>(std::move(atoms));
+                    predicate_atoms = std::make_unique<PredicateAtomsHolder>(PredicateAtomsHolder{std::move(atoms)});
                     collect_predicate_stats = true;
                 }
             }
@@ -383,8 +388,8 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
 
     /// for conjunctive filters (multiple atoms), the selectivity recorded here is the
     /// combined pass rate, which is a lower bound on each individual atom's selectivity.
-    /// this logic aligns well with physical design advisor logic, so no need to leave only atoms
-    for (const auto & atom : *predicate_atoms)
+    /// this logic aligns well with physical design advisor logic, no need to leave only atoms
+    for (const auto & atom : predicate_atoms->atoms)
     {
         PredicateStatisticsLogElement elem;
         elem.event_date = today;
