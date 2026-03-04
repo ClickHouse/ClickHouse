@@ -107,7 +107,7 @@ class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
-class TextIndexDictionaryBlockCache;
+class TextIndexTokensCache;
 class TextIndexHeaderCache;
 class TextIndexPostingsCache;
 class ProcessList;
@@ -668,7 +668,7 @@ protected:
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
-    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+    std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1134,8 +1134,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
     void cancelAllBackupsAndRestores() const;
-    BackupsInMemoryHolder & getBackupsInMemory();
-    const BackupsInMemoryHolder & getBackupsInMemory() const;
+    std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
+    std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1379,10 +1379,10 @@ public:
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
 
-    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
-    void clearTextIndexDictionaryBlockCache() const;
+    void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexTokensCache> getTextIndexTokensCache() const;
+    void clearTextIndexTokensCache() const;
 
     void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);

@@ -559,7 +559,24 @@ getColumnsForNewDataPart(
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
+        {
+            /// For RENAME commands, handle chained renames:
+            /// e.g., if column A was already renamed to B, and now B is renamed to C,
+            /// we should track that C originates from A (the actual column in the source part).
+            if (command.type == MutationCommand::RENAME_COLUMN)
+            {
+                auto it = renamed_columns_to_from.find(command.column_name);
+                if (it != renamed_columns_to_from.end())
+                {
+                    auto original_name = it->second;
+                    renamed_columns_to_from.erase(it);
+                    renamed_columns_from_to.erase(original_name);
+                    renamed_columns_to_from.emplace(command.rename_to, original_name);
+                    renamed_columns_from_to.emplace(original_name, command.rename_to);
+                }
+            }
             continue;
+        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);

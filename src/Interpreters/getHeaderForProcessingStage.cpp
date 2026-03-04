@@ -37,6 +37,16 @@ bool hasJoin(const ASTSelectQuery & select)
     return joined_table.table_join != nullptr;
 }
 
+bool hasArrayJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return false;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    return joined_table.array_join != nullptr;
+}
+
 /// Rewrite original query removing joined tables from it
 bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, ContextPtr context)
 {

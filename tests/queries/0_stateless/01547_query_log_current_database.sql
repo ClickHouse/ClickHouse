@@ -23,7 +23,7 @@ from system.query_log
 where
     query like 'select \'01547_query_log_current_database%'
     and current_database = currentDatabase()
-    and event_date >= yesterday();
+    and event_date >= yesterday() AND event_time >= now() - 600;
 
 -- at least two threads for processing
 -- (but one just waits for another, sigh)
@@ -32,4 +32,4 @@ from system.query_thread_log
 where
     query like 'select \'01547\_query\_log\_current\_database%'
     and current_database = currentDatabase()
-    and event_date >= yesterday()
+    and event_date >= yesterday() AND event_time >= now() - 600

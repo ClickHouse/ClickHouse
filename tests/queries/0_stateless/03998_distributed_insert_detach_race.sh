@@ -40,9 +40,6 @@ wait
 # Reattach in case the table was left detached
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE dist_03998" 2>/dev/null
 
-# Flush any remaining async inserts
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH DISTRIBUTED dist_03998"
-
 $CLICKHOUSE_CLIENT -nmq "
     DROP TABLE dist_03998;
     DROP TABLE local_03998;

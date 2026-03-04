@@ -25,8 +25,10 @@ struct Keeper4LWInfo
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;
 
+    uint64_t learner_count;
     uint64_t follower_count;
     uint64_t synced_follower_count;
+    uint64_t synced_non_voting_follower_count;
 
     String getRole() const
     {
