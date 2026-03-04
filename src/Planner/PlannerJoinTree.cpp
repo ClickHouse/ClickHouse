@@ -1505,7 +1505,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     /// Overall, IStorage::read    -> FetchColumns returns normal column names (except Distributed, which is inconsistent)
                     /// Interpreter::getQueryPlan  -> FetchColumns returns identifiers (why?) and this the reason for the bug ^ in Distributed
                     /// Hopefully there is no other case when we read from Distributed up to FetchColumns.
-                    if (table_node && table_node->getStorage()->isRemote() && select_query_options.to_stage == QueryProcessingStage::FetchColumns)
+                    if (table_node && table_node->getStorage()->isRemote())
+                        updated_actions_dag_outputs.push_back(output_node);
+                    else if (table_function_node && table_function_node->getStorage()->isRemote())
                         updated_actions_dag_outputs.push_back(output_node);
                 }
                 else

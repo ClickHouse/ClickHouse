@@ -2,7 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import time
+import uuid
 from email.errors import HeaderParseError
 
 import pytest
@@ -509,3 +509,354 @@ def test_cluster_default_expression(started_cluster):
     )
 
     assert result == expected_result
+
+
+def test_remote_hedged(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    pure_s3 = node.query(
+        f"""
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+        """
+    )
+    s3_distributed = node.query(
+        f"""
+    SELECT * from remote('s0_0_1', s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+    SETTINGS use_hedged_requests=True
+        """
+    )
+
+    assert TSV(pure_s3) == TSV(s3_distributed)
+
+
+def test_remote_no_hedged(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    pure_s3 = node.query(
+        f"""
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+        """
+    )
+    s3_distributed = node.query(
+        f"""
+    SELECT * from remote('s0_0_1', s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
+    ORDER BY (name, value, polygon)
+    LIMIT 1
+    SETTINGS use_hedged_requests=False
+        """
+    )
+
+    assert TSV(pure_s3) == TSV(s3_distributed)
+
+
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
+    node = started_cluster.instances["s0_0_0"]
+
+    node.query(f"SET allow_experimental_analyzer = {allow_experimental_analyzer}")
+
+    for i in range(1, 5):
+        exists = node.query(
+            f"""
+            SELECT
+                count()
+                FROM s3('http://minio1:9001/root/data/hive/key={i}/*', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                GROUP BY ALL
+                FORMAT TSV
+            """
+        )
+        if int(exists) == 0:
+            node.query(
+                f"""
+                INSERT
+                    INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                    SELECT {i}, {i}
+                    SETTINGS use_hive_partitioning = 0
+                """
+            )
+
+    query_id_full = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0
+        """,
+        query_id=query_id_full,
+    )
+    result = int(result)
+    assert result == 2
+
+    query_id_optimized = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1
+        """,
+        query_id=query_id_optimized,
+    )
+    result = int(result)
+    assert result == 2
+
+    query_id_cluster_full = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0
+        """,
+        query_id=query_id_cluster_full,
+    )
+    result = int(result)
+    assert result == 2
+
+    query_id_cluster_optimized = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1
+        """,
+        query_id=query_id_cluster_optimized,
+    )
+    result = int(result)
+    assert result == 2
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    full_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_full}'
+            FORMAT TSV
+        """
+    )
+    full_traffic = int(full_traffic)
+    assert full_traffic > 0  # 612*4
+
+    optimized_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_optimized}'
+            FORMAT TSV
+        """
+    )
+    optimized_traffic = int(optimized_traffic)
+    assert optimized_traffic > 0  # 612*2
+    assert full_traffic > optimized_traffic
+
+    cluster_full_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_full}'
+            FORMAT TSV
+        """
+    )
+    cluster_full_traffic = int(cluster_full_traffic)
+    assert cluster_full_traffic == full_traffic
+
+    cluster_optimized_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_optimized}'
+            FORMAT TSV
+        """
+    )
+    cluster_optimized_traffic = int(cluster_optimized_traffic)
+    assert cluster_optimized_traffic == optimized_traffic
+
+    node.query("SET allow_experimental_analyzer = DEFAULT")
+
+
+def test_joins(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    # Table join_table only exists on the node 's0_0_0'.
+    node.query("DROP TABLE IF EXISTS join_table SYNC")
+    node.query(
+        """
+        CREATE TABLE IF NOT EXISTS join_table (
+            id UInt32,
+            name String
+        ) ENGINE=MergeTree()
+        ORDER BY id;
+        """
+    )
+
+    node.query(
+        f"""
+        INSERT INTO join_table
+        SELECT value, concat(name, '_jt') FROM s3Cluster('cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
+        """
+    )
+
+    result1 = node.query(
+        f"""
+        SELECT t1.name, t2.name FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON t1.value = t2.id
+        ORDER BY t1.name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+
+    res = list(map(str.split, result1.splitlines()))
+    assert len(res) == 25
+
+    for line in res:
+        if len(line) == 2:
+            assert line[1] == f"{line[0]}_jt"
+        else:
+            assert line == ["_jt"] # for empty name
+
+    result2 = node.query(
+        f"""
+        SELECT t1.name, t2.name FROM
+            join_table AS t2
+        JOIN
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        ON t1.value = t2.id
+        ORDER BY t1.name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+
+    assert result1 == result2
+
+    # With WHERE clause with remote column only
+    result3 = node.query(
+        f"""
+        SELECT t1.name, t2.name FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON t1.value = t2.id
+        WHERE (t1.value % 2)
+        ORDER BY t1.name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+
+    res = list(map(str.split, result3.splitlines()))
+    assert len(res) == 8
+
+    # With WHERE clause with local column only
+    result4 = node.query(
+        f"""
+        SELECT t1.name, t2.name FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON t1.value = t2.id
+        WHERE (t2.id % 2)
+        ORDER BY t1.name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+
+    assert result3 == result4
+
+    # With WHERE clause with local and remote columns
+    result5 = node.query(
+        f"""
+        SELECT t1.name, t2.name FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON t1.value = t2.id
+        WHERE (t1.value % 2) AND ((t2.id % 3) == 2)
+        ORDER BY t1.name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+
+    res = list(map(str.split, result5.splitlines()))
+    assert len(res) == 6
+
+    result6 = node.query(
+        f"""
+        SELECT name FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        WHERE value IN (SELECT id FROM join_table)
+        ORDER BY name
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+    res = list(map(str.split, result6.splitlines()))
+    assert len(res) == 25
+
+    result7 = node.query(
+        f"""
+        SELECT count() FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON 1
+        GROUP BY ALL
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+    assert result7.strip() == "625"
+
+    result8 = node.query(
+        f"""
+        SELECT count(), t2.id FROM
+            s3Cluster('cluster_simple',
+                'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+                'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') AS t1
+        JOIN
+            join_table AS t2
+        ON 1
+        GROUP BY ALL
+        SETTINGS object_storage_cluster_join_mode='local';
+        """
+    )
+    res = list(map(str.split, result8.splitlines()))
+    assert len(res) == 25

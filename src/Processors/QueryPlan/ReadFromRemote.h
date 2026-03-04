@@ -50,6 +50,7 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
+    void setIsRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
 
     bool hasSerializedPlan() const;
 
@@ -68,6 +69,7 @@ private:
     const String cluster_name;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    bool is_remote_function = false;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
