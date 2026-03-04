@@ -656,6 +656,16 @@ def test_long_disconnection_stops_backup():
 
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_backup():
+    # Wait for any backup processes from the previous test to finish their ZooKeeper cleanup
+    # before creating the NoTrashChecker, so residual errors don't fall in its time window.
+    for _ in range(30):
+        if not any(
+            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
+            for node in nodes
+        ):
+            break
+        time.sleep(1)
+
     create_and_fill_table(random_node())
 
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
@@ -711,6 +721,16 @@ def test_short_disconnection_doesnt_stop_backup():
 
 # A restore must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_restore():
+    # Wait for any backup processes from the previous test to finish their ZooKeeper cleanup
+    # before creating the NoTrashChecker, so residual errors don't fall in its time window.
+    for _ in range(30):
+        if not any(
+            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
+            for node in nodes
+        ):
+            break
+        time.sleep(1)
+
     # Make a backup.
     backup_id = get_backup_id_of_successful_backup()
 
