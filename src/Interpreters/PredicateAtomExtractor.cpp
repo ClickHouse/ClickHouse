@@ -1,5 +1,6 @@
 #include <Interpreters/PredicateAtomExtractor.h>
 #include <Functions/IFunction.h>
+#include <unordered_set>
 
 
 namespace DB
@@ -31,35 +32,29 @@ String classifyPredicateFunction(const String & function_name)
 namespace
 {
 
-String findInputColumnName(const ActionsDAG::Node * node)
+void collectInputColumnNames(const ActionsDAG::Node * node, std::unordered_set<String> & out)
 {
     if (!node)
-        return {};
+        return;
 
     if (node->type == ActionsDAG::ActionType::INPUT)
-        return node->result_name;
-
-    if (node->type == ActionsDAG::ActionType::ALIAS)
     {
-        if (!node->children.empty())
-            return findInputColumnName(node->children[0]);
-        return {};
-    }
-
-    /// function nodes, check children for INPUT nodes
-    for (const auto * child : node->children)
-    {
-        if (child->type == ActionsDAG::ActionType::INPUT)
-            return child->result_name;
+        out.insert(node->result_name);
+        return;
     }
 
     for (const auto * child : node->children)
-    {
-        String result = findInputColumnName(child);
-        if (!result.empty())
-            return result;
-    }
+        collectInputColumnNames(child, out);
+}
 
+/// return single INPUT column name if the subtree references exactly one column
+/// for multi-column predicates (`a > b`, `a + b > 0`) return empty
+String findSingleInputColumnName(const ActionsDAG::Node * node)
+{
+    std::unordered_set<String> columns;
+    collectInputColumnNames(node, columns);
+    if (columns.size() == 1)
+        return *columns.begin();
     return {};
 }
 
@@ -80,7 +75,7 @@ std::vector<PredicateAtom> extractPredicateAtoms(const ActionsDAG::Node * filter
             continue;
 
         String func_name = atom_node->function_base->getName();
-        String column_name = findInputColumnName(atom_node);
+        String column_name = findSingleInputColumnName(atom_node);
 
         /// skip atoms where we cannot determine the column
         if (column_name.empty())

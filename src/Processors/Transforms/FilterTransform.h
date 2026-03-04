@@ -77,7 +77,7 @@ private:
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
 
-    void collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_filtered_rows, const Chunk & chunk);
+    void collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_rows_after_filtration, const Chunk & chunk);
 
 public:
     /// Out-of-line destructor: PredicateAtomsHolder is incomplete here

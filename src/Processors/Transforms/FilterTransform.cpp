@@ -361,7 +361,7 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
     }
 }
 
-void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_filtered_rows, const Chunk & chunk)
+void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_rows_after_filtration, const Chunk & chunk)
 {
     ++chunk_counter;
     if (chunk_counter % predicate_stats_sample_rate != 0)
@@ -369,7 +369,7 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
 
     time_t now = time(nullptr);
     UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
-    Float64 selectivity = static_cast<Float64>(num_filtered_rows) / static_cast<Float64>(num_rows_before_filtration);
+    Float64 selectivity = static_cast<Float64>(num_rows_after_filtration) / static_cast<Float64>(num_rows_before_filtration);
     String query_id(CurrentThread::getQueryId());
 
     /// try to resolve database/table from MarkRangesInfo (MergeTree tables attach this to chunks)
@@ -400,7 +400,7 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
         elem.predicate_class = atom.predicate_class;
         elem.function_name = atom.function_name;
         elem.input_rows = num_rows_before_filtration;
-        elem.passed_rows = num_filtered_rows;
+        elem.passed_rows = num_rows_after_filtration;
         elem.selectivity = selectivity;
         elem.query_id = query_id;
         predicate_stats_log->add(std::move(elem));
