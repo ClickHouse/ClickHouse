@@ -24,7 +24,7 @@ public:
     static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_)
     {
         auto hash = getHash(elems_, has_explicit_names_);
-        return ISerialization::pooled(hash, [elems = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(elems), has_explicit_names_); });
+        return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
