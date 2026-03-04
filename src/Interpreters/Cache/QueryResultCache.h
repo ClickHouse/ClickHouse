@@ -27,16 +27,14 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 
-/// Maps queries to query results. Useful to avoid repeated query calculation.
-///
-/// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
-/// when data is inserted/deleted into/from tables referenced by queries in the cache. In such situations, incorrect results may be
-/// returned. In order to still obtain sufficiently up-to-date query results, a expiry time (TTL) must be specified for each cache entry
-/// after which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a
-/// new entry is inserted and the cache has insufficient capacity.
-class QueryResultCache
+/// Common key/entry types shared between all cache implementations.
+/// These are defined as members of a common base to avoid circular dependencies.
+
+/// Holds the key/entry structs that are shared by both LocalQueryResultCache and RemoteQueryResultCache.
+/// We keep them inside a namespace struct so existing code using QueryResultCache::Key still compiles
+/// after the rename.
+struct QueryResultCache
 {
-public:
     /// Key + Entry represents a query result in the cache.
     struct Key
     {
@@ -124,7 +122,6 @@ public:
         std::optional<Chunk> extremes = std::nullopt;
     };
 
-private:
     struct KeyHasher
     {
         size_t operator()(const Key & key) const;
@@ -140,33 +137,94 @@ private:
         bool operator()(const Key & key) const;
     };
 
-public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
+};
 
-    QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+/// Internal interface used by QueryResultCacheWriter to write into the cache without depending on
+/// the concrete cache type (local vs. remote). Both LocalQueryResultCache and RemoteQueryResultCache
+/// implement this interface.
+struct IQueryResultCacheStorage
+{
+    virtual ~IQueryResultCacheStorage() = default;
+
+    /// Store an entry. Must be non-throwing; failures should be logged and silently dropped.
+    virtual void setEntry(
+        const QueryResultCache::Key & key,
+        std::shared_ptr<QueryResultCache::Entry> entry) = 0;
+
+    /// Return true if the cache already contains a non-stale entry for the given key.
+    /// Used by the Writer constructor and finalizeWrite to avoid redundant writes.
+    virtual bool hasNonStaleEntry(const QueryResultCache::Key & key) = 0;
+};
+
+/// Abstract interface for all query result cache implementations.
+/// Concrete implementations: LocalQueryResultCache (in-process) and RemoteQueryResultCache (Redis).
+class IQueryResultCache
+{
+public:
+    using Key = QueryResultCache::Key;
+    using Entry = QueryResultCache::Entry;
+
+    virtual ~IQueryResultCache() = default;
+
+    virtual QueryResultCacheReader createReader(const Key & key) = 0;
+    virtual QueryResultCacheWriter createWriter(
+        const Key & key,
+        std::chrono::milliseconds min_query_runtime,
+        bool squash_partial_results,
+        size_t max_block_size,
+        size_t max_query_result_cache_size_in_bytes_quota,
+        size_t max_query_result_cache_entries_quota) = 0;
+
+    virtual void clear(const std::optional<String> & tag) = 0;
+    virtual size_t sizeInBytes() const = 0;
+    virtual size_t count() const = 0;
+
+    /// Record new execution of query represented by key. Returns number of executions so far.
+    virtual size_t recordQueryRun(const Key & key) = 0;
+
+    /// For debugging and system tables
+    virtual std::vector<QueryResultCache::Cache::KeyMapped> dump() const = 0;
+};
+
+using QueryResultCachePtr = std::shared_ptr<IQueryResultCache>;
+
+/// Maps queries to query results. Useful to avoid repeated query calculation.
+///
+/// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
+/// when data is inserted/deleted into/from tables referenced by queries in the cache. In such situations, incorrect results may be
+/// returned. In order to still obtain sufficiently up-to-date query results, a expiry time (TTL) must be specified for each cache entry
+/// after which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a
+/// new entry is inserted and the cache has insufficient capacity.
+class LocalQueryResultCache : public IQueryResultCache, private IQueryResultCacheStorage
+{
+public:
+    using Cache = QueryResultCache::Cache;
+
+    LocalQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    QueryResultCacheReader createReader(const Key & key);
+    QueryResultCacheReader createReader(const Key & key) override;
     QueryResultCacheWriter createWriter(
         const Key & key,
         std::chrono::milliseconds min_query_runtime,
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota);
+        size_t max_query_result_cache_entries_quota) override;
 
-    void clear(const std::optional<String> & tag);
+    void clear(const std::optional<String> & tag) override;
 
-    size_t sizeInBytes() const;
-    size_t count() const;
+    size_t sizeInBytes() const override;
+    size_t count() const override;
 
     /// Record new execution of query represented by key. Returns number of executions so far.
-    size_t recordQueryRun(const Key & key);
+    size_t recordQueryRun(const Key & key) override;
 
     /// For debugging and system tables
-    std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
+    std::vector<QueryResultCache::Cache::KeyMapped> dump() const override;
 
 private:
     Cache cache; /// has its own locking --> not protected by mutex
@@ -174,12 +232,16 @@ private:
     mutable std::mutex mutex;
 
     /// query --> query execution count
-    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
+    using TimesExecuted = std::unordered_map<Key, size_t, QueryResultCache::KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
 
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    /// IQueryResultCacheStorage implementation
+    void setEntry(const Key & key, std::shared_ptr<Entry> entry) override;
+    bool hasNonStaleEntry(const Key & key) override;
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
@@ -212,10 +274,8 @@ public:
 
     void finalizeWrite();
 private:
-    using Cache = QueryResultCache::Cache;
-
     std::mutex mutex;
-    Cache & cache;
+    IQueryResultCacheStorage & storage;
     const QueryResultCache::Key key;
     const size_t max_entry_size_in_bytes;
     const size_t max_entry_size_in_rows;
@@ -223,21 +283,21 @@ private:
     const std::chrono::milliseconds min_query_runtime;
     const bool squash_partial_results;
     const size_t max_block_size;
-    Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
+    std::shared_ptr<QueryResultCache::Entry> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     bool was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(
-        Cache & cache_,
-        const Cache::Key & key_,
+        IQueryResultCacheStorage & storage_,
+        const QueryResultCache::Key & key_,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
         size_t max_block_size_);
 
-    friend class QueryResultCache; /// for createWriter()
+    friend class LocalQueryResultCache; /// for createWriter()
 };
 
 /// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
@@ -271,10 +331,7 @@ private:
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
-    friend class QueryResultCache; /// for createReader()
+    friend class LocalQueryResultCache; /// for createReader()
 };
-
-
-using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
 
 }

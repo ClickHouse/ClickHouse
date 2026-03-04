@@ -383,14 +383,14 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
 };
 
 QueryResultCacheWriter::QueryResultCacheWriter(
-    Cache & cache_,
+    IQueryResultCacheStorage & storage_,
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
     size_t max_block_size_)
-    : cache(cache_)
+    : storage(storage_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
@@ -398,7 +398,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (storage.hasNonStaleEntry(key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -406,7 +406,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
 }
 
 QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & other)
-    : cache(other.cache)
+    : storage(other.storage)
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
@@ -480,7 +480,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (storage.hasNonStaleEntry(key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -571,7 +571,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    cache.set(key, query_result);
+    storage.setEntry(key, query_result);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 
@@ -722,14 +722,14 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
+LocalQueryResultCache::LocalQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    : cache(std::make_unique<TTLCachePolicy<QueryResultCache::Key, QueryResultCache::Entry, QueryResultCache::KeyHasher, QueryResultCache::EntryWeight, QueryResultCache::IsStale>>(
             CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }
 
-void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+void LocalQueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
 {
     std::lock_guard lock(mutex);
     cache.setMaxSizeInBytes(max_size_in_bytes);
@@ -738,13 +738,13 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCacheReader QueryResultCache::createReader(const Key & key)
+QueryResultCacheReader LocalQueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
     return QueryResultCacheReader(cache, key, lock);
 }
 
-QueryResultCacheWriter QueryResultCache::createWriter(
+QueryResultCacheWriter LocalQueryResultCache::createWriter(
     const Key & key,
     std::chrono::milliseconds min_query_runtime,
     bool squash_partial_results,
@@ -760,10 +760,21 @@ QueryResultCacheWriter QueryResultCache::createWriter(
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(*this, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryResultCache::clear(const std::optional<String> & tag)
+void LocalQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> entry)
+{
+    cache.set(key, entry);
+}
+
+bool LocalQueryResultCache::hasNonStaleEntry(const Key & key)
+{
+    auto existing = cache.getWithKey(key);
+    return existing.has_value() && !QueryResultCache::IsStale()(existing->key);
+}
+
+void LocalQueryResultCache::clear(const std::optional<String> & tag)
 {
     if (tag)
     {
@@ -779,17 +790,17 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     times_executed.clear();
 }
 
-size_t QueryResultCache::sizeInBytes() const
+size_t LocalQueryResultCache::sizeInBytes() const
 {
     return cache.sizeInBytes();
 }
 
-size_t QueryResultCache::count() const
+size_t LocalQueryResultCache::count() const
 {
     return cache.count();
 }
 
-size_t QueryResultCache::recordQueryRun(const Key & key)
+size_t LocalQueryResultCache::recordQueryRun(const Key & key)
 {
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
@@ -800,7 +811,7 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
     return times;
 }
 
-std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
+std::vector<QueryResultCache::Cache::KeyMapped> LocalQueryResultCache::dump() const
 {
     return cache.dump();
 }
