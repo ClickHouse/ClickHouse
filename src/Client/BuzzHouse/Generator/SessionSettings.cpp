@@ -13,7 +13,17 @@ namespace BuzzHouse
 
 const std::unordered_set<String> blockSizes = {"1", "2", "4", "8", "16", "32", "64", "1024", "2048", "4096", "16384", "1048576"}; /// 1MB
 
-static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(rg.nasty_strings) + "'"; };
+static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &)
+{
+    String ret = "'";
+
+    for (const char c : rg.pickRandomly(rg.nasty_strings))
+    {
+        ret += (c == '\'') ? "''" : c;
+    }
+    ret += "'";
+    return ret;
+};
 
 static const auto setSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
