@@ -1315,6 +1315,7 @@ public:
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
+    void signalKeeperDispatcherShutdown() const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
