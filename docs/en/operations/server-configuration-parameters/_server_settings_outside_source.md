@@ -855,6 +855,7 @@ To write log messages additionally to syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production-scc</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -870,7 +871,9 @@ Keys for `<syslog>`:
 | `address`  | The address of syslog in format `host\[:port\]`. If omitted, the local daemon is used.                                                                                                                                                                         |
 | `hostname` | The name of the host from which logs are send (optional).                                                                                                                                                                                                      |
 | `facility` | The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a "LOG_" prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.                                           |
-| `format`   | Log message format. Possible values: `bsd` and `syslog.`                                                                                                                                                                                                       |
+| `format`   | Log message format. Possible values: `bsd` and `syslog`                                                                                                                                                                                                       |
+| `programname` | Program name used to identify ClickHouse in syslog messages. For remote syslog with `format=syslog` (RFC 5424), this is sent as `APP-NAME`. With `format=bsd` (RFC 3164), `programname` has no effect. Default: name of the ClickHouse command you started, for example `clickhouse-server` or `clickhouse-keeper`. |
+| `options`  | Options for local syslog (`logger.syslog.address` not set), passed as a `|`-separated list (for example, `LOG_CONS|LOG_PID`). Default: `LOG_CONS|LOG_PID`. |
 
 **Log formats**
 
