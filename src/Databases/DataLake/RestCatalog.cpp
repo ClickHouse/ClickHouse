@@ -42,6 +42,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB::ErrorCodes
@@ -49,6 +50,12 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -266,6 +273,10 @@ OneLakeCatalog::OneLakeCatalog(
 
 AccessToken RestCatalog::retrieveAccessToken() const
 {
+    fiu_do_on(FailPoints::check_database_datalake_negative, {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database during catalog HTTP request");
+    });
+
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
     /// TODO:
