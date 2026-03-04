@@ -13,8 +13,8 @@ doc_type: 'guide'
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
-:::warning Dots in column names are reserved for `Nested` sub-column access
-The dot (`.`) character in column names is reserved for accessing sub-columns of `Nested` data structures. Columns whose names share a common dot-prefix (e.g., `foo.a` and `foo.b`) are treated as belonging to an implicit `Nested` structure when [`flatten_nested`](/operations/settings/settings#flatten_nested) is set to `1` (the default). This causes type coercion to `Array`, insert-time array-length validation across columns sharing the same prefix, and restrictions on renaming — even if `Nested` was not intended.
+:::warning[Dots in column names are reserved for `Nested` sub-column access]
+The dot (`.`) character in column names is reserved for accessing sub-columns of `Nested` data structures. Columns whose names share a common dot-prefix (e.g., `foo.a` and `foo.b`) are treated as belonging to an implicit `Nested` structure when [`flatten_nested`](/operations/settings/settings#flatten_nested) is set to `1` (the default). This causes type coercion to `Array`, insert-time array-length validation across columns sharing the same prefix, and restrictions on renaming, even if `Nested` was not intended.
 
 Avoid dots in column names unless you are intentionally using `Nested`. Use underscores (`_`) or another separator instead.
 :::
