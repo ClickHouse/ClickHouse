@@ -14,6 +14,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
@@ -884,6 +885,19 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_DISK:
             restartDisk(query.disk);
+        case Type::WAIT_BLOBS_CLEANUP:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
+
+            auto disk_ptr = getContext()->getDisk(query.disk);
+            auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
+            if (!object_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
+
+            object_disk->waitBlobsCleanup();
+
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -2413,6 +2427,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
