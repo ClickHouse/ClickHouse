@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Interpreters/DatabaseCatalog.h>
-
 #include <atomic>
 #include <memory>
+#include <string>
 
 namespace DB
 {
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 /// Owns a temporary Memory table used by a materialized CTE, and tracks whether
 /// the table has already been populated. The `is_built` flag is checked
@@ -15,8 +17,8 @@ namespace DB
 /// and the main plan), the table is written exactly once.
 struct MaterializedCTE
 {
-    explicit MaterializedCTE(const TemporaryTableHolder & holder_, const std::string & cte_name_)
-        : storage(holder_.getTable())
+    explicit MaterializedCTE(const StoragePtr & storage_, const std::string & cte_name_)
+        : storage(storage_)
         , cte_name(cte_name_)
     {}
 

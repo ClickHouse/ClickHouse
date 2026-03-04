@@ -8,8 +8,10 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageMemory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <Core/Settings.h>
 #include <Common/SipHash.h>
@@ -51,7 +53,9 @@ TableNode::TableNode(
 )
     : TableNode(temporary_table_holder_.getTable(), context_)
 {
-    materialized_cte = std::make_shared<MaterializedCTE>(temporary_table_holder_, cte_name_);
+    materialized_cte = std::make_shared<MaterializedCTE>(storage, cte_name_);
+    typeid_cast<StorageMemory *>(storage.get())->setMaterializedCTE(materialized_cte);
+
     children[materialized_cte_subquery_index] = std::move(materialized_cte_subquery_);
 }
 
