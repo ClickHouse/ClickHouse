@@ -1054,20 +1054,19 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
 
     /// Database namespace for multi-tenant isolation.
-    /// When set, database names are transparently prefixed with "{database_namespace}__".
+    /// When set (and database_namespace_separator server setting is non-empty),
+    /// database names are transparently prefixed with "{namespace}{separator}".
     String getDatabaseNamespace() const;
     void setDatabaseNamespace(const String & ns);
     /// Prepend namespace prefix to a database name (skip system databases and already-prefixed names).
     String applyDatabaseNamespace(const String & database_name) const;
     /// Strip namespace prefix from a physical database name for user-facing display.
     String stripDatabaseNamespace(const String & physical_database_name) const;
-    /// Validate that a database name does not conflict with existing database namespaces.
-    /// Throws if a non-namespaced user tries to create a database whose name looks like "ns__xxx"
-    /// where "ns" is an existing user's database namespace.
-    void validateDatabaseNamespaceConflict(const String & database_name) const;
-    /// Validate that setting a database namespace does not conflict with existing databases.
-    /// Throws if any existing database has the prefix "ns__" that wasn't created by a namespaced user.
-    void validateNamespaceAgainstExistingDatabases(const String & ns) const;
+    /// Returns the database_namespace_separator server setting value.
+    String getDatabaseNamespaceSeparator() const;
+    /// Validate that a database name does not contain the namespace separator.
+    /// Only checked when database_namespace_separator is configured.
+    void validateDatabaseNameNoSeparator(const String & database_name) const;
 
     void setCurrentQueryId(const String & query_id);
 

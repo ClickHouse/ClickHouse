@@ -1,3 +1,4 @@
+__
 tenant1__testns
 1
 2
@@ -77,10 +78,12 @@ alter_user_namespace
 1
 0
 1
-namespace_collision
+separator_in_db_name
+BAD_ARGUMENTS
 BAD_ARGUMENTS
 1
 1
-namespace_collision_reverse
+namespace_with_separator
 BAD_ARGUMENTS
+feature_disabled
 BAD_ARGUMENTS

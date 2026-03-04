@@ -3235,13 +3235,16 @@ String Context::applyDatabaseNamespace(const String & database_name) const
 {
     if (database_namespace.empty())
         return database_name;
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
+        return database_name;
     if (DatabaseCatalog::isPredefinedDatabase(database_name))
         return database_name;
     /// The "default" database is shared across all namespaces.
     if (database_name == "default")
         return database_name;
     /// Already prefixed — don't double-prefix.
-    String prefix = database_namespace + "__";
+    String prefix = database_namespace + separator;
     if (database_name.starts_with(prefix))
         return database_name;
     return prefix + database_name;
@@ -3251,56 +3254,49 @@ String Context::stripDatabaseNamespace(const String & physical_database_name) co
 {
     if (database_namespace.empty())
         return physical_database_name;
-    String prefix = database_namespace + "__";
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
+        return physical_database_name;
+    String prefix = database_namespace + separator;
     if (physical_database_name.starts_with(prefix))
         return physical_database_name.substr(prefix.size());
     return physical_database_name;
 }
 
-void Context::validateDatabaseNamespaceConflict(const String & database_name) const
+String Context::getDatabaseNamespaceSeparator() const
 {
-    /// Only relevant for non-namespaced users creating databases with "__" in the name.
-    if (!database_namespace.empty())
-        return;
-
-    auto pos = database_name.find("__");
-    if (pos == String::npos || pos == 0)
-        return;
-
-    String potential_namespace = database_name.substr(0, pos);
-
-    /// Check if any existing user has this as their database_namespace.
-    const auto & access_control = getAccessControl();
-    auto user_ids = access_control.findAll<User>();
-    for (const auto & id : user_ids)
-    {
-        auto user = access_control.tryRead<User>(id);
-        if (user && user->database_namespace == potential_namespace)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot create database '{}': the prefix '{}' conflicts with an existing database namespace",
-                database_name, potential_namespace);
-    }
+    /// Read from the live Poco config rather than shared->server_settings,
+    /// because SYSTEM RELOAD CONFIG updates the Poco config but does not
+    /// call loadSettingsFromConfig() on shared->server_settings.
+    const auto & config = getConfigRef();
+    if (config.has("database_namespace_separator"))
+        return config.getString("database_namespace_separator");
+    return "";
 }
 
-void Context::validateNamespaceAgainstExistingDatabases(const String & ns) const
+void Context::validateDatabaseNameNoSeparator(const String & database_name) const
 {
-    if (ns.empty())
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
         return;
 
-    String prefix = ns + "__";
+    auto pos = database_name.find(separator);
+    if (pos == String::npos)
+        return;
 
-    /// Check if any existing database starts with "ns__".
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{});
-    for (const auto & [db_name, _] : databases)
-    {
-        if (db_name.starts_with(prefix))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot set database namespace '{}': existing database '{}' has the prefix '{}' which would conflict. "
-                "Drop or rename the conflicting database first.",
-                ns, db_name, prefix);
-    }
+    /// Reject if separator is at the start (empty prefix) or at the end (empty suffix).
+    if (pos == 0 || pos + separator.size() >= database_name.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid database name '{}': the namespace separator '{}' cannot appear at the start or end of the name",
+            database_name, separator);
+
+    /// Separator found in the middle — not allowed when namespace feature is active.
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot create database '{}': database names cannot contain the namespace separator '{}' "
+        "when the database namespace feature is enabled (server setting database_namespace_separator)",
+        database_name, separator);
 }
 
 void Context::setCurrentQueryId(const String & query_id)

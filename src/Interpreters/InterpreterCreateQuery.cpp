@@ -143,6 +143,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsString database_namespace_separator;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -2448,12 +2449,11 @@ BlockIO InterpreterCreateQuery::execute()
         String database = create.getDatabase();
         if (!database.empty())
         {
-            /// Check for namespace collision before applying the prefix.
-            /// Skip for ATTACH queries — they may come from internal paths
-            /// (e.g. UNDROP, server restart) where the database name is already
-            /// physical and the context has no namespace set.
+            /// When namespace feature is active, reject database names containing the separator.
+            /// Skip for ATTACH queries — they come from internal paths (UNDROP, server restart)
+            /// where names are already physical.
             if (!create.attach)
-                getContext()->validateDatabaseNamespaceConflict(database);
+                getContext()->validateDatabaseNameNoSeparator(database);
             create.setDatabase(getContext()->applyDatabaseNamespace(database));
         }
     }

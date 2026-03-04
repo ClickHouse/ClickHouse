@@ -2,8 +2,9 @@
 # Tags: no-parallel
 
 # Test database namespace isolation.
-# When a user has DATABASE NAMESPACE set, all non-system database names are
-# transparently prefixed with "{namespace}__".
+# When a user has DATABASE NAMESPACE set and the server has database_namespace_separator
+# configured, all non-system database names are transparently prefixed with
+# "{namespace}{separator}".
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,19 +13,42 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Unique suffix to avoid conflicts
 P="04006"
 
-# Cleanup from previous runs
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__testns"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant2__testns"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__otherdb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__joindb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__srcdb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant3__altdb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__sneakydb"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS coltest__mydb"
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant1"
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant2"
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant3"
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_coltest"
+# Config file path for the server setting
+NS_CONFIG="${CLICKHOUSE_CONFIG_DIR}/config.d/database_namespace_separator_${P}.xml"
+
+# Cleanup function to ensure config is always removed
+cleanup() {
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__testns" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant2__testns" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__otherdb" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__joindb" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__srcdb" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant3__altdb" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant1__sneakydb" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant1" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant2" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant3" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_nofeature" 2>/dev/null
+    rm -f "${NS_CONFIG}" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RELOAD CONFIG" 2>&1 | grep -v -e 'Listen .* failed'
+}
+trap cleanup EXIT
+
+# Cleanup from previous runs (in case test was interrupted)
+cleanup 2>/dev/null
+
+# ============================================================
+# Enable the database namespace feature via server setting
+# ============================================================
+cat > "${NS_CONFIG}" <<'EOF'
+<clickhouse>
+    <database_namespace_separator>__</database_namespace_separator>
+</clickhouse>
+EOF
+${CLICKHOUSE_CLIENT} -q "SYSTEM RELOAD CONFIG" 2>&1 | grep -v -e 'Listen .* failed'
+
+# Verify the setting is active
+${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings WHERE name = 'database_namespace_separator'"
 
 # Create tenant users with DATABASE NAMESPACE
 ${CLICKHOUSE_CLIENT} -q "CREATE USER u_${P}_tenant1 DATABASE NAMESPACE tenant1"
@@ -312,39 +336,46 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS tenant3__altdb"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_tenant3"
 
 # ============================================================
-echo "namespace_collision"
-# Test: non-namespaced user cannot create a database whose name
-# collides with an existing namespace (direction 1).
+# Test 31: Database name containing separator is rejected
 # ============================================================
-# tenant1 user already exists with DATABASE NAMESPACE tenant1.
-# A non-namespaced (default) user must not be able to CREATE DATABASE tenant1__sneaky.
+echo "separator_in_db_name"
+# Any database name with the separator "__" should be rejected
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE tenant1__sneaky" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
-# But tenant1__unrelated is fine if no namespace "tenant1" exists... wait, it does.
-# So any tenant1__* should be blocked for non-namespaced users.
-# Verify the namespaced user CAN still create databases normally.
+# Namespaced user also can't use separator in their logical db name
+${T1} -q "CREATE DATABASE bad__name" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+# But namespaced user CAN still create normal databases
 ${T1} -q "CREATE DATABASE sneakydb"
-${T1} -q "SELECT count() FROM system.databases WHERE name = 'tenant1__sneakydb'" 2>/dev/null || echo "FAIL"
-# Verify physical database exists
+${T1} -q "SELECT count() FROM system.databases WHERE name = 'tenant1__sneakydb'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name = 'tenant1__sneakydb'"
 ${T1} -q "DROP DATABASE sneakydb"
 
 # ============================================================
-echo "namespace_collision_reverse"
-# Test: cannot assign a namespace that conflicts with an existing
-# non-namespaced database (direction 2).
+# Test 32: Namespace value cannot contain separator
 # ============================================================
-${CLICKHOUSE_CLIENT} -q "CREATE DATABASE coltest__mydb"
-# Now try to create a user with namespace "coltest" — should fail.
-${CLICKHOUSE_CLIENT} -q "CREATE USER u_${P}_coltest DATABASE NAMESPACE coltest" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
-# Also test ALTER USER path.
-${CLICKHOUSE_CLIENT} -q "CREATE USER u_${P}_coltest"
-${CLICKHOUSE_CLIENT} -q "ALTER USER u_${P}_coltest DATABASE NAMESPACE coltest" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
-# Cleanup
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_coltest"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS coltest__mydb"
+echo "namespace_with_separator"
+${CLICKHOUSE_CLIENT} -q "CREATE USER u_${P}_nofeature DATABASE NAMESPACE 'bad__ns'" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_nofeature"
 
 # ============================================================
-# Cleanup
+# Test 33: DATABASE NAMESPACE rejected when feature is disabled
+# ============================================================
+echo "feature_disabled"
+# Remove the config to disable the feature
+rm -f "${NS_CONFIG}"
+${CLICKHOUSE_CLIENT} -q "SYSTEM RELOAD CONFIG" 2>&1 | grep -v -e 'Listen .* failed'
+# Now trying to create a user with namespace should fail
+${CLICKHOUSE_CLIENT} -q "CREATE USER u_${P}_nofeature DATABASE NAMESPACE somens" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS u_${P}_nofeature"
+# Re-enable for cleanup (cleanup trap needs it to drop namespaced databases)
+cat > "${NS_CONFIG}" <<'EOF'
+<clickhouse>
+    <database_namespace_separator>__</database_namespace_separator>
+</clickhouse>
+EOF
+${CLICKHOUSE_CLIENT} -q "SYSTEM RELOAD CONFIG" 2>&1 | grep -v -e 'Listen .* failed'
+
+# ============================================================
+# Cleanup (also handled by trap)
 # ============================================================
 ${T1} -q "DROP DATABASE IF EXISTS testns"
 ${T2} -q "DROP DATABASE IF EXISTS testns"

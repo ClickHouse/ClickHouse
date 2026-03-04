@@ -27,6 +27,7 @@ namespace DB
 {
 namespace ServerSetting
 {
+    extern const ServerSettingsString database_namespace_separator;
     extern const ServerSettingsUInt64 max_authentication_methods_per_user;
 }
 
@@ -266,9 +267,24 @@ BlockIO InterpreterCreateUserQuery::execute()
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
-    /// Validate namespace doesn't conflict with existing databases.
+    /// Reject setting a database namespace when the feature is not enabled.
     if (query.database_namespace && !query.database_namespace->database_name.empty())
-        getContext()->validateNamespaceAgainstExistingDatabases(query.database_namespace->database_name);
+    {
+        String separator = getContext()->getDatabaseNamespaceSeparator();
+        if (separator.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot set DATABASE NAMESPACE: the database namespace feature is not enabled. "
+                "Set the 'database_namespace_separator' server setting to enable it.");
+
+        /// Namespace value itself must not contain the separator.
+        const auto & ns = query.database_namespace->database_name;
+        if (ns.find(separator) != String::npos)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Database namespace '{}' cannot contain the separator '{}'",
+                ns, separator);
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
