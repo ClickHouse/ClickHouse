@@ -97,7 +97,9 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     && apt-get autoremove --purge -yq dirmngr gnupg2
 
 # Verify the installation.
-RUN clickhouse-local -q 'SELECT version()'
+# Use "clickhouse local" (not "clickhouse-local") because only clickhouse-common-static
+# is installed here — the clickhouse-local symlink is provided by clickhouse-server.
+RUN clickhouse local -q 'SELECT version()'
 
 ARG DEFAULT_DATA_DIR="/var/lib/clickhouse"
 ARG DEFAULT_LOG_DIR="/var/log/clickhouse-keeper"
