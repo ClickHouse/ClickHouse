@@ -31,7 +31,10 @@ cluster.add_instance(
         "configs/server.crt",
         "configs/server.key",
     ],
-    user_configs=["configs/default_passwd.xml"],
+    user_configs=[
+        "configs/default_passwd.xml",
+        "configs/sync_inserts.xml"
+    ],
     with_postgres=True,
     with_postgresql_java_client=True,
 )
@@ -46,7 +49,10 @@ cluster.add_instance(
         "configs/server.crt",
         "configs/server.key",
     ],
-    user_configs=["configs/default_passwd.xml"],
+    user_configs=[
+        "configs/default_passwd.xml",
+        "configs/sync_inserts.xml"
+    ],
     with_postgres=True,
     with_postgresql_java_client=True,
 )
