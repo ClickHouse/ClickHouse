@@ -53,6 +53,14 @@ ZOOKEEPER_SKIP_SCENARIO_IDS = frozenset({
 })
 
 
+def _scenario_base_id(scenario):
+    """Return base scenario id without matrix suffix (e.g. 'prod-mix-no-fault[zookeeper]' -> 'prod-mix-no-fault')."""
+    sid = (scenario.get("id") or "").strip()
+    if "[" in sid and sid.endswith("]"):
+        return sid.rsplit("[", 1)[0].strip()
+    return sid
+
+
 def _tail_file(path, max_lines=200):
     try:
         p = pathlib.Path(str(path))
@@ -783,8 +791,8 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     # Fault injection (kill, stop, etc.) targets ClickHouse Keeper processes and is not supported for ZooKeeper backend.
     if backend == "zookeeper" and fs_effective:
         pytest.skip("Fault injection not supported for ZooKeeper backend; use no-fault scenarios only")
-    if backend == "zookeeper" and scenario.get("id") in ZOOKEEPER_SKIP_SCENARIO_IDS:
-        pytest.skip(f"ZooKeeper backend: scenario {scenario.get('id')} is skipped (known incompatible or failing)")
+    if backend == "zookeeper" and _scenario_base_id(scenario) in ZOOKEEPER_SKIP_SCENARIO_IDS:
+        pytest.skip(f"ZooKeeper backend: scenario {_scenario_base_id(scenario)} is skipped (known incompatible or failing)")
     seed_val = request.config.getoption("--seed")
     print(f"[keeper] seed={int(seed_val)} faults={'enabled' if fs_effective else 'disabled'} (scenario={scenario.get('id')})")
 
