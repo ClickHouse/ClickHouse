@@ -79,6 +79,9 @@ public:
 
     size_t numberOfProcessingReplicas() const;
 
+    /// Return the pool of the first ready replica, or nullptr if none.
+    ConnectionPoolPtr getReplicaPool() const { return first_ready_replica_pool; }
+
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
@@ -161,6 +164,9 @@ private:
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
+
+    /// Pool of the first replica that became ready, for error tracking during retries.
+    ConnectionPoolPtr first_ready_replica_pool;
 };
 
 }

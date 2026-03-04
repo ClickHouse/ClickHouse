@@ -67,6 +67,8 @@ HedgedConnections::HedgedConnections(
     if (connections.empty())
         return;
 
+    replica_pool = hedged_connections_factory.getReplicaPool();
+
     offset_states.reserve(connections.size());
     for (size_t i = 0; i != connections.size(); ++i)
     {
