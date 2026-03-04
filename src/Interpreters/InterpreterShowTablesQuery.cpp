@@ -59,7 +59,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             /// Wrap in subquery so LIKE filters work on the stripped (virtual) name.
             /// Use a distinct alias `_db_name` to avoid predicate pushdown confusion
             /// with the inner `name` column, then rename back to `name` in the outer SELECT.
-            String prefix = ns + "__";
+            String separator = getContext()->getDatabaseNamespaceSeparator();
+            String prefix = ns + separator;
             rewritten_query
                 << "SELECT _db_name AS name FROM ("
                 << "SELECT if(startsWith(name, " << DB::quote << prefix
