@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -22,8 +23,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-
-#include <Common/SharedLockGuard.h>
 
 #include <Common/logger_useful.h>
 
@@ -124,23 +123,28 @@ namespace
 
 }
 
-ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle(FileContentType content_type) const
+const std::vector<ProcessedManifestFileEntryPtr> &
+ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
 {
-    if (!fully_initialized)
+    switch (content_type)
+    {
+        case FileContentType::DATA:
+            return *data_files;
+        case FileContentType::POSITION_DELETE:
+            return *position_delete_files;
+        case FileContentType::EQUALITY_DELETE:
+            return *equality_delete_files;
+    }
+    UNREACHABLE();
+}
+
+ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle() const
+{
+    if (!isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
-    const std::vector<ProcessedManifestFileEntryPtr> * ptr;
-    if (content_type == FileContentType::DATA)
-        ptr = &data_files_without_deleted;
-    else if (content_type == FileContentType::POSITION_DELETE)
-        ptr = &position_deletes_files_without_deleted;
-    else
-        ptr = &equality_deletes_files;
-    auto handle = ManifestFileEntriesHandle{ptr, SharedLockGuard<SharedMutex>(files_mutex, std::defer_lock)};
-    bool locked = handle.lock.tryLock();
-    if (!locked)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
-    return handle;
+    SharedLockGuard lock{files_mutex};
+    return ManifestFileEntriesHandle{data_files_without_deleted, position_deletes_files_without_deleted, equality_deletes_files};
 }
 
 using namespace DB;
@@ -440,15 +444,15 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             switch (entry->parsed_entry->content_type)
             {
                 case FileContentType::EQUALITY_DELETE: {
-                    this->equality_deletes_files.emplace_back(entry);
+                    equality_deletes_files->emplace_back(entry);
                     return entry;
                 }
                 case FileContentType::POSITION_DELETE: {
-                    this->position_deletes_files_without_deleted.emplace_back(entry);
+                    position_deletes_files_without_deleted->emplace_back(entry);
                     return entry;
                 }
                 case FileContentType::DATA: {
-                    this->data_files_without_deleted.emplace_back(entry);
+                    data_files_without_deleted->emplace_back(entry);
                     return entry;
                 }
             }
@@ -482,7 +486,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
 
 bool ManifestFileIterator::isInitialized() const
 {
-    return fully_initialized;
+    return fully_initialized && active_fetchers == 0;
 }
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::next()
@@ -492,6 +496,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
 
     while (true)
     {
+        active_fetchers.fetch_add(1);
+        SCOPE_EXIT(active_fetchers.fetch_sub(1););
         size_t row_index = current_row_index.fetch_add(1);
         if (row_index >= total_rows)
         {
@@ -518,8 +524,8 @@ const DB::KeyDescription & ManifestFileIterator::getPartitionKeyDescription() co
 
 bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
 {
-    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
-    for (const auto & file : *data_files_handle)
+    auto handle = getFilesWithoutDeletedHandle();
+    for (const auto & file : handle.getFilesWithoutDeleted(FileContentType::DATA))
     {
         // Treat missing sort_order_id as "not sorted by the expected order".
         // This can happen if:
@@ -530,40 +536,13 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
     }
     /// Empty manifest (no data files) is considered sorted by definition
     return true;
-
 }
-
-
-std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
-{
-    Int64 result = 0;
-
-    auto files_handle = getFilesWithoutDeletedHandle(content);
-    for (const auto & file : *files_handle)
-    {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
-}
-
 
 std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingDeleted() const
 {
     Int64 result = 0;
-    auto data_files_handle = getFilesWithoutDeletedHandle(FileContentType::DATA);
-    for (const auto & file : *data_files_handle)
+    auto handle = getFilesWithoutDeletedHandle();
+    for (const auto & file : handle.getFilesWithoutDeleted(FileContentType::DATA))
     {
         /// Have at least one column with bytes count
         bool found = false;

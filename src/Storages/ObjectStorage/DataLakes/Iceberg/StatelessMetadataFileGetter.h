@@ -34,7 +34,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
 /// Creates a fully initialized ManifestFileIterator from a cache key.
 /// All entries are drained so that aggregate methods (e.g. getRowsCountInAllFilesExcludingDeleted)
 /// can be called on the returned iterator.
-Iceberg::ManifestFilePtr getManifestFileAsIterator(
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,

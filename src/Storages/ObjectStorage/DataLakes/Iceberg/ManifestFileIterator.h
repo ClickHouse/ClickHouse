@@ -49,21 +49,83 @@ class ManifestFileIterator : public boost::noncopyable
 public:
     struct ManifestFileEntriesHandle
     {
-        friend class ManifestFileIterator;
-        const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted() const { return *files; }
+        using FilesPtr = std::shared_ptr<const std::vector<ProcessedManifestFileEntryPtr>>;
 
-        ManifestFileEntriesHandle(const std::vector<ProcessedManifestFileEntryPtr> * files_, SharedLockGuard<SharedMutex> && shared_lock_)
-            : files(files_)
-            , lock(std::move(shared_lock_))
+        const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
+
+        bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
+        {
+            for (const auto & file : *data_files)
+            {
+                // Treat missing sort_order_id as "not sorted by the expected order".
+                // This can happen if:
+                // 1. The field is not present in older Iceberg format versions.
+                // 2. The data file was written without sort order information.
+                if (!file->parsed_entry->sort_order_id.has_value() || (*file->parsed_entry->sort_order_id != sort_order_id))
+                    return false;
+            }
+            /// Empty manifest (no data files) is considered sorted by definition
+            return true;
+        }
+
+        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+        {
+            Int64 result = 0;
+            for (const auto & file : getFilesWithoutDeleted(content))
+            {
+                /// Have at least one column with rows count
+                bool found = false;
+                for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+                {
+                    if (column_info.rows_count.has_value())
+                    {
+                        result += *column_info.rows_count;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    return std::nullopt;
+            }
+            return result;
+        }
+
+        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const
+        {
+            size_t result = 0;
+            for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
+            {
+                /// Have at least one column with bytes count
+                bool found = false;
+                for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+                {
+                    if (column_info.bytes_size.has_value())
+                    {
+                        result += *column_info.bytes_size;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                    return std::nullopt;
+            }
+            return result;
+        }
+
+    private:
+        friend class ManifestFileIterator;
+
+        ManifestFileEntriesHandle(FilesPtr data_files_, FilesPtr position_delete_files_, FilesPtr equality_delete_files_)
+            : data_files(std::move(data_files_))
+            , position_delete_files(std::move(position_delete_files_))
+            , equality_delete_files(std::move(equality_delete_files_))
         {
         }
 
-        const std::vector<ProcessedManifestFileEntryPtr> & operator*() const { return getFilesWithoutDeleted(); }
-        const std::vector<ProcessedManifestFileEntryPtr> * operator->() const { return files; }
-
-    private:
-        const std::vector<ProcessedManifestFileEntryPtr> * files;
-        SharedLockGuard<SharedMutex> lock;
+        FilesPtr data_files;
+        FilesPtr position_delete_files;
+        FilesPtr equality_delete_files;
     };
 
     static std::shared_ptr<ManifestFileIterator> create(
@@ -80,7 +142,7 @@ public:
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
 
-    ManifestFileEntriesHandle getFilesWithoutDeletedHandle(FileContentType content_type) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+    ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -145,12 +207,13 @@ private:
     const size_t total_rows;
     std::atomic<size_t> current_row_index{0};
     std::atomic<bool> fully_initialized{false};
+    std::atomic<size_t> active_fetchers{0};
 
     /// Cached results accumulated during iteration
     mutable SharedMutex files_mutex;
-    std::vector<ProcessedManifestFileEntryPtr> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
-    std::vector<ProcessedManifestFileEntryPtr> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
-    std::vector<ProcessedManifestFileEntryPtr> equality_deletes_files TSA_GUARDED_BY(files_mutex);
+    std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
+    std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> equality_deletes_files TSA_GUARDED_BY(files_mutex);
 
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
@@ -162,8 +225,7 @@ private:
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
 };
 
-using ManifestFilePtr = std::shared_ptr<ManifestFileIterator>;
-
+using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;
 }
 
 #endif

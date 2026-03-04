@@ -783,15 +783,10 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_iterator = getManifestFileAsIterator(
-            object_storage,
-            persistent_components,
-            context,
-            log,
-            manifest_list_entry,
-            table_state_snapshot->schema_id);
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
 
-        if (!manifest_file_iterator->areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+        if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
     }
     return true;
@@ -819,15 +814,10 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFileAsIterator(
-            object_storage,
-            persistent_components,
-            local_context,
-            log,
-            manifest_list_entry,
-            actual_table_state_snapshot.schema_id);
-        auto data_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr->getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
         if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
@@ -853,14 +843,9 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
-        auto manifest_file_ptr = getManifestFileAsIterator(
-            object_storage,
-            persistent_components,
-            local_context,
-            log,
-            manifest_list_entry,
-            actual_table_state_snapshot.schema_id);
-        auto count = manifest_file_ptr->getBytesCountInAllDataFilesExcludingDeleted();
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+        auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
 

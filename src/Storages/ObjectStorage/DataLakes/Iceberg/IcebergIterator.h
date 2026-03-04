@@ -57,7 +57,7 @@ private:
     LoggerPtr log;
 
     size_t manifest_file_index = 0;
-    Iceberg::ManifestFilePtr current_manifest_file_iterator;
+    Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
 };

@@ -102,7 +102,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     return create_fn();
 }
 
-Iceberg::ManifestFilePtr getManifestFileAsIterator(
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
@@ -136,7 +136,7 @@ Iceberg::ManifestFilePtr getManifestFileAsIterator(
     {
     }
 
-    return iterator;
+    return iterator->getFilesWithoutDeletedHandle();
 }
 
 ManifestFileCacheKeys getManifestList(
