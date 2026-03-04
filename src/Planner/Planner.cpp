@@ -145,7 +145,6 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool ordered_group_by_limit_pushdown;
 }
 
 namespace ServerSetting
@@ -611,65 +610,11 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
-bool testForAggregationLimitPushdownOptimization(PlannerExpressionsAnalysisResult & expression_analysis_result,
-    const QueryAnalysisResult & query_analysis_result,
-    const QueryNode & query_node)
-{
-    auto aggregation_analysis_result = expression_analysis_result.getAggregation();
-
-    if (expression_analysis_result.hasHaving())
-        return false;
-
-    if (query_node.isGroupByWithCube() || query_node.isGroupByWithRollup() || query_node.isGroupByWithTotals()
-        || query_node.isGroupByWithGroupingSets())
-        return false;
-
-    if (query_node.hasLimitBy())
-        return false;
-
-    /// The optimization cannot be applied for non-final aggregation (e.g. distributed queries
-    /// or parallel replicas) because each shard/replica would independently keep only its top-N
-    /// keys and the merge step would produce wrong results.
-    if (!query_analysis_result.aggregate_final)
-        return false;
-
-    if (aggregation_analysis_result.aggregation_keys.empty())
-        return false;
-
-    /// Currently only single-column GROUP BY is supported because the heap
-    /// compares keys as single Field values. Multi-column composite keys
-    /// would need lexicographic comparison which is not implemented yet.
-    if (aggregation_analysis_result.aggregation_keys.size() != 1)
-        return false;
-
-    SortDescription sort_description_for_group_by_limit_pushdown = query_analysis_result.sort_description;
-
-    // TODO support GROUP BY y, z ORDER BY y
-    if (sort_description_for_group_by_limit_pushdown.size() != aggregation_analysis_result.aggregation_keys.size())
-        return false;
-
-    for (size_t i = 0; i < sort_description_for_group_by_limit_pushdown.size(); ++i)
-    {
-        if (sort_description_for_group_by_limit_pushdown[i].column_name != aggregation_analysis_result.aggregation_keys[i])
-            return false;
-
-        /// Currently only ascending sort order is supported.
-        if (sort_description_for_group_by_limit_pushdown[i].direction != 1)
-            return false;
-    }
-
-    if (query_analysis_result.limit_length < 1)
-        return false;
-
-    return true;
-}
-
 void addAggregationStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info,
-    const QueryNode & query_node)
+    const SelectQueryInfo & select_query_info)
 {
     auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
@@ -677,18 +622,6 @@ void addAggregationStep(QueryPlan & query_plan,
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
-
-    {
-        auto applicable = testForAggregationLimitPushdownOptimization(expression_analysis_result, query_analysis_result, query_node);
-        LOG_DEBUG(getLogger("Planner"), "GROUP BY ... ORDER BY ... LIMIT optimization can be applied: {}", applicable);
-
-        if (applicable && settings[Setting::ordered_group_by_limit_pushdown] && !settings[Setting::exact_rows_before_limit])
-        {
-            aggregator_params.top_n_keys = query_analysis_result.limit_length + query_analysis_result.limit_offset;
-            if (query_analysis_result.sort_description[0].collator)
-                aggregator_params.top_n_keys_collator = query_analysis_result.sort_description[0].collator.get();
-        }
-    }
 
     if (settings[Setting::force_aggregation_in_order])
     {
@@ -2000,7 +1933,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
+            addAggregationStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage

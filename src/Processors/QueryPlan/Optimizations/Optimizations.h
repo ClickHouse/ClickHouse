@@ -47,6 +47,8 @@ struct Optimization
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
 
+        bool ordered_group_by_limit_pushdown;
+
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
     };
@@ -137,9 +139,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Push LIMIT into GROUP BY via bounded heap when ORDER BY matches GROUP BY keys
+size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -158,6 +163,7 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
+        {tryOptimizeGroupByLimitPushdown, "tryOptimizeGroupByLimitPushdown", &QueryPlanOptimizationSettings::ordered_group_by_limit_pushdown},
     }};
 
     return optimizations;

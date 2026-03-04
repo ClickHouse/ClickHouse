@@ -169,6 +169,12 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
+void AggregatingStep::applyLimitPushdown(size_t top_n, const Collator * collator)
+{
+    params.top_n_keys = top_n;
+    params.top_n_keys_collator = collator;
+}
+
 const SortDescription & AggregatingStep::getSortDescription() const
 {
     if (memoryBoundMergingWillBeUsed())
