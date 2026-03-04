@@ -54,11 +54,11 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr relative_url_column = arguments[0].column;
-        // Both arguments can be constants, so there could be four separate implementations 
+        // Both arguments can be constants, so there could be four separate implementations
         // if we want to optimize the constants cases whenever possible. For now, just keep
         // it simple (with default implementations for constants set to true).
         relative_url_column = relative_url_column->convertToFullColumnIfConst();
-        
+
         ColumnPtr base_url_column = arguments[1].column;
         base_url_column = base_url_column->convertToFullColumnIfConst();
 
@@ -101,7 +101,7 @@ public:
         ColumnString::Offset relative_url_prev_offset = 0;
         ColumnString::Offset base_url_prev_offset = 0;
         ColumnString::Offset res_offset = 0;
-    
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset relative_url_offset = relative_url_offsets[i];
@@ -111,24 +111,24 @@ public:
             const char * relative_url_end = reinterpret_cast<const char *>(&relative_url_data[relative_url_offset]);
 
             const char * base_url_begin = reinterpret_cast<const char *>(&base_url_data[base_url_prev_offset]);
-            const char * base_url_end = reinterpret_cast<const char *>(&base_url_data[base_url_offset]);    
+            const char * base_url_end = reinterpret_cast<const char *>(&base_url_data[base_url_offset]);
 
             size_t res_url_len = 0;
             resolveURL(relative_url_begin, relative_url_end, base_url_begin, base_url_end,
                 res_data, res_offset, res_url_len);
-            
+
             res_offset += res_url_len;
             res_offsets[i] = res_offset;
 
             relative_url_prev_offset = relative_url_offset;
             base_url_prev_offset = base_url_offset;
-        }            
+        }
     }
 
     /// Helper to remove "." and ".." segments from a path (RFC 3986 Section 5.2.4)
     static std::string removeDotSegements(std::string_view path) {
         if (path.empty()) return "";
-        
+
         std::string result;
         size_t i = 0;
         while (i < path.size()) {
