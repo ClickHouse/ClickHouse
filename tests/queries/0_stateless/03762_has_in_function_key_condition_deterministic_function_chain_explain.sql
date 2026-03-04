@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 -- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
