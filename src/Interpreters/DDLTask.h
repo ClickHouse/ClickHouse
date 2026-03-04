@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
@@ -31,6 +32,7 @@ class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 using ClusterPtr = std::shared_ptr<Cluster>;
 class DatabaseReplicated;
+class DDLReplicator;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
@@ -176,15 +178,23 @@ private:
     size_t host_replica_num = 0;
 };
 
-struct DatabaseReplicatedTask : public DDLTaskBase
+struct DDLReplicateTask : public DDLTaskBase
 {
-    DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
+    DDLReplicateTask(const String & name, const String & path, DDLReplicator * replicator);
 
     String getShardID() const override;
-    void parseQueryFromEntry(ContextPtr context) override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
+
+    DDLReplicator * replicator;
+};
+
+struct DatabaseReplicatedTask : public DDLReplicateTask
+{
+    DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_);
+    ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    void parseQueryFromEntry(ContextPtr context) override;
 
     DatabaseReplicated * database;
 };

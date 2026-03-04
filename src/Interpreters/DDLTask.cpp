@@ -14,6 +14,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLReplicator.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -626,45 +627,32 @@ bool DDLTask::isSelfHostname(
     }
 }
 
-DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
+DDLReplicateTask::DDLReplicateTask(const String & name, const String & path, DDLReplicator * replicator_)
     : DDLTaskBase(name, path)
-    , database(database_)
+    , replicator(replicator_)
 {
-    host_id_str = database->getFullReplicaName();
+    host_id_str = replicator->getFullReplicaName();
 }
 
-String DatabaseReplicatedTask::getShardID() const
+String DDLReplicateTask::getShardID() const
 {
-    return database->shard_name;
+    return replicator->shard_name;
 }
 
-void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
-{
-    DDLTaskBase::parseQueryFromEntry(context);
-    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
-    {
-        /// Update database name with actual name of local database
-        chassert(!ddl_query->database);
-        ddl_query->setDatabase(database->getDatabaseName());
-    }
-    formatRewrittenQuery(context);
-}
-
-ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+ContextMutablePtr DDLReplicateTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     query_context->setQueryKindReplicatedDatabaseInternal();
-    query_context->setCurrentDatabase(database->getDatabaseName());
 
-    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
+    auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicator->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
 
     if (is_initial_query)
     {
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
-        txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+        txn->addOp(zkutil::makeSetRequest(replicator->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
         /// Make sure that we did not disable replicated DDL queries
         const auto & macros = from_context->getMacros();
@@ -690,12 +678,12 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     return query_context;
 }
 
-Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
+Coordination::RequestPtr DDLReplicateTask::getOpToUpdateLogPointer()
 {
-    return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
+    return zkutil::makeSetRequest(replicator->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
-void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+void DDLReplicateTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
 {
     assert(!completely_processed);
     if (!entry.settings)
@@ -711,6 +699,31 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
         return;
 
     zookeeper->createIfNotExists(getSyncedNodePath(), "");
+}
+
+DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
+    : DDLReplicateTask(name, path, database_)
+    , database(database_)
+{
+}
+
+void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
+{
+    DDLReplicateTask::parseQueryFromEntry(context);
+    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
+    {
+        /// Update database name with actual name of local database
+        chassert(!ddl_query->database);
+        ddl_query->setDatabase(database->getDatabaseName());
+    }
+    formatRewrittenQuery(context);
+}
+
+ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+{
+    auto query_context = DDLReplicateTask::makeQueryContext(from_context, zookeeper);
+    query_context->setCurrentDatabase(database->getDatabaseName());
+    return query_context;
 }
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
