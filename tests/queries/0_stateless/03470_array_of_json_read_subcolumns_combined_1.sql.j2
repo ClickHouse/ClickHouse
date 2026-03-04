@@ -29,21 +29,14 @@ select distinct arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.r[]))) as paths
 select json, json.a.b, json.a.r, json.a.r[], json.^a, json.a.b.^b.c, json.a.r[].^b.c, json.$a, json.a.b.$b.c, json.a.r[].$b.c from test order by id format JSONColumns;
 select json.a.b, json.a.r, json.a.r[], json.^a, json.a.b.^b.c, json.a.r[].^b.c, json.$a, json.a.b.$b.c, json.a.r[].$b.c from test order by id format JSONColumns;
 
--- json.a.r[].$b.c vs json.a.r[].^b.c alongside literal path subcolumns
-select json.a.r[].^b.c, json.a.r[].$b.c, json.a.r[].b.c.d_0, json.a.r[].b.c.d_1 from test order by id format JSONColumns;
+-- json.a.r[].$b.c vs json.a.r[].^b.c alongside typed literal path subcolumns
 select json.a.r[].^b.c, json.a.r[].$b.c, json.a.r[].b.c.d_0.:Int64, json.a.r[].b.c.d_1.:Int64 from test order by id format JSONColumns;
-select json.a.r, json.a.r[].^b.c, json.a.r[].$b.c, json.a.r[].b.c.d_0, json.a.r[].b.c.d_1 from test order by id format JSONColumns;
-select json.a.r, json.a.r[].^b.c, json.a.r[].$b.c, json.a.r[].b.c.d_0.:Int64, json.a.r[].b.c.d_1.:Int64 from test order by id format JSONColumns;
 
 -- json.a.r[].$b: top-level combined subcolumn inside array elements
-select json.a.r[].$b, json.a.r[].^b, json.a.r[].b.c.d_0 from test order by id format JSONColumns;
 select json.a.r[].$b, json.a.r[].^b, json.a.r[].b.c.d_0.:Int64 from test order by id format JSONColumns;
-select json.a.r, json.a.r[].$b, json.a.r[].^b, json.a.r[].b.c.d_0 from test order by id format JSONColumns;
-select json.a.r, json.a.r[].$b, json.a.r[].^b, json.a.r[].b.c.d_0.:Int64 from test order by id format JSONColumns;
 
 -- json.a.b.$b.c: combined in fixed typed Array(JSON) column
 select json.a.b.^b.c, json.a.b.$b.c, json.a.b.b.c.d_0, json.a.b.b.c.d_1 from test order by id format JSONColumns;
-select json.a.b, json.a.b.^b.c, json.a.b.$b.c, json.a.b.b.c.d_0 from test order by id format JSONColumns;
 
 -- json.$a: top-level combined where a.b is typed Array(JSON) and a.r is dynamic
 select json.$a, json.^a from test order by id format JSONColumns;

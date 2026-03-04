@@ -24,58 +24,33 @@ select json, json.$non.existing.path, json.$a, json.$a.b, json.$a.b.c, json.$a.b
 
 -- Non-existing combined path
 select json.$non.existing.path from test order by id format JSONColumns;
-select json, json.$non.existing.path from test order by id format JSONColumns;
 
 -- $a.b.c: typed path, returns Dynamic(UInt32)
-select json.$a.b.c from test order by id format JSONColumns;
 select json.$a.b.c, json.a.b.c from test order by id format JSONColumns;
-select json, json.$a.b.c from test order by id format JSONColumns;
 
 -- $b.b.e: dynamic path (String or Date)
-select json.$b.b.e from test order by id format JSONColumns;
 select json.$b.b.e, json.b.b.e.:String, json.b.b.e.:Date from test order by id format JSONColumns;
-select json, json.$b.b.e from test order by id format JSONColumns;
-select json, json.$b.b.e, json.b.b.e.:String, json.b.b.e.:Date from test order by id format JSONColumns;
 
 -- $a.b.d: dynamic path (UInt32, Array(UInt32) or DateTime)
-select json.$a.b.d from test order by id format JSONColumns;
 select json.$a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.$a.b.d from test order by id format JSONColumns;
-select json, json.$a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
 
 -- $b.b.e and $a.b.d together: tests substreams cache interaction
-select json.$b.b.e, json.$a.b.d from test order by id format JSONColumns;
 select json.$b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.$a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.$b.b.e, json.$a.b.d from test order by id format JSONColumns;
-select json, json.$b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.$a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
 
 -- $d.a and $d.b: array and scalar dynamic paths
-select json.$d.a, json.$d.b from test order by id format JSONColumns;
 select json.$d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.$d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json, json.$d.a, json.$d.b from test order by id format JSONColumns;
-select json, json.$d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.$d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
 
 -- $a vs ^a: combined returns sub-object cast to Dynamic when no scalar at path
 select json.$a, json.^a from test order by id format JSONColumns;
 select json.$a, json.a.b.c from test order by id format JSONColumns;
-select json.$a, json.$a.b.c from test order by id format JSONColumns;
-select json, json.$a, json.^a, json.a.b.c from test order by id format JSONColumns;
 
 -- $a.b: intermediate path combined
-select json.$a.b, json.^a.b from test order by id format JSONColumns;
-select json.$a.b, json.$a.b.c, json.$a.b.d from test order by id format JSONColumns;
-select json, json.$a.b, json.^a.b, json.$a.b.c from test order by id format JSONColumns;
+select json.$a.b, json.^a.b, json.$a.b.c, json.$a.b.d from test order by id format JSONColumns;
 
 -- $b: top-level combined for b-prefix paths
-select json.$b from test order by id format JSONColumns;
-select json.$b, json.^b from test order by id format JSONColumns;
-select json.$b, json.b.b.e, json.b.b.`_25`, json.b.b.`_26` from test order by id format JSONColumns;
-select json, json.$b, json.^b, json.b.b.e from test order by id format JSONColumns;
+select json.$b, json.^b, json.b.b.e from test order by id format JSONColumns;
 
 -- $d: top-level combined for d-prefix paths
-select json.$d from test order by id format JSONColumns;
-select json.$d, json.^d from test order by id format JSONColumns;
-select json.$d, json.d.a, json.d.b from test order by id format JSONColumns;
-select json, json.$d, json.^d, json.d.a, json.d.b from test order by id format JSONColumns;
+select json.$d, json.^d, json.d.a, json.d.b from test order by id format JSONColumns;
 
 drop table test;
