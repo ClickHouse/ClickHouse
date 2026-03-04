@@ -15,7 +15,8 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
+repo_dir = Utils.cwd()
+temp_dir = f"{repo_dir}/ci/tmp"
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -805,7 +806,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def _collect_core_dumps(self) -> List[str]:
         return [
-            Utils.encode(Utils.compress_zst(f))
+            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/defs/public.pem")
             for f in Path(temp_dir).glob("run_r*/core.*")
         ]
 

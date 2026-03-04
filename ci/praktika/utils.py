@@ -788,7 +788,7 @@ class Utils:
     AES_KEY_RSA = f"{AES_KEY}.rsa"
 
     @classmethod
-    def encode(cls, path: str) -> str:
+    def encrypt(cls, path: str) -> str:
         if not Path(Utils.AES_KEY_RSA).exists():
             Shell.run(f"""
 cat <<EOF >public.pem
