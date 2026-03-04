@@ -57,23 +57,23 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 The following source types (`SOURCE_TYPE`/`source_type`) are available:
 
-- [Local file](./local-file)
-- [Executable File](./executable-file)
-- [Executable Pool](./executable-pool)
-- [HTTP(S)](./http)
+- [Local file](./local-file.md)
+- [Executable File](./executable-file.md)
+- [Executable Pool](./executable-pool.md)
+- [HTTP(S)](./http.md)
 - DBMS
-  - [ODBC](./odbc)
-  - [MySQL](./mysql)
-  - [ClickHouse](./clickhouse)
-  - [MongoDB](./mongodb)
-  - [Redis](./redis)
-  - [Cassandra](./cassandra)
-  - [PostgreSQL](./postgresql)
-  - [YTsaurus](./ytsaurus)
+  - [ODBC](./odbc.md)
+  - [MySQL](./mysql.md)
+  - [ClickHouse](./clickhouse.md)
+  - [MongoDB](./mongodb.md)
+  - [Redis](./redis.md)
+  - [Cassandra](./cassandra.md)
+  - [PostgreSQL](./postgresql.md)
+  - [YTsaurus](./ytsaurus.md)
 - [YAMLRegExpTree](./yamlregexptree.md)
-- [Null](./null)
+- [Null](./null.md)
 
-For source types [Local file](./local-file), [Executable file](./executable-file), [HTTP(s)](./http), [ClickHouse](./clickhouse)
+For source types [Local file](./local-file.md), [Executable file](./executable-file.md), [HTTP(s)](./http.md), [ClickHouse](./clickhouse.md)
 optional settings are available:
 
 <Tabs>

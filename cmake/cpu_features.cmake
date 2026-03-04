@@ -1,59 +1,11 @@
 # https://software.intel.com/sites/landingpage/IntrinsicsGuide/
 
-# The variables HAVE_* determine if compiler has support for the flag to use the corresponding instruction set.
-# The options ENABLE_* determine if we will tell compiler to actually use the corresponding instruction set if compiler can do it.
-
-# All of them are unrelated to the instruction set at the host machine
-# (you can compile for newer instruction set on old machines and vice versa).
-
-option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
+# On x86-64, the build target is specified as a microarchitecture level (1, 2, 3, 4) via `X86_ARCH_LEVEL`.
+# All of this is unrelated to the instruction set of the host machine
+# (you can compile for a newer instruction set on old machines and vice versa).
 
 set(RUSTFLAGS_CPU)
-if (ARCH_NATIVE)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
-    list(APPEND RUSTFLAGS_CPU "-C" "target-feature=native")
-
-    macro(GET_CPU_FEATURES TEST_FEATURE_RESULT)
-       execute_process(
-            COMMAND sh -c "clang -E - -march=native -###"
-            INPUT_FILE /dev/null
-            OUTPUT_QUIET
-            ERROR_VARIABLE ${TEST_FEATURE_RESULT})
-    endmacro()
-
-    macro(TEST_CPU_FEATURE TEST_FEATURE_RESULT feat flag)
-        if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
-            set(${flag} ON)
-        else ()
-            set(${flag} OFF)
-        endif ()
-    endmacro()
-
-    # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
-    # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
-    # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
-    # according to the current CPU's capabilities, detected using clang.
-    if (ARCH_AMD64)
-        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
-
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
-    elseif (ARCH_AARCH64)
-        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
-    endif ()
-
-elseif (ARCH_AARCH64)
+if (ARCH_AARCH64)
     # ARM publishes almost every year a new revision of it's ISA [1]. Each version comes with new mandatory and optional features from
     # which CPU vendors can pick and choose. This creates a lot of variability ... We provide two build "profiles", one for maximum
     # compatibility intended to run on all 64-bit ARM hardware released after 2013 (e.g. Raspberry Pi 4), and one for modern ARM server
@@ -132,112 +84,40 @@ elseif (ARCH_PPC64LE)
     endif ()
 
 elseif (ARCH_AMD64)
-    option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
-    option (ENABLE_SSE41 "Use SSE4.1 instructions on x86_64" 1)
-    option (ENABLE_SSE42 "Use SSE4.2 instructions on x86_64" 1)
-    option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
-    option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
-    option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
-    option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
-    option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
-    option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
-    option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
-    option (ENABLE_BMI2 "Use BMI2 instructions on x86_64 (depends on ENABLE_AVX2)" 0)
-    option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
-    option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
+    # x86-64 microarchitecture levels (https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels):
+    #   1 — SSE2 baseline, maximum compatibility with older/embedded hardware
+    #   2 — SSE4.2, SSSE3, POPCNT (default, matches ClickHouse's historical baseline)
+    #   3 — AVX2, BMI1/2, FMA, F16C etc.
+    #   4 — AVX-512F/BW/CD/DQ/VL
+    set (X86_ARCH_LEVEL "2" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
+    set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
-    option (NO_SSE3_OR_HIGHER "Disable SSE3 or higher on x86_64 for maximum compatibility with older/embedded hardware." 0)
-    if (NO_SSE3_OR_HIGHER)
-        SET(ENABLE_SSSE3 0)
-        SET(ENABLE_SSE41 0)
-        SET(ENABLE_SSE42 0)
-        SET(ENABLE_PCLMULQDQ 0)
-        SET(ENABLE_POPCNT 0)
-        SET(ENABLE_AVX 0)
-        SET(ENABLE_AVX2 0)
-        SET(ENABLE_AVX512 0)
-        SET(ENABLE_AVX512_VBMI 0)
-        SET(ENABLE_BMI 0)
-        SET(ENABLE_BMI2 0)
-        SET(ENABLE_AVX2_FOR_SPEC_OP 0)
-        SET(ENABLE_AVX512_FOR_SPEC_OP 0)
-    endif()
+    if (NOT X86_ARCH_LEVEL MATCHES "^[1-4]$")
+        message (FATAL_ERROR "X86_ARCH_LEVEL must be one of: 1, 2, 3, 4 (got '${X86_ARCH_LEVEL}')")
+    endif ()
 
     # Same best-effort check for x86 as above for ARM.
-    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND NOT NO_SSE3_OR_HIGHER)
-        # Test for flags in standard profile but not in NO_SSE3_OR_HIGHER profile.
-        # /proc/cpuid for Intel Xeon 8124: "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse
-        # sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon rep_good nopl xtopology nonstop_tsc cpuid aperfmperf
-        # tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c
-        # rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single pti fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx
-        # avx512f avx512dq rdseed adx smap clflushopt clwb avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves ida arat pku ospke""
+    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
+        # Test for flags in the default v2 profile.
         execute_process(
             COMMAND grep -P "^(?=.*ssse3)(?=.*sse4_1)(?=.*sse4_2)" /proc/cpuinfo
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
-            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_SSE3_OR_HIGHER=1")
+            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DX86_ARCH_LEVEL=1")
         endif()
     endif()
 
     # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
     # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
 
-    if (ENABLE_SSSE3)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mssse3")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+ssse3")
-    endif ()
+    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=x86-64-v${X86_ARCH_LEVEL}")
+        list (APPEND RUSTFLAGS_CPU "-C" "target-cpu=x86-64-v${X86_ARCH_LEVEL}")
 
-    if (ENABLE_SSE41)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.1")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+sse4.1")
-    endif ()
-
-    if (ENABLE_SSE42)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.2")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+sse4.2")
-    endif ()
-
-    if (ENABLE_PCLMULQDQ)
+        # PCLMULQDQ is not formally part of any psABI microarchitecture level but ClickHouse's baseline has always included it and
+        # third-party dependencies (zlib-ng, RocksDB) rely on it. All CPUs that support x86-64-v2 also support PCLMULQDQ.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+pclmulqdq")
-    endif ()
-
-    if (ENABLE_BMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi1")
-    endif ()
-
-    if (ENABLE_POPCNT)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpopcnt")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+popcnt")
-    endif ()
-
-    if (ENABLE_AVX)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx")
-    endif ()
-
-    if (ENABLE_AVX2)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx2")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx2")
-        if (ENABLE_BMI2)
-            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi2")
-            list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi2")
-        endif ()
-    endif ()
-
-    if (ENABLE_AVX512)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512f -mavx512bw -mavx512vl")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx512f,+avx512bw,+avx512vl")
-        if (ENABLE_AVX512_VBMI)
-            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512vbmi")
-            list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx512vbmi")
-        endif ()
-    endif ()
-
-    if (ENABLE_AVX512_FOR_SPEC_OP)
-        set (X86_INTRINSICS_FLAGS "-mbmi -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi1,+avx512f,+avx512bw,+avx512vl,+prefer-256-bit")
+        list (APPEND RUSTFLAGS_CPU "-C" "target-feature=+pclmulqdq")
     endif ()
 
 else ()

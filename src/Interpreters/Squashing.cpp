@@ -86,6 +86,7 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkI
         LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
             data.chunk.getChunkInfos().get<DeduplicationInfo>() ? data.chunk.getChunkInfos().get<DeduplicationInfo>()->debug() : "null");
         result_info.mergeWith(std::move(data.chunk.getChunkInfos()));
+        data.chunk.setChunkInfos({});
     }
     LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
     infos.get<DeduplicationInfo>() ? infos.get<DeduplicationInfo>()->debug() : "null");
@@ -331,9 +332,17 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
 
     for (size_t col_ind = 0; col_ind != num_columns; ++col_ind)
     {
+        /// Materialize ColumnConst before concatenation, because ColumnConst::insertRangeFrom
+        /// ignores the source value and just increments the row count
+        if (isColumnConst(*mutable_columns[col_ind]))
+        {
+            mutable_columns[col_ind] = IColumn::mutate(mutable_columns[col_ind]->convertToFullColumnIfConst());
+            for (auto & column : source_columns_list[col_ind])
+                column = column->convertToFullColumnIfConst();
+        }
         if (!have_same_serialization[col_ind])
         {
-            mutable_columns[col_ind] = removeSpecialRepresentations(mutable_columns[col_ind]->convertToFullColumnIfConst())->assumeMutable();
+            mutable_columns[col_ind] = IColumn::mutate(removeSpecialRepresentations(mutable_columns[col_ind]->convertToFullColumnIfConst()));
             for (auto & column : source_columns_list[col_ind])
                 column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
         }

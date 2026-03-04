@@ -19,8 +19,11 @@ TEST(VersionNumber, fromString)
     EXPECT_EQ(VersionNumber("1.1.1"), VersionNumber(1, 1, 1));
     EXPECT_EQ(VersionNumber("5.5.13prefix"), VersionNumber(5, 5, 13));
 
-    EXPECT_GT(VersionNumber("1.1.1.1"), VersionNumber(1, 1, 1));
-    EXPECT_LT(VersionNumber("1.1"), VersionNumber(1, 1, 0));
-    EXPECT_LT(VersionNumber("1"), VersionNumber(1, 0, 0));
-    EXPECT_LT(VersionNumber(""), VersionNumber(0, 0, 0));
+    /// Fewer than 3 components: missing ones default to 0.
+    EXPECT_EQ(VersionNumber("1.1"), VersionNumber(1, 1, 0));
+    EXPECT_EQ(VersionNumber("1"), VersionNumber(1, 0, 0));
+    EXPECT_EQ(VersionNumber(""), VersionNumber(0, 0, 0));
+
+    /// Extra components beyond patch are ignored.
+    EXPECT_EQ(VersionNumber("1.1.1.1"), VersionNumber(1, 1, 1));
 }

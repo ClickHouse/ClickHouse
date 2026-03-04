@@ -34,7 +34,7 @@ public:
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
         CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
+        CLEAR_TEXT_INDEX_TOKENS_CACHE,
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
@@ -106,6 +106,8 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        ALLOCATE_MEMORY,
+        FREE_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -157,6 +159,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -164,6 +168,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 

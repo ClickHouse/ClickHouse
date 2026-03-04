@@ -27,7 +27,7 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 | [range_hashed](./range-hashed.md) | Hash table with ordered ranges. Supports lookups by key + date/time range. |
 | [complex_key_range_hashed](./range-hashed.md#complex_key_range_hashed) | Like `range_hashed`, for composite keys. |
 | [cache](./cache.md) | Fixed-size in-memory cache. Only frequently accessed keys are stored. |
-| [complex_key_cache](./complex-key-cache.md) | Like `cache`, for composite keys. |
+| [complex_key_cache](/sql-reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) | Like `cache`, for composite keys. |
 | [ssd_cache](./ssd-cache.md) | Like `cache`, but stores data on SSD with an in-memory index. |
 | [complex_key_ssd_cache](./ssd-cache.md#complex_key_ssd_cache) | Like `ssd_cache`, for composite keys. |
 | [direct](./direct.md) | No in-memory storage — queries the source directly for each request. |
@@ -76,11 +76,11 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 </Tabs>
 <br/>
 
-See also [CREATE DICTIONARY](../index.md) for the full DDL syntax.
+See also [CREATE DICTIONARY](../overview.md) for the full DDL syntax.
 
-Dictionaries without word `complex-key*` in a layout have a key with [UInt64](../../../data-types/int-uint.md) type, `complex-key*` dictionaries have a composite key (complex, with arbitrary types).
+Dictionaries without word `complex-key*` in a layout have a key with [UInt64](/sql-reference/data-types/int-uint.md) type, `complex-key*` dictionaries have a composite key (complex, with arbitrary types).
 
-**Numeric key example** (column key_column has [UInt64](../../../data-types/int-uint.md) type):
+**Numeric key example** (column key_column has [UInt64](/sql-reference/data-types/int-uint.md) type):
 
 <Tabs>
 <TabItem value="ddl" label="DDL" default>
@@ -109,7 +109,7 @@ PRIMARY KEY key_column
 </Tabs>
 <br/>
 
-**Composite key example** (key has one element with [String](../../../data-types/string.md) type):
+**Composite key example** (key has one element with [String](/sql-reference/data-types/string.md) type):
 
 <Tabs>
 <TabItem value="ddl" label="DDL" default>
@@ -155,4 +155,4 @@ Examples of errors can be:
 - The dictionary being accessed could not be loaded.
 - Error querying a `cached` dictionary.
 
-You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../../operations/system-tables/dictionaries.md) table.
+You can view the list of dictionaries and their statuses in the [system.dictionaries](/operations/system-tables/dictionaries.md) table.

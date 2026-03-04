@@ -41,3 +41,17 @@
 --- PREWHERE before FINAL
 1
 2
+
+--- filter before FINAL
+1	aaa	1
+2	bbb	1
+--- deferred
+2	bbb	1
+
+= WHERE + FINAL must not prune partitions with non-sorting-key partition columns =
+--- FINAL WHERE y != ccc (should see deduplication winners, then filter)
+2	ddd	2
+
+= PARTITION BY sorting-key column is still prunable =
+--- FINAL WHERE x != 1 (partition pruning is safe here)
+2	bbb	1
