@@ -1135,20 +1135,8 @@ bool applyFunctionChainToColumn(
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
 
-        /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
-        /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
-        if (isDate(result_type_inner))
-        {
-            if (result_column->getUInt(0) >= DATE_LUT_MAX_DAY_NUM)
-                return false;
-        }
-        else if (isDateTime(result_type_inner))
-        {
-            if (result_column->get64(0) >= DATE_LUT_MAX)
-                return false;
-        }
-
-        // Transforming nullable columns to the nested ones, in case no nulls found
+        // Transforming nullable columns to the nested ones, in case no nulls found.
+        // This must be done before calling getUInt/get64 below.
         if (result_column->isNullable())
         {
             const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
@@ -1160,6 +1148,19 @@ bool applyFunctionChainToColumn(
             }
             result_column = result_column_nullable.getNestedColumnPtr();
             result_type = removeNullable(result_type);
+        }
+
+        /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
+        /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
+        if (isDate(result_type_inner))
+        {
+            if (result_column->getUInt(0) >= DATE_LUT_MAX_DAY_NUM)
+                return false;
+        }
+        else if (isDateTime(result_type_inner))
+        {
+            if (result_column->get64(0) >= DATE_LUT_MAX)
+                return false;
         }
     }
     out_column = result_column;
