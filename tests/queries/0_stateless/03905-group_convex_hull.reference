@@ -34,7 +34,10 @@ Polygon hole ignored:	1
 Geometry Points:	1
 Geometry Point+Ring:	1
 Geometry Point+Polygon:	1
-Geometry all types:	1
+Geometry all polygon types:	1
+Geometry Point+LineString:	1
+Geometry Point+MultiLineString:	1
+Geometry all six types:	1
 Geometry with NULLs:	1
 1	1
 2	1
