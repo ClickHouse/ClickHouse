@@ -110,7 +110,6 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         if (context->getApplicationType() != Context::ApplicationType::LOCAL)
             context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
 
-        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
         Strings paths;
         std::optional<StorageFile::ArchiveInfo> archive_info;
         if (path_to_archive.empty())
