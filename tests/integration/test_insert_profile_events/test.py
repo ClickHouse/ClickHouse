@@ -26,10 +26,10 @@ def started_cluster():
 def test_insert_profile_events(started_cluster):
     node = started_cluster.instances["node"]
     select_insert_query = (
-        "SELECT value FROM system.events WHERE event == 'InsertQuery'"
+        "SELECT value FROM system.events WHERE event = 'InsertQuery'"
     )
     select_async_insert_query = (
-        "SELECT value FROM system.events WHERE event == 'AsyncInsertQuery'"
+        "SELECT value FROM system.events WHERE event = 'AsyncInsertQuery'"
     )
    
     non_async_inserts = 10   
@@ -37,7 +37,7 @@ def test_insert_profile_events(started_cluster):
     inserts = non_async_inserts  + async_inserts 
     
     node.query(
-        "CREATE TABLE test_insert_profile_events  (id UInt32, s String) ENGINE = Memory"
+        "CREATE TABLE test_insert_profile_events  (id UInt32, s String) ENGINE = MergeTree"
     )
 
     for i in range(non_async_inserts):
