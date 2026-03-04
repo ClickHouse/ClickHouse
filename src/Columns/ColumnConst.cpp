@@ -97,7 +97,7 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
-    if (s != 0 && s != offsets.size())
+    if (s != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets ({}) doesn't match size of column ({})",
             offsets.size(), toString(s));
 
