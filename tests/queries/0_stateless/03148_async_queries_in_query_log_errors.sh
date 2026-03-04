@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# no-parallel because it flushes asynchronous_insert_log and that conflicts with other tests that expect flushes to be done only by themselves
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function print_flush_query_logs()
 {
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log, query_log"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
     echo ""
 
     echo "system.asynchronous_insert_log"
@@ -22,7 +20,7 @@ function print_flush_query_logs()
               not empty(flush_query_id) as populated_flush_query_id
           FROM system.asynchronous_insert_log
           WHERE
-              event_date >= yesterday() AND event_time >= now() - 600
+              event_date >= yesterday()
           AND query_id = '$1'
           AND database = currentDatabase()
           FORMAT Vertical"
@@ -46,7 +44,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_log
       WHERE
-          event_date >= yesterday() AND event_time >= now() - 600
+          event_date >= yesterday()
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC

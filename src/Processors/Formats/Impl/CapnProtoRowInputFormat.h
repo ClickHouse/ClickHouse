@@ -3,6 +3,7 @@
 #include "config.h"
 #if USE_CAPNP
 
+#include <Core/Block.h>
 #include <Formats/CapnProtoSchema.h>
 #include <Formats/CapnProtoSerializer.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -23,7 +24,7 @@ class ReadBuffer;
 class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
-    CapnProtoRowInputFormat(ReadBuffer & in_, SharedHeader header, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
@@ -40,7 +41,6 @@ private:
     std::shared_ptr<CapnProtoSchemaParser> parser;
     capnp::StructSchema schema;
     std::unique_ptr<CapnProtoSerializer> serializer;
-    UInt64 max_message_size;
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

@@ -50,7 +50,6 @@ class AvroDeserializer
 {
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
-    AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
@@ -86,12 +85,10 @@ private:
 
         explicit Action(SkipFn skip_fn_)
             : type(Skip)
-            , target_column_idx(0)
             , skip_fn(skip_fn_) {}
 
         Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
             : type(Nested)
-            , target_column_idx(0)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
@@ -132,7 +129,6 @@ private:
     private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
-            , target_column_idx(0)
             , actions(actions_) {}
 
         void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
@@ -157,7 +153,7 @@ private:
 class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
-    AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "AvroRowInputFormat"; }
 
@@ -182,7 +178,7 @@ private:
 class AvroConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
-    AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;

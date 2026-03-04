@@ -1,11 +1,9 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
-#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -108,7 +106,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
+        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -137,7 +135,7 @@ private:
 #endif
 
 MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
+    : ISource(processor_->getHeader()), processor(std::move(processor_)), log_name(log_name_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -212,7 +210,6 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
-                Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
                 OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
                 holder->setResult(processor->read());
             }
@@ -228,7 +225,6 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
     OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
     return processReadResult(processor->read());
 }

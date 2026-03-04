@@ -1,30 +1,35 @@
 ---
-description: 'The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
   to data flows, organize fault-tolerant storage, and process streams as they become
   available.'
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka table engine'
-keywords: ['Kafka', 'table engine']
-doc_type: 'guide'
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka table engine
+# Kafka
 
-:::tip
-If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
+<CloudNotSupportedBadge/>
+
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
+
+This engine works with [Apache Kafka](http://kafka.apache.org/).
+
+Kafka lets you:
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [ALIAS expr1],
@@ -36,10 +41,6 @@ SETTINGS
     kafka_topic_list = 'topic1,topic2,...',
     kafka_group_name = 'group_name',
     kafka_format = 'data_format'[,]
-    [kafka_security_protocol = '',]
-    [kafka_sasl_mechanism = '',]
-    [kafka_sasl_username = '',]
-    [kafka_sasl_password = '',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
@@ -49,13 +50,10 @@ SETTINGS
     [kafka_poll_timeout_ms = 0,]
     [kafka_poll_max_batch_size = 0,]
     [kafka_flush_interval_ms = 0,]
-    [kafka_consumer_reschedule_ms = 0,]
     [kafka_thread_per_consumer = 0,]
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
-    [kafka_max_rows_per_message = 1,]
-    [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_max_rows_per_message = 1];
 ```
 
 Required parameters:
@@ -67,12 +65,7 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
-- `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
-- `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `kafka_schema_registry_skip_bytes` — The number of bytes to skip from the beginning of each message when using schema registry with envelope headers (e.g., AWS Glue Schema Registry which includes a 19-byte envelope). Range: `[0, 255]`. Default: `0`.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
@@ -81,17 +74,14 @@ Optional parameters:
 - `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
 - `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
-- `kafka_consumer_reschedule_ms` — Reschedule interval when Kafka stream processing is stalled (e.g., when no messages are available to consume). This setting controls the delay before the consumer retries polling. Must not exceed `kafka_consumers_pool_ttl_ms`. Default: `500` milliseconds.
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
-- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
+- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
-- `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
-- `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
 
 Examples:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -127,9 +117,9 @@ Examples:
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-```sql
+``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
 
 </details>
@@ -144,8 +134,6 @@ The delivered messages are tracked automatically, so each message in a group is 
 
 Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at http://kafka.apache.org/intro.
 
-It is recommended that each Kafka topic have its own dedicated consumer group, ensuring exclusive pairing between the topic and the group, especially in environments where topics may be created and deleted dynamically (e.g., in testing or staging).
-
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
 1.  Use the engine to create a Kafka consumer and consider it a data stream.
@@ -157,7 +145,7 @@ One kafka table can have as many materialized views as you like, they do not rea
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -171,7 +159,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
@@ -180,7 +168,7 @@ To improve performance, received messages are grouped into blocks the size of [m
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
-```sql
+``` sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```
@@ -191,7 +179,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
-```xml
+``` xml
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
@@ -231,6 +219,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   </kafka>
 ```
 
+
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
 ### Kerberos support {#kafka-kerberos-support}
@@ -240,7 +229,7 @@ ClickHouse is able to maintain Kerberos credentials using a keytab file. Conside
 
 Example:
 
-```xml
+``` xml
 <!-- Kerberos-aware Kafka -->
 <kafka>
   <security_protocol>SASL_PLAINTEXT</security_protocol>
@@ -249,7 +238,7 @@ Example:
 </kafka>
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
 - `_key` — Key of the message. Data type: `String`.
@@ -280,14 +269,25 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 <ExperimentalBadge/>
 
 If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
-- `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
-- `kafka_replica_name` specifies the replica name in ClickHouse Keeper
+ - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
+ - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
 Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
 
 Example:
 
-```sql
+``` sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
+  kafka_replica_name = 'r1'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
+
+``` sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
@@ -299,10 +299,10 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
-- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
-- Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
-- To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
-- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
+ - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
+ - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
+ - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+ - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

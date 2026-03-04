@@ -4,11 +4,10 @@ description: 'This engine allows processing of application log files as a stream
 sidebar_label: 'FileLog'
 sidebar_position: 160
 slug: /engines/table-engines/special/filelog
-title: 'FileLog table engine'
-doc_type: 'reference'
+title: 'FileLog Engine'
 ---
 
-# FileLog table engine {#filelog-engine}
+# FileLog Engine {#filelog-engine}
 
 This engine allows processing of application log files as a stream of records.
 
@@ -17,7 +16,7 @@ This engine allows processing of application log files as a stream of records.
 - Subscribe to log files.
 - Process new records as they are appended to subscribed log files.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -81,7 +80,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
@@ -96,7 +95,7 @@ To stop receiving streams data or to change the conversion logic, detach the mat
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
 - `_offset` - Offset in the log file. Data type: `UInt64`.

@@ -4,7 +4,6 @@ description: 'System table containing information about all successful and faile
 keywords: ['system table', 'session_log']
 slug: /operations/system-tables/session_log
 title: 'system.session_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -19,34 +18,34 @@ Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
-  - `LoginFailure` — Login error.
-  - `LoginSuccess` — Successful login.
-  - `Logout` — Logout from the system.
+    - `LoginFailure` — Login error.
+    - `LoginSuccess` — Successful login.
+    - `Logout` — Logout from the system.
 - `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Authentication ID, which is a UUID that is automatically generated each time user logins.
-- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](/interfaces/http) interface.
+- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](../../interfaces/http.md) interface.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
 - `user` ([String](../../sql-reference/data-types/string.md)) — User name.
 - `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. Possible values:
-  - `NO_PASSWORD`
-  - `PLAINTEXT_PASSWORD`
-  - `SHA256_PASSWORD`
-  - `DOUBLE_SHA1_PASSWORD`
-  - `LDAP`
-  - `KERBEROS`
-  - `SSL_CERTIFICATE`
+    - `NO_PASSWORD`
+    - `PLAINTEXT_PASSWORD`
+    - `SHA256_PASSWORD`
+    - `DOUBLE_SHA1_PASSWORD`
+    - `LDAP`
+    - `KERBEROS`
+    - `SSL_CERTIFICATE`
 - `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles set for all roles and/or users.
 - `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
 - `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
 - `client_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The IP address that was used to log in/out.
 - `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
 - `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
-  - `TCP`
-  - `HTTP`
-  - `gRPC`
-  - `MySQL`
-  - `PostgreSQL`
+    - `TCP`
+    - `HTTP`
+    - `gRPC`
+    - `MySQL`
+    - `PostgreSQL`
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
@@ -59,13 +58,13 @@ Columns:
 
 Query:
 
-```sql
+``` sql
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 ```
 
 Result:
 
-```text
+``` text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

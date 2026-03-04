@@ -8,8 +8,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --query "
-SET apply_mutations_on_fly = 0;
-
 DROP TABLE IF EXISTS t_delay_mutations SYNC;
 
 CREATE TABLE t_delay_mutations (id UInt64, v UInt64)
@@ -53,7 +51,7 @@ SELECT
     ProfileEvents['DelayedMutations'],
     ProfileEvents['DelayedMutationsMilliseconds'] BETWEEN 10 AND 1000
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
     type = 'QueryFinish' AND
     current_database = '$CLICKHOUSE_DATABASE' AND
     query ILIKE 'ALTER TABLE t_delay_mutations UPDATE%'

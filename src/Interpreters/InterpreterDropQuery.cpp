@@ -1,8 +1,6 @@
 #include <Databases/IDatabase.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -14,15 +12,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
-#include <Common/likePatternToRegexp.h>
-#include <Common/re2.h>
-#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -73,7 +65,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -108,24 +100,15 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
 
-void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_)
+void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
 {
     if (uuid_to_wait == UUIDHelpers::Nil)
         return;
 
     if (query.kind == ASTDropQuery::Kind::Drop)
-    {
-        QueryStatusPtr query_status = context_->getProcessListElementSafe();
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]()
-        {
-            if (query_status)
-                query_status->throwIfKilled();
-        });
-    }
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
     else if (query.kind == ASTDropQuery::Kind::Detach)
-    {
         db->waitDetachedTableNotInUse(uuid_to_wait);
-    }
 }
 
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
@@ -134,32 +117,29 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     UUID table_to_wait_on = UUIDHelpers::Nil;
     auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
     if (query.sync)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on, getContext());
+        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on);
     return res;
 }
 
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
-    if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
-
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
-    if (query.isTemporary() || table_id.database_name.empty())
+    if (query.temporary || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
-    if (query.isTemporary())
+    if (query.temporary)
     {
         if (query.if_exists)
             return {};
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
-    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
@@ -170,7 +150,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty)
         {
-            if (auto rows = table->totalRows(getContext()); rows > 0)
+            if (auto rows = table->totalRows(settings); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
@@ -243,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -271,7 +251,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -327,7 +306,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
@@ -345,6 +323,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
+    if (kind == ASTDropQuery::Kind::Detach)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
+
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -386,7 +367,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)
-                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
+                waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
         }
         throw;
     }
@@ -394,31 +375,9 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     if (query.sync)
     {
         for (const auto & table_uuid : tables_to_wait)
-            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
+            waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid);
     }
     return res;
-}
-
-bool matchesLikePattern(const String & haystack,
-                        const String & like_pattern,
-                        bool case_insensitive)
-{
-    /// Converts LIKE pattern (with % and _) to a RE2 pattern
-    String regex_str = likePatternToRegexp(like_pattern);
-
-    /// Sets up RE2 with case insensitivity if needed
-    RE2::Options options;
-    options.set_log_errors(false);
-    if (case_insensitive)
-        options.set_case_sensitive(false);
-
-    /// Builds the RE2 regex
-    RE2 re(regex_str, options);
-    if (!re.ok())
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid regex: {}", regex_str);
-
-    /// Returns true if the entire string matches
-    return RE2::PartialMatch(haystack, re);
 }
 
 BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait)
@@ -427,7 +386,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         return {};
 
     const auto & database_name = query.getDatabase();
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
@@ -461,237 +420,51 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         query_for_table.kind = query.kind;
         // For truncate operation on database, drop the tables
         if (truncate)
-            query_for_table.kind = query.has_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
-        if (database->getDisk()->isReadOnly())
-            query_for_table.kind = ASTDropQuery::Detach;
+            query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
         query_for_table.sync = query.sync;
 
-        /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
-        /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || query.like.empty())
-        {
-            /// Flush should not be done if shouldBeEmptyOnDetach() == false,
-            /// since in this case getTablesIterator() may do some additional work,
-            /// see DatabaseMaterialized...SQL::getTablesIterator()
-            auto table_context = Context::createCopy(getContext());
-            table_context->setInternalQuery(true);
-
-            /// List the tables, then call flushAndPrepareForShutdown() on them in parallel, then call
-            /// executeToTableImpl on them in sequence.
-            ///
-            /// Complication: if some tables (refreshable materialized views) have background tasks that
-            /// create/drop other tables, we have to stop those tasks first (using flushAndPrepareForShutdown()),
-            /// then list tables again.
-
-            std::unordered_set<UUID> prepared_tables;
-            std::vector<std::pair<StorageID, bool>> tables_to_drop;
-            std::vector<StoragePtr> tables_to_prepare;
-
-            auto collect_tables = [&] {
-                // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
-                for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
-                {
-                    auto table_ptr = iterator->table();
-                    StorageID storage_id = table_ptr->getStorageID();
-                    tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
-                    /// If the database doesn't support table UUIDs, we might call
-                    /// IStorage::flushAndPrepareForShutdown() twice. That's ok.
-                    /// (And shouldn't normally happen because refreshable materialized views don't work
-                    ///  in such DBs.)
-                    if (!storage_id.hasUUID() || !prepared_tables.contains(storage_id.uuid))
-                        tables_to_prepare.push_back(table_ptr);
-                }
-            };
-
-            auto prepare_tables = [&](std::vector<StoragePtr> & tables)
-            {
-                /// Prepare tables for shutdown in parallel.
-                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
-                for (StoragePtr & table_ptr : tables)
-                {
-                    StorageID storage_id = table_ptr->getStorageID();
-                    if (storage_id.hasUUID())
-                        prepared_tables.insert(storage_id.uuid);
-                    runner.enqueueAndKeepTrack([my_table_ptr = std::move(table_ptr)]()
-                    {
-                        my_table_ptr->flushAndPrepareForShutdown();
-                    });
-                }
-                runner.waitForAllToFinishAndRethrowFirstError();
-                tables.clear(); // don't hold extra shared pointers
-            };
-
-            collect_tables();
-
-            /// If there are refreshable materialized views, we need to stop them before getting the
-            /// final list of tables to drop.
-            std::vector<StoragePtr> tables_to_prepare_early;
-            for (const StoragePtr & table_ptr : tables_to_prepare)
-            {
-                if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
-                {
-                    if (materialized_view->canCreateOrDropOtherTables())
-                        tables_to_prepare_early.push_back(table_ptr);
-                }
-            }
-            if (!tables_to_prepare_early.empty())
-            {
-                tables_to_prepare.clear();
-                tables_to_drop.clear();
-
-                prepare_tables(tables_to_prepare_early);
-
-                collect_tables();
-            }
-
-            prepare_tables(tables_to_prepare);
-
-            /// Sort tables in reverse loading dependency order (dependents first, then their dependencies).
-            /// This way, if the server crashes mid-drop, the remaining tables will still have their
-            /// dependencies intact and can be loaded on restart.
-            {
-                TablesDependencyGraph local_graph("drop_database");
-                std::unordered_set<String> table_names_in_drop;
-                for (const auto & [id, _] : tables_to_drop)
-                    table_names_in_drop.insert(id.getFullTableName());
-
-                for (const auto & [id, _] : tables_to_drop)
-                {
-                    auto deps = DatabaseCatalog::instance().getLoadingDependencies(id);
-                    std::vector<StorageID> relevant_deps;
-                    for (const auto & dep : deps)
-                        if (table_names_in_drop.contains(dep.getFullTableName()))
-                            relevant_deps.push_back(dep);
-                    local_graph.addDependencies(id, relevant_deps);
-                }
-
-                auto sorted = local_graph.getTablesSortedByDependency();
-
-                /// Build a position map: tables sorted by loading order (dependencies first).
-                /// For dropping, we reverse: higher position (more dependencies) should be dropped first.
-                std::unordered_map<String, size_t> position;
-                for (size_t i = 0; i < sorted.size(); ++i)
-                    position[sorted[i].getFullTableName()] = i;
-
-                std::sort(tables_to_drop.begin(), tables_to_drop.end(), [&](const auto & a, const auto & b)
-                {
-                    /// Inner tables (e.g. `.inner_id.*` for MVs) must be dropped before their parent views.
-                    /// In Replicated databases, if we drop an MV first, its dropInnerTableIfAny() tries to
-                    /// drop the inner table via executeDropQuery which fails because the replicated DDL path
-                    /// rejects secondary queries. Dropping inner tables first makes dropInnerTableIfAny() a no-op.
-                    /// Note: refreshable MVs also create `.tmp.inner_id.*` temporary tables during refresh,
-                    /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
-                    auto is_inner_table_name = [](const String & name)
-                    {
-                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
-                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
-                    };
-                    bool a_is_inner = is_inner_table_name(a.first.table_name);
-                    bool b_is_inner = is_inner_table_name(b.first.table_name);
-                    if (a_is_inner != b_is_inner)
-                        return a_is_inner;
-
-                    size_t pos_a = 0;
-                    size_t pos_b = 0;
-                    if (auto it = position.find(a.first.getFullTableName()); it != position.end())
-                        pos_a = it->second;
-                    if (auto it = position.find(b.first.getFullTableName()); it != position.end())
-                        pos_b = it->second;
-                    return pos_a > pos_b;
-                });
-            }
-
-            /// Save original values that may be modified by ignore_drop_queries_probability
-            /// inside executeToTableImpl (it may set sync=false and kind=Truncate via non-const reference).
-            const auto original_kind = query_for_table.kind;
-            const auto original_sync = query_for_table.sync;
-
-            for (const auto & table : tables_to_drop)
-            {
-                query_for_table.setTable(table.first.getTableName());
-                query_for_table.is_dictionary = table.second;
-                query_for_table.kind = original_kind;
-                query_for_table.sync = original_sync;
-                DatabasePtr db;
-                UUID table_to_wait = UUIDHelpers::Nil;
-                /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
-                /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
-                executeToTableImpl(table_context, query_for_table, db, table_to_wait);
-                uuids_to_wait.push_back(table_to_wait);
-            }
-        }
-    }
-
-    /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && !query.like.empty())
-    {
+        /// Flush should not be done if shouldBeEmptyOnDetach() == false,
+        /// since in this case getTablesIterator() may do some additional work,
+        /// see DatabaseMaterialized...SQL::getTablesIterator()
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
-
-        std::vector<StorageID> tables_to_truncate;
-        for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
+        /// Do not hold extra shared pointers to tables
+        std::vector<std::pair<StorageID, bool>> tables_to_drop;
+        // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
+        for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
         {
-            const auto & table_ptr = it->table();
-            const auto & storage_id = table_ptr->getStorageID();
-            const auto & tname = storage_id.table_name;
-
-            if (!query.like.empty())
-            {
-                bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
-                if (query.not_like)
-                    match = !match;
-                if (!match)
-                    continue;
-            }
-            tables_to_truncate.push_back(storage_id);
+            auto table_ptr = iterator->table();
+            tables_to_drop.push_back({table_ptr->getStorageID(), table_ptr->isDictionary()});
         }
 
-        std::mutex mutex_for_uuids;
-        ThreadPoolCallbackRunnerLocal<void> runner(
-            getDatabaseCatalogDropTablesThreadPool().get(),
-            ThreadName::TRUNCATE_TABLE);
-
-        for (const auto & table_id : tables_to_truncate)
+        /// Prepare tables for shutdown in parallel.
+        ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+        for (const auto & [name, _] : tables_to_drop)
         {
-            /// Passing by references here is fine:
-            /// query: Outlives runner
-            /// table_context: Outlives runner
-            /// mutex_for_uuids: Outlives runner
-            /// uuids_to_wait: Outlives runner
-            runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
+            auto table_ptr = DatabaseCatalog::instance().getTable(name, table_context);
+            runner([my_table_ptr = std::move(table_ptr)]()
             {
-                // Create a proper AST for a single-table TRUNCATE query.
-                auto sub_query_ptr = make_intrusive<ASTDropQuery>();
-                auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
-                sub_query.kind = ASTDropQuery::Kind::Truncate;
-                sub_query.if_exists = true;
-                sub_query.sync = query.sync;
-                // Set the target database and table:
-                sub_query.setDatabase(table_id.database_name);
-                sub_query.setTable(table_id.table_name);
-                // Optionally, add these nodes to sub_query->children if needed:
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.database_name));
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.table_name));
-
-                DatabasePtr dummy_db;
-                UUID table_uuid = UUIDHelpers::Nil;
-                executeToTableImpl(table_context, sub_query, dummy_db, table_uuid);
-
-                if (query.sync)
-                {
-                    std::lock_guard<std::mutex> lock(mutex_for_uuids);
-                    uuids_to_wait.push_back(table_uuid);
-                }
+                my_table_ptr->flushAndPrepareForShutdown();
             });
         }
         runner.waitForAllToFinishAndRethrowFirstError();
+
+        for (const auto & table : tables_to_drop)
+        {
+            query_for_table.setTable(table.first.getTableName());
+            query_for_table.is_dictionary = table.second;
+            DatabasePtr db;
+            UUID table_to_wait = UUIDHelpers::Nil;
+            executeToTableImpl(table_context, query_for_table, db, table_to_wait);
+            uuids_to_wait.push_back(table_to_wait);
+        }
     }
 
     // only if operation is DETACH
-    if (!drop && !truncate && query.sync)
+    if ((!drop || !truncate) && query.sync)
     {
         /// Avoid "some tables are still in use" when sync mode is enabled
         for (const auto & table_uuid : uuids_to_wait)
@@ -701,7 +474,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// Protects from concurrent CREATE TABLE queries
     auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
     // only if operation is DETACH
-    if (!drop && !truncate)
+    if (!drop || !truncate)
         database->assertCanBeDetached(true);
 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
@@ -759,7 +532,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.getDatabase(), drop.getTable());
     }
-    else if (!drop.isTemporary())
+    else if (!drop.temporary)
     {
         /// It can be view or table.
         if (drop.kind == ASTDropQuery::Kind::Drop)
@@ -776,11 +549,11 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
                                             const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
 {
-    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
+    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
-        auto drop_query = make_intrusive<ASTDropQuery>();
+        auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->setDatabase(target_table_id.database_name);
         drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;
@@ -819,7 +592,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
-            && !drop.isTemporary()
+            && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
             && drop.table;
 }

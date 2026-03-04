@@ -18,14 +18,13 @@ mkdir left ||:
 ## right_pr=$3 not used for now
 #right_sha=$4
 
-datasets=${CHPC_DATASETS-"hits1 hits10 hits100 values tpch10"}
+datasets=${CHPC_DATASETS-"hits1 hits10 hits100 values"}
 
 declare -A dataset_paths
 dataset_paths["hits10"]="https://clickhouse-private-datasets.s3.amazonaws.com/hits_10m_single/partitions/hits_10m_single.tar"
 dataset_paths["hits100"]="https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar"
 dataset_paths["hits1"]="https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar"
 dataset_paths["values"]="https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar"
-dataset_paths["tpch10"]="https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar"
 
 
 function download
@@ -82,6 +81,16 @@ function download
     done
     cd -
 
+    mkdir ~/fg ||:
+    (
+        cd ~/fg
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl"
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl"
+        chmod +x ~/fg/difffolded.pl
+        chmod +x ~/fg/flamegraph.pl
+    ) &
+
+    wait
     echo "ATTACH DATABASE default ENGINE=Ordinary" > db0/metadata/default.sql
     echo "ATTACH DATABASE datasets ENGINE=Ordinary" > db0/metadata/datasets.sql
     ls db0/metadata

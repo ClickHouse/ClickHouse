@@ -1,16 +1,19 @@
 #pragma once
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include "Common/ZooKeeper/ZooKeeperArgs.h"
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include "Generator.h"
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/InterruptListener.h>
-#include <Interpreters/Context.h>
+#include <Common/CurrentMetrics.h>
 
-#include <Generator.h>
-#include <Stats.h>
+#include <Core/Types.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include "Interpreters/Context.h"
+#include "Stats.h"
 
 #include <filesystem>
 
@@ -66,7 +69,7 @@ public:
         std::cerr << "Requests executed: " << num << ".\n";
     }
 
-    bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
+    bool tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
@@ -93,7 +96,7 @@ private:
 
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx);
 
     std::string input_request_log;
     std::string setup_nodes_snapshot_path;
@@ -106,7 +109,6 @@ private:
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
-    bool enable_tracing = false;
     size_t max_iterations = 0;
 
     std::atomic<size_t> requests_executed = 0;
@@ -122,7 +124,7 @@ private:
 
     std::mutex mutex;
 
-    using Queue = ConcurrentBoundedQueue<ZooKeeperRequestWithCallbacks>;
+    using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
     std::optional<Queue> queue;
 
     std::mutex connection_mutex;

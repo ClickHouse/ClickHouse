@@ -1,10 +1,9 @@
-#include <Core/Protocol.h>
+#include "Core/Protocol.h"
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
@@ -114,23 +113,6 @@ void HedgedConnections::sendScalarsData(Scalars & data)
                 send_scalars_data(replica);
 
     pipeline_for_new_replicas.add(send_scalars_data);
-}
-
-void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
-
-    auto send_query_plan = [&query_plan](ReplicaState & replica) { replica.connection->sendQueryPlan(query_plan); };
-
-    for (auto & offset_state : offset_states)
-        for (auto & replica : offset_state.replicas)
-            if (replica.connection)
-                send_query_plan(replica);
-
-    pipeline_for_new_replicas.add(send_query_plan);
 }
 
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)

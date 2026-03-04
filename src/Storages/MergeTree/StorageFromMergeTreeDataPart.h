@@ -22,10 +22,10 @@ public:
         const MergeTreeData::DataPartPtr & part_,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
-        , parts(RangesInDataParts({part_}))
+        , parts({part_})
         , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
-        , partition_id(part_->info.getPartitionId())
+        , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
@@ -57,6 +57,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -75,16 +76,16 @@ public:
 
     bool hasLightweightDeletedMask() const override
     {
-        return !parts.empty() && parts.front().data_part->hasLightweightDelete();
+        return !parts.empty() && parts.front()->hasLightweightDelete();
     }
 
     bool supportsLightweightDelete() const override
     {
-        return !parts.empty() && parts.front().data_part->supportLightweightDeleteMutate();
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
     }
 
 private:
-    const RangesInDataParts parts;
+    const MergeTreeData::DataPartsVector parts;
     const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const MergeTreeData & storage;
     const String partition_id;

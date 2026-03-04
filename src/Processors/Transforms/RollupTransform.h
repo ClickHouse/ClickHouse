@@ -10,7 +10,7 @@ namespace DB
 
 struct GroupByModifierTransform : public IAccumulatingTransform
 {
-    GroupByModifierTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_);
+    GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_);
 
 protected:
     void consume(Chunk chunk) override;
@@ -40,7 +40,7 @@ protected:
 class RollupTransform : public GroupByModifierTransform
 {
 public:
-    RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_);
+    RollupTransform(Block header, AggregatingTransformParamsPtr params, bool use_nulls_);
     String getName() const override { return "RollupTransform"; }
 
 protected:

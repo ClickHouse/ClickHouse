@@ -1,5 +1,4 @@
--- Tags: use-rocksdb, no-parallel-replicas
--- no-parallel-replicas: Can't execute any of specified algorithms for specified strictness/kind and right storage type. (NOT_IMPLEMENTED)
+-- Tags: use-rocksdb
 
 DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t1;
