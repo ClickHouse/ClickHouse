@@ -1,6 +1,5 @@
 -- { echoOn }
 
-SET enable_analyzer = 0;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -41,7 +40,6 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 0;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -82,631 +80,6 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	1
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	0
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	1
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	0
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-SEMI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-SEMI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	2
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	1
-SET enable_analyzer = 0;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	2
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-ANTI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	1
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-SEMI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-SEMI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	1
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	\N
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-0	1
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	\N
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-SEMI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-SEMI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-\N	2
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	1
-SET enable_analyzer = 0;
-SET join_use_nulls = 1;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-\N	2
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-ANTI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-\N	1
-SET enable_analyzer = 1;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
-SEMI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 1;
-SET join_use_nulls = 0;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(toNullable(0))) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(toNullable(0))) AS id) AS d
-USING (id)
-;
-0	0
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
-USING (id)
-;
-SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
-ON a.id = d.id
-;
-0	0
-SELECT id > 1, d.idd FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
-SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS idd) AS d
-ON a.id = d.idd
-;
-0	0
-SELECT *
-FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
-SEMI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
-ON a.id = d.id
-;
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -743,7 +116,6 @@ ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 \N
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -780,7 +152,6 @@ ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 \N
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -821,7 +192,6 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 SEMI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -862,7 +232,6 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 SEMI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -899,7 +268,6 @@ ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 1
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -936,7 +304,6 @@ ANTI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 1
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -977,7 +344,6 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -1018,7 +384,6 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 SEMI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -1055,7 +420,6 @@ ANTI LEFT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 \N
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -1092,7 +456,6 @@ ANTI LEFT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 \N
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -1133,7 +496,6 @@ FROM (SELECT (NULL :: Nullable(UInt64)) AS id) AS a
 SEMI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 SEMI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
@@ -1174,7 +536,6 @@ FROM (SELECT materialize(NULL :: Nullable(UInt64)) AS id) AS a
 SEMI RIGHT JOIN (SELECT materialize(1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI RIGHT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
@@ -1211,7 +572,6 @@ ANTI RIGHT JOIN (SELECT (1 :: UInt32) AS id) AS d
 ON a.id = d.id
 ;
 1
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI RIGHT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
