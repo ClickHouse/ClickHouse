@@ -1,8 +1,10 @@
-Perform root cause analysis of this ThreadSanitizer alert in ClickHouse.
+Perform root cause analysis of this ThreadSanitizer alert or test hang in ClickHouse.
 
-## TSan Alert
-Read the alert from: {{ALERT_FILE}}
-(Use the Read tool to load the file contents before proceeding.)
+## TSan Alert or Hang Stacktraces
+Read from: {{ALERT_FILE}}
+(Use the Read tool to load the file contents before proceeding. This file contains either a TSan alert with stack traces, or all-thread backtraces captured from a hung process via lldb.)
+
+{{HANG_TYPE}}
 
 ## Previous Progress
 Read the progress file from: {{PROGRESS_FILE}}
@@ -20,13 +22,14 @@ Run `git diff` to see uncommitted changes. If the output is empty, no changes ha
 **IMPORTANT:** The stack traces reference line numbers in the CURRENT working tree. Read source files directly — do not assume line numbers from previous iterations are still valid.
 
 ### Step 1: Identify source files from the stack traces
-Extract all source file paths and line numbers from the `DB::` stack frames in the alert. These are the files you need to read.
+Extract all source file paths and line numbers from the `DB::` stack frames in the alert or stacktrace. These are the files you need to read. For lldb stacktraces, focus on frames containing `unit_tests_dbms` with source file references (ignore libc, sanitizer, and std library frames).
 
 ### Step 2: Read source files and analyze threading
-Read each source file. For the classes/structs involved in the racing accesses, analyze:
+Read each source file. For the classes/structs involved in the racing accesses or blocking operations, analyze:
 - Member fields: classify each as atomic, mutex-protected (`TSA_GUARDED_BY`), pointer-guarded (`TSA_PT_GUARDED_BY`), unprotected, or immutable
 - Synchronization primitives: mutexes, their types, what they guard, lock ordering (`TSA_ACQUIRED_AFTER`)
 - Thread access patterns: which threads call the methods in the stack traces
+- Condition variables: what predicate is waited on, who signals
 
 Use the Threading Model section above as a starting point — it may already have relevant information from previous iterations. Verify it against the current source code.
 
@@ -70,6 +73,35 @@ Use the Threading Model section above as a starting point — it may already hav
 2. Map stack to source.
 3. Propose fix: use only async-signal-safe functions in signal handlers, defer work to main thread.
 
+#### For test hangs (deadlock or livelock detected via all-thread stacktraces):
+
+The stacktrace file contains `bt all` output from lldb — backtraces of every thread in the hung process. Each thread shows `thread #N, name = '<name>'` followed by its stack frames.
+
+**For deadlocks** (~0% CPU — all threads blocked):
+1. Identify blocked threads — look for threads waiting on:
+   - `pthread_cond_wait` / `condition_variable::wait` — what predicate are they waiting for? Who should signal?
+   - `pthread_join` / `std::thread::join` — which thread are they joining? Is that thread also blocked?
+   - `pthread_mutex_lock` — which mutex? Who holds it?
+2. Map each blocked thread's `DB::` frames to source locations.
+3. Determine the root cause:
+   - Circular lock dependency (thread A holds mutex X, waits for mutex Y; thread B holds Y, waits for X)
+   - Condition variable never signaled (producer finished or exited before signaling consumer)
+   - Thread join waiting for a thread that is itself blocked (transitive deadlock)
+   - Missing `notify_all`/`notify_one` on a code path that changes the wait predicate
+4. Propose fix: fix lock ordering, add missing notification, restructure to avoid nested waits, add `TSA_ACQUIRED_AFTER` annotations.
+
+**For livelocks** (high CPU — threads spinning but making no forward progress):
+1. Identify spinning threads — look for threads in application code (not blocked in kernel):
+   - Tight loops retrying a failed operation
+   - CAS loops that keep failing because another thread undoes the change
+   - Busy-wait loops with no backoff
+2. Map spinning threads' `DB::` frames to source locations.
+3. Determine root cause:
+   - Two threads competing on the same atomic variable in opposing directions
+   - Retry loop without exponential backoff or yield
+   - Spurious wakeup loop where the condition is immediately invalidated by another thread
+4. Propose fix: add proper synchronization, introduce backoff, restructure to avoid contention.
+
 ## ClickHouse Threading Reference
 Read the reference from: {{CLICKHOUSE_REFERENCES_FILE}}
 (Use the Read tool for background context on ClickHouse threading primitives and TSA macros.)
@@ -77,7 +109,7 @@ Read the reference from: {{CLICKHOUSE_REFERENCES_FILE}}
 ## Output Format
 
 ### Alert Analysis
-**Error Type:** <type>
+**Error Type:** <type — e.g., data race, lock-order-inversion, deadlock, livelock, thread leak>
 **Threads/Mutexes Involved:** <description>
 **Source Locations:** <file:line for each relevant stack frame>
 **Field/Variable/Mutex:** <name of what's affected>
@@ -94,4 +126,4 @@ Read the reference from: {{CLICKHOUSE_REFERENCES_FILE}}
 **TSA Annotations to Add:** <any TSA_GUARDED_BY, TSA_ACQUIRED_AFTER, etc.>
 
 ### Threading Model Update
-Update `{{THREADING_MODEL_FILE}}` directly (using Edit tool) with new discoveries for the classes involved in this alert. The file's header describes the required format, conventions, and update rules — follow it exactly. Only add or update entries for classes involved in the alert.
+Update `{{THREADING_MODEL_FILE}}` directly (using Edit tool) with new discoveries for the classes involved in this alert or hang. The file's header describes the required format, conventions, and update rules — follow it exactly. Only add or update entries for classes involved in the alert.

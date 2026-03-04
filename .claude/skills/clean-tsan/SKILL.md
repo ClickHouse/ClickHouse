@@ -3,12 +3,12 @@ name: clean-tsan
 description: Detect and fix ThreadSanitizer errors (data races, deadlocks, thread leaks, etc.) by building with TSan, running a specified test, analyzing alerts, and applying fixes iteratively.
 argument-hint: <test_name>
 disable-model-invocation: false
-allowed-tools: Task, TaskOutput, Bash(ninja *), Bash(cd *), Bash(ls *), Bash(find *), Bash(pgrep *), Bash(ps *), Bash(pkill *), Bash(mktemp *), Bash(sleep *), Bash(python *), Bash(python3 *), Bash(export *), Bash(mkdir *), Bash(tail *), Bash(grep *), Bash(sed *), Bash(git diff*), Bash(wc *), Bash(./tests/clickhouse-test *), Read, Grep, Glob, Edit, Write, AskUserQuestion
+allowed-tools: Task, TaskOutput, Bash(ninja *), Bash(cd *), Bash(ls *), Bash(find *), Bash(pgrep *), Bash(ps *), Bash(pkill *), Bash(sleep *), Bash(python *), Bash(python3 *), Bash(export *), Bash(mkdir *), Bash(tail *), Bash(grep *), Bash(sed *), Bash(git diff*), Bash(wc *), Bash(./tests/clickhouse-test *), Read, Grep, Glob, Edit, Write, AskUserQuestion
 ---
 
 # Clean TSan Skill
 
-Systematically detect and fix ThreadSanitizer (TSan) errors by running a specified test, extracting alerts, performing root cause analysis via isolated subagents, applying fixes, and iterating until clean. Handles all TSan error types: data races, lock-order-inversions (potential deadlocks), thread leaks, destroy of locked mutex, unlock of unlocked mutex, and signal-unsafe calls. Alerts are processed one at a time — the stack traces guide which source files to analyze.
+Systematically detect and fix ThreadSanitizer (TSan) errors by running a specified test, extracting alerts, performing root cause analysis via isolated subagents, applying fixes, and iterating until clean. Handles all TSan error types: data races, lock-order-inversions (potential deadlocks), thread leaks, destroy of locked mutex, unlock of unlocked mutex, and signal-unsafe calls. Also detects **test hangs** (deadlocks/livelocks that produce no TSan alert) by monitoring output progress and capturing all-thread stacktraces via lldb. Alerts and hangs are processed one at a time — the stack traces guide which source files to analyze.
 
 ## Arguments
 
@@ -21,8 +21,8 @@ Systematically detect and fix ThreadSanitizer (TSan) errors by running a specifi
 
 1. **Setup** — Detect test type from the argument
 2. **Build** — Incremental TSan build
-3. **Test** — Run tests to provoke TSan errors
-4. **Extract** — Extract first TSan alert from logs, save artifact
+3. **Test** — Run tests to provoke TSan errors; detect hangs via output monitoring
+4. **Extract** — Extract first TSan alert from logs (or capture stacktraces for hangs), save artifact
 5. **RCA** — Root cause analysis with threading analysis (isolated subagent), save artifact
 6. **Fix** — Apply fix based on RCA
 7. **Verify** — Rebuild, retest, update progress, loop back to step 4 if more errors remain
@@ -58,17 +58,15 @@ Store the test type and test selector.
 
 **IMPORTANT:** The `build_tsan` directory must already be configured with CMake (`-DSANITIZE=thread`). This skill does NOT run cmake. All commands assume CWD is the repository root.
 
-### 2a. Create log file
+### 2a. Log file
 
-```bash
-mktemp /tmp/tsan_build_XXXXXX.log
-```
+The build log is `build_tsan/tsan_build.log` (overwritten each run — build output is transient).
 
 **IMMEDIATELY** report to the user:
-- "TSan build logs: `<log_file>`"
+- "TSan build logs: `build_tsan/tsan_build.log`"
 - Provide copyable command:
   ```bash
-  tail -f <log_file>
+  tail -f build_tsan/tsan_build.log
   ```
 
 ### 2b. Determine build target
@@ -79,7 +77,7 @@ mktemp /tmp/tsan_build_XXXXXX.log
 ### 2c. Start build
 
 ```bash
-cd build_tsan && ninja <target> > <log_file> 2>&1
+cd build_tsan && ninja <target> > tsan_build.log 2>&1
 ```
 
 Run with `run_in_background: true`.
@@ -100,12 +98,9 @@ Check the **exit code** of the build:
 
 ### 3b. Run tests
 
-Create a test log file:
-```bash
-mktemp /tmp/tsan_test_XXXXXX.log
-```
+The test log is `build_tsan/tsan_test.log` (overwritten each run).
 
-Report log path and `tail -f` command to user.
+Report log path and `tail -f build_tsan/tsan_test.log` command to user.
 
 #### Unit Tests
 
@@ -125,6 +120,68 @@ TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7" \
 `--gtest_repeat=20` keeps repeating until the first TSan hit — combined with `halt_on_error=1` the process aborts immediately when a race is found, so a larger repeat count costs nothing if a race is hit early.
 
 TSan output goes directly to the log file (stdout/stderr of the binary). With `halt_on_error=1`, TSan calls `abort()` on error — the exit code will be non-zero (typically 134 for SIGABRT), not the default 66. Check `$?` non-zero as a fast indicator before grepping logs.
+
+**Do NOT use `run_in_background` for unit tests** — run the test process in the shell background (`&`) and capture the PID immediately with `pid=$!`, so you can monitor output and detect hangs from the same Bash session.
+
+#### Unit Test Hang Detection
+
+Individual ClickHouse unit tests complete in 1-2 seconds even under TSan. If a test hangs (deadlock or livelock), no TSan alert is produced — the process just stops making progress. Detect this by monitoring the log file for stalled output.
+
+**After launching the unit test** (with `&`), poll the log file every 10 seconds. If the last line has not changed between two consecutive checks, the test is hung:
+
+```bash
+prev_line=""
+while kill -0 <pid> 2>/dev/null; do
+    sleep 10
+    curr_line=$(tail -1 <log_file>)
+    if [ "$curr_line" = "$prev_line" ] && [ -n "$curr_line" ]; then
+        # Output stalled — test is hung
+        break
+    fi
+    prev_line="$curr_line"
+done
+```
+
+When a hang is detected:
+
+1. **Classify the hang** — check process CPU usage to distinguish deadlock from livelock:
+   ```bash
+   ps -p <pid> -o %cpu --no-headers
+   ```
+   - **~0% CPU** → deadlock (all threads blocked on locks or condition variables)
+   - **High CPU** → livelock (threads are running but making no progress — spinning, retrying, or undoing each other's work)
+
+   Include this classification in the report and the RCA prompt — it changes the analysis focus.
+
+2. **Create artifact directory** (if not already done):
+   ```bash
+   mkdir -p _clean-tsan/<test_name>
+   ```
+
+3. **Find lldb** — it is versioned (e.g., `lldb-21`):
+   ```bash
+   ls /usr/bin/lldb-* 2>/dev/null | grep -v -E 'argdumper|dap|instr|server' | head -1
+   ```
+
+4. **Capture all-thread stacktraces** using `sudo` (required for ptrace attach). NNN is the iteration number (`001`, `002`, ...) — if the artifact directory already has files from previous iterations, continue from the last used number:
+   ```bash
+   sudo <lldb> -p <pid> -o "bt all" -o "detach" -o "quit" > _clean-tsan/<test_name>/stacktrace-NNN.txt 2>&1
+   ```
+   Do NOT read the stacktrace output into the main conversation context — it can be very large. The RCA subagent (Phase 5) reads the file.
+
+5. **Kill the hung process**:
+   ```bash
+   kill <pid>
+   ```
+
+6. **Extract the hung test name** from the last `[ RUN      ]` line in the log:
+   ```bash
+   grep '^\[ RUN' <log_file> | tail -1
+   ```
+
+7. **Report to user**: "Test `<test_case>` hung (<deadlock|livelock>, CPU: <N>%). Captured all-thread stacktraces to `_clean-tsan/<test_name>/stacktrace-NNN.txt`"
+
+8. **Set `hang_detected=true`** — this flag controls branching in Phase 3c and Phase 4.
 
 #### Integration Tests
 
@@ -167,12 +224,10 @@ The `--include="*.log"` avoids searching large data files and speeds up the sear
 
 First verify a TSan-instrumented server is running. If not, instruct user to start the server with stderr captured to a known file:
 
-```bash
-mktemp /tmp/tsan_server_stderr_XXXXXX.log
-```
+The server stderr log is `build_tsan/tsan_server_stderr.log`.
 
 ```bash
-./build_tsan/programs/clickhouse server --config-file ./programs/server/config.xml 2>/tmp/tsan_server_stderr_XXXXXX.log &
+./build_tsan/programs/clickhouse server --config-file ./programs/server/config.xml 2>build_tsan/tsan_server_stderr.log &
 ```
 
 Store this server stderr log path — it is where **server-side** TSan alerts will appear.
@@ -195,7 +250,11 @@ Both files must be checked for TSan errors.
 - **Integration tests**: Run **once**. Integration tests are slow under TSan and a single run is usually sufficient to trigger errors. If the first run is clean, optionally run once more to confirm.
 - **Stateless tests**: Run once. If clean, optionally rerun for confidence.
 
-### 3c. Check for TSan errors
+### 3c. Check for TSan errors or hangs
+
+**If `hang_detected` is true** (unit test hang detected in 3b): skip TSan alert checks — the stacktrace artifact is already saved. Proceed directly to Phase 5 (RCA) with the `stacktrace-NNN.txt` file. Phase 4 extraction is not needed for hangs.
+
+**Otherwise**, check for TSan alerts:
 
 **Unit tests:** Check exit code (non-zero = error; `halt_on_error=1` aborts with SIGABRT rather than exit 66) and grep the log:
 ```bash
@@ -210,12 +269,14 @@ grep -c "SUMMARY: ThreadSanitizer:" <log_file>
 grep -c "SUMMARY: ThreadSanitizer:" <server_stderr_log>
 ```
 
-- If errors found: report "TSan errors detected! (N alerts)" and proceed to Phase 4
+- If TSan errors found: report "TSan errors detected! (N alerts)" and proceed to Phase 4
 - If no errors: report "No TSan errors detected. The test appears clean." and stop
 
 ---
 
 ## Phase 4: Extract First TSan Alert
+
+**Skip this phase if a hang was detected** — the stacktrace artifact (`stacktrace-NNN.txt`) is already saved during hang detection (Phase 3b). Proceed directly to Phase 5.
 
 The skill processes alerts **one at a time**: extract the first alert, analyze it, fix it, rerun tests, and repeat until clean.
 
@@ -274,6 +335,7 @@ Each entry is compact (~5 lines):
 - `FIXED` — the alert disappeared after the fix
 - `FAILED` — the same or equivalent alert reappeared after the fix (add `- **Why it failed:** <explanation>`)
 - `NEW_ALERT` — a different alert appeared (the fix worked, new issue found)
+- `HANG` — test hung (deadlock or livelock), stacktraces captured
 
 ### Threading model file
 
@@ -289,7 +351,7 @@ On subsequent iterations (or sessions) the file already exists — RCA and Fix s
 
 ## Phase 5: Root Cause Analysis
 
-Launch a Task with `subagent_type=general-purpose` for the extracted alert. Using a separate subagent prevents context pollution. The subagent reads the source files referenced in the stack traces and performs both threading analysis and root cause analysis in one pass.
+Launch a Task with `subagent_type=general-purpose` for the extracted alert or hang stacktraces. Using a separate subagent prevents context pollution. The subagent reads the source files referenced in the stack traces and performs both threading analysis and root cause analysis in one pass.
 
 **Before launching**, check if a previous iteration failed:
 ```bash
@@ -301,7 +363,8 @@ Read the prompt template from `.claude/skills/clean-tsan/assets/rca-prompt.md` a
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{ALERT_FILE}}` | Path to `_clean-tsan/<test_name>/alert-NNN.txt` |
+| `{{ALERT_FILE}}` | Path to `_clean-tsan/<test_name>/alert-NNN.txt` **or** `_clean-tsan/<test_name>/stacktrace-NNN.txt` for hangs |
+| `{{HANG_TYPE}}` | For hangs: substitute with `**Hang type: deadlock** (~0% CPU)` or `**Hang type: livelock** (high CPU: N%)`. For TSan alerts: omit the entire `{{HANG_TYPE}}` line from the prompt. |
 | `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
 | `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
 | `{{CLICKHOUSE_REFERENCES_FILE}}` | Path to `.claude/skills/clean-tsan/references/clickhouse-threading.md` |
@@ -370,15 +433,17 @@ After checking results, append the full entry for the current iteration to `_cle
 - **Outcome** based on the verify results:
   - Same/equivalent alert reappeared → `FAILED`, add `- **Why it failed:** <explanation>`
   - Different alert appeared → `NEW_ALERT` (the fix worked, new issue found)
-  - No TSan errors → `FIXED`
+  - Test hung again → `HANG`, note whether it is the same hang as before
+  - No TSan errors and no hang → `FIXED`
 
 ### 7d. Check results and loop
 
-- **If no TSan errors:** report "All TSan errors resolved! The test is clean." and stop.
+- **If no TSan errors and no hang:** report "All TSan errors resolved! The test is clean." and stop.
 - **If TSan errors remain:** extract the first alert (Phase 4), perform RCA (Phase 5), present fix (Phase 6), and loop back here.
+- **If test hung:** Phase 3 will have captured stacktraces via hang detection (Phase 3b). Skip Phase 4, perform RCA (Phase 5), present fix (Phase 6), and loop back here.
 
-Each iteration processes one alert at a time. The loop continues until either:
-- No more TSan errors are detected
+Each iteration processes one alert or hang at a time. The loop continues until either:
+- No more TSan errors or hangs are detected
 - The user chooses "Stop" in Phase 6
 
 ---
@@ -386,9 +451,9 @@ Each iteration processes one alert at a time. The loop continues until either:
 ## Error Handling
 
 ### Test timeout
-- Integration tests: use 600000ms timeout (tests may take >10 minutes under TSan)
-- Unit tests: use 300000ms timeout
-- If test hangs, kill and report
+- **Unit tests**: no global timeout — hang detection (Phase 3b) monitors output and captures stacktraces automatically
+- **Integration tests**: use 600000ms timeout (tests may take >10 minutes under TSan). If timeout triggers, kill and report.
+- **Stateless tests**: use 300000ms timeout
 
 ### Empty test results
 - For gtest: verify `--gtest_filter` matches actual test names
@@ -409,10 +474,11 @@ Each iteration processes one alert at a time. The loop continues until either:
 
 | Artifact | Path |
 |----------|------|
-| Build logs | `/tmp/tsan_build_XXXXXX.log` |
-| Test logs | `/tmp/tsan_test_XXXXXX.log` |
-| Server stderr (stateless) | `/tmp/tsan_server_stderr_XXXXXX.log` |
+| Build logs | `build_tsan/tsan_build.log` |
+| Test logs | `build_tsan/tsan_test.log` |
+| Server stderr (stateless) | `build_tsan/tsan_server_stderr.log` |
 | TSan alerts | `_clean-tsan/<test_name>/alert-NNN.txt` |
+| Hang stacktraces | `_clean-tsan/<test_name>/stacktrace-NNN.txt` |
 | RCA reports | `_clean-tsan/<test_name>/rca-NNN.txt` |
 | Progress log | `_clean-tsan/progress.md` (shared across tests) |
 | Threading model | `_clean-tsan/threading-model.md` (shared across tests) |
@@ -429,7 +495,7 @@ Each iteration processes one alert at a time. The loop continues until either:
 
 ## Important Notes
 
-- **All long-running operations** (build, tests) MUST run in background with `run_in_background: true`
+- **Builds** MUST run in background with `run_in_background: true`. **Unit tests** run in shell background (`&`) with hang detection polling. **Integration/stateless tests** run with `run_in_background: true`.
 - **Use Task subagents** for ALL analysis to avoid polluting main conversation context
 - **Each RCA gets its own subagent** to prevent cross-contamination between alerts
 - **Stack traces guide analysis** — the RCA subagent reads source files referenced in the alert, no upfront class search needed
