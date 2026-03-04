@@ -87,6 +87,8 @@ python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" -v
 
 Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. The tool caches symbol tables by build-id for fast repeated queries.
 
+**IMPORTANT**: `--select N` does NOT imply `--search`. When using a regex pattern with `--select`, you MUST also pass `--search`, e.g. `--search --select 1`. Without `--search`, the pattern is treated as a literal exact match and will fail.
+
 You can build multiple versions of ClickHouse inside `build_*` directories, such as `build`, `build_debug`, `build_asan`, etc.
 
 You can run integration tests as in `tests/integration/README.md` using: `python -m ci.praktika run "integration" --test <selectors>` invoked from the repository root.
