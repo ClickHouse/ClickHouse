@@ -36,6 +36,8 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -259,8 +261,12 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     {
         for (size_t i = 0; i < hyperrectangle.size(); ++i)
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, other.hyperrectangle[i].left);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, other.hyperrectangle[i].right);
+            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, other.hyperrectangle[i].left)
+                ? hyperrectangle[i].left
+                : other.hyperrectangle[i].left;
+            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, other.hyperrectangle[i].right)
+                ? other.hyperrectangle[i].right
+                : hyperrectangle[i].right;
         }
     }
 }
@@ -707,6 +713,86 @@ bool IMergeTreeDataPart::isMovingPart() const
     return part_directory_path.parent_path().filename() == "moving";
 }
 
+void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) const
+{
+    if (!index_mark_cache)
+        return;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    auto read_settings = storage.getContext()->getReadSettings();
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_name = skip_index->getFileName();
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+
+        if (!index_format)
+            continue;
+
+        for (const auto & substream : index_format.substreams)
+        {
+            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
+            if (!stream_name)
+                continue;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                index_mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity->getMarksCountForSkipIndex(index_description.granularity),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                /*load_marks_threadpool=*/ nullptr,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        }
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
+
+void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache) const
+{
+    if (!index_mark_cache)
+        return;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_name = skip_index->getFileName();
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+
+        if (!index_format)
+            continue;
+
+        for (const auto & substream : index_format.substreams)
+        {
+            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
+            if (!stream_name)
+                continue;
+
+            auto marks_file = index_granularity_info.getMarksFilePath(*stream_name);
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
+            index_mark_cache->remove(key);
+        }
+    }
+}
+
 void IMergeTreeDataPart::clearCaches()
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
@@ -715,6 +801,7 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove index and marks from the cache, because otherwise the cache will grow to its maximum size
     /// even if the overall index size is much less.
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
+    removeIndexMarksFromCache(storage.getContext()->getIndexMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
 
     /// Remove from other caches of secondary indexes
@@ -723,12 +810,11 @@ void IMergeTreeDataPart::clearCaches()
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
 {
-    size_t uncompressed_bytes = getBytesUncompressedOnDisk();
+    if (cleared_data_in_caches)
+        return false;
 
-    auto mark_cache = storage.getMarkCacheToPrewarm(uncompressed_bytes);
-    auto index_cache = storage.getPrimaryIndexCacheToPrewarm(uncompressed_bytes);
-
-    return (mark_cache || index_cache) && !cleared_data_in_caches;
+    auto caches = storage.getCachesToPrewarm(getBytesUncompressedOnDisk());
+    return caches.hasAny();
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -2140,8 +2226,14 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         file.read(str_buf);
         bool valid_creation_tid = version.creation_tid == file.creation_tid;
         bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
-        bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
-        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
+        /// CSN may have been learned from the transaction log and cached in memory
+        /// (e.g., by VersionMetadata::isVisible) but not yet appended to the on-disk file.
+        bool valid_creation_csn = version.creation_csn == file.creation_csn
+            || version.creation_csn == Tx::RolledBackCSN
+            || file.creation_csn == Tx::UnknownCSN;
+        bool valid_removal_csn = version.removal_csn == file.removal_csn
+            || version.removal_csn == Tx::PrehistoricCSN
+            || file.removal_csn == Tx::UnknownCSN;
         bool valid_removal_tid_lock = (version.removal_tid.isEmpty() && version.removal_tid_lock == 0)
             || (version.removal_tid_lock == version.removal_tid.getHash());
         if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
@@ -2341,7 +2433,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
-        .keep_metadata_version = prefix == "covered-by-broken",
+        .keep_metadata_version = true,
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };

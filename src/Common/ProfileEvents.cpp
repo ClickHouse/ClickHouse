@@ -108,8 +108,8 @@
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheHits, "Number of times a text index dictionary block has been found in the cache.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheMisses, "Number of times a text index dictionary block has not been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
@@ -362,6 +362,7 @@
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
+    M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
     M(DeltaLakeScannedFiles, "Number of files scanned during DeltaLake scan callbacks", ValueType::Number) \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
@@ -385,7 +386,8 @@
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
     M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
     M(DistributedIndexAnalysisScheduledReplicas, "Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled", ValueType::Number) \
-    M(DistributedIndexAnalysisFailedReplicas, "Number of times distributed index analysis failed on one of replicas", ValueType::Number) \
+    M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \
+    M(DistributedIndexAnalysisReplicaFallback, "Number of times distributed index analysis failed on one of replicas with fallback to local replica", ValueType::Number) \
     M(DistributedIndexAnalysisParts, "Number of parts send for distributed index analysis", ValueType::Number) \
     M(DistributedIndexAnalysisMissingParts, "Number of missing parts during distributed index analysis that will be resolved locally", ValueType::Number) \
     \
@@ -932,6 +934,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperPacketsSent, "Packets sent by keeper server", ValueType::Number) \
     M(KeeperPacketsReceived, "Packets received by keeper server", ValueType::Number) \
     M(KeeperRequestTotal, "Total requests number on keeper server", ValueType::Number) \
+    M(KeeperRequestTotalWithSubrequests, "Total requests number on keeper server, counting each subrequest within a multi request", ValueType::Number) \
     M(KeeperLatency, "Keeper latency", ValueType::Milliseconds) \
     M(KeeperTotalElapsedMicroseconds, "Keeper total latency for a single request", ValueType::Microseconds) \
     M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request", ValueType::Microseconds) \
@@ -1187,6 +1190,9 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeDataPartsFetchFromPeer, "How many times we fetch data parts from peer", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromPeerMicroseconds, "Data parts fetch from peer microseconds", ValueType::Number) \
     M(SharedMergeTreeDataPartsFetchFromS3, "How many times we fetch data parts from S3", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeper, "How many times we have update replica set from ZooKeeper", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests, "How many total ZooKeeper requests we made to update replica set", ValueType::Number) \
+    M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds, "How much time we spend to update replica set", ValueType::Number) \
     \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \

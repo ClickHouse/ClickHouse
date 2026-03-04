@@ -209,14 +209,11 @@ def main():
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
-        # The sccache server sometimes fails to start because of issues with S3
-        # It should start before cmake, since cmake can precompile binaries during
-        # configuration stage
-        results.append(
-            Result.from_commands_run(
-                name="Start sccache server", command="sccache --start-server", retries=3
-            )
-        )
+        # The sccache server sometimes fails to start because of issues with S3.
+        # Start it explicitly with retries before cmake, since cmake can invoke
+        # the compiler during configuration. Non-fatal: build can proceed without it.
+        if not Shell.check("sccache --start-server", retries=3):
+            print("WARNING: sccache server failed to start, build will proceed without it")
         run_shell("sccache stats", "sccache --show-stats")
         results.append(
             Result.from_commands_run(
