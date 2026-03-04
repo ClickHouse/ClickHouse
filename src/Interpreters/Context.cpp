@@ -41,6 +41,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -1020,6 +1021,14 @@ struct ContextSharedPart : boost::noncopyable
         }
         if (delete_zookeeper)
             delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -3716,14 +3725,17 @@ void Context::cancelAllBackupsAndRestores() const
         shared->backups_worker->cancelAll();
 }
 
-BackupsInMemoryHolder & Context::getBackupsInMemory()
+std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 {
+    std::lock_guard lock(mutex);
+    if (!backups_in_memory)
+        backups_in_memory = std::make_shared<BackupsInMemoryHolder>();
     return backups_in_memory;
 }
 
-const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
-    return backups_in_memory;
+    return const_cast<Context *>(this)->getBackupsInMemory();
 }
 
 
@@ -3801,6 +3813,8 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
@@ -3832,6 +3846,8 @@ void Context::clearPageCache() const
     }
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3868,6 +3884,8 @@ void Context::clearMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -4008,6 +4026,8 @@ void Context::clearIndexUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -4044,6 +4064,8 @@ void Context::clearIndexMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)

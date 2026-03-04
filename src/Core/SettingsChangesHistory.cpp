@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, true, "Allow duplicated paths in JSON type with literal and nested object by default"},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -56,9 +57,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
             {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
             {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
+            {"async_insert", false, true, "Enable async inserts by default."},
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
             {"optimize_dry_run_check_part", true, true, "New setting"},
