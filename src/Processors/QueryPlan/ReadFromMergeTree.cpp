@@ -2312,7 +2312,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
-    NameSet indexes_column_names(primary_key_column_names.begin(), primary_key_column_names.end());
+    NameSet indexes_column_names;
+    /// We need not only PK columns, but source columns for this PK calculation as well
+    if (auto required_columns = primary_key.expression->getRequiredColumns(); !required_columns.empty())
+        indexes_column_names.insert(required_columns.begin(), required_columns.end());
     for (const auto & skip_index : indexes->skip_indexes.useful_indices)
     {
         const auto & skip_index_required_columns = skip_index.index->getColumnsRequiredForIndexCalc();
@@ -2521,6 +2524,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 part_range_info.ranges = ranges;
                 result_parts_ranges.push_back(part_range_info);
             }
+
+            /// Parts should be sorted by part_index_in_query for Query Condition Cache
+            std::sort(result_parts_ranges.begin(), result_parts_ranges.end(),
+                [](const auto & a, const auto & b) { return a.part_index_in_query < b.part_index_in_query; });
 
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
@@ -3274,7 +3281,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             if (!query_info.input_order_info)
                 return CoordinationMode::Default;
 
-            return result.read_type == ReadType::InOrder
+            if (!query_info.input_order_info->direction)
+                return CoordinationMode::Default;
+
+            return query_info.input_order_info->direction > 0
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };

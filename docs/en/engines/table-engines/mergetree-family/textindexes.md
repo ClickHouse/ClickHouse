@@ -775,21 +775,22 @@ This ordering enables skipping even more data granules than the granules skipped
 ### Caching {#caching}
 
 Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
-Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
+They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+
 By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
 
-#### Dictionary blocks cache settings {#caching-dictionary}
+#### Tokens cache settings {#caching-tokens}
 
 | Setting                                                                                                                                                  | Description                                                                                                    |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)                | Text index dictionary block cache policy name.                                                                 |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                    | Maximum cache size in bytes.                                                                                   |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)      | Maximum number of deserialized dictionary blocks in cache.                                                     |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)        | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.  |
+| [text_index_tokens_cache_policy](/operations/server-configuration-parameters/settings#text_index_tokens_cache_policy)                | Text index tokens cache policy name.                                                                 |
+| [text_index_tokens_cache_size](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_tokens_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_tokens_cache_max_entries)      | Maximum number of deserialized tokens in cache.                                                     |
+| [text_index_tokens_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size_ratio)        | The size of the protected queue in the text index tokens cache relative to the cache\'s total size.  |
 
 #### Header cache settings {#caching-header}
 
@@ -882,6 +883,10 @@ During this step, the sorted dictionaries of the text indexes of each input part
 The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
 This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
 If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
+
+**Debugging**
+
+Table function [mergeTreeTextIndex](../../../sql-reference/table-functions/mergeTreeTextIndex.md) can be used to introspect text indexes.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
