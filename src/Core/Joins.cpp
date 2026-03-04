@@ -82,6 +82,7 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
     {
         case JoinOrderAlgorithm::GREEDY: return "GREEDY";
         case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
+        case JoinOrderAlgorithm::DPHYP:  return "DPHYP";
     }
 }
 

@@ -82,6 +82,13 @@ public:
         return BitSet(lhs.bitset | rhs.bitset);
     }
 
+    /// Returns this & ~other (set difference).
+    BitSet andNot(const BitSet & other) const
+    {
+        adjustSize(*this, other);
+        return BitSet(bitset & ~other.bitset);
+    }
+
     void shift(size_t pos)
     {
         if (pos == 0)
