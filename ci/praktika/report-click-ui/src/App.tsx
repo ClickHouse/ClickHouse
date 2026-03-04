@@ -1258,11 +1258,19 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
 }
 
 function App() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const savedTheme = localStorage.getItem('theme')
+    return (savedTheme === 'dark' || savedTheme === 'light') ? savedTheme : 'dark'
+  })
+
+  const handleSetTheme = (newTheme: 'dark' | 'light') => {
+    setTheme(newTheme)
+    localStorage.setItem('theme', newTheme)
+  }
 
   return (
     <ClickUIProvider theme={theme}>
-      <AppContent theme={theme} setTheme={setTheme} />
+      <AppContent theme={theme} setTheme={handleSetTheme} />
     </ClickUIProvider>
   )
 }
