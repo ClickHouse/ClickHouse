@@ -30,6 +30,17 @@ UInt64 parseSequentialNodeNumber(const String & path, size_t prefix_size)
     return parse<UInt64>(path.c_str() + prefix_size, path.size() - prefix_size);
 }
 
+constexpr UInt64 BLOCK_NUMBER_WARNING_THRESHOLD = 1ULL << 30;
+
+void warnIfBlockNumberIsHigh(UInt64 number, const String & path)
+{
+    if (number > BLOCK_NUMBER_WARNING_THRESHOLD)
+        LOG_WARNING(
+            getLogger("EphemeralLockInZooKeeper"),
+            "Block number {} is too high, this may lead to overflow. Path: {}",
+            number, path);
+}
+
 }
 
 EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_)
@@ -93,6 +104,7 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
     }
 
     const UInt64 number = parseSequentialNodeNumber(path, path_prefix_.size());
+    warnIfBlockNumberIsHigh(number, path);
     CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path, number};
 }
@@ -196,6 +208,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             const String & path = dynamic_cast<const Coordination::CreateResponse &>(*lock_responses[i]).path_created;
 
             const UInt64 number = parseSequentialNodeNumber(path, prefix_size);
+            warnIfBlockNumberIsHigh(number, path);
             CurrentMetrics::max(CurrentMetrics::MaxAllocatedEphemeralLockSequentialNumber, number);
             locks.push_back(LockInfo{path, partitions[i], number});
         }
