@@ -27,6 +27,7 @@ def test_both_https(clickhouse_cluster):
     node = clickhouse_cluster.instances["node"]
     node.query(
     """
+        DROP TABLE IF EXISTS test_table SYNC;
         CREATE TABLE test_table(
             id UInt32,
             a0 String,
