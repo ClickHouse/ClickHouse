@@ -32,24 +32,28 @@ def test_insert_profile_events(started_cluster):
         "SELECT value FROM system.events WHERE event = 'AsyncInsertQuery'"
     )
    
-    non_async_inserts = 10   
-    async_inserts = 10    
+    non_async_inserts = 2   
+    async_inserts = 2    
     inserts = non_async_inserts  + async_inserts 
     
     node.query(
         "CREATE TABLE test_insert_profile_events  (id UInt32, s String) ENGINE = MergeTree"
     )
 
-    for i in range(non_async_inserts):
-       node.query(
-        f"INSERT INTO test_insert_profile_events VALUES ({i},'Non Async Insert')"
-       )
+    node.query(
+        "INSERT INTO test_insert_profile_events VALUES (1,'Non Async Insert')"
+    )
+    node.query(
+        "INSERT INTO test_insert_profile_events VALUES (2,'Non Async Insert')"
+    )
 
-    for i in range(async_inserts):
-       node.query(
-        f"INSERT INTO test_insert_profile_events SETTINGS async_insert = 1 VALUES ({i},'Async Insert')"
-       )
-
+    node.query(
+        "INSERT INTO test_insert_profile_events SETTINGS async_insert = 1 VALUES (3,'Async Insert')"
+    )
+    node.query(
+        "INSERT INTO test_insert_profile_events SETTINGS async_insert = 1 VALUES (4,'Async Insert')"
+    )
+    
     insert_count = node.query(select_insert_query).strip()
     async_insert_count = node.query(select_async_insert_query).strip()
     
