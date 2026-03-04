@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool enable_positional_arguments;
+    extern const ParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
 }
 
 namespace ErrorCodes
@@ -166,7 +167,10 @@ StorageView::StorageView(
     if (!is_parameterized_view_)
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
+        if (
+            (Setting::use_declared_schema_for_parameterized_views != ParameterizedViewSchemaDefinitionMode::OFF && !columns_.empty())
+            || !query.isParameterizedView()
+        )
             storage_metadata.setColumns(columns_);
     }
     else

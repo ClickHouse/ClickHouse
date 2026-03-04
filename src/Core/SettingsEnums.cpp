@@ -344,6 +344,13 @@ IMPLEMENT_SETTING_ENUM(
      {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
+    ParameterizedViewSchemaDefinitionMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"off", ParameterizedViewSchemaDefinitionMode::OFF},
+     {"insecure", ParameterizedViewSchemaDefinitionMode::INSECURE},
+     {"throwing", ParameterizedViewSchemaDefinitionMode::THROWING}})
+
+IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
     ErrorCodes::BAD_ARGUMENTS,
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
