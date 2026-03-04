@@ -320,18 +320,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"kafka", allow_kafka}};
 
     const SettingEntries configEntries = {
-        {"client_file_path",
-         [&](const JSONObjectType & value)
-         {
-             client_file_path = std::filesystem::path(String(value.getString()));
-             fuzz_client_out = client_file_path / "fuzz.data";
-         }},
-        {"server_file_path",
-         [&](const JSONObjectType & value)
-         {
-             server_file_path = std::filesystem::path(String(value.getString()));
-             fuzz_server_out = server_file_path / "fuzz.data";
-         }},
+        {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
+        {"server_file_path", [&](const JSONObjectType & value) { server_file_path = std::filesystem::path(String(value.getString())); }},
+        {"fuzzer_out_file", [&](const JSONObjectType & value) { fuzzer_out_file = std::filesystem::path(String(value.getString())); }},
         {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
@@ -509,9 +500,9 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
     uint64_t found = 0;
 
     if (processServerQuery(
-            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzz_client_out.generic_string())))
+            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out);
+        std::ifstream infile(fuzzer_out_file);
         out.clear();
         while (std::getline(infile, buf) && !buf.empty())
         {
@@ -568,10 +559,10 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
             fmt::format(
                 "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
                 "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
         static constexpr std::array<std::string_view, 3> infinite_prefixes{"numbers", "zeros", "primes"};
-        std::ifstream infile(fuzz_client_out);
+        std::ifstream infile(fuzzer_out_file);
 
         while (std::getline(infile, buf) && buf.size() > 1)
         {
@@ -623,9 +614,9 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out);
+        std::ifstream infile(fuzzer_out_file);
         if (std::getline(infile, buf))
         {
             return !buf.empty() && buf[0] != '0';
@@ -642,9 +633,9 @@ bool FuzzConfig::hasMutations()
             false,
             fmt::format(
                 R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out);
+        std::ifstream infile(fuzzer_out_file);
         if (std::getline(infile, buf))
         {
             return !buf.empty() && buf[0] != '0';
@@ -665,9 +656,9 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
                 "FORMAT TabSeparated;",
                 rand_val,
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
     }
     return res;
@@ -683,9 +674,9 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
             fmt::format(
                 R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 property,
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
     }
     return res.empty() ? "-1" : res;
@@ -700,9 +691,9 @@ String FuzzConfig::getRandomFileSystemCacheValue()
             false,
             fmt::format(
                 R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
     }
     return res;
@@ -730,9 +721,9 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 detached_tbl,
                 db_clause,
                 table,
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
         std::getline(infile, res);
     }
     return res;
@@ -773,11 +764,11 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "'%CORRUPTED_DATA%' AND message NOT ILIKE '%UNION ALL%')"
                 ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fuzz_client_out.generic_string())))
+                fuzzer_out_file.generic_string())))
     {
         String buf;
         size_t i = 0;
-        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
         static const DB::Strings health_errors
             = {"broken detached part(s)",
                "broken replica(s)",
@@ -814,10 +805,10 @@ void FuzzConfig::validateClickHouseHealth()
                     && processServerQuery(
                         false,
                         fmt::format(
-                            "{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", detail_queries[i], fuzz_client_out.generic_string())))
+                            "{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", detail_queries[i], fuzzer_out_file.generic_string())))
                 {
                     String dbuf;
-                    std::ifstream detail_file(fuzz_client_out, std::ios::in);
+                    std::ifstream detail_file(fuzzer_out_file, std::ios::in);
                     while (std::getline(detail_file, dbuf))
                     {
                         if (!dbuf.empty())
