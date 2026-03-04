@@ -1,21 +1,35 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
-#include <pcg_random.hpp>
 #include <random>
+
 
 namespace DB
 {
 
-BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
+BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
-    , data(data_)
-    , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
-    , rng(randomSeed())
     , type(type_)
+    , data(data_)
+    , storage_id(storage_id_)
+    , rng(randomSeed())
+    , sleep_settings(getSettings())
 {
+}
+
+BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
+{
+    switch (type)
+    {
+        case Type::DataProcessing:
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
+        case Type::Moving:
+            return getContext()->getBackgroundMoveTaskSchedulingSettings();
+    }
 }
 
 void BackgroundJobsAssignee::trigger()
@@ -99,9 +113,14 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
+}
+
+void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
+{
+    storage_id = new_id;
 }
 
 void BackgroundJobsAssignee::finish()
@@ -110,8 +129,6 @@ void BackgroundJobsAssignee::finish()
     if (holder)
     {
         holder->deactivate();
-
-        auto storage_id = data.getStorageID();
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);

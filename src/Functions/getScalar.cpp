@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-/** Get scalar value of sub queries from query context via IAST::Hash.
+/** Get scalar value of sub queries from query context via IASTHash.
   */
 class FunctionGetScalar : public IFunction, WithContext
 {
@@ -74,36 +74,34 @@ private:
 
 /** Get special scalar values
   */
-template <typename Scalar>
 class FunctionGetSpecialScalar : public IFunction
 {
 public:
-    static constexpr auto name = Scalar::name;
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context_, const char * function_name_, const char * scalar_name_)
     {
-        return std::make_shared<FunctionGetSpecialScalar<Scalar>>(context_);
+        return std::make_shared<FunctionGetSpecialScalar>(context_, function_name_, scalar_name_);
     }
 
-    static ColumnWithTypeAndName createScalar(ContextPtr context_)
+    static ColumnWithTypeAndName createScalar(ContextPtr context_, const char * scalar_name_)
     {
-        if (auto block = context_->tryGetSpecialScalar(Scalar::scalar_name))
+        if (auto block = context_->tryGetSpecialScalar(scalar_name_))
             return block->getByPosition(0);
         if (context_->hasQueryContext())
         {
-            if (context_->getQueryContext()->hasScalar(Scalar::scalar_name))
-                return context_->getQueryContext()->getScalar(Scalar::scalar_name).getByPosition(0);
+            if (context_->getQueryContext()->hasScalar(scalar_name_))
+                return context_->getQueryContext()->getScalar(scalar_name_).getByPosition(0);
         }
-        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), Scalar::scalar_name};
+        return {DataTypeUInt32().createColumnConst(1, 0), std::make_shared<DataTypeUInt32>(), scalar_name_};
     }
 
-    explicit FunctionGetSpecialScalar(ContextPtr context_)
-        : scalar(createScalar(context_)), is_distributed(context_->isDistributed())
+    FunctionGetSpecialScalar(ContextPtr context_, const char * function_name_, const char * scalar_name_)
+        : scalar(createScalar(context_, scalar_name_)), is_distributed(context_->isDistributed()), function_name(function_name_)
     {
     }
 
     String getName() const override
     {
-        return name;
+        return function_name;
     }
 
     bool isDeterministic() const override { return false; }
@@ -137,27 +135,74 @@ public:
 private:
     ColumnWithTypeAndName scalar;
     bool is_distributed;
-};
-
-struct GetShardNum
-{
-    static constexpr auto name = "shardNum";
-    static constexpr auto scalar_name = "_shard_num";
-};
-
-struct GetShardCount
-{
-    static constexpr auto name = "shardCount";
-    static constexpr auto scalar_name = "_shard_count";
+    const char * function_name;
 };
 
 }
 
 REGISTER_FUNCTION(GetScalar)
 {
-    factory.registerFunction<FunctionGetScalar>();
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>();
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>();
+    factory.registerFunction<FunctionGetScalar>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+
+    FunctionDocumentation::Description description_shardNum = R"(
+Returns the index of a shard which processes a part of data in a distributed query.
+Indices begin from `1`.
+If a query is not distributed then a constant value `0` is returned.
+)";
+    FunctionDocumentation::Syntax syntax_shardNum = "shardNum()";
+    FunctionDocumentation::Arguments arguments_shardNum = {};
+    FunctionDocumentation::ReturnedValue returned_value_shardNum = {"Returns the shard index or a constant `0`.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_shardNum = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE shard_num_example (dummy UInt8)
+ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
+        )",
+        R"(
+┌─dummy─┬─shardNum()─┬─shardCount()─┐
+│     0 │          1 │            2 │
+│     0 │          2 │            2 │
+└───────┴────────────┴──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shardNum = {21, 9};
+    FunctionDocumentation::Category category_shardNum = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, {}, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
+
+    factory.registerFunction("shardNum", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardNum", "_shard_num"); }, documentation_shardNum);
+
+    FunctionDocumentation::Description description_shardCount = R"(
+Returns the total number of shards for a distributed query.
+If a query is not distributed then constant value `0` is returned.
+)";
+    FunctionDocumentation::Syntax syntax_shardCount = "shardCount()";
+    FunctionDocumentation::Arguments arguments_shardCount = {};
+    FunctionDocumentation::ReturnedValue returned_value_shardCount = {"Returns the total number of shards or `0`.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_shardCount = {
+    {
+        "Usage example",
+        R"(
+-- See shardNum() example above which also demonstrates shardCount()
+CREATE TABLE shard_count_example (dummy UInt8)
+ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT shardCount() FROM shard_count_example;
+        )",
+        R"(
+┌─shardCount()─┐
+│            2 │
+│            2 │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shardCount = {21, 9};
+    FunctionDocumentation::Category category_shardCount = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, {}, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
+
+    factory.registerFunction("shardCount", [](ContextPtr context){ return FunctionGetSpecialScalar::create(context, "shardCount", "_shard_count"); }, documentation_shardCount);
 }
 
 }

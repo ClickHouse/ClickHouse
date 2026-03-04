@@ -44,7 +44,7 @@ BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, co
 {
 }
 
-bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents)
+bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents)
 {
     if (!fileExists(file_name))
         return false;
@@ -52,7 +52,7 @@ bool BackupWriterDefault::fileContentsEqual(const String & file_name, const Stri
     try
     {
         auto in = readFile(file_name, expected_file_contents.size());
-        String actual_file_contents(expected_file_contents.size(), ' ');
+        actual_file_contents = String(expected_file_contents.size(), ' ');
         return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
             && (actual_file_contents == expected_file_contents) && in->eof();
     }
@@ -90,4 +90,16 @@ void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPt
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
 }
+
+void BackupWriterDefault::removeFiles(const Strings & file_names)
+{
+    /// Derived classes can override removeFiles() to remove files faster (e.g. by using batch remove).
+    for (const auto & file_name : file_names)
+        removeFile(file_name);
+}
+
+void BackupWriterDefault::removeEmptyDirectories()
+{
+}
+
 }

@@ -11,14 +11,14 @@ function test()
 {
     echo "test"
     $CH_CLIENT -q "insert into test select number, multiIf(number % 3 == 2, NULL, number % 3 == 1, number, arrayMap(x -> multiIf(number % 9 == 0, NULL, number % 9 == 3, 'str_' || toString(number), number), range(number % 10))) from numbers(36)"
-    $CH_CLIENT -q "select v, v.UInt64.null, v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id"
-    $CH_CLIENT -q "select v.UInt64.null, v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id"
-    $CH_CLIENT -q "select v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null, v.\`Array(Variant(String, UInt64))\`.String.null from test order by id"
+    $CH_CLIENT -q "select v, v.UInt64.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id"
+    $CH_CLIENT -q "select v.UInt64.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id"
+    $CH_CLIENT -q "select v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null, v.\`Array(Variant(String, UInt64))\`.String.null from test order by id"
     $CH_CLIENT -q "select id from test where v.UInt64 is null order by id"
     $CH_CLIENT -q "insert into test select number, multiIf(number % 3 == 2, NULL, number % 3 == 1, number, arrayMap(x -> multiIf(number % 9 == 0, NULL, number % 9 == 3, 'str_' || toString(number), number), range(number % 10))) from numbers(250000) settings min_insert_block_size_rows=100000, min_insert_block_size_bytes=0"
-    $CH_CLIENT -q "select v, v.UInt64.null, v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id format Null"
-    $CH_CLIENT -q "select v.UInt64.null, v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id format Null"
-    $CH_CLIENT -q "select v.\`Array(Variant(String, UInt64))\`.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null, v.\`Array(Variant(String, UInt64))\`.String.null from test order by id format Null"
+    $CH_CLIENT -q "select v, v.UInt64.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id format Null"
+    $CH_CLIENT -q "select v.UInt64.null,  v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null from test order by id format Null"
+    $CH_CLIENT -q "select v.\`Array(Variant(String, UInt64))\`.size0, v.\`Array(Variant(String, UInt64))\`.UInt64.null, v.\`Array(Variant(String, UInt64))\`.String.null from test order by id format Null"
     $CH_CLIENT -q "select id from test where v.UInt64 is null order by id format Null"
 }
 

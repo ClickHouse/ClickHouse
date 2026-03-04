@@ -26,7 +26,7 @@ SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries1';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_thread_log, query_log;
 
 WITH
     maxIntersections(
@@ -37,13 +37,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries1'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -58,7 +58,7 @@ SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries2', prefer_localhost_replica=0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_thread_log, query_log;
 
 WITH
     maxIntersections(
@@ -69,13 +69,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries2'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -94,7 +94,7 @@ SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries3', async_socket_for_remote=0, prefer_localhost_replica=1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_thread_log, query_log;
 
 WITH
     maxIntersections(
@@ -102,16 +102,16 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 77, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+    if(peak_threads >= 1, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries3'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -170,7 +170,7 @@ ORDER BY c DESC
 LIMIT 5
 SETTINGS log_comment='check_concurrency_in_remote_queries4' FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_thread_log, query_log;
 
 WITH
     maxIntersections(
@@ -181,13 +181,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries4'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -208,7 +208,7 @@ ORDER BY c DESC
 LIMIT 5
 SETTINGS log_comment='check_concurrency_in_remote_queries5', async_socket_for_remote=0 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_thread_log, query_log;
 
 WITH
     maxIntersections(
@@ -216,17 +216,17 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 95, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
-     -- we have 95 parts
+    if(peak_threads >= 1, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+     -- we have 95 parts, but avoid spawning too much idles threads
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries5'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1

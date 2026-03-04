@@ -1,5 +1,5 @@
 # Vectorscan is drop-in replacement for Hyperscan.
-if ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64)
+if ((ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2) OR ARCH_AARCH64)
     option (ENABLE_VECTORSCAN "Enable vectorscan" ${ENABLE_LIBRARIES})
 endif()
 
@@ -7,6 +7,8 @@ if (NOT ENABLE_VECTORSCAN)
     message (STATUS "Not using vectorscan")
     return()
 endif()
+
+set (CMAKE_CXX_STANDARD 17)
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/vectorscan")
 
@@ -273,7 +275,7 @@ add_library (_vectorscan ${SRCS})
 
 # library has too much debug information
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_vectorscan PRIVATE -g0)
+    target_compile_options (_vectorscan PRIVATE -g1)
 endif()
 
 target_include_directories (_vectorscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")

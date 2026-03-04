@@ -1,10 +1,12 @@
-#include "Parsers/IAST_fwd.h"
+#include <Core/Block.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -127,7 +129,7 @@ public:
         Block scalar{{std::move(column), type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
         {
-            auto literal = std::make_unique<ASTLiteral>(std::move(field));
+            auto literal = make_intrusive<ASTLiteral>(std::move(field));
             ast = addTypeConversionToAST(std::move(literal), type->getName());
         }
     }

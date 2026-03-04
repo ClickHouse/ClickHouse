@@ -3,12 +3,10 @@
 #if USE_MYSQL
 #include <vector>
 
-#include <Core/MySQL/MySQLReplication.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/IDataType.h>
@@ -17,13 +15,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -32,7 +30,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -60,13 +58,13 @@ MySQLSource::Connection::Connection(
 {
 }
 
-/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MySQL tables and in doInvalidateQuery for dictionary source.
 MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(sample_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
@@ -77,7 +75,7 @@ MySQLSource::MySQLSource(
 
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(sample_block_.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
@@ -105,7 +103,11 @@ void MySQLWithFailoverSource::onStart()
     {
         try
         {
-            connection = std::make_unique<Connection>(pool->get(), query_str);
+            mysqlxx::PoolWithFailover::Entry entry = pool->get();
+            mysqlxx::Connection & mysql_conn = entry;
+            mysql_connection_id = mysql_conn.getDriverThreadID();
+            LOG_TEST(log, "Get data from database");
+            connection = std::make_unique<Connection>(entry, query_str);
             break;
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
@@ -117,6 +119,10 @@ void MySQLWithFailoverSource::onStart()
                 LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
                 throw;
             }
+        }
+        catch (mysqlxx::ConnectionFailed & ecl)  /// Replica is probably down - try next.
+        {
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
         }
         catch (const mysqlxx::BadQuery & e)
         {
@@ -130,16 +136,80 @@ void MySQLWithFailoverSource::onStart()
 
 Chunk MySQLWithFailoverSource::generate()
 {
-    if (!is_initialized)
+    try
     {
-        onStart();
-        is_initialized = true;
-    }
+        if (!is_initialized.load())
+        {
+            onStart();
+            is_initialized = true;
+        }
 
-    return MySQLSource::generate();
+        return MySQLSource::generate();
+    }
+    catch (const mysqlxx::BadQuery & e)
+    {
+        LOG_ERROR(log, "Error in MySQLWithFailoverSource::generate(): {}", e.displayText());
+
+        if (!isCancelled())
+            throw;
+
+        return {};
+    }
 }
 
+void MySQLWithFailoverSource::onCancel() noexcept
+{
+    try
+    {
+        /// The code is executed only if onStart() was not finished because of freezing
+        if (is_initialized.load())
+        {
+            return;
+        }
 
+        uint64_t connection_id = mysql_connection_id.load();
+        if (connection_id == 0)
+        {
+            LOG_DEBUG(log, "No valid MySQL connection ID to cancel");
+            return;
+        }
+
+        LOG_DEBUG(log, "Attempting to cancel MySQL query with connection ID {}", connection_id);
+
+        std::string kill_query = "KILL QUERY " + std::to_string(connection_id);
+
+        try
+        {
+            auto cancel_connection = std::make_unique<Connection>(pool->get(), kill_query);
+            cancel_connection->query.execute();
+            LOG_DEBUG(log, "Successfully cancelled MySQL query with connection ID {}", connection_id);
+        }
+        catch (const mysqlxx::ConnectionFailed & e)
+        {
+            LOG_WARNING(log, "Failed to connect for cancel query: {}", e.displayText());
+        }
+        catch (const mysqlxx::BadQuery & e)
+        {
+            LOG_WARNING(log, "Failed to execute cancel query: {}", e.displayText());
+        }
+        catch (const mysqlxx::Exception & e)
+        {
+            LOG_WARNING(log, "MySQL exception during cancellation: {}", e.displayText());
+        }
+        catch (const Poco::Exception & e)
+        {
+            LOG_WARNING(log, "Poco exception during cancellation: {}", e.displayText());
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(log, "std::exception during cancellation: {}", e.what());
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
+    }
+}
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -149,11 +219,11 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value.getUInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value.getUInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
@@ -166,8 +236,15 @@ namespace
                 {
                     size_t n = value.size();
                     UInt64 val = 0UL;
-                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
-                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    char * to = reinterpret_cast<char *>(&val);
+                    memcpy(to, const_cast<char *>(value.data()), n);
+
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
@@ -179,11 +256,11 @@ namespace
                 break;
             }
             case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value.getInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value.getInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
@@ -226,11 +303,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>()));
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>()));
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:
@@ -321,6 +398,7 @@ namespace
 
 Chunk MySQLSource::generate()
 {
+    LOG_TEST(log, "Generate a chunk");
     auto row = connection->result.fetch();
     if (!row)
     {
@@ -337,7 +415,7 @@ Chunk MySQLSource::generate()
     size_t num_rows = 0;
     size_t read_bytes_size = 0;
 
-    while (row)
+    while (row && !isCancelled())
     {
         for (size_t index = 0; index < position_mapping.size(); ++index)
         {

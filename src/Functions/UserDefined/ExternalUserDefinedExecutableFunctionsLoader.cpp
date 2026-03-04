@@ -1,8 +1,10 @@
-#include "ExternalUserDefinedExecutableFunctionsLoader.h"
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -157,7 +159,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (!execute_direct && !parameters.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
 
-    std::vector<String> command_arguments;
+    VectorWithMemoryTracking<String> command_arguments;
 
     if (execute_direct)
     {
@@ -173,12 +175,14 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (config.has(key_in_config + ".return_name"))
         result_name = config.getString(key_in_config + ".return_name");
 
+    bool is_deterministic = config.getBool(key_in_config + ".deterministic", false);
+
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
     ExternalCommandStderrReaction stderr_reaction
-        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "none"));
+        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "throw"));
     bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
 
     size_t pool_size = 0;
@@ -239,6 +243,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .parameters = std::move(parameters),
         .result_type = std::move(result_type),
         .result_name = std::move(result_name),
+        .is_deterministic = is_deterministic
     };
 
     ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration

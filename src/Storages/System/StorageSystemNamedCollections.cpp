@@ -1,6 +1,9 @@
-#include "StorageSystemNamedCollections.h"
+#include <Storages/System/StorageSystemNamedCollections.h>
 
-#include <Common/FieldVisitorToString.h>
+#include <base/EnumReflection.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
@@ -15,12 +18,19 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool format_display_secrets_in_show_and_select;
+}
+
 ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
 {
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the collection."},
         {"collection", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Collection internals."},
+        {"source", std::make_shared<DataTypeString>(), "Named collection source."},
+        {"create_query", std::make_shared<DataTypeString>(), "Named collection create query."},
     };
 }
 
@@ -49,12 +59,16 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & tuple_column = column_map->getNestedData();
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
+        bool access_secrets = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+        access_secrets &= access->isGranted(AccessType::displaySecretsInShowAndSelect);
+        access_secrets &= context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+        access_secrets &= context->displaySecretsInShowAndSelect();
 
         size_t size = 0;
         for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            if (access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS))
+            if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
                 value_column.insert("[HIDDEN]");
@@ -62,6 +76,9 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         }
 
         offsets.push_back(offsets.back() + size);
+
+        res_columns[2]->insert(magic_enum::enum_name(collection->getSourceId()));
+        res_columns[3]->insert(collection->getCreateStatement(access_secrets));
     }
 }
 

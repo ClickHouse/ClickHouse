@@ -4,7 +4,7 @@
 -- Tests the cross product of all predicates with all right-hand sides on all data types and all statistics types.
 
 SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 
 DROP TABLE IF EXISTS tab;
 

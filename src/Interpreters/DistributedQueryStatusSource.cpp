@@ -2,13 +2,12 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Databases/DatabaseReplicated.h>
 
 namespace DB
 {
@@ -23,13 +22,15 @@ extern const int UNFINISHED;
 }
 
 DistributedQueryStatusSource::DistributedQueryStatusSource(
+    const String & zookeeper_name_,
     const String & zk_node_path,
     const String & zk_replicas_path,
-    Block block,
+    SharedHeader block,
     ContextPtr context_,
     const Strings & hosts_to_wait,
     const char * logger_name)
     : ISource(block)
+    , zookeeper_name(zookeeper_name_)
     , node_path(zk_node_path)
     , replicas_path(zk_replicas_path)
     , context(context_)
@@ -50,7 +51,6 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     addTotalRowsApprox(waiting_hosts.size());
     timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
 }
-
 
 IProcessor::Status DistributedQueryStatusSource::prepare()
 {
@@ -87,13 +87,22 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     NameSet offline;
     auto res = zookeeper->tryGet(paths);
     for (size_t i = 0; i < res.size(); ++i)
+    {
         if (res[i].error == Coordination::Error::ZNONODE)
             offline.insert(hosts_array[i]);
+
+        if (res[i].data.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+        {
+            LOG_TRACE(log, "Replica {} is not fully synced after recovery, considering it as offline", hosts_array[i]);
+            offline.insert(hosts_array[i]);
+        }
+    }
 
     if (offline.size() == hosts_to_wait.size())
     {
         /// Avoid reporting that all hosts are offline
-        LOG_WARNING(log, "Did not find active hosts, will wait for all {} hosts. This should not happen often", offline.size());
+        LOG_WARNING(
+            log, "Did not find active hosts, will wait for all hosts: {}. This should not happen often", fmt::join(hosts_to_wait, ", "));
         return {};
     }
 
@@ -134,7 +143,7 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     bool finished_exists = false;
 
     auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
-    retries_ctl.retryLoop([&]() { finished_exists = context->getZooKeeper()->tryGet(status_path, status_data); });
+    retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(status_path, status_data); });
     if (finished_exists)
         status.tryDeserializeText(status_data);
 
@@ -161,6 +170,16 @@ std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const S
     return {host, port};
 }
 
+std::shared_ptr<DataTypeEnum8> DistributedQueryStatusSource::getStatusEnum()
+{
+    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"OK", static_cast<Int8>(QueryStatus::OK)},
+        {"IN_PROGRESS", static_cast<Int8>(QueryStatus::IN_PROGRESS)},
+        {"QUEUED", static_cast<Int8>(QueryStatus::QUEUED)},
+        {"UNFINISHED", static_cast<Int8>(QueryStatus::UNFINISHED)},
+    });
+}
+
 Chunk DistributedQueryStatusSource::generate()
 {
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
@@ -182,7 +201,7 @@ Chunk DistributedQueryStatusSource::generate()
             return stopWaitingOfflineHosts();
         }
 
-        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
+        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > static_cast<double>(timeout_seconds)))
         {
             return handleTimeoutExceeded();
         }
@@ -193,12 +212,13 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
+        auto component_guard = Coordination::setCurrentComponent("DistributedQueryStatusSource::generate");
         {
             auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(
                 [&]()
                 {
-                    auto zookeeper = context->getZooKeeper();
+                    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
                     Strings paths = getNodesToWait();
                     auto res = zookeeper->tryGetChildren(paths);
                     for (size_t i = 0; i < res.size(); ++i)

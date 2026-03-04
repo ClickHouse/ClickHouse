@@ -7,7 +7,10 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/config.xml"], with_zookeeper=True
+    "node", main_configs=["configs/config.xml"],
+    with_zookeeper=True,
+    # Server is very short on memory and may fail while initializing remote database disk
+    with_remote_database_disk=False,
 )
 
 
@@ -22,6 +25,11 @@ def started_cluster():
 
 def test_failed_async_inserts(started_cluster):
     node = started_cluster.instances["node"]
+    select_query = (
+        "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery'"
+    )
+    failed_count = node.query(select_query).strip()
+    original_failed_count = int(failed_count) if failed_count else 0
 
     node.query(
         "CREATE TABLE async_insert_30_10_2022 (id UInt32, s String) ENGINE = Memory"
@@ -43,10 +51,8 @@ def test_failed_async_inserts(started_cluster):
         ignore_error=True,
     )
 
-    select_query = (
-        "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery'"
-    )
-
-    assert node.query(select_query) == "4\n"
+    failed_count = node.query(select_query).strip()
+    current_failed_count = int(failed_count) if failed_count else 0
+    assert current_failed_count - original_failed_count == 4
 
     node.query("DROP TABLE IF EXISTS async_insert_30_10_2022 SYNC")

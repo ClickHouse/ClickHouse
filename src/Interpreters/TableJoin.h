@@ -8,10 +8,10 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/JoinOperator.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/Exception.h>
 
 #include <base/types.h>
 
@@ -20,11 +20,6 @@
 #include <memory>
 #include <unordered_map>
 #include <utility>
-
-namespace CurrentMetrics
-{
-    extern const Metric TemporaryFilesForJoin;
-}
 
 namespace DB
 {
@@ -121,17 +116,17 @@ public:
                 "Left keys: [{}] Right keys [{}] Condition columns: '{}', '{}'",
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
+
+        bool isEmpty() const
+        {
+            return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
+                && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
+        }
     };
 
     using Clauses = std::vector<JoinOnClause>;
 
-    static std::string formatClauses(const Clauses & clauses, bool short_format = false)
-    {
-        std::vector<std::string> res;
-        for (const auto & clause : clauses)
-            res.push_back("[" + clause.formatDebug(short_format) + "]");
-        return fmt::format("{}", fmt::join(res, "; "));
-    }
+    static std::string formatClauses(const Clauses & clauses, bool short_format = false);
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -151,15 +146,21 @@ private:
     const UInt64 cross_join_min_rows_to_compress = 1000;
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
-    std::vector<JoinAlgorithm> join_algorithm;
+    const size_t max_joined_block_bytes = 0;
+    const bool joined_block_split_single_row = false;
+    const bool parallel_non_joined_rows_processing = true;
+    std::vector<JoinAlgorithm> join_algorithms;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     const size_t output_by_rowlist_perkey_rows_threshold = 0;
     const size_t sort_right_minimum_perkey_rows = 0;
     const size_t sort_right_maximum_table_rows = 0;
     const bool allow_join_sorting = false;
+    const bool allow_dynamic_type_in_join_keys = false;
+    const bool enable_lazy_columns_replication = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -172,6 +173,7 @@ private:
     std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
+    std::optional<JoinOperator> join_operator;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
@@ -209,8 +211,6 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::string right_storage_name;
-
     bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
@@ -222,7 +222,8 @@ private:
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
-        NameToNameMap & key_column_rename);
+        NameToNameMap & key_column_rename,
+        const ContextPtr & context);
 
     std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
@@ -232,7 +233,8 @@ private:
 
     std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
-        const NameToNameMap & key_column_rename);
+        const NameToNameMap & key_column_rename,
+        const ContextPtr & context);
 
     void applyRename(JoinTableSide side, const NameToNameMap & name_map);
 
@@ -253,49 +255,36 @@ public:
     TableJoin() = default;
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
-              const Names & key_names_right)
-        : size_limits(limits)
-        , default_max_bytes(0)
-        , join_use_nulls(use_nulls)
-        , join_algorithm({JoinAlgorithm::DEFAULT})
-    {
-        clauses.emplace_back().key_names_right = key_names_right;
-        table_join.kind = kind;
-        table_join.strictness = strictness;
-    }
+              const Names & key_names_right);
 
     TableJoin(const TableJoin & rhs) = default;
 
-    JoinKind kind() const { return table_join.kind; }
-    void setKind(JoinKind kind) { table_join.kind = kind; }
-    JoinStrictness strictness() const { return table_join.strictness; }
+    JoinKind kind() const;
+    void setKind(JoinKind kind);
+    JoinStrictness strictness() const;
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     size_t getMaxMemoryUsage() const;
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableEnalyzer() const { return enable_analyzer; }
-    void assertEnableEnalyzer() const;
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
+    bool enableAnalyzer() const { return enable_analyzer; }
+    void assertEnableAnalyzer() const;
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
 
-    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
+    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithms; }
+
+    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
-        /// When join_algorithm = 'default' (not specified by user) we use [parallel_]hash or direct algorithm.
-        /// It's behaviour that was initially supported by clickhouse.
-        bool is_default_enabled = std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::DEFAULT) != join_algorithm.end();
-        constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
-            JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
-        if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
-            return true;
-        return std::find(join_algorithm.begin(), join_algorithm.end(), val) != join_algorithm.end();
+        return isEnabledAlgorithm(join_algorithms, val);
     }
 
     bool allowParallelHashJoin() const;
@@ -322,17 +311,24 @@ public:
     size_t sortRightMaximumTableRows() const { return sort_right_maximum_table_rows; }
     bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
+    bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
+    bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
+    size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
+    UInt64 temporaryFilesBufferSize() const { return temporary_files_buffer_size; }
     bool needStreamWithNonJoinedRows() const;
+    bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
 
     bool oneDisjunct() const;
 
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
+
+    void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
@@ -367,8 +363,8 @@ public:
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
 
-    bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return table_join.on_expression != nullptr; }
+    bool hasUsing() const;
+    bool hasOn() const;
 
     String getOriginalName(const String & column_name) const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
@@ -390,8 +386,8 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-
     void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
+    void setUsedColumns(const Names & column_names);
 
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
@@ -410,7 +406,8 @@ public:
     std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
-        const ColumnsWithTypeAndName & right_sample_columns);
+        const ColumnsWithTypeAndName & right_sample_columns,
+        const ContextPtr & context);
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
@@ -427,8 +424,7 @@ public:
     }
 
     void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
-    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
-
+    const NamesAndTypesList & getOutputColumns(JoinTableSide side) const;
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
@@ -447,20 +443,22 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
-    /// Remember storage name in case of joining with dictionary or another special storage
-    void setRightStorageName(const std::string & storage_name);
-    const std::string & getRightStorageName() const;
-
     void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() const { return right_storage_join; }
 
-    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
+    bool isSpecialStorage() const { return right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
+bool allowParallelHashJoin(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool is_special_storage,
+    bool one_disjunct);
 }

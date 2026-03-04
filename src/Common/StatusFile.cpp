@@ -1,4 +1,4 @@
-#include "StatusFile.h"
+#include <Common/StatusFile.h>
 
 #include <sys/file.h>
 #include <fcntl.h>
@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
+#include <Common/ErrnoException.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -42,8 +43,8 @@ StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
 };
 
 
-StatusFile::StatusFile(std::string path_, FillFunction fill_)
-    : path(std::move(path_)), fill(std::move(fill_))
+StatusFile::StatusFile(std::string path_, FillFunction fill)
+    : path(std::move(path_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (fs::exists(path))
@@ -86,6 +87,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         WriteBufferFromFileDescriptor out(fd, 1024);
         try
         {
+            LOG_INFO(getLogger("StatusFile"), "Writing pid {} to {}", getpid(), path);
             fill(out);
             out.finalize();
         }

@@ -1,9 +1,12 @@
 ---
-slug: /en/operations/utilities/clickhouse-keeper-client
-sidebar_label: clickhouse-keeper-client
+description: 'Documentation for the ClickHouse Keeper client utility'
+sidebar_label: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'clickhouse-keeper-client utility'
+doc_type: 'reference'
 ---
 
-# clickhouse-keeper-client
+# clickhouse-keeper-client utility
 
 A client application to interact with clickhouse-keeper by its native protocol.
 
@@ -48,7 +51,9 @@ keeper foo bar
 -   `ls '[path]'` -- Lists the nodes for the given path (default: cwd)
 -   `cd '[path]'` -- Changes the working path (default `.`)
 -   `cp '<src>' '<dest>'`  -- Copies 'src' node to 'dest' path
+-   `cpr '<src>' '<dest>'`  -- Copies 'src' node subtree to 'dest' path
 -   `mv '<src>' '<dest>'`  -- Moves 'src' node to the 'dest' path
+-   `mvr '<src>' '<dest>'`  -- Moves 'src' node subtree to 'dest' path
 -   `exists '<path>'` -- Returns `1` if node exists, `0` otherwise
 -   `set '<path>' <value> [version]` -- Updates the node's value. Only updates if version matches (default: -1)
 -   `create '<path>' <value> [mode]` -- Creates new node with the set value
@@ -65,4 +70,4 @@ keeper foo bar
 -   `delete_stale_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
 -   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
 -   `sync '<path>'` -- Synchronizes node between processes and leader
--   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration
+-   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

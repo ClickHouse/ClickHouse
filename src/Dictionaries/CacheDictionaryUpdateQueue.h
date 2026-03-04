@@ -1,9 +1,6 @@
 #pragma once
 
-#include <atomic>
 #include <mutex>
-#include <utility>
-#include <vector>
 #include <functional>
 
 #include <Common/ThreadPool.h>
@@ -11,7 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
 namespace CurrentMetrics
@@ -38,7 +35,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryUpdateUnit
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     /// Constructor for complex keys update request
     explicit CacheDictionaryUpdateUnit(

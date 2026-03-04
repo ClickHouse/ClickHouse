@@ -8,14 +8,16 @@
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), format_settings(format_settings_)
 {
     color = format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal);
 
@@ -26,29 +28,35 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
+    names_and_paddings.resize(columns);
+    is_number.resize(columns);
+    is_json.resize(columns);
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
-        max_name_width = std::max(name_widths[i], max_name_width);
-    }
+        auto [name_cut, width] = truncateName(name,
+          format_settings.pretty.max_column_name_width_cut_to,
+          format_settings.pretty.max_column_name_width_min_chars_to_cut,
+          format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
 
-    names_and_paddings.resize(columns);
-    is_number.resize(columns);
-    for (size_t i = 0; i < columns; ++i)
-    {
-        WriteBufferFromString buf(names_and_paddings[i]);
-        writeString(sample.getByPosition(i).name, buf);
-        writeCString(": ", buf);
+        name_widths[i] = width;
+        max_name_width = std::max(width, max_name_width);
+        if (color)
+            names_and_paddings[i] = "\033[1m" + name_cut + ":\033[0m ";
+        else
+            names_and_paddings[i] = name_cut + ": ";
     }
 
     for (size_t i = 0; i < columns; ++i)
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
-        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
+        const auto & type = removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type));
+        is_number[i] = isNumber(type);
+        is_json[i] = isObject(type);
     }
 }
 
@@ -66,9 +74,17 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 }
 
 
-void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
+void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, const size_t row_num) const
 {
-    if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
+    if (is_json[field_number])
+    {
+        constexpr size_t indent = 0;
+        serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
+    }
+    /// If we need highlighting.
+    else if (color
+        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
+            || format_settings.pretty.highlight_trailing_spaces))
     {
         String serialized_value;
         {
@@ -77,7 +93,13 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         }
 
         /// Highlight groups of thousands.
-        serialized_value = highlightDigitGroups(serialized_value);
+        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
+            serialized_value = highlightDigitGroups(serialized_value);
+
+        /// Highlight trailing spaces.
+        if (format_settings.pretty.highlight_trailing_spaces)
+            serialized_value = highlightTrailingSpaces(serialized_value);
+
         out.write(serialized_value.data(), serialized_value.size());
     }
     else
@@ -182,9 +204,10 @@ void registerOutputFormatVertical(FormatFactory & factory)
     factory.registerOutputFormat("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");

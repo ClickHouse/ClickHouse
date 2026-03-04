@@ -1,26 +1,35 @@
 ---
-slug: /en/sql-reference/table-functions/mergeTreeIndex
+description: 'Represents the contents of index and marks files of MergeTree tables.
+  It can be used for introspection.'
+sidebar_label: 'mergeTreeIndex'
 sidebar_position: 77
-sidebar_label: mergeTreeIndex
+slug: /sql-reference/table-functions/mergeTreeIndex
+title: 'mergeTreeIndex'
+doc_type: 'reference'
 ---
 
-# mergeTreeIndex
+# mergeTreeIndex Table Function
 
-Represents the contents of index and marks files of MergeTree tables. It can be used for introspection
+Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
-``` sql
-mergeTreeIndex(database, table, [with_marks = true])
+## Syntax {#syntax}
+
+```sql
+mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `database`- The database name to read index and marks from.
-- `table`- The table name to read index and marks from.
-- `with_marks` - Whether include columns with marks to the result.
+| Argument      | Description                                       |
+|---------------|---------------------------------------------------|
+| `database`    | The database name to read index and marks from.   |
+| `table`       | The table name to read index and marks from.      |
+| `with_marks`  | Whether include columns with marks to the result. |
+| `with_minmax` | Whether include min-max index to the result.      |
 
-**Returned Value**
+## Returned value {#returned_value}
 
-A table object with columns with values of primary index of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
+A table object with columns with values of primary index and min-max index (if enabled) of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
 - `part_name` - The name of data part.
 - `mark_number` - The number of current mark in data part.
@@ -28,7 +37,7 @@ A table object with columns with values of primary index of source table, column
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ```sql
 CREATE TABLE test_table

@@ -18,6 +18,10 @@ enum class CompileExpressions: uint8_t
 
 struct ExpressionActionsSettings
 {
+    ExpressionActionsSettings() = default;
+    explicit ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_ = CompileExpressions::no);
+    explicit ExpressionActionsSettings(ContextPtr from, CompileExpressions compile_expressions_ = CompileExpressions::no);
+
     bool can_compile_expressions = false;
     size_t min_count_to_compile_expression = 0;
 
@@ -28,8 +32,7 @@ struct ExpressionActionsSettings
 
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
 
-    static ExpressionActionsSettings fromSettings(const Settings & from, CompileExpressions compile_expressions = CompileExpressions::no);
-    static ExpressionActionsSettings fromContext(ContextPtr from, CompileExpressions compile_expressions = CompileExpressions::no);
+    bool enable_lazy_columns_replication = false;
 };
 
 }

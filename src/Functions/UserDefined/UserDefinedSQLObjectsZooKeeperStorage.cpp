@@ -4,11 +4,12 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -48,6 +49,16 @@ namespace
     String getNodePath(const String & root_path, UserDefinedSQLObjectType object_type, const String & object_name)
     {
         return root_path + "/" + String{getNodePrefix(object_type)} + escapeForFileName(object_name) + String{sql_extension};
+    }
+
+    String makeWatchIdFromName(const String & name)
+    {
+        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(name={})", name);
+    }
+
+    String makeWatchIdFromType(const UserDefinedSQLObjectType & type)
+    {
+        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(type={})", type);
     }
 }
 
@@ -144,8 +155,9 @@ void UserDefinedSQLObjectsZooKeeperStorage::loadObjects()
 void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
-    setThreadName("UserDefObjWatch");
+    DB::setThreadName(ThreadName::USER_DEFINED_WATCH);
 
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue");
     while (watching_flag)
     {
         try
@@ -186,6 +198,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::stopWatching()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObjects");
     auto zookeeper = getZooKeeper();
     refreshAllObjects(zookeeper);
     startWatchingThread();
@@ -194,6 +207,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObject");
     auto zookeeper = getZooKeeper();
     refreshObject(zookeeper, object_type, object_name);
 }
@@ -214,11 +228,13 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(*create_object_query, create_statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
+    create_object_query->format(create_statement_buf, format_settings);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 
@@ -264,6 +280,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     const String & object_name,
     bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Removing user-defined object {} at zk path {}", backQuote(object_name), path);
 
@@ -291,15 +308,18 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     UserDefinedSQLObjectType object_type,
     const String & object_name)
 {
-    const auto object_watcher = [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
+    auto object_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromName(object_name), [&] -> Coordination::WatchCallback
     {
-        if (response.type == Coordination::Event::CHANGED)
+        return [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
         {
-            [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, object_name);
-            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
-        }
-        /// Event::DELETED is processed as child event by getChildren watch
-    };
+            if (response.type == Coordination::Event::CHANGED)
+            {
+                [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, object_name);
+                /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
+            }
+            /// Event::DELETED is processed as child event by getChildren watch
+        };
+    });
 
     Coordination::Stat entity_stat;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
@@ -354,11 +374,14 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::tryLoadObject(
 Strings UserDefinedSQLObjectsZooKeeperStorage::getObjectNamesAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
-    auto object_list_watcher = [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
+    auto object_list_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromType(object_type), [&] -> Coordination::WatchCallback
     {
-        [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, "");
-        /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
-    };
+        return [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
+        {
+            [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, "");
+            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
+        };
+    });
 
     Coordination::Stat stat;
     const auto node_names = zookeeper->getChildrenWatch(zookeeper_path, &stat, object_list_watcher);

@@ -1,4 +1,4 @@
-#include "ExecutableDictionarySource.h"
+#include <Dictionaries/ExecutableDictionarySource.h>
 
 #include <filesystem>
 
@@ -19,9 +19,14 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
@@ -103,7 +108,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-QueryPipeline ExecutableDictionarySource::loadAll()
+BlockIO ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -114,10 +119,12 @@ QueryPipeline ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
+    BlockIO io;
+    io.pipeline = QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
+    return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
+BlockIO ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -149,23 +156,29 @@ QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
+    BlockIO io;
+    io.pipeline = QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
+    return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ExecutableDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
 QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
@@ -174,7 +187,8 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     String command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto header = std::make_shared<const Block>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(header);
     auto shell_input_pipe = Pipe(std::move(source));
 
     Pipes shell_input_pipes;
@@ -183,7 +197,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
 
     return QueryPipeline(std::move(pipe));
 }
@@ -215,7 +229,8 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -223,6 +238,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` is disabled");
+
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` does not support attribute expressions");
 
@@ -240,7 +258,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 
         bool execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false);
         std::string command_value = config.getString(settings_config_prefix + ".command");
-        std::vector<String> command_arguments;
+        VectorWithMemoryTracking<String> command_arguments;
 
         if (execute_direct)
         {
@@ -265,7 +283,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),

@@ -1,10 +1,20 @@
 #pragma once
 
+#include <Common/OpenTelemetryTracingContext.h>
+#include <base/types.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
+
+#include <chrono>
+#include <exception>
+#include <string_view>
+#include <variant>
+
 
 namespace DB
 {
 
+class Exception;
 struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
@@ -13,6 +23,52 @@ struct ExecutionStatus;
 
 namespace OpenTelemetry
 {
+
+class SpanAttribute
+{
+private:
+    String key;
+    std::variant<
+        String,
+        int64_t,
+        uint64_t,
+        double,
+        int,
+        bool>
+        value;
+
+public:
+    template <typename V>
+    requires (!std::is_constructible_v<String, std::decay_t<V>>)
+    SpanAttribute(std::string_view k, V v)
+        : key(k)
+        , value(std::forward<V>(v))
+    {
+    }
+
+    template <typename V>
+    requires std::is_constructible_v<String, std::decay_t<V>>
+    SpanAttribute(std::string_view k, V && v)
+        : key(k)
+        , value(String(std::forward<V>(v)))
+    {
+    }
+
+    const String & getKey() const
+    {
+        return key;
+    }
+
+    String getValue() const
+    {
+        return std::visit([]<typename T>(T && v)
+        {
+            if constexpr (std::is_convertible_v<std::decay_t<T>, String>)
+                return v;
+            return toString(v);
+        }, value);
+    }
+};
 
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
 enum class SpanKind : uint8_t
@@ -37,6 +93,13 @@ enum class SpanKind : uint8_t
     CONSUMER = 4
 };
 
+enum class SpanStatus : uint8_t
+{
+    UNSET = 0,
+    OK = 1,
+    ERROR = 2
+};
+
 struct Span
 {
     UUID trace_id = {};
@@ -46,7 +109,9 @@ struct Span
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
     SpanKind kind = SpanKind::INTERNAL;
-    Map attributes;
+    SpanStatus status_code = SpanStatus::UNSET;
+    String status_message = {};
+    std::vector<SpanAttribute> attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
@@ -65,39 +130,34 @@ struct Span
         return trace_id != UUID();
     }
 
-private:
-    bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
-};
-
-/// See https://www.w3.org/TR/trace-context/ for trace_flags definition
-enum TraceFlags : UInt8
-{
-    TRACE_FLAG_NONE = 0,
-    TRACE_FLAG_SAMPLED = 1,
-};
-
-/// The runtime info we need to create new OpenTelemetry spans.
-struct TracingContext
-{
-    UUID trace_id;
-    UInt64 span_id = 0;
-    // The incoming tracestate header and the trace flags, we just pass them
-    // downstream. See https://www.w3.org/TR/trace-context/
-    String tracestate;
-    UInt8 trace_flags = TRACE_FLAG_NONE;
-
-    // Parse/compose OpenTelemetry traceparent header.
-    bool parseTraceparentHeader(std::string_view traceparent, String & error);
-    String composeTraceparentHeader() const;
-
-    bool isTraceEnabled() const
+    void start()
     {
-        return trace_id != UUID();
+        start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
-    void deserialize(ReadBuffer & buf);
-    void serialize(WriteBuffer & buf) const;
+    void finish()
+    {
+        finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+private:
+    template <class T>
+    bool addAttributeImpl(std::string_view name, T value) noexcept
+    {
+        try
+        {
+            attributes.emplace_back(name, value);
+        }
+        catch (...)
+        {
+            return false;
+        }
+        return true;
+    }
 };
+
 
 /// Tracing context kept on each thread
 struct TracingContextOnThread : TracingContext
@@ -117,6 +177,8 @@ struct TracingContextOnThread : TracingContext
 
 /// Get tracing context on current thread
 const TracingContextOnThread& CurrentContext();
+
+void SetTraceFlagInCurrentContext(UInt8 flag, bool enable);
 
 /// Holder of tracing context.
 /// It should be initialized at the beginning of each thread execution.
@@ -178,15 +240,27 @@ private:
 using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
 /// A span holder that creates span automatically in a (function) scope if tracing is enabled.
-/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
+/// Once it's created or destructed, it automatically maintains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
+    explicit SpanHolder(std::string_view _operation_name,
+                        SpanKind _kind = SpanKind::INTERNAL,
+                        bool create_trace_if_not_exists = false);
+
+    SpanHolder(std::string_view _operation_name,
+               SpanKind _kind,
+               std::vector<SpanAttribute> _attributes,
+               bool create_trace_if_not_exists = false);
+
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish() noexcept;
+    void finish(std::chrono::system_clock::time_point time) noexcept;
+
+    bool trace_created = false;
+    /// All changes made to the current tracing context while the scope is active need to be restored.
+    UInt8 old_trace_flags;
 };
 
 }

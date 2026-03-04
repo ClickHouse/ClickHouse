@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
@@ -33,7 +34,7 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
     return fs::file_size(root_path / file_name);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
 {
     return createReadBufferFromFileBase(root_path / file_name, read_settings);
 }
@@ -108,19 +109,18 @@ void BackupWriterFile::removeFile(const String & file_name)
     (void)fs::remove(root_path / file_name);
 }
 
-void BackupWriterFile::removeFiles(const Strings & file_names)
-{
-    for (const auto & file_name : file_names)
-        (void)fs::remove(root_path / file_name);
-}
-
 void BackupWriterFile::removeEmptyDirectories()
 {
+    if (root_path.empty())
+        return;
+
     removeEmptyDirectoriesImpl(root_path);
 }
 
 void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
+    checkStackSize();
+
     if (!fs::is_directory(current_dir))
         return;
 
@@ -130,7 +130,6 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         return;
     }
 
-    /// Backups are not too deep, so recursion is good enough here.
     for (const auto & it : std::filesystem::directory_iterator{current_dir})
         removeEmptyDirectoriesImpl(it.path());
 

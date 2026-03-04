@@ -1,5 +1,9 @@
-#include <Interpreters/getColumnFromBlock.h>
+#include <Columns/IColumn.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 namespace DB
 {
@@ -16,6 +20,10 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
         return nullptr;
 
     auto elem_type = elem->type;
+
+    if (!elem->column)
+        return nullptr;
+
     auto elem_column = elem->column->decompress();
 
     if (requested_column.isSubcolumn())
@@ -52,7 +60,7 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return elem_column;
     }
 
-    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column);
+    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
     auto elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
 
     if (!elem_type || !elem_column)

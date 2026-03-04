@@ -5,6 +5,7 @@
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
@@ -129,6 +130,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -163,31 +165,33 @@ enum class DistributedProductMode : uint8_t
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
-/// How the query cache handles queries with non-deterministic functions, e.g. now()
-enum class QueryCacheNondeterministicFunctionHandling : uint8_t
+/// How the query result cache handles queries with non-deterministic functions, e.g. now()
+enum class QueryResultCacheNondeterministicFunctionHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
+DECLARE_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling)
 
-/// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
-enum class QueryCacheSystemTableHandling : uint8_t
+/// How the query result cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
+enum class QueryResultCacheSystemTableHandling : uint8_t
 {
     Throw,
     Save,
     Ignore
 };
 
-DECLARE_SETTING_ENUM(QueryCacheSystemTableHandling)
+DECLARE_SETTING_ENUM(QueryResultCacheSystemTableHandling)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
@@ -294,11 +298,39 @@ enum class Dialect : uint8_t
     clickhouse,
     kusto,
     prql,
+    promql,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
+enum class AlterUpdateMode : uint8_t
+{
+    HEAVY,
+    LIGHTWEIGHT,
+    LIGHTWEIGHT_FORCE,
+};
+
+DECLARE_SETTING_ENUM(AlterUpdateMode)
+
+enum class UpdateParallelMode : uint8_t
+{
+    SYNC,
+    ASYNC,
+    AUTO,
+};
+
+DECLARE_SETTING_ENUM(UpdateParallelMode)
+
+enum class LightweightDeleteMode : uint8_t
+{
+    ALTER_UPDATE,
+    LIGHTWEIGHT_UPDATE,
+    LIGHTWEIGHT_UPDATE_FORCE,
+};
+
+DECLARE_SETTING_ENUM(LightweightDeleteMode)
 
 enum class LightweightMutationProjectionMode : uint8_t
 {
@@ -319,6 +351,16 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class AlterColumnSecondaryIndexMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+    COMPATIBILITY,
+};
+
+DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
+
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -335,9 +377,28 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
+    MOVE,
+    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
+
+enum class ObjectStorageQueuePartitioningMode : uint8_t
+{
+    NONE,   /// No per-partition tracking (default)
+    HIVE,   /// Extract partition from path structure (key=value pairs)
+    REGEX,  /// Extract partition from filename using regex
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
+
+enum class ObjectStorageQueueBucketingMode : uint8_t
+{
+    PATH,       /// Hash full file path for bucketing (default, existing behavior)
+    PARTITION,  /// Hash partition key for bucketing (requires partitioning_mode != NONE)
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
@@ -359,11 +420,133 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
-enum class DatabaseIcebergCatalogType : uint8_t
+enum class DatabaseDataLakeCatalogType : uint8_t
 {
-    REST,
+    NONE,
+    ICEBERG_REST,
+    UNITY,
+    GLUE,
+    ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
+    PAIMON_REST,
 };
 
-DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
+DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
+enum class FileCachePolicy : uint8_t
+{
+    LRU,
+    SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
+};
+
+DECLARE_SETTING_ENUM(FileCachePolicy)
+
+enum class VectorSearchFilterStrategy : uint8_t
+{
+    AUTO,
+    PREFILTER,
+    POSTFILTER,
+};
+
+DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)
+
+enum class GeoToH3ArgumentOrder : uint8_t
+{
+    LAT_LON,
+    LON_LAT,
+};
+
+DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+
+enum class SearchOrphanedPartsDisks : uint8_t
+{
+    NONE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class DecorrelationJoinKind : uint8_t
+{
+    LEFT = 0,
+    RIGHT,
+};
+
+DECLARE_SETTING_ENUM(DecorrelationJoinKind)
+
+enum class IcebergMetadataLogLevel : uint8_t
+{
+    None = 0,
+    Metadata = 1,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
+};
+
+DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    FILE = 0,
+    BUCKET = 1,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+enum class ArrowFlightDescriptorType : uint8_t
+{
+    Path = 0,
+    Command
+};
+
+DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
+enum class DeduplicateInsertSelectMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_POSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
+
+enum class DeduplicateInsertMode : uint8_t
+{
+    BACKWARD_COMPATIBLE_CHOICE = 0,
+    ENABLE,
+    DISABLE
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertMode)
+
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
+enum class JemallocProfileFormat : uint8_t
+{
+    Raw = 0,
+    Symbolized,
+    Collapsed
+};
+
+DECLARE_SETTING_ENUM(JemallocProfileFormat)
 }

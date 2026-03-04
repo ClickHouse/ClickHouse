@@ -1,13 +1,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
+#include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionBinaryArithmetic.h>
+#include <DataTypes/NumberTraits.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
@@ -19,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -47,7 +47,7 @@ struct DotProduct
                 if constexpr (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
                     result_type = std::make_shared<DataTypeFloat32>();
                 else
-                    result_type = std::make_shared<DataTypeFromFieldType<ResultType>>();
+                    result_type = std::make_shared<DataTypeNumber<ResultType>>();
                 return true;
             });
         });
@@ -79,7 +79,7 @@ struct DotProduct
 
 #if USE_MULTITARGET_CODE
     template <typename Type>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const Type * __restrict data_x,
         const Type * __restrict data_y,
         size_t i_max,
@@ -175,38 +175,19 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        switch (result_type->getTypeId())
-        {
-        #define ON_TYPE(type) \
-            case TypeIndex::type: \
-                return executeWithResultType<type>(arguments, input_rows_count); \
-                break;
-
-            SUPPORTED_TYPES(ON_TYPE)
-        #undef ON_TYPE
-
-            default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
-        }
-    }
-
-private:
-    template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
         switch (type_x->getTypeId())
         {
-#define ON_TYPE(type) \
+        #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultTypeAndLeftType<ResultType, type>(arguments, input_rows_count); \
+                return executeWithLeftType<type>(arguments, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
-#undef ON_TYPE
+        #undef ON_TYPE
 
             default:
                 throw Exception(
@@ -218,8 +199,9 @@ private:
         }
     }
 
-    template <typename ResultType, typename LeftType>
-    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+private:
+    template <typename LeftType>
+    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -227,7 +209,7 @@ private:
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count); \
+                return executeWithLeftAndRightType<LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -241,6 +223,19 @@ private:
                     getName(),
                     type_y->getName());
         }
+    }
+
+    template <typename LeftType, typename RightType>
+    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    {
+        /// Compute result type from input types, matching getReturnType logic.
+        /// This avoids an extra dispatch level (10x fewer template instantiations).
+        using ResultType = std::conditional_t<
+            std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>,
+            Float32,
+            typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type>;
+
+        return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
@@ -352,7 +347,7 @@ private:
             if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
                             && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
             {
-                if (isArchSupported(TargetArch::AVX512F))
+                if (isArchSupported(TargetArch::x86_64_v4))
                     Kernel::template accumulateCombine<ResultType>(&data_x[0], &data_y[current_offset], array_size, i, state);
             }
 #else
@@ -386,7 +381,35 @@ using FunctionArrayDotProduct = FunctionArrayScalarProduct<DotProduct>;
 
 REGISTER_FUNCTION(ArrayDotProduct)
 {
-    factory.registerFunction<FunctionArrayDotProduct>();
+    FunctionDocumentation::Description description = R"(
+Returns the dot product of two arrays.
+
+:::note
+The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"v1", "First vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v2", "Second vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+The dot product of the two vectors.
+
+:::note
+The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+:::
+
+)", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::Examples examples = {
+        {"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
+        {"Tuple example", "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);", "32    Float64"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDotProduct>(documentation);
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp

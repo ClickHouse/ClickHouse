@@ -1,15 +1,13 @@
 #pragma once
 
 #include <set>
-#include <map>
 #include <list>
 #include <mutex>
-#include <thread>
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
@@ -69,12 +67,16 @@ public:
 
     ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
-    std::unique_lock<std::mutex> pausePartsCheck();
+    /// Pause parts check in a thread-safe way.
+    /// The returned guard can be safely destroyed from any thread.
+    BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
 
-    /// Can be called only while holding a lock returned from pausePartsCheck()
+    /// Can be called only while holding a TemporaryPause guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
+    BackgroundSchedulePoolTaskHolder & getTask();
+
     void run();
 
     bool onPartIsLostForever(const String & part_name);
@@ -109,7 +111,8 @@ private:
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    BackgroundSchedulePool::TaskHolder task;
+
+    BackgroundSchedulePoolPausableTask pausable_task;
 };
 
 }

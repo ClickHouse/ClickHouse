@@ -2,9 +2,12 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ErrnoException.h>
 #include <filesystem>
+#include <Interpreters/Cache/FileSegmentInfo.h>
 
 namespace fs = std::filesystem;
 
@@ -12,12 +15,14 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheKeys;
 }
 
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
 namespace DB
@@ -60,18 +65,18 @@ size_t FileSegmentMetadata::size() const
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
-    const UserInfo & user_,
+    const OriginInfo & origin_,
     const CacheMetadata * cache_metadata_,
     bool created_base_directory_)
     : key(key_)
-    , user(user_)
+    , origin(origin_)
     , cache_metadata(cache_metadata_)
     , created_base_directory(created_base_directory_)
 {
-    if (user_ == FileCache::getInternalUser())
+    if (origin_ == FileCache::getInternalOrigin())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
-    if (!user_.weight.has_value())
+    if (!origin_.weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
     chassert(!created_base_directory || fs::exists(getPath()));
@@ -79,7 +84,7 @@ KeyMetadata::KeyMetadata(
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
 {
-    return user_id_ == user.user_id || user_id_ == FileCache::getInternalUser().user_id;
+    return user_id_ == origin.user_id || user_id_ == FileCache::getInternalOrigin().user_id;
 }
 
 void KeyMetadata::assertAccess(const UserID & user_id_) const
@@ -120,43 +125,50 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
 
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
-    if (!created_base_directory.exchange(true))
+    if (created_base_directory.load())
+        return true;
+
+    std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
+
+    if (created_base_directory.load(std::memory_order_relaxed))
+        return true;
+
+    try
     {
-        try
-        {
-            std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
-            fs::create_directories(getPath());
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            created_base_directory = false;
-
-            if (!throw_if_failed &&
-                (e.code() == std::errc::no_space_on_device
-                 || e.code() == std::errc::read_only_file_system
-                 || e.code() == std::errc::permission_denied
-                 || e.code() == std::errc::too_many_files_open
-                 || e.code() == std::errc::operation_not_permitted))
-            {
-                LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
-        }
+        fs::create_directories(getPath());
+        created_base_directory.store(true);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
+
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
+
+            return false;
+        }
+        throw;
+    }
+
     return true;
 }
 
 std::string KeyMetadata::getPath() const
 {
-    return cache_metadata->getKeyPath(key, user);
+    return cache_metadata->getKeyPath(key, origin);
 }
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), user);
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), origin);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -196,18 +208,19 @@ String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const UserInfo & user) const
+    const OriginInfo & origin) const
 {
-    return fs::path(getKeyPath(key, user)) / getFileNameForFileSegment(offset, segment_kind);
+    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
 }
 
-String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
+String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
 {
     const auto key_str = key.toString();
+    const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
+        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
 
-    return fs::path(path) / key_str.substr(0, 3) / key_str;
+    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -218,17 +231,17 @@ CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 
 CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
 {
-    const auto bucket = key.key % buckets_num;
+    const auto bucket = static_cast<size_t>(key.key % buckets_num);
     return metadata_buckets[bucket];
 }
 
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
     const FileCacheKey & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const UserInfo & user,
+    const OriginInfo & origin,
     bool is_initial_load)
 {
-    auto key_metadata = getKeyMetadata(key, key_not_found_policy, user, is_initial_load);
+    auto key_metadata = getKeyMetadata(key, key_not_found_policy, origin, is_initial_load);
     if (!key_metadata)
         return nullptr;
 
@@ -261,13 +274,13 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     /// Now we are at the case when the key was removed (key_state == KeyMetadata::KeyState::REMOVED)
     /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
     /// Retry
-    return lockKeyMetadata(key, key_not_found_policy, user);
+    return lockKeyMetadata(key, key_not_found_policy, origin);
 }
 
 KeyMetadataPtr CacheMetadata::getKeyMetadata(
     const Key & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const UserInfo & user,
+    const OriginInfo & origin,
     bool is_initial_load)
 {
     auto & bucket = getMetadataBucket(key);
@@ -284,10 +297,12 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, origin, this, is_initial_load)).first;
+
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
-    it->second->assertAccess(user.user_id);
+    it->second->assertAccess(origin.user_id);
     return it->second;
 }
 
@@ -326,6 +341,164 @@ void CacheMetadata::iterate(IterateFunc && func, const KeyMetadata::UserID & use
     }
 }
 
+class CacheMetadata::IteratorImpl
+{
+public:
+    IteratorImpl(MetadataBuckets & metadata_buckets_, const UserID & user_id_)
+        : user_id(user_id_)
+        , metadata_buckets(metadata_buckets_)
+        , bucket_it(metadata_buckets_.begin())
+    {
+    }
+
+    bool next(Iterator::OnFileSegmentFunc func)
+    {
+        while (true)
+        {
+            if (bucket_it == metadata_buckets.end())
+                return false;
+
+            if (!bucket_lock)
+                bucket_lock = bucket_it->lock();
+
+            if (!key_it.has_value())
+                key_it = bucket_it->begin();
+
+            if (key_it.value() == bucket_it->end())
+            {
+                ++bucket_it;
+                bucket_lock.reset();
+
+                key_it.reset();
+                key_lock.reset();
+
+                file_segment_it.reset();
+                continue;
+            }
+
+            const auto & key = key_it.value()->second;
+
+            if (!key_lock)
+            {
+                if (!key->checkAccess(user_id))
+                {
+                    ++key_it.value();
+                    continue;
+                }
+
+                /// Will lock only if key is in state ACTIVE.
+                key_lock = key->tryLock();
+                if (!key_lock)
+                {
+                    ++key_it.value();
+                    continue;
+                }
+            }
+
+            if (!file_segment_it.has_value())
+                file_segment_it = key->begin();
+
+            if (file_segment_it.value() == key->end())
+            {
+                ++key_it.value();
+                key_lock.reset();
+
+                file_segment_it.reset();
+                continue;
+            }
+
+            func(FileSegment::getInfo(file_segment_it.value()->second->file_segment));
+            ++(file_segment_it.value());
+            return true;
+        }
+    }
+
+private:
+    const UserID user_id;
+    MetadataBuckets & metadata_buckets;
+    MetadataBuckets::iterator bucket_it;
+    std::optional<MetadataBucket::iterator> key_it;
+    std::optional<KeyMetadata::iterator> file_segment_it;
+
+    std::optional<CacheMetadataGuard::Lock> bucket_lock;
+    LockedKeyPtr key_lock;
+};
+
+class CacheMetadata::BatchedIteratorImpl
+{
+public:
+    BatchedIteratorImpl(MetadataBuckets & metadata_buckets_, const UserID & user_id_)
+        : user_id(user_id_)
+        , metadata_buckets(metadata_buckets_)
+        , bucket_it(metadata_buckets_.begin())
+    {
+    }
+
+    bool next(Iterator::OnFileSegmentFunc func)
+    {
+        bool result = false;
+        while (bucket_it != metadata_buckets.end())
+        {
+            auto bucket_lock = bucket_it->lock();
+            for (const auto & [_, key_metadata] : *bucket_it)
+            {
+                if (!key_metadata->checkAccess(user_id))
+                    continue;
+
+                /// Will lock only if key is in state ACTIVE.
+                auto key_lock = key_metadata->tryLock();
+                if (!key_lock)
+                    continue;
+
+                result |= key_metadata->size();
+                for (const auto & [_, file_segment_metadata] : *key_metadata)
+                    func(FileSegment::getInfo(file_segment_metadata->file_segment));
+            }
+            ++bucket_it;
+            if (result)
+                break;
+        }
+        return result;
+    }
+
+private:
+    const UserID user_id;
+    MetadataBuckets & metadata_buckets;
+    MetadataBuckets::iterator bucket_it;
+};
+
+CacheMetadata::Iterator::Iterator(const UserID & user_id_, MetadataBuckets & metadata_buckets_)
+    : user_id(user_id_), metadata_buckets(metadata_buckets_)
+{
+}
+
+bool CacheMetadata::Iterator::next(OnFileSegmentFunc func)
+{
+    if (!impl.has_value())
+        impl = std::make_shared<IteratorImpl>(metadata_buckets, user_id);
+
+    if (auto * iterator = std::get_if<CacheMetadata::IteratorImplPtr>(&impl.value()); iterator)
+        return (*iterator)->next(func);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected IteratorImplPtr");
+}
+
+bool CacheMetadata::Iterator::nextBatch(OnFileSegmentFunc func)
+{
+    if (!impl)
+        impl = std::make_shared<BatchedIteratorImpl>(metadata_buckets, user_id);
+
+    if (auto * iterator = std::get_if<CacheMetadata::BatchedIteratorImplPtr>(&impl.value()); iterator)
+        return (*iterator)->next(func);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected BatchedIteratorImplPtr");
+}
+
+CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
+{
+    return std::make_unique<Iterator>(user_id, metadata_buckets);
+}
+
 void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
 {
     for (auto & bucket : metadata_buckets)
@@ -334,7 +507,10 @@ void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
         for (auto it = bucket.begin(); it != bucket.end();)
         {
             if (!it->second->checkAccess(user_id))
+            {
+                ++it;
                 continue;
+            }
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
@@ -393,9 +569,11 @@ CacheMetadata::removeEmptyKey(
     locked_key.markAsRemoved();
     auto next_it = bucket.erase(it);
 
-    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
-    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
+    LOG_TEST(log, "Key {} is removed from metadata", key);
+
+    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->origin);
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try
@@ -610,7 +788,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
             try
             {
                 {
-                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalUser());
+                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalOrigin());
                     if (!locked_key)
                         continue;
 
@@ -637,6 +815,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                 chassert(file_segment.assertCorrectness());
 
                 downloadImpl(file_segment, memory);
+                holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
             {
@@ -680,8 +859,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (!size_to_download)
         return;
 
-    auto reader = file_segment.getRemoteFileReader();
-    if (!reader)
+    auto buf = file_segment.getRemoteFileReader();
+    if (!buf)
     {
         LOG_TEST(log, "No reader in {}:{} (state: {}, range: {}, downloaded size: {})",
                  file_segment.key(), file_segment.offset(), file_segment.state(),
@@ -689,25 +868,24 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         return;
     }
 
-    /// If remote_fs_read_method == 'threadpool',
-    /// reader itself never owns/allocates the buffer.
-    if (reader->internalBuffer().empty())
-    {
-        if (!memory)
-            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
-        reader->set(memory->data(), memory->size());
-    }
+    chassert(buf->internalBuffer().empty(),
+             fmt::format("Memory buffer for buffer must have been reset before "
+             "being put into background download ({})", file_segment.getInfoForLog()));
+
+    if (!memory)
+        memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
+    buf->set(memory->data(), std::min(size_to_download, memory->size()));
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
         Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     size_t offset = file_segment.getCurrentWriteOffset();
-    if (offset != static_cast<size_t>(reader->getPosition()))
-        reader->seek(offset, SEEK_SET);
+    if (offset != static_cast<size_t>(buf->getPosition()))
+        buf->seek(offset, SEEK_SET);
 
-    while (size_to_download && !reader->eof())
+    while (size_to_download && !buf->eof())
     {
-        const auto available = reader->available();
+        const auto available = buf->available();
         chassert(available);
 
         const auto size = std::min(available, size_to_download);
@@ -726,9 +904,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 
         try
         {
-            file_segment.write(reader->position(), size, offset);
+            file_segment.write(buf->position(), size, offset);
             offset += size;
-            reader->position() += size;
+            buf->position() += size;
         }
         catch (ErrnoException & e)
         {
@@ -742,7 +920,10 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
+    /// Reset buffer to avoid
+    /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
+    file_segment.completePartAndResetDownloader();
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
@@ -910,6 +1091,16 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
+KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return {};
+
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
+}
+
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
@@ -943,7 +1134,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size.load());
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
@@ -998,42 +1189,6 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     }
 
     return key_metadata->erase(it);
-}
-
-void LockedKey::shrinkFileSegmentToDownloadedSize(
-    size_t offset,
-    const FileSegmentGuard::Lock & segment_lock)
-{
-    /**
-     * In case file was partially downloaded and it's download cannot be continued
-     * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
-     */
-
-    auto file_segment_metadata = getByOffset(offset);
-    const auto & file_segment = file_segment_metadata->file_segment;
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
-
-    const size_t downloaded_size = file_segment->getDownloadedSize();
-    if (downloaded_size == file_segment->range().size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Nothing to reduce, file segment fully downloaded: {}",
-            file_segment->getInfoForLogUnlocked(segment_lock));
-    }
-
-    chassert(file_segment->reserved_size >= downloaded_size);
-    int64_t diff = file_segment->reserved_size - downloaded_size;
-
-    file_segment_metadata->file_segment = std::make_shared<FileSegment>(
-        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()), false,
-        file_segment->cache, key_metadata, file_segment->queue_iterator);
-
-    if (diff)
-        file_segment_metadata->getQueueIterator()->decrementSize(diff);
-
-    chassert(file_segment_metadata->file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -56,7 +57,32 @@ public:
 
 REGISTER_FUNCTION(DumpColumnStructure)
 {
-    factory.registerFunction<FunctionDumpColumnStructure>();
+    FunctionDocumentation::Description description = R"(
+Outputs a detailed description of the internal structure of a column and its data type.
+)";
+    FunctionDocumentation::Syntax syntax = "dumpColumnStructure(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Value for which to get the description of.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a description of the column structure used for representing the value.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
+        )",
+        R"(
+┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ DateTime, Const(size = 1, UInt32(size = 1))                  │
+└──────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDumpColumnStructure>(documentation);
 }
 
 }

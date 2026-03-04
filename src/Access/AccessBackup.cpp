@@ -354,7 +354,7 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                res.emplace_back(AccessType::CREATE_USER);
+                res.emplace_back(AccessType::CREATE_USER, user.getName());
                 auto elements = user.access.getElements();
                 for (auto & element : elements)
                 {
@@ -370,7 +370,7 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROLE);
+                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
                 auto elements = role.access.getElements();
                 for (auto & element : elements)
                 {

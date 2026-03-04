@@ -8,6 +8,8 @@
 #    include <IO/WriteBufferFromFileBase.h>
 #    include <base/defines.h>
 
+#    include <mutex>
+
 
 namespace DB
 {
@@ -18,7 +20,12 @@ class LibArchiveWriter : public IArchiveWriter
 {
 public:
     /// Constructs an archive that will be written as a file in the local filesystem.
-    explicit LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
+    /// The constructor sets adaptive_buffer_max_size to be greater than or equal to buf_size.
+    explicit LibArchiveWriter(
+        const String & path_to_archive_,
+        std::unique_ptr<WriteBuffer> archive_write_buffer_,
+        size_t buf_size_,
+        size_t adaptive_buffer_max_size_);
 
     /// Call finalize() before destructing IArchiveWriter.
     ~LibArchiveWriter() override;
@@ -66,9 +73,16 @@ private:
     class WriteBufferFromLibArchive;
     class StreamInfo;
 
+    const size_t buf_size;
+    const size_t adaptive_buffer_max_size;
+
     Archive getArchive();
     void startWritingFile();
     void endWritingFile();
+
+    /// Re-throws a stored exception from a libarchive C callback, if any.
+    void rethrowStoredException();
+    void rethrowStoredExceptionLocked() TSA_REQUIRES(mutex);
 
     std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex);
     bool is_writing_file TSA_GUARDED_BY(mutex) = false;

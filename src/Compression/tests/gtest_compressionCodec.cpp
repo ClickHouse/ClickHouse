@@ -10,6 +10,7 @@
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
+#include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -385,7 +386,8 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = static_cast<T>(gen(i));
+        /// Pass index as T so generators using decltype(i) produce values of the target type.
+        const T v = static_cast<T>(gen(static_cast<T>(i)));
 
         unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
@@ -480,10 +482,10 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<uint8_t>(test_sequence.data_type->getSizeOfValueInMemory()), source_data, decoded));
 
     const auto header_size = ICompressionCodec::getHeaderSize();
-    const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
+    const auto compression_ratio = (encoded_size - header_size) / static_cast<double>(source_data.size());
 
     if (expected_compression_ratio)
     {
@@ -570,7 +572,7 @@ TEST_P(CodecTestCompatibility, Decoding)
         encoded_data.c_str(), static_cast<UInt32>(encoded_data.size()), decoded.data());
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<UInt8>(expected.data_type->getSizeOfValueInMemory()), expected.serialized_data, decoded));
 }
 
 class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
@@ -613,17 +615,17 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
         for (const auto & v : tmp_v)
         {
-            mean += v;
+            mean += static_cast<double>(v);
         }
 
-        mean = mean / tmp_v.size();
+        mean = mean / static_cast<double>(tmp_v.size());
         double std_dev = 0.0;
         for (const auto & v : tmp_v)
         {
-            const auto d = (v - mean);
+            const auto d = (static_cast<double>(v) - mean);
             std_dev += (d * d);
         }
-        std_dev = std::sqrt(std_dev / tmp_v.size());
+        std_dev = std::sqrt(std_dev / static_cast<double>(tmp_v.size()));
 
         return std::make_tuple(mean, std_dev);
     };
@@ -739,10 +741,15 @@ private:
     uniform_distribution<T> distribution;
 };
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+MonotonicGenerator() -> MonotonicGenerator<Int32>;
+#pragma clang diagnostic pop
+
 auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
+    double sin_value = sin(static_cast<double>(i * i)) * static_cast<double>(i);
     if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);
@@ -1117,6 +1124,22 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     )
 );
 
+/// Size of data after ZSTD is not a multiple of 8,
+/// and may break DoubleDelta.
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaUnalignedTranscode,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ZSTD, DoubleDelta")
+        ),
+        ::testing::Values(
+            makeSeq<Float64>(0, 1),
+            makeSeq<Float64>(1, 0)
+        )
+    )
+);
+
+
 template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
@@ -1300,6 +1323,90 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     auto codec = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
+}
+
+TEST(DoubleDeltaTest, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeFloat32>(),
+        std::make_shared<DataTypeFloat64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            DB::Memory<> memory_for_compression;
+            memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+
+            auto codec = makeCodec("DoubleDelta", type);
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
+}
+
+TEST(T64Test, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            DB::Memory<> memory_for_compression;
+            auto codec = makeCodec("T64", type);
+
+            memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
 }
 
 }

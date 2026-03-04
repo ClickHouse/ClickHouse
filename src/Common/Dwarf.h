@@ -147,6 +147,7 @@ public:
         bool has_file_and_line = false;
         Path file;
         uint64_t line = 0;
+        uint64_t column = 0;
     };
 
     /**
@@ -266,7 +267,7 @@ private:
         // The beginning of the offsets table (immediately following the
         // header) of the CU's contribution to .debug_rnglists
         std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
-        // Points to the first string offset of the compilation unit’s
+        // Points to the first string offset of the compilation unit's
         // contribution to the .debug_str_offsets (or .debug_str_offsets.dwo) section.
         std::optional<uint64_t> str_offsets_base; // DW_AT_str_offsets_base (DWARF 5)
 
@@ -303,7 +304,7 @@ private:
             std::string_view debugStr,
             std::string_view debugLineStr);
 
-        bool findAddress(uintptr_t target, Path & file, uint64_t & line);
+        bool findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column);
 
         /** Gets full file name at given index including directory. */
         Path getFullFileName(uint64_t index) const;

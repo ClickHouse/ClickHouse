@@ -3,7 +3,6 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
-#include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
@@ -32,12 +31,12 @@ namespace
     void getGrantsFromAccess(
         ASTs & res,
         const AccessRights & access,
-        const std::shared_ptr<ASTRolesOrUsersSet> grantees,
+        const boost::intrusive_ptr<ASTRolesOrUsersSet> grantees,
         const AccessControl * access_control,
         bool attach_mode = false,
         bool with_implicit = false)
     {
-        std::shared_ptr<ASTGrantQuery> current_query = nullptr;
+        boost::intrusive_ptr<ASTGrantQuery> current_query = nullptr;
 
         AccessRightsElements elements;
         if (with_implicit)
@@ -60,7 +59,7 @@ namespace
 
             if (!current_query)
             {
-                current_query = std::make_shared<ASTGrantQuery>();
+                current_query = make_intrusive<ASTGrantQuery>();
                 current_query->grantees = grantees;
                 current_query->attach_mode = attach_mode;
                 if (element.is_partial_revoke)
@@ -92,7 +91,7 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
+        boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
         grantees->names.push_back(grantee.getName());
 
         AccessRights access = grantee.access;
@@ -108,7 +107,7 @@ namespace
                 if (element.empty())
                     continue;
 
-                auto grant_query = std::make_shared<ASTGrantQuery>();
+                auto grant_query = make_intrusive<ASTGrantQuery>();
                 grant_query->grantees = grantees;
                 grant_query->admin_option = element.admin_option;
                 grant_query->attach_mode = attach_mode;
@@ -155,24 +154,19 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString grant_buf;
     for (const auto & grant_query : grant_queries)
     {
-        grant_buf.restart();
-        formatAST(*grant_query, grant_buf, false, true);
-        column->insert(grant_buf.str());
+        column->insert(grant_query->formatWithSecretsOneLine());
     }
 
     /// Prepare description of the result column.
-    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
-    formatAST(show_query, desc_buf, false, true);
-    String desc = desc_buf.str();
+    String desc = show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (desc.starts_with(prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
 }
 
 

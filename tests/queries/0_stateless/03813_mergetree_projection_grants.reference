@@ -1,0 +1,4 @@
+=== mergeTreeProjection without grant ===
+ACCESS_DENIED
+=== mergeTreeProjection with grant ===
+1

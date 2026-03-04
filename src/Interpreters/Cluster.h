@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionPool_fwd.h>
+#include <Core/Protocol.h>
 #include <Common/Macros.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Timespan.h>
 
 #include <map>
 #include <string>
@@ -45,6 +47,7 @@ struct ClusterConnectionParameters
     bool treat_local_as_remote;
     bool treat_local_port_as_remote;
     bool secure = false;
+    const String & bind_host;
     Priority priority{1};
     String cluster_name;
     String cluster_secret;
@@ -95,7 +98,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -103,7 +106,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
         *    </replica>
         * </shard>
         */
@@ -133,6 +136,8 @@ public:
 
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
+
+        String bind_host;
 
         Priority priority{1};
 
@@ -173,7 +178,7 @@ public:
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
-        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
@@ -217,6 +222,7 @@ public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
+        String name;
         UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
@@ -224,6 +230,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
+        String default_database;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
@@ -298,6 +305,7 @@ private:
         Addresses addresses,
         bool treat_local_as_remote,
         UInt32 current_shard_num,
+        String current_shard_name = "",
         UInt32 weight = 1,
         ShardInfoInsertPathForInternalReplication insert_paths = {},
         bool internal_replication = false);

@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function print_flush_query_logs()
 {
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log, query_log, query_views_log, part_log"
     echo ""
     echo "system.query_log"
     ${CLICKHOUSE_CLIENT} -q "
@@ -27,7 +27,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_log
       WHERE
-          event_date >= yesterday()
+          event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
@@ -49,7 +49,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_views_log
       WHERE
-          event_date >= yesterday()
+          event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       ORDER BY view_name
       FORMAT Vertical"
@@ -64,7 +64,7 @@ function print_flush_query_logs()
           rows
       FROM system.part_log
       WHERE
-          event_date >= yesterday()
+          event_date >= yesterday() AND event_time >= now() - 600
       AND query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       ORDER BY table
       FORMAT Vertical"
@@ -87,5 +87,6 @@ print_flush_query_logs ${query_id}
 
 
 query_id="$(random_str 10)"
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1 values (42), (12), (13)" 2>/dev/null || true
+# Use materialized_views_ignore_errors to guarantee it lands in the landing table, making the test stable
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=1, async_insert=1, materialized_views_ignore_errors=1 values (42), (12), (13)" 2>/dev/null || true
 print_flush_query_logs ${query_id}

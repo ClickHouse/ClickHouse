@@ -107,7 +107,7 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
 
 ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto window_definition = std::make_shared<ASTWindowDefinition>();
+    auto window_definition = make_intrusive<ASTWindowDefinition>();
 
     window_definition->parent_window_name = parent_window_name;
 
@@ -140,6 +140,15 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         window_definition->children.push_back(getFrameEndOffsetNode()->toAST(options));
         window_definition->frame_end_offset = window_definition->children.back();
+    }
+
+    if (hasAlias())
+    {
+        auto window_list_element = make_intrusive<ASTWindowListElement>();
+        window_list_element->name = getAlias();
+        window_list_element->children.push_back(window_definition);
+        window_list_element->definition = window_list_element->children.back();
+        return window_list_element;
     }
 
     return window_definition;

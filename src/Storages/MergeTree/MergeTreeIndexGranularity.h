@@ -46,6 +46,9 @@ public:
     /// Return amount of rows before mark
     size_t getMarkStartingRow(size_t mark_index) const;
 
+    /// Return the mark associated with the target row offset.
+    virtual MarkRange getMarkRangeForRowOffset(size_t row_offset) const = 0;
+
     /// Amount of rows after last mark
     size_t getLastMarkRows() const;
 
@@ -61,6 +64,7 @@ public:
     /// Sets last mark equal to rows_count.
     virtual void adjustLastMark(size_t rows_count) = 0;
     void addRowsToLastMark(size_t rows_count);
+    size_t getMarksCountForSkipIndex(size_t skip_index_granularity) const;
 
     virtual uint64_t getBytesSize() const = 0;
     virtual uint64_t getBytesAllocated() const = 0;

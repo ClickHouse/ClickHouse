@@ -17,6 +17,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -58,8 +59,8 @@ private:
     String backup_tmp_path;
     String backup_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
-    CompressedWriteBuffer compressed_backup_buf;
-    NativeWriter backup_stream;
+    std::optional<CompressedWriteBuffer> compressed_backup_buf;
+    std::optional<NativeWriter> backup_stream;
     bool persistent;
 };
 
@@ -72,16 +73,13 @@ SetOrJoinSink::SetOrJoinSink(
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , WithContext(ctx)
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
     , backup_file_name(backup_file_name_)
-    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
-    , compressed_backup_buf(*backup_buf)
-    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
     , persistent(persistent_)
 {
 }
@@ -94,7 +92,8 @@ SetOrJoinSink::~SetOrJoinSink()
 
 void SetOrJoinSink::cancelBuffers() noexcept
 {
-    compressed_backup_buf.cancel();
+    if (compressed_backup_buf)
+        compressed_backup_buf->cancel();
     if (backup_buf)
         backup_buf->cancel();
 }
@@ -106,23 +105,27 @@ void SetOrJoinSink::consume(Chunk & chunk)
 
     table.insertBlock(block, getContext());
     if (persistent)
-        backup_stream.write(block);
+    {
+        if (!backup_buf)
+        {
+            backup_buf = table.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
+            compressed_backup_buf.emplace(*backup_buf);
+            backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
+        }
+        backup_stream->write(block);
+    }
 }
 
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
-    if (persistent)
+    if (backup_buf)
     {
-        backup_stream.flush();
-        compressed_backup_buf.finalize();
+        backup_stream->flush();
+        compressed_backup_buf->finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
-    }
-    else
-    {
-        cancelBuffers();
     }
 }
 
@@ -213,7 +216,7 @@ size_t StorageSet::getSize(ContextPtr) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -223,7 +226,7 @@ std::optional<UInt64> StorageSet::totalRows(const Settings &) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -306,7 +309,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     NativeReader backup_stream(compressed_backup_buf, 0);
 
     ProfileInfo info;
-    while (Block block = backup_stream.read())
+    for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
     {
         info.update(block);
         insertBlock(block, ctx);
@@ -346,7 +349,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

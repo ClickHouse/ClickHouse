@@ -25,16 +25,20 @@ extern const int ILLEGAL_COLUMN;
 
 namespace
 {
-template <class Impl>
+
 class FunctionH3PointDist final : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-    static constexpr auto function = Impl::function;
+    using DistFunc = double (*)(const LatLng *, const LatLng *);
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PointDist>(); }
+    FunctionH3PointDist(const char * name_, DistFunc func_) : function_name(name_), dist_func(func_) {}
 
-    std::string getName() const override { return name; }
+    static FunctionPtr create(const char * name, DistFunc func)
+    {
+        return std::make_shared<FunctionH3PointDist>(name, func);
+    }
+
+    std::string getName() const override { return function_name; }
 
     size_t getNumberOfArguments() const override { return 4; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -119,39 +123,120 @@ public:
             LatLng point1 = {degsToRads(lat1), degsToRads(lon1)};
             LatLng point2 = {degsToRads(lat2), degsToRads(lon2)};
 
-            // function will be equivalent to distanceM or distanceKm or distanceRads
-            Float64 res = function(&point1, &point2);
+            Float64 res = dist_func(&point1, &point2);
             dst_data[row] = res;
         }
 
         return dst;
     }
+
+private:
+    const char * function_name;
+    DistFunc dist_func;
 };
 
 }
 
-struct H3PointDistM
+
+REGISTER_FUNCTION(H3PointDistM)
 {
-    static constexpr auto name = "h3PointDistM";
-    static constexpr auto function = distanceM;
-};
-
-struct H3PointDistKm
+    FunctionDocumentation::Description description = R"(
+Returns the ["great circle"](https://en.wikipedia.org/wiki/Great-circle_distance) or ["haversine"](https://en.wikipedia.org/wiki/Haversine_formula)
+distance between pairs of GeoCoord points (latitude/longitude) in meters.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3PointDistM(lat1, lon1, lat2, lon2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lat1", "Latitude of point1 in degrees.", {"Float64"}},
+        {"lon1", "Longitude of point1 in degrees.", {"Float64"}},
+        {"lat2", "Latitude of point2 in degrees.", {"Float64"}},
+        {"lon2", "Longitude of point2 in degrees.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the haversine or great circle distance in meters.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Calculate distance between two points in meters",
+            "SELECT h3PointDistM(-10.0, 0.0, 10.0, 0.0) AS h3PointDistM",
+            R"(
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", distanceM); }, documentation);
+}
+REGISTER_FUNCTION(H3PointDistKm)
 {
-    static constexpr auto name = "h3PointDistKm";
-    static constexpr auto function = distanceKm;
-};
-
-struct H3PointDistRads
+    FunctionDocumentation::Description description = R"(
+Returns the ["great circle"](https://en.wikipedia.org/wiki/Great-circle_distance) or ["haversine"](https://en.wikipedia.org/wiki/Haversine_formula)
+distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3PointDistKm(lat1, lon1, lat2, lon2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lat1", "Latitude of point1 in degrees.", {"Float64"}},
+        {"lon1", "Longitude of point1 in degrees.", {"Float64"}},
+        {"lat2", "Latitude of point2 in degrees.", {"Float64"}},
+        {"lon2", "Longitude of point2 in degrees.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the haversine or great circle distance in kilometers.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Calculate distance between two points in kilometers",
+            "SELECT h3PointDistKm(-10.0, 0.0, 10.0, 0.0) AS h3PointDistKm",
+            R"(
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", distanceKm); }, documentation);
+}
+REGISTER_FUNCTION(H3PointDistRads)
 {
-    static constexpr auto name = "h3PointDistRads";
-    static constexpr auto function = distanceRads;
-};
-
-
-REGISTER_FUNCTION(H3PointDistM) { factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(); }
-REGISTER_FUNCTION(H3PointDistKm) { factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(); }
-REGISTER_FUNCTION(H3PointDistRads) { factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(); }
+    FunctionDocumentation::Description description = R"(
+Returns the ["great circle"](https://en.wikipedia.org/wiki/Great-circle_distance) or ["haversine"](https://en.wikipedia.org/wiki/Haversine_formula)
+distance between pairs of GeoCoord points (latitude/longitude) in radians.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3PointDistRads(lat1, lon1, lat2, lon2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lat1", "Latitude of point1 in degrees.", {"Float64"}},
+        {"lon1", "Longitude of point1 in degrees.", {"Float64"}},
+        {"lat2", "Latitude of point2 in degrees.", {"Float64"}},
+        {"lon2", "Longitude of point2 in degrees.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the haversine or great circle distance in radians.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Calculate distance between two points in radians",
+            "SELECT h3PointDistRads(-10.0, 0.0, 10.0, 0.0) AS h3PointDistRads",
+            R"(
+┌────h3PointDistRads─┐
+│ 0.3490658503988659 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", distanceRads); }, documentation);
+}
 
 }
 

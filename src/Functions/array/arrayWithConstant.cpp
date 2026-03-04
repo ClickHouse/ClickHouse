@@ -56,17 +56,19 @@ public:
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::Offsets & offsets = offsets_col->getData();
-        offsets.reserve(num_rows);
+        if (num_rows == 0)
+            return ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
 
+        offsets.reserve(num_rows);
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto array_size = col_num->getInt(i);
-            auto element_size = col_value->byteSizeAt(i);
 
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
 
+            auto element_size = col_value->byteSizeAt(i);
             Int64 estimated_size = 0;
             if (unlikely(common::mulOverflow(array_size, element_size, estimated_size)))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
@@ -88,7 +90,21 @@ public:
 
 REGISTER_FUNCTION(ArrayWithConstant)
 {
-    factory.registerFunction<FunctionArrayWithConstant>();
+    FunctionDocumentation::Description description = R"(
+Creates an array of length `length` filled with the constant `x`.
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayWithConstant(N, x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Number of elements in the array.", {"(U)Int*"}},
+        {"x", "The value of the `N` elements in the array, of any type."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an Array with `N` elements of value `x`.", {"Array(T)"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1, 1, 1]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayWithConstant>(documentation);
 }
 
 }

@@ -3,9 +3,9 @@
 #include <list>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -30,11 +30,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
+#include <Storages/MergeTree/TextIndexSegment.h>
 
 namespace ProfileEvents
 {
     extern const Event MergeHorizontalStageTotalMilliseconds;
     extern const Event MergeVerticalStageTotalMilliseconds;
+    extern const Event MergeTextIndexStageTotalMilliseconds;
     extern const Event MergeProjectionStageTotalMilliseconds;
 }
 
@@ -44,6 +46,19 @@ namespace DB
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class RowsSourcesTemporaryFile;
+
+class MergedPartOffsets;
+using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
+
+class MergeTextIndexesTask;
+using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
+
+class BuildTextIndexTransform;
+using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
+
+class BuildStatisticsTransform;
+using BuildStatisticsTransformPtr = std::shared_ptr<BuildStatisticsTransform>;
+using BuildStatisticsTransformMap = std::unordered_map<String, BuildStatisticsTransformPtr>;
 
 /**
  * Overview of the merge algorithm
@@ -69,6 +84,7 @@ class RowsSourcesTemporaryFile;
 class MergeTask
 {
 public:
+    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -84,7 +100,9 @@ public:
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
+        ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
+        MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -108,7 +126,9 @@ public:
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
+            global_ctx->projection = projection_;
             global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
@@ -117,6 +137,8 @@ public:
             global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
+
+            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -138,6 +160,13 @@ public:
     {
         PlainMarksByName res;
         std::swap(global_ctx->cached_marks, res);
+        return res;
+    }
+
+    PlainMarksByName releaseCachedIndexMarks() const
+    {
+        PlainMarksByName res;
+        std::swap(global_ctx->cached_index_marks, res);
         return res;
     }
 
@@ -173,6 +202,7 @@ private:
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
+        MergeTreeSettingsPtr data_settings;
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
@@ -180,8 +210,10 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         std::vector<AlterConversionsPtr> alter_conversions;
+        ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
+        MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
@@ -189,15 +221,26 @@ private:
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
+        bool vertical_lightweight_delete{false};
+        bool vertical_ttl_delete{false};
+        CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
+        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
+        NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsWithTypeAndName gathered_columns_samples{};
+        NamesAndTypesList storage_columns_expired_by_ttl{};
+
+        MergedBlockOutputStream::GatheredData gathered_data{};
+        std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
+        IndicesDescription text_indexes_to_merge;
+        MutableDataPartStoragePtr temporary_text_index_storage;
+        std::unordered_map<String, std::vector<BuildTextIndexTransformPtr>> build_text_index_transforms;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
@@ -221,8 +264,9 @@ private:
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
-        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
+        WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
+        PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;
@@ -232,6 +276,9 @@ private:
         scope_guard temporary_directory_lock;
 
         UInt64 prev_elapsed_ms{0};
+
+        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
+        bool merge_may_reduce_rows{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -247,7 +294,6 @@ private:
     {
         bool need_remove_expired_values{false};
         bool force_ttl{false};
-        CompressionCodecPtr compression_codec{nullptr};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -258,6 +304,7 @@ private:
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
+        BuildStatisticsTransformMap build_statistics_transforms;
 
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
@@ -302,14 +349,14 @@ private:
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         void prepareProjectionsToMergeAndRebuild() const;
-        void calculateProjections(const Block & block) const;
+        void calculateProjections(const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
-        void extractMergingAndGatheringColumns() const;
+        void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
@@ -332,7 +379,6 @@ private:
         /// Begin dependencies from previous stage
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
-        CompressionCodecPtr compression_codec;
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -355,6 +401,7 @@ private:
         {
             QueryPipeline pipeline;
             MergeTreeIndices indexes_to_recalc;
+            BuildStatisticsTransformMap build_statistics_transforms;
         };
 
         std::optional<PreparedColumnPipeline> prepared_pipeline;
@@ -364,6 +411,7 @@ private:
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
+        BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
     };
 
@@ -408,6 +456,50 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
+    struct MergeTextIndexRuntimeContext : IStageRuntimeContext
+    {
+        bool need_sync{false};
+        UInt64 elapsed_execute_ns{0};
+        std::vector<MergeTextIndexesTaskPtr> merge_tasks;
+    };
+
+    using MergeTextIndexRuntimeContextPtr = std::shared_ptr<MergeTextIndexRuntimeContext>;
+
+    struct MergeTextIndexStage : IStage
+    {
+        bool execute() override;
+        void cancel() noexcept override;
+
+        void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
+        {
+            ctx = static_pointer_cast<MergeTextIndexRuntimeContext>(local);
+            global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
+        }
+
+        StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
+
+        bool prepare() const;
+        bool execute() const;
+        bool finalize() const;
+
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using MergeTextIndexStageSubtasks = std::array<bool(MergeTextIndexStage::*)()const, 3>;
+
+        const MergeTextIndexStageSubtasks subtasks
+        {
+            &MergeTextIndexStage::prepare,
+            &MergeTextIndexStage::execute,
+            &MergeTextIndexStage::finalize,
+        };
+
+        MergeTextIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        MergeTextIndexRuntimeContextPtr ctx;
+        GlobalRuntimeContextPtr global_ctx;
+
+        std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
+    };
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -441,7 +533,7 @@ private:
         StageRuntimeContextPtr getContextForNextStage() override;
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool mergeMinMaxIndexAndPrepareProjections() const;
+        bool prepareProjections() const;
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
@@ -450,7 +542,7 @@ private:
 
         const MergeProjectionsStageSubtasks subtasks
         {
-            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
+            &MergeProjectionsStage::prepareProjections,
             &MergeProjectionsStage::executeProjections,
             &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
         };
@@ -463,12 +555,13 @@ private:
 
     GlobalRuntimeContextPtr global_ctx;
 
-    using Stages = std::array<StagePtr, 3>;
+    using Stages = std::array<StagePtr, 4>;
 
     const Stages stages
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
+        std::make_shared<MergeTextIndexStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
@@ -476,8 +569,15 @@ private:
 
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
-
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
+    static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
+    static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
+    static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
+    static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);
+    static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME

@@ -1,20 +1,23 @@
 ---
-slug: /en/engines/table-engines/integrations/embedded-rocksdb
+description: 'This engine allows integrating ClickHouse with RocksDB'
+sidebar_label: 'EmbeddedRocksDB'
 sidebar_position: 50
-sidebar_label: EmbeddedRocksDB
+slug: /engines/table-engines/integrations/embedded-rocksdb
+title: 'EmbeddedRocksDB table engine'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# EmbeddedRocksDB Engine
+# EmbeddedRocksDB table engine
 
 <CloudNotSupportedBadge />
 
 This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -41,7 +44,7 @@ Engine settings:
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE test
 (
     `key` String,
@@ -53,7 +56,7 @@ ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
 
-## Metrics
+## Metrics {#metrics}
 
 There is also `system.rocksdb` table, that expose rocksdb statistics:
 
@@ -69,7 +72,7 @@ FROM system.rocksdb
 └───────────────────────────┴───────┘
 ```
 
-## Configuration
+## Configuration {#configuration}
 
 You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) using config:
 
@@ -101,7 +104,7 @@ turn on the settings to see approximate values for `total_rows` and `total_bytes
 
 ## Supported operations {#supported-operations}
 
-### Inserts
+### Inserts {#inserts}
 
 When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
 
@@ -111,7 +114,7 @@ Example:
 INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
 ```
 
-### Deletes
+### Deletes {#deletes}
 
 Rows can be deleted using `DELETE` query or `TRUNCATE`.
 
@@ -127,7 +130,7 @@ ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
 TRUNCATE TABLE test;
 ```
 
-### Updates
+### Updates {#updates}
 
 Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
 
@@ -135,7 +138,7 @@ Values can be updated using the `ALTER TABLE` query. The primary key cannot be u
 ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
 ```
 
-### Joins
+### Joins {#joins}
 
 A special `direct` join with EmbeddedRocksDB tables is supported.
 This direct join avoids forming a hash table in memory and accesses
@@ -154,9 +157,9 @@ When the `join_algorithm` is set to `direct, hash`, direct joins will be used
 when possible, and hash otherwise.
 :::
 
-#### Example
+#### Example {#example}
 
-##### Create and populate an EmbeddedRocksDB table:
+##### Create and populate an EmbeddedRocksDB table {#create-and-populate-an-embeddedrocksdb-table}
 ```sql
 CREATE TABLE rdb
 (
@@ -171,13 +174,13 @@ PRIMARY KEY key
 ```sql
 INSERT INTO rdb
     SELECT
-        toUInt32(sipHash64(number) % 10) as key,
-        [key, key+1] as value,
-        ('val2' || toString(key)) as value2
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
     FROM numbers_mt(10);
 ```
 
-##### Create and populate a table to join with table `rdb`:
+##### Create and populate a table to join with table `rdb` {#create-and-populate-a-table-to-join-with-table-rdb}
 
 ```sql
 CREATE TABLE t2
@@ -192,13 +195,13 @@ INSERT INTO t2 SELECT number AS k
 FROM numbers_mt(10)
 ```
 
-##### Set the join algorithm to `direct`:
+##### Set the join algorithm to `direct`{#set-the-join-algorithm-to-direct}
 
 ```sql
 SET join_algorithm = 'direct'
 ```
 
-##### An INNER JOIN:
+##### An INNER JOIN {#an-inner-join}
 ```sql
 SELECT *
 FROM
@@ -221,6 +224,6 @@ ORDER BY key ASC
 └─────┴─────────┴────────┴────────┘
 ```
 
-### More information on Joins
-- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#join_algorithm)
-- [JOIN clause](/docs/en/sql-reference/statements/select/join.md)
+### More information on Joins {#more-information-on-joins}
+- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
+- [JOIN clause](/sql-reference/statements/select/join.md)

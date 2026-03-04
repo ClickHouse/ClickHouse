@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,7 +34,7 @@ INSERT INTO t02982 SELECT
 FROM numbers_mt(1000000);
 """
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q """
 SELECT
     ProfileEvents['MergeTreeDataProjectionWriterMergingBlocksMicroseconds'] = 0,
@@ -42,5 +43,5 @@ SELECT
     ProfileEvents['MergeTreeDataWriterProjectionsCalculationMicroseconds'] > 0,
     ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id='$query_id' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id='$query_id' AND type = 'QueryFinish';
 """

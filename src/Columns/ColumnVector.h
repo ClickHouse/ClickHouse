@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
@@ -17,11 +16,6 @@ class SipHash;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /** A template for columns that use a simple array to store.
  */
@@ -103,12 +97,15 @@ public:
 
     void popBack(size_t n) override
     {
+        if (n > size())
+            throwCannotPopBack(n, this->getName(), size());
+
         data.resize_assume_reserved(data.size() - n);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -165,6 +162,10 @@ public:
 
 #endif
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+        int direction, int nan_direction_hint) const override;
+
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -205,6 +206,8 @@ public:
         res = (*this)[n];
     }
 
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
@@ -216,7 +219,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "UInt");
     }
 
     /// Out of range conversion is permitted.
@@ -225,7 +228,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "Int");
     }
 
     bool getBool(size_t n) const override
@@ -233,7 +236,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
+            throwColumnConvertNotSupported(TypeName<T>, "bool");
     }
 
     void insert(const Field & x) override
@@ -251,6 +254,8 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
+    void filter(const IColumn::Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -262,20 +267,21 @@ public:
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     std::string_view getRawData() const override
     {
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
@@ -286,6 +292,8 @@ public:
     }
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
+
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 

@@ -14,6 +14,7 @@ node_old = cluster.add_instance(
 )
 node_new = cluster.add_instance(
     "node2",
+    user_configs=["configs/user_config.xml"],
     main_configs=[
         "configs/no_compress_marks.xml",
         "configs/no_allow_vertical_merges_from_compact_to_wide_parts.xml",
@@ -35,6 +36,11 @@ def start_cluster():
 
 
 def test_vertical_merges_from_compact_parts(start_cluster):
+    # Clean up from any previous iteration (when test is repeated with --count).
+    for node in [node_new, node_old]:
+        node.query("DROP TABLE IF EXISTS t_vertical_merges SYNC")
+        node.query("TRUNCATE TABLE IF EXISTS system.part_log")
+
     for i, node in enumerate([node_old, node_new]):
         node.query(
             """
@@ -123,3 +129,10 @@ def test_vertical_merges_from_compact_parts(start_cluster):
 
     assert node_new.query(check_query.format("all_0_3_3")) == "Vertical\tWide\n"
     assert node_old.query(check_query.format("all_0_3_3")) == "Vertical\tWide\n"
+
+    for node in [node_new, node_old]:
+        node.query("DROP TABLE t_vertical_merges SYNC")
+
+    # Restore node_old to the original version so repeated runs still test backward compatibility.
+    # clear_data_dir is needed because the old binary cannot start with system tables written by the new version.
+    node_old.restart_with_original_version(clear_data_dir=True)

@@ -49,9 +49,12 @@ public:
     BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_);
     ~BackupWriterDefault() override = default;
 
-    bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
+    bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) override;
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
     void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
+
+    void removeFiles(const Strings & file_names) override;
+    void removeEmptyDirectories() override;
 
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }

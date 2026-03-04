@@ -1,6 +1,8 @@
 #pragma once
+
 #include <IO/WriteBuffer.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -18,6 +20,7 @@ public:
 
 protected:
     void nextImpl() override;
+    void preFinalize() override;
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
 

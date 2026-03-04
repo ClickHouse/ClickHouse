@@ -1,10 +1,14 @@
 #include <Core/Block.h>
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -60,6 +64,22 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     for (size_t i = 0; i < prefix.size(); ++i)
     {
         if ((*this)[i] != prefix[i])
+            return false;
+    }
+    return true;
+}
+
+bool SortDescription::hasPrefix(const Names & prefix) const
+{
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if ((*this)[i].column_name != prefix[i])
             return false;
     }
     return true;

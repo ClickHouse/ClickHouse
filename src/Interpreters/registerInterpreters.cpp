@@ -49,7 +49,6 @@ void registerInterpreterCheckGrantQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessQuery(InterpreterFactory & factory);
 void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory);
-void registerInterpreterExternalDDLQuery(InterpreterFactory & factory);
 void registerInterpreterTransactionControlQuery(InterpreterFactory & factory);
 void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterDropFunctionQuery(InterpreterFactory & factory);
@@ -62,6 +61,9 @@ void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
+void registerInterpreterUpdateQuery(InterpreterFactory & factory);
+void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
+void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 
 void registerInterpreters()
 {
@@ -113,7 +115,6 @@ void registerInterpreters()
     registerInterpreterShowAccessEntitiesQuery(factory);
     registerInterpreterShowAccessQuery(factory);
     registerInterpreterShowPrivilegesQuery(factory);
-    registerInterpreterExternalDDLQuery(factory);
     registerInterpreterTransactionControlQuery(factory);
     registerInterpreterCreateFunctionQuery(factory);
     registerInterpreterDropFunctionQuery(factory);
@@ -126,5 +127,9 @@ void registerInterpreters()
     registerInterpreterDropIndexQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
+    registerInterpreterUpdateQuery(factory);
+    registerInterpreterParallelWithQuery(factory);
+    registerInterpreterExecuteAsQuery(factory);
 }
+
 }

@@ -1,10 +1,14 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <cmath>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -15,6 +19,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsSeconds receive_timeout;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -22,7 +31,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
-    extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_mutate_task_pause_in_prepare[];
 }
 
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
@@ -30,6 +43,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = storage.getSettings();
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
@@ -39,12 +54,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->part_info = new_part_info;
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
+
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
+            mutation_ids_for_log);
     };
 
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
@@ -53,6 +70,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         LOG_DEBUG(log, "Source part {} for {} is missing; will try to fetch it instead. "
             "Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
             source_part_name, entry.new_part_name);
+
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = true,
@@ -79,7 +97,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     /// TODO - some better heuristic?
-    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part}, false);
+    size_t estimated_space_for_result = CompactionStatistics::estimateNeededDiskSpace({source_part}, false);
 
     if (entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_size_threshold])
@@ -90,6 +108,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
+
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
@@ -123,7 +142,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
-              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString());
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
+
+    /// mutation_ids can be empty here.
+    mutation_ids_for_log = mutation_ids;
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -150,27 +172,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 };
             }
 
-            if ((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0 &&
-                estimated_space_for_result >= (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock])
-            {
-                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to metigate the skew of merges execution because of faster/slower replicas.
-                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges don't affect the ability to aquite locks for new merges.
-                ///
-                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-                double start_to_sleep_seconds = std::logf((*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value);
-                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
-                uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-                LOG_INFO(log, "Mutation size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big mutation",
-                    estimated_space_for_result, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock], time_to_sleep_milliseconds);
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-            }
-
+            maybeSleepBeforeZeroCopyLock(estimated_space_for_result);
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
@@ -180,7 +182,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     "Mutation of part {} started by some other replica, will wait for it and mutated merged part. Number of tries {}",
                     entry.new_part_name,
                     entry.num_tries);
-                storage.watchZeroCopyLock(entry.new_part_name, disk);
 
                 return PrepareResult{
                     .prepared_successfully = false,
@@ -216,10 +217,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext());
+    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
     task_context->makeQueryContextForMutate(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -228,7 +228,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {});
+        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log);
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
@@ -249,16 +249,35 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+
     auto & data_part_storage = new_part->getDataPartStorage();
+
+#if CLICKHOUSE_CLOUD
+    new_part->is_prewarmed = true;
+    data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
+
     if (data_part_storage.hasActiveTransaction())
         data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
+    /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
+    /// The task holds RAII guards for temporary part directories (TemporaryParts).
+    /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
+    /// falls back to fetching the part from another replica. The fetch may use
+    /// cloneAndLoadDataPart with the same "tmp_clone_" prefix, which would try to
+    /// register the same temporary part name in TemporaryParts — causing a
+    /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
+    /// releases these guards before the fallback fetch can run.
+    auto hardlinked_files = mutate_task->getHardlinkedFiles();
+    mutate_task->updateProfileEvents();
+    mutate_task.reset();
+
     try
     {
         transaction_ptr->renameParts();
-        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
+        storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, hardlinked_files);
     }
     catch (const Exception & e)
     {
@@ -271,7 +290,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
-            mutate_task->updateProfileEvents();
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if ((*storage.getSettings())[MergeTreeSetting::detach_not_byte_identical_parts])
@@ -299,7 +317,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
          */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
-    mutate_task->updateProfileEvents();
     write_part_log({});
 
     return true;

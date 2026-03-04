@@ -1,9 +1,7 @@
-#include <Common/intExp.h>
-
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ParserSampleRatio.h>
-#include <Parsers/ASTSampleRatio.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Common/intExp10.h>
 
 
 namespace DB
@@ -109,7 +107,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
         res = numerator;
     }
 
-    node = std::make_shared<ASTSampleRatio>(res);
+    node = make_intrusive<ASTSampleRatio>(res);
     return true;
 }
 

@@ -1,0 +1,36 @@
+paimon-format
+Copyright 2023-2024 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+This project bundles the following dependencies under the Apache Software License 2.0. (http://www.apache.org/licenses/LICENSE-2.0.txt)
+
+- org.apache.orc:orc-core:1.9.2
+- org.apache.orc:orc-shims:1.9.2
+- org.apache.hive:hive-storage-api:2.8.1
+- io.airlift:aircompressor:0.27
+- commons-lang:commons-lang:2.6
+- org.apache.commons:commons-lang3:3.12.0
+
+- org.apache.avro:avro:1.11.3
+- com.fasterxml.jackson.core:jackson-core:2.14.2
+- com.fasterxml.jackson.core:jackson-databind:2.14.2
+- com.fasterxml.jackson.core:jackson-annotations:2.14.2
+- org.apache.commons:commons-compress:1.22
+
+- org.apache.parquet:parquet-hadoop:1.13.1
+- org.apache.parquet:parquet-column:1.13.1
+- org.apache.parquet:parquet-common:1.13.1
+- org.apache.parquet:parquet-encoding:1.13.1
+- org.apache.parquet:parquet-format-structures:1.13.1
+- org.apache.parquet:parquet-jackson:1.13.1
+- commons-pool:commons-pool:1.6
+
+This project bundles the following dependencies under the BSD license.
+You find it under licenses/LICENSE.protobuf, licenses/LICENSE.zstd-jni
+and licenses/LICENSE.threeten-extra
+
+- com.google.protobuf:protobuf-java:3.19.6
+- com.github.luben:zstd-jni:1.5.5-11
+- org.threeten:threeten-extra:1.7.1

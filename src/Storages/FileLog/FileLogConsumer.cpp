@@ -4,9 +4,11 @@
 
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <filesystem>
+
 
 namespace DB
 {

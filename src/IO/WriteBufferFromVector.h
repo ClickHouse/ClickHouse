@@ -2,8 +2,8 @@
 
 #include <vector>
 
+#include <IO/AutoFinalizedWriteBuffer.h>
 #include <IO/WriteBuffer.h>
-
 
 namespace DB
 {
@@ -58,9 +58,10 @@ public:
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         finalized = false;
         canceled = false;
+        bytes = 0;
     }
 
-private:
+protected:
     void finalizeImpl() override
     {
         vector.resize(
@@ -68,10 +69,13 @@ private:
                 + sizeof(ValueType) - 1)  /// Align up. /// NOLINT
             / sizeof(ValueType));
 
+        bytes += offset();
+
         /// Prevent further writes.
         set(nullptr, 0);
     }
 
+private:
     void nextImpl() override
     {
         if (finalized)

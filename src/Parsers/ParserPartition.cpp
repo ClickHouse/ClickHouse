@@ -20,7 +20,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSubstitution parser_substitution;
     ParserExpression parser_expr;
 
-    auto partition = std::make_shared<ASTPartition>();
+    auto partition = make_intrusive<ASTPartition>();
 
     if (s_id.ignore(pos, expected))
     {
@@ -65,7 +65,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 if (literal_ast->value.getType() == Field::Types::Tuple)
                 {
-                    fields_count = literal_ast->value.safeGet<const Tuple &>().size();
+                    fields_count = literal_ast->value.safeGet<Tuple>().size();
                 }
                 else
                 {

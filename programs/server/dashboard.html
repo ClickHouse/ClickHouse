@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>ClickHouse Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6IzAwMH0ub3tmaWxsOiNmZjB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
@@ -548,12 +548,20 @@ let queries = [];
 /// All other parameters will be automatically found in the queries.
 let default_params = {
     'rounding': '60',
-    'seconds': '86400'
+    'seconds': '86400',
+    // If unset, the `seconds` is used
+    'from': '',
+    'to': '',
 };
+let default_params_desc = {
+    'from': {'placeholder': '2023-01-01 00:00:00', 'title': 'Enter date in 2023-01-01 00:00:00 format. If empty, it is calculated as current time minus "seconds" parameter.'},
+    'to': {'placeholder': '2023-01-02 00:00:00', 'title': 'Enter date in 2023-01-01 00:00:00 format. If empty, it is current time.'},
+    'seconds': {'placeholder': '86400', 'title': 'Number of seconds to look back from current time. Default is 86400 (1 day).'},
+}
 let params = default_params;
 
 /// Palette generation for charts
-function generatePalette(numColors) {
+function generateColor(l, c, h) {
     // oklch() does not work in firefox<=125 inside <canvas> element so we convert it back to rgb for now.
     // Based on https://github.com/color-js/color.js/blob/main/src/spaces/oklch.js
     const multiplyMatrices = (A, B) => {
@@ -598,13 +606,17 @@ function generatePalette(numColors) {
         ], xyz)
     }
 
-    const oklch2rgb = lch =>  srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
+    const oklch2rgb = lch => srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
+
+    let rgb = oklch2rgb([l, c, h]);
+    return `rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`;
+}
+
+function generatePalette(numColors) {
 
     palette = [];
     for (let i = 0; i < numColors; i++) {
-        //palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
-        let rgb = oklch2rgb([theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors]);
-        palette.push(`rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`);
+        palette.push(generateColor(theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors));
     }
     return palette;
 }
@@ -637,9 +649,24 @@ function findParamsInQuery(query, new_params) {
         : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
         : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
         : ''))));
+    let temp_params = {};
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
+        temp_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
+    }
+    // Here we preserve the order of default_params if they are present in temp_params
+    // First, add parameters in the order they appear in default_params
+    for (let key in default_params) {
+        if (key in temp_params) {
+            new_params[key] = temp_params[key];
+        }
+    }
+
+    // Then, add all remaining parameters from temp_params
+    for (let key in temp_params) {
+        if (!(key in default_params)) {
+            new_params[key] = temp_params[key];
+        }
     }
 }
 
@@ -663,6 +690,14 @@ function insertParam(name, value) {
     param_value.name = `${name}`;
     param_value.type = 'text';
     param_value.value = value;
+    if (name in default_params_desc) {
+        if ('placeholder' in default_params_desc[name]) {
+            param_value.placeholder = default_params_desc[name]['placeholder'];
+        }
+        if ('title' in default_params_desc[name]) {
+            param_value.title = default_params_desc[name]['title'];
+        }
+    }
     param_value.spellcheck = false;
 
     let setWidth = e => { e.style.width = (e.value.length + 1) + 'ch' };
@@ -1067,7 +1102,9 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
         /// avoiding the borders of the chart.
         left -= legendEl.clientWidth * (left / u.width);
-        top -= legendEl.clientHeight;
+        if (top >= legendEl.clientHeight) {
+            top -= legendEl.clientHeight;
+        }
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
 
         if (multiline) {
@@ -1116,7 +1153,7 @@ async function doFetch(query, url_params = '') {
 
     let response, reply, error;
     try {
-        response = await fetch(url + url_params, { method: "POST", body: query });
+        response = await fetch(url + url_params, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
         reply = await response.text();
         if (response.ok) {
             reply = JSON.parse(reply);
@@ -1144,6 +1181,15 @@ async function doFetch(query, url_params = '') {
     }
 
     return {reply, error};
+}
+
+function stringHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash;
+    }
+    return hash;
 }
 
 async function draw(idx, chart, url_params, query) {
@@ -1238,9 +1284,12 @@ async function draw(idx, chart, url_params, query) {
         title_div.style.display = 'block';
     }
 
-    const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
-        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
+    const color_rotate = Math.abs(stringHash(query));
+
+    const line_color = theme != 'dark' ? generateColor(0.75, 0.14, (21 + color_rotate) % 360) : generateColor(0.53, 0.07, (56 + color_rotate) % 360);
+    const fill_color = theme != 'dark' ? generateColor(0.96, 0.02, (21 + color_rotate) % 360) : generateColor(0.36, 0.07, (56 + color_rotate) % 360);
+    const grid_color = theme != 'dark' ? "#eeeedd" : "#2c3235";
+    const axes_color = theme != 'dark' ? "#2c3235" : "#c7d0d9";
 
     let sync = uPlot.sync("sync");
 
@@ -1300,7 +1349,7 @@ async function draw(idx, chart, url_params, query) {
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;
-        series.push({ label, stroke: palette[i - 1], fill });
+        series.push({ label, stroke: palette[i - 1], fill, points: { size: 3, fill: palette[i - 1] }});
         data.push(reply.data[label]);
         max_value = Math.max(max_value, ...reply.data[label]);
     }

@@ -4,7 +4,6 @@
 #include <mutex>
 
 #include <Core/Names.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
@@ -350,7 +349,7 @@ public:
     /// IKeyValueEntity implementation
     Names getPrimaryKey() const  override { return getStructure().getKeysNames(); }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names & result_names, PaddedPODArray<UInt8> & out_null_map, IColumn::Offsets & /* out_offsets */) const override
     {
         if (keys.empty())
             return Chunk(getSampleBlock(result_names).cloneEmpty().getColumns(), 0);

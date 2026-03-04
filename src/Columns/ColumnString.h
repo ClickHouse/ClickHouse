@@ -2,13 +2,15 @@
 
 #include <cstring>
 
+#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/memcpySmall.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 
@@ -21,8 +23,7 @@ namespace DB
 
 class Arena;
 
-/** Column for String values.
-  */
+/// Column for String values.
 class ColumnString final : public COWHelper<IColumnHelper<ColumnString>, ColumnString>
 {
 public:
@@ -37,16 +38,15 @@ private:
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
     Offsets offsets;
 
-    /// Bytes of strings, placed contiguously.
-    /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
+    /// Bytes of strings, placed contiguously. Note that strings are not zero-terminated and could contain zero bytes in the middle.
     Chars chars;
 
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
-    /// Size of i-th element, including terminating zero.
+    /// Size of i-th element
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const
     {
-        chassert(offsets[i] > offsets[i - 1]);
+        chassert(offsets[i] >= offsets[i - 1]);
         return offsets[i] - offsets[i - 1];
     }
 
@@ -101,36 +101,42 @@ public:
     Field operator[](size_t n) const override
     {
         chassert(n < size());
-        return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
+        return Field(&chars[offsetAt(n)], sizeAt(n));
     }
 
     void get(size_t n, Field & res) const override
     {
         chassert(n < size());
-        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
+        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    StringRef getDataAt(size_t n) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    {
+        if (options.notFull(name_buf))
+            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
+    }
+
+    std::string_view getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
+        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override
     {
         chassert(n < size());
-        return sizeAt(n) == 1;
+        return sizeAt(n) == 0;
     }
 
     void insert(const Field & x) override
     {
-        const String & s = x.safeGet<const String &>();
+        const String & s = x.safeGet<String>();
         const size_t old_size = chars.size();
-        const size_t size_to_append = s.size() + 1;
+        const size_t size_to_append = s.size();
         const size_t new_size = old_size + size_to_append;
 
         chars.resize(new_size);
-        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
+        memcpy(chars.data() + old_size, s.data(), size_to_append);
         offsets.push_back(new_size);
     }
 
@@ -150,18 +156,17 @@ public:
 #endif
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
-        const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
+        const size_t size_to_append = src.sizeAt(n);
 
-        if (size_to_append == 1)
+        if (size_to_append == 0)
         {
             /// shortcut for empty string
-            chars.push_back(0);
             offsets.push_back(chars.size());
         }
         else
         {
             const size_t old_size = chars.size();
-            const size_t offset = src.offsets[n - 1];
+            const size_t offset = src.offsetAt(n);
             const size_t new_size = old_size + size_to_append;
 
             chars.resize(new_size);
@@ -179,17 +184,19 @@ public:
     void insertData(const char * pos, size_t length) override
     {
         const size_t old_size = chars.size();
-        const size_t new_size = old_size + length + 1;
+        const size_t new_size = old_size + length;
 
         chars.resize(new_size);
         if (length)
             memcpy(chars.data() + old_size, pos, length);
-        chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }
 
     void popBack(size_t n) override
     {
+        if (n > size())
+            throwCannotPopBack(n, getName(), size());
+
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
         offsets.resize_assume_reserved(offsets.size() - n);
@@ -199,14 +206,18 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -222,6 +233,8 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
+    void filter(const Filter & filt) override;
+
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -233,15 +246,15 @@ public:
 
     void insertDefault() override
     {
-        chars.push_back(0);
-        offsets.push_back(offsets.back() + 1);
+        auto last = offsets.back();
+        offsets.push_back(last);
     }
 
     void insertManyDefaults(size_t length) override
     {
-        chars.resize_fill(chars.size() + length);
+        auto last = offsets.back();
         for (size_t i = 0; i < length; ++i)
-            offsets.push_back(offsets.back() + 1);
+            offsets.push_back(last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -251,7 +264,7 @@ public:
 #endif
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
-        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
+        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n), rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m));
     }
 
     /// Variant of compareAt for string comparison with respect of collation.
@@ -278,10 +291,10 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool canBeInsideNullable() const override { return true; }
 
@@ -300,6 +313,9 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
+
+    /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
+    ColumnPtr createSizeSubcolumn() const;
 };
 
 

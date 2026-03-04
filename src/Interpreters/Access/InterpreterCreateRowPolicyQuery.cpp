@@ -11,7 +11,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -42,7 +41,7 @@ namespace
             policy.setRestrictive(*query.is_restrictive);
 
         for (const auto & [filter_type, filter] : query.filters)
-            policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
+            policy.filters[static_cast<size_t>(filter_type)] = filter ? filter->formatWithSecretsOneLine() : String{};
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;

@@ -17,6 +17,7 @@
 #include <deque>
 #include <atomic>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
@@ -74,7 +75,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -90,7 +91,9 @@ public:
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        auto internal_formatter = internal_formatter_creator(buf);
+        save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
+        supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -114,9 +117,10 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override
@@ -130,22 +134,10 @@ public:
         finishAndWait();
     }
 
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
-    }
-
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
         started_suffix = true;
-    }
-
-    String getContentType() const override
-    {
-        NullWriteBuffer buffer;
-        return internal_formatter_creator(buffer)->getContentType();
     }
 
     bool supportsWritingException() const override
@@ -155,6 +147,8 @@ public:
     }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
+    bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
 
 private:
     void consume(Chunk chunk) final
@@ -262,6 +256,7 @@ private:
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+    bool supports_non_default_serialization_kinds;
 
     String exception_message;
     bool exception_is_rethrown = false;

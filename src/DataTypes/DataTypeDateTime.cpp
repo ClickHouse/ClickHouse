@@ -1,13 +1,15 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
+#include <Common/DateLUTImpl.h>
+
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 
-DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
+DataTypeDateTime::DataTypeDateTime(std::string_view time_zone_name)
     : TimezoneMixin(time_zone_name)
 {
 }

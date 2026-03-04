@@ -39,11 +39,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-def close_keeper_socket(cli):
-    if cli is not None:
-        cli.close()
-
-
 def test_aggressive_mntr(started_cluster):
     def go_mntr(node):
         for _ in range(10000):

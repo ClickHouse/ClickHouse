@@ -2,9 +2,10 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Interpreters/AggregationCommon.h>
+#include <Interpreters/KeysNullMap.h>
 
 namespace DB
 {
@@ -16,6 +17,12 @@ namespace ErrorCodes
 namespace ColumnsHashing
 {
 
+struct HashMethodContextSettings
+{
+    size_t max_threads;
+    bool serialize_string_with_zero_byte = false;
+};
+
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
 /// Is used for caching.
 class HashMethodContext
@@ -23,10 +30,7 @@ class HashMethodContext
 public:
     virtual ~HashMethodContext() = default;
 
-    struct Settings
-    {
-        size_t max_threads;
-    };
+    using Settings = HashMethodContextSettings;
 };
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
@@ -180,7 +184,7 @@ public:
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
 
-    static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
+    static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)

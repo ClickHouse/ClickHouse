@@ -2,8 +2,11 @@ DirectoryPath: /test
 IgnoreDirectoryMissingTrailingSlash: true
 CheckExternal: false
 CheckInternal: false
-CheckInternalHash: false
+CheckInternalHash: true
 CheckMailto: false
 IgnoreAltMissing: true
 IgnoreEmptyHref: true
 IgnoreInternalEmptyHash: true
+IgnoreDirs:
+- "zh"
+- "ru"

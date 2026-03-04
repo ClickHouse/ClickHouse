@@ -6,9 +6,11 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnLazy.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/typeid_cast.h>
 #include <base/range.h>
+#include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -17,6 +19,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Interpreters/castColumn.h>
+
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -80,23 +84,47 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(
+    const ISerialization & serialization,
+    ColumnPtr & column,
+    ReadBuffer & istr,
+    const FormatSettings * format_settings,
+    size_t rows,
+    const NameAndTypePair * name_and_type,
+    ValueSizeMap * avg_value_size_hints_)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-    settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
+    settings.format_settings = format_settings;
+
+    if (name_and_type != nullptr && avg_value_size_hints_ != nullptr)
+    {
+        settings.get_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path) -> double
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
+            return (*avg_value_size_hints_)[stream_name];
+        };
+
+        settings.update_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
+            IDataType::updateAvgValueSizeHint(column_, (*avg_value_size_hints_)[stream_name]);
+        };
+    }
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}", column->size(), rows);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
+            column->size(),
+            rows);
 }
 
 
@@ -104,7 +132,6 @@ Block NativeReader::getHeader() const
 {
     return header;
 }
-
 
 Block NativeReader::read()
 {
@@ -125,7 +152,7 @@ Block NativeReader::read()
 
     /// Additional information about the block.
     if (server_revision > 0)
-        res.info.read(istr);
+        res.info.read(istr, server_revision);
 
     /// Dimensions
     size_t columns = 0;
@@ -136,9 +163,9 @@ Block NativeReader::read()
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
 
-        if (columns > 1'000'000uz)
+        if (columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
-        if (rows > 1'000'000'000'000uz)
+        if (rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
@@ -147,7 +174,7 @@ Block NativeReader::read()
         rows = index_block_it->num_rows;
     }
 
-    if (columns == 0 && !header && rows != 0)
+    if (columns == 0 && header.empty() && rows != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
     for (size_t i = 0; i < columns; ++i)
@@ -179,9 +206,13 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
+        ColumnPtr read_column;
+
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            auto info = column.type->createSerializationInfo({});
+            /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
+            /// in-memory state, it should be able to handle all possible serialization variants.
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
             UInt8 has_custom;
             readBinary(has_custom, istr);
@@ -189,32 +220,38 @@ Block NativeReader::read()
                 info->deserializeFromKindsBinary(istr);
 
             serialization = column.type->getSerialization(*info);
+            auto new_column = column.type->createColumn(*serialization);
+            new_column->reserve(rows);
+            read_column = std::move(new_column);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
+            auto new_column = column.type->createColumn(*serialization);
+            new_column->reserve(rows);
+            read_column = std::move(new_column);
         }
 
         if (use_index)
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
-            if (index_column_it->type != type_name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to a column with a wrong name ({} instead of {}): corrupted index or data", index_column_it->name, column.name);
+            /// Note: we can't compare data types as strings, compatible data types may differ in parameters.
         }
 
-        /// Data
-        ColumnPtr read_column = column.type->createColumn(*serialization);
-
-        double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
-        if (rows)    /// If no rows, nothing to read.
-            readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
+        /// If no rows, nothing to read.
+        if (rows)
+        {
+            const auto * format = format_settings ? &*format_settings : nullptr;
+            NameAndTypePair name_and_type = {column.name, column.type};
+            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+        }
 
         column.column = std::move(read_column);
 
         bool use_in_result = true;
-        if (header)
+        if (!header.empty())
         {
             if (header.has(column.name))
             {
@@ -275,9 +312,9 @@ Block NativeReader::read()
             index_column_it = index_block_it->columns.begin();
     }
 
-    if (rows && header)
+    if (rows && !header.empty())
     {
-        /// Allow to skip columns. Fill them with default values.
+        /// Allow to skip columns. We will fill them with default values later.
         Block tmp_res;
 
         for (size_t column_i = 0; column_i != header.columns(); ++column_i)
@@ -303,21 +340,6 @@ Block NativeReader::read()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
-}
-
-void NativeReader::updateAvgValueSizeHints(const Block & block)
-{
-    auto rows = block.rows();
-    if (rows < 10)
-        return;
-
-    avg_value_size_hints.resize_fill(block.columns(), 0);
-
-    for (auto idx : collections::range(0, block.columns()))
-    {
-        auto & avg_value_size_hint = avg_value_size_hints[idx];
-        IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
-    }
 }
 
 }

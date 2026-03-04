@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-import os
-import random
-import string
-import time
-
 import pytest
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -19,6 +16,7 @@ node1 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -29,6 +27,7 @@ node2 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -40,8 +39,6 @@ node3 = cluster.add_instance(
     stay_alive=True,
     with_minio=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -56,11 +53,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):
@@ -150,5 +143,11 @@ def test_recover_from_snapshot_with_disk_s3(started_cluster):
                     node3_zk.exists("/test_snapshot_multinode_recover" + str(i)) is None
                 )
     finally:
+        for i in range(435):
+            if node1_zk.exists("/test_snapshot_multinode_recover" + str(i)):
+                node1_zk.delete("/test_snapshot_multinode_recover" + str(i))
+        if node1_zk.exists("/test_snapshot_multinode_recover"):
+            node1_zk.delete("/test_snapshot_multinode_recover")
+
         for zk in [node1_zk, node2_zk, node3_zk]:
             stop_zk(zk)

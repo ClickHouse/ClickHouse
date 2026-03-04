@@ -2,7 +2,10 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <random>
 #include <unordered_set>
@@ -45,7 +48,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log(getLogger(log_name))
     , sleep_ms((*storage.getSettings())[MergeTreeSetting::cleanup_delay_period] * 1000)
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -61,6 +64,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 
     auto storage_settings = storage.getSettings();
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeCleanupThread");
     Float32 cleanup_points = 0;
     try
     {
@@ -91,17 +95,17 @@ void ReplicatedMergeTreeCleanupThread::run()
         auto expected_cleanup_points = (*storage_settings)[MergeTreeSetting::cleanup_thread_preferred_points_per_iteration];
 
         /// How long should we sleep to remove cleanup_thread_preferred_points_per_iteration on the next iteration?
-        Float32 ratio = cleanup_points / expected_cleanup_points;
+        Float32 ratio = cleanup_points / static_cast<Float32>(expected_cleanup_points);
         if (ratio == 0)
             sleep_ms = (*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000;
         else
-            sleep_ms = static_cast<UInt64>(sleep_ms / ratio);
+            sleep_ms = static_cast<UInt64>(static_cast<Float32>(sleep_ms) / ratio);
 
         sleep_ms = std::clamp(sleep_ms, (*storage_settings)[MergeTreeSetting::cleanup_delay_period] * 1000, (*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000);
 
         UInt64 interval_ms = now_ms - prev_timestamp;
         LOG_TRACE(log, "Scheduling next cleanup after {}ms (points: {}, interval: {}ms, ratio: {}, points per minute: {})",
-                  sleep_ms, cleanup_points, interval_ms, ratio, cleanup_points / interval_ms * 60'000);
+                  sleep_ms, cleanup_points, interval_ms, ratio, cleanup_points / static_cast<Float32>(interval_ms * 60'000));
     }
     prev_cleanup_timestamp_ms.store(now_ms, std::memory_order_relaxed);
 
@@ -129,7 +133,7 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
         return;
 
     /// Do not re-check all parts too often (avoid constantly calling getNumberOfOutdatedPartsWithExpiredRemovalTime())
-    if (!wakeup_check_timer.compareAndRestart((*storage_settings)[MergeTreeSetting::cleanup_delay_period] / 4.0))
+    if (!wakeup_check_timer.compareAndRestart(static_cast<double>((*storage_settings)[MergeTreeSetting::cleanup_delay_period]) / 4.0))
         return;
 
     UInt64 prev_run_timestamp_ms = prev_cleanup_timestamp_ms.load(std::memory_order_relaxed);
@@ -153,6 +157,20 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
     wakeup();
 }
 
+void ReplicatedMergeTreeCleanupThread::start()
+{
+    task->activateAndSchedule();
+}
+
+void ReplicatedMergeTreeCleanupThread::wakeup()
+{
+    task->schedule();
+}
+
+void ReplicatedMergeTreeCleanupThread::stop()
+{
+    task->deactivate();
+}
 
 Float32 ReplicatedMergeTreeCleanupThread::iterate()
 {
@@ -176,6 +194,10 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     if (storage.is_leader)
     {
         cleaned_logs = clearOldLogs();
+
+        size_t deduplication_blocks = clearOldBlocks("deduplication_hashes", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
+                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_stats_for_insert_deduplication_hashes);
+
         size_t normal_blocks = clearOldBlocks("blocks", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
                                    (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_block_stats_for_sync_inserts);
 
@@ -186,11 +208,12 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
         /// Many async blocks are transformed into one ordinary block
         Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
-            ((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
-        cleaned_blocks = (normal_blocks + async_blocks * async_blocks_per_block) / 2;
+            static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
+        cleaned_blocks = (static_cast<Float32>(deduplication_blocks) + static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
+        cleaned_part_like += storage.clearUnusedPatchParts();
     }
 
     cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
@@ -206,8 +229,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     /// many Outdated parts, and WALs usually contain many parts too). We count then as one part for simplicity.
 
     constexpr Float32 parts_number_amplification = 1.3f;     /// Assuming we merge 4-5 parts each time
-    Float32 cleaned_inserted_parts = (cleaned_blocks + (cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
-    return cleaned_inserted_parts + cleaned_part_like + cleaned_other;
+    Float32 cleaned_inserted_parts = (cleaned_blocks + static_cast<Float32>(cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
+    return cleaned_inserted_parts + static_cast<Float32>(cleaned_part_like + cleaned_other);
 }
 
 
@@ -227,9 +250,9 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Numbers are arbitrary.
     std::uniform_real_distribution<double> distr(1.05, 1.15);
     double ratio = distr(rng);
-    size_t min_replicated_logs_to_keep = static_cast<size_t>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep] * ratio);
+    size_t min_replicated_logs_to_keep = static_cast<size_t>(static_cast<double>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep]) * ratio);
 
-    if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
+    if (static_cast<size_t>(children_count) < min_replicated_logs_to_keep)
         return 0;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
@@ -444,13 +467,19 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 {
     String node;
     Int64 ctime = 0;
+    Int64 czxid = 0;
     Int32 version = 0;
 
-    NodeWithStat(String node_, Int64 ctime_, Int32 version_) : node(std::move(node_)), ctime(ctime_), version(version_) {}
+    NodeWithStat(String node_, Int64 ctime_, Int64 czxid_, Int32 version_) : node(std::move(node_)), ctime(ctime_), czxid(czxid_), version(version_) {}
 
+    /// Sort by (ctime, czxid) rather than (ctime, node_name) to ensure consistent ordering
+    /// across different deduplication directories (blocks/, deduplication_hashes/).
+    /// With COMPATIBLE_DOUBLE_HASHES, entries for the same insert exist in both directories
+    /// with different node names but the same czxid (created in the same multi-op).
+    /// Using czxid ensures both directories remove entries for the same logical inserts.
     static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
-        return std::forward_as_tuple(lhs.ctime, lhs.node) > std::forward_as_tuple(rhs.ctime, rhs.node);
+        return std::forward_as_tuple(lhs.ctime, lhs.czxid) > std::forward_as_tuple(rhs.ctime, rhs.czxid);
     }
 };
 
@@ -471,7 +500,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         current_time - static_cast<Int64>(1000 * window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
-    NodeWithStat block_threshold{{}, time_threshold, 0};
+    NodeWithStat block_threshold{{}, time_threshold, 0, 0};
 
     size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), window_size);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
@@ -564,8 +593,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
         else
         {
             /// Cached block
-            const auto & ctime_and_version = it->second;
-            timed_blocks.emplace_back(block, ctime_and_version.first, ctime_and_version.second);
+            const auto & entry = it->second;
+            timed_blocks.emplace_back(block, entry.ctime, entry.czxid, entry.version);
         }
     }
 
@@ -579,8 +608,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
         if (status.error != Coordination::Error::ZNONODE)
         {
             auto node_name = fs::path(exists_paths[i]).filename();
-            cached_block_stats.emplace(node_name, std::make_pair(status.stat.ctime, status.stat.version));
-            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.version);
+            cached_block_stats.emplace(node_name, NodeCacheEntry{status.stat.ctime, status.stat.czxid, status.stat.version});
+            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.czxid, status.stat.version);
         }
     }
 

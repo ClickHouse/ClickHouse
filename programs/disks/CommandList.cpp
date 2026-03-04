@@ -1,16 +1,16 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include "DisksApp.h"
-#include "DisksClient.h"
-#include "ICommand.h"
-
+#include <DisksApp.h>
+#include <DisksClient.h>
+#include <ICommand.h>
+#include <Common/logger_useful.h>
 namespace DB
 {
 
 class CommandList final : public ICommand
 {
 public:
-    explicit CommandList() : ICommand()
+    explicit CommandList() : ICommand("CommandList")
     {
         command_name = "list";
         description = "List files at path[s]";
@@ -21,15 +21,21 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        bool recursive = options.count("recursive");
-        bool show_hidden = options.count("all");
+        bool recursive = options.contains("recursive");
+        bool show_hidden = options.contains("all");
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
+        {
+            LOG_INFO(log, "Listing directory '{}' recursively at disk '{}'", path, disk.getDisk()->getName());
             listRecursive(disk, path, show_hidden);
+        }
         else
+        {
+            LOG_INFO(log, "Listing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
             list(disk, path, show_hidden);
+        }
     }
 
 private:

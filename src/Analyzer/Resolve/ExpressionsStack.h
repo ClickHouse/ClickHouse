@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -61,6 +62,13 @@ public:
         return expressions.back();
     }
 
+    [[maybe_unused]] const QueryTreeNodePtr & operator[](int32_t n) const
+    {
+        if (n < 0)
+            n = static_cast<int32_t>(expressions.size()) + n - 1;
+        return expressions[n];
+    }
+
     [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);
@@ -80,6 +88,11 @@ public:
         return expression_it->second.front();
     }
 
+    bool has(const IQueryTreeNode * node) const
+    {
+        return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
+    }
+
     [[maybe_unused]] size_t size() const
     {
         return expressions.size();
@@ -92,11 +105,11 @@ public:
 
     void dump(WriteBuffer & buffer) const
     {
-        buffer << expressions.size() << '\n';
+        buffer << "Expression resolve process stack size: " << expressions.size() << '\n';
 
         for (const auto & expression : expressions)
         {
-            buffer << "Expression ";
+            buffer << " Expression ";
             buffer << expression->formatASTForErrorMessage();
 
             const auto & alias = expression->getAlias();

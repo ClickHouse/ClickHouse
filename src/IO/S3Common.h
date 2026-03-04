@@ -1,11 +1,9 @@
 #pragma once
 
-#include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-
-#include <unordered_set>
 
 #include "config.h"
 
@@ -48,6 +46,10 @@ public:
     }
 
     bool isRetryableError() const;
+    bool isAccessTokenExpiredError() const;
+
+    S3Exception * clone() const override { return new S3Exception(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
 private:
     Aws::S3::S3Errors code;

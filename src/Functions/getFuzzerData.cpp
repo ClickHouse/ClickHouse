@@ -1,4 +1,6 @@
-#ifdef FUZZING_MODE
+#include <config.h>
+
+#if USE_FUZZING_MODE
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -51,7 +53,7 @@ public:
 
 REGISTER_FUNCTION(GetFuzzerData)
 {
-    factory.registerFunction<FunctionGetFuzzerData>();
+    factory.registerFunction<FunctionGetFuzzerData>({});
 }
 
 }

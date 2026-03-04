@@ -65,22 +65,23 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
-    /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char *) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -98,6 +99,7 @@ public:
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -141,7 +143,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
@@ -153,8 +155,10 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -165,7 +169,9 @@ public:
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override { values->fixDynamicStructure(); }
 
     size_t getNumberOfTrailingDefaults() const
     {
@@ -257,5 +263,8 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
+
+/// Remove all special representations (for now Sparse and Replicated).
+ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
 }

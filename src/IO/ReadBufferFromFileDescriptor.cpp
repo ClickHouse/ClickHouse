@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -22,8 +23,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -88,14 +87,13 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->add(res, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+                throttler->throttle(res);
         }
 
 
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-        /// (NetlinkMetricsProvider has about 500K RPS).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 

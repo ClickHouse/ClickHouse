@@ -43,7 +43,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
 }
 
 DistinctStep::DistinctStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
@@ -81,7 +81,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (pre_distinct)
             {
                 pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
@@ -105,7 +105,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
                 {
                     pipeline.addSimpleTransform(
-                        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                         {
                             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                                 return nullptr;
@@ -119,7 +119,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             else
             {
                 pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
@@ -133,7 +133,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     }
 
     pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -196,7 +196,7 @@ void DistinctStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
@@ -216,11 +216,11 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx,
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, false);
 }
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, true);
 }

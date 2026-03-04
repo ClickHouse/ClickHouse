@@ -1,7 +1,7 @@
-#include "StoragePolicy.h"
-#include "DiskFactory.h"
-#include "DiskLocal.h"
-#include "createVolume.h"
+#include <Disks/StoragePolicy.h>
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
 #include <Common/StringUtils.h>
@@ -12,6 +12,8 @@
 #include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <exception>
+#include <ranges>
 #include <set>
 
 
@@ -35,6 +37,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int READONLY;
 }
 
 
@@ -111,7 +114,7 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -130,7 +133,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -251,22 +254,30 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
+    bool all_volumes_read_only = true;
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
+        if (volume->isReadOnly())
+            continue;
+        all_volumes_read_only = false;
         auto reservation = volume->reserve(bytes);
         if (reservation)
             return reservation;
     }
-    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
 
-    return {};
+    if (all_volumes_read_only)
+        return std::unexpected(
+            ReservationError(ErrorCodes::READONLY, "Could not reserve {} because all disk volumes are readonly", ReadableSize(bytes)));
+
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+    return std::unexpected(ReservationError(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes)));
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes) const
 {
     return reserve(bytes, 0);
 }
@@ -274,9 +285,11 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 
 ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
 {
-    if (auto res = reserve(bytes, 0))
-        return res;
-    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes));
+    auto res = reserve(bytes, 0);
+    if (res)
+        return std::move(res.value());
+
+    throw Exception(res.error().message, res.error().code);
 }
 
 
@@ -392,6 +405,22 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     }
 }
 
+bool StoragePolicy::isCompatibleForPartitionOps(const StoragePolicyPtr & other) const
+{
+    if (getName() == other->getName())
+        return true;
+
+    constexpr auto is_compatible = [](const auto & disk) -> bool
+    {
+        if (disk->isPlain())
+            return true;
+        if (auto delegate = disk->getDelegateDiskIfExists())
+            return delegate->isPlain();
+        return false;
+    };
+
+    return std::ranges::all_of(getDisks(), is_compatible) && std::ranges::all_of(other->getDisks(), is_compatible);
+}
 
 std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
@@ -408,7 +437,7 @@ void StoragePolicy::buildVolumeIndices()
     {
         const VolumePtr & volume = volumes[index];
 
-        if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+        if (volume_index_by_volume_name.contains(volume->getName()))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                             "Volume names must be unique in storage policy {} ({} "
                             "is duplicated)" , backQuote(name), backQuote(volume->getName()));
@@ -419,7 +448,7 @@ void StoragePolicy::buildVolumeIndices()
         {
             const String & disk_name = disk->getName();
 
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+            if (volume_index_by_disk_name.contains(disk_name))
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
@@ -468,7 +497,7 @@ StoragePolicySelector::StoragePolicySelector(
     }
 
     /// Add default policy if it isn't explicitly specified.
-    if (policies.find(DEFAULT_STORAGE_POLICY_NAME) == policies.end())
+    if (!policies.contains(DEFAULT_STORAGE_POLICY_NAME))
     {
         auto default_policy = std::make_shared<StoragePolicy>(DEFAULT_STORAGE_POLICY_NAME, config, config_prefix + "." + DEFAULT_STORAGE_POLICY_NAME, disks);
         policies.emplace(DEFAULT_STORAGE_POLICY_NAME, std::move(default_policy));

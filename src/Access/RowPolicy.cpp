@@ -1,4 +1,5 @@
 #include <Access/RowPolicy.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm/equal.hpp>
 
@@ -45,7 +46,7 @@ void RowPolicy::setFullName(const RowPolicyName & full_name_)
 
 void RowPolicy::setName(const String &)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RowPolicy::setName() is not implemented");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RowPolicy::setName is not implemented");
 }
 
 

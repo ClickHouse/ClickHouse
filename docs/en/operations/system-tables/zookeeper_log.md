@@ -1,7 +1,13 @@
 ---
-slug: /en/operations/system-tables/zookeeper_log
+description: 'System table containing information about the parameters of the request
+  to the ZooKeeper server and the response from it.'
+keywords: ['system table', 'zookeeper_log']
+slug: /operations/system-tables/zookeeper_log
+title: 'system.zookeeper_log'
+doc_type: 'reference'
 ---
-# zookeeper_log
+
+# system.zookeeper_log
 
 This table contains information about the parameters of the request to the ZooKeeper server and the response from it.
 
@@ -11,9 +17,9 @@ Columns with request parameters:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum](../../sql-reference/data-types/enum.md)) — Event type in the ZooKeeper client. Can have one of the following values:
-    - `Request` — The request has been sent.
-    - `Response` — The response was received.
-    - `Finalize` — The connection is lost, no response was received.
+  - `Request` — The request has been sent.
+  - `Response` — The response was received.
+  - `Finalize` — The connection is lost, no response was received.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 - `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the event happened.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
@@ -34,11 +40,11 @@ Columns with request response parameters:
 
 - `zxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — ZooKeeper transaction ID. The serial number issued by the ZooKeeper server in response to a successfully executed request (`0` if the request was not executed/returned an error/the client does not know whether the request was executed).
 - `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — Error code. Can have many values, here are just some of them:
-    - `ZOK` — The request was executed successfully.
-    - `ZCONNECTIONLOSS` — The connection was lost.
-    - `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
-	- `ZSESSIONEXPIRED` — The session has expired.
-    - `NULL` — The request is completed.
+  - `ZOK` — The request was executed successfully.
+  - `ZCONNECTIONLOSS` — The connection was lost.
+  - `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
+  - `ZSESSIONEXPIRED` — The session has expired.
+  - `NULL` — The request is completed.
 - `watch_type` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The type of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
 - `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The status of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
 - `path_created` ([String](../../sql-reference/data-types/string.md)) — The path to the created ZooKeeper node (for responses to the `CREATE` request), may differ from the `path` if the node is created as a `sequential`.
@@ -55,13 +61,13 @@ Columns with request response parameters:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.zookeeper_log WHERE (session_id = '106662742089334927') AND (xid = '10858') FORMAT Vertical;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 hostname:         clickhouse.eu-central1.internal

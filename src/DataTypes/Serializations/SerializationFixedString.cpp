@@ -10,10 +10,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include "Common/PODArray.h"
+#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = field.safeGet<const String &>();
+    const String & s = field.safeGet<String>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -39,7 +39,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = field.safeGet<String &>();
+    String & s = field.safeGet<String>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
@@ -82,9 +82,15 @@ void SerializationFixedString::serializeBinaryBulk(const IColumn & column, Write
 }
 
 
-void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
+
+    size_t skipped_bytes;
+
+    if (unlikely(__builtin_mul_overflow(rows_offset, n, &skipped_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
+    istr.ignore(skipped_bytes);
 
     size_t initial_size = data.size();
     size_t max_bytes;
@@ -199,10 +205,17 @@ bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadB
 }
 
 
-void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeAnyQuotedString<'\''>(pos, pos + n, ostr);
+    if (settings.values.escape_quote_with_quote)
+    {
+        writeChar('\'', ostr);
+        writeAnyEscapedString<'\'', true, false>(pos, pos + n, ostr);
+        writeChar('\'', ostr);
+    }
+    else
+        writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
 

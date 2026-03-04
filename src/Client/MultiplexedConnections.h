@@ -39,7 +39,9 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles) override;
 
-    void sendReadTaskResponse(const String &) override;
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     Packet receivePacket() override;
@@ -67,6 +69,8 @@ public:
 
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
+
+    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;

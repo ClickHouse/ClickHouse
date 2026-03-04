@@ -5,6 +5,7 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include "defines.h"
 
 #include <bit>
 #include <cmath>
@@ -12,18 +13,63 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <utility>
+
 
 // NOLINTBEGIN(*)
 
-/// Use same extended double for all platforms
+/// Cross-platform conversion from double to wide integers requires consistent rounding behavior.
+/// We target 64-bit mantissa precision (matching x86's 80-bit extended) on all platforms.
+///
+/// Platform-specific handling:
+/// 1. x86/x86_64 (LDBL_MANT_DIG == 64):
+///    - Native 80-bit extended precision with 64-bit mantissa
+///    - Use long double directly, no emulation needed
+///
+/// 2. ARM Linux, RISC-V, PowerPC, etc. (LDBL_MANT_DIG > 64, typically 113):
+///    - 128-bit quad precision with 113-bit mantissa
+///    - Use long double but round intermediate results to 64-bit precision
+///    - Emulation via round_to_64bit_mantissa() ensures identical results to x86
+///
+/// 3. macOS ARM64 (LDBL_MANT_DIG == 53):
+///    - long double == double (no extended precision available)
+///    - Cannot emulate 64-bit from 53-bit, so use boost::multiprecision
+///    - boost::cpp_bin_float_double_extended provides software-emulated 64-bit mantissa
+///
 #if (LDBL_MANT_DIG == 64)
-#define CONSTEXPR_FROM_DOUBLE constexpr
 using FromDoubleIntermediateType = long double;
+#elif (LDBL_MANT_DIG > 64)
+using FromDoubleIntermediateType = long double;
+
+namespace detail
+{
+/// Round a long double to 64-bit mantissa precision to match x86 extended precision behavior.
+/// This extracts the value into 64-bit chunks similar to boost::multiprecision::cpp_bin_float.
+constexpr long double round_to_64bit_mantissa(long double value) noexcept
+{
+    if (!std::isfinite(value) || value == 0.0L)
+        return value;
+
+    // Extract mantissa and exponent
+    int exponent;
+    long double mantissa = std::frexp(value, &exponent);
+
+    // mantissa is now in range [0.5, 1.0) or (-1.0, -0.5]
+    // Scale to extract exactly 64 bits of precision
+    constexpr long double scale = static_cast<long double>(1ULL << 63) * 2.0L; // 2^64
+    long double scaled = std::round(mantissa * scale);
+
+    // Convert back to normalized mantissa with 64-bit precision
+    long double rounded_mantissa = scaled / scale;
+
+    // Reconstruct the original value with limited precision
+    return std::ldexp(rounded_mantissa, exponent);
+}
+}
 #else
-#include <boost/math/special_functions/fpclassify.hpp>
-#include <boost/multiprecision/cpp_bin_float.hpp>
-/// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
-#define CONSTEXPR_FROM_DOUBLE
+// Platforms where long double has insufficient precision (e.g., macOS ARM64 where LDBL_MANT_DIG=53)
+#    include <boost/math/special_functions/fpclassify.hpp>
+#    include <boost/multiprecision/cpp_bin_float.hpp>
 using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
 #endif
 
@@ -32,16 +78,74 @@ namespace CityHash_v1_0_2 { struct uint128; }
 namespace wide
 {
 
+constexpr bool supportsBitInt256()
+{
+#if defined(__x86_64__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+#if defined(__x86_64__)
+/// TODO C23 standardized _BitInt(N). Theoretically, it is not necessary to restrict the platform to x86.
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
+using BitInt256 = signed _BitInt(256);
+using BitUInt256 = unsigned _BitInt(256);
+#    pragma clang diagnostic pop
+
+struct Error {};
+
+template <typename Signed>
+struct ConstructBitInt256
+{
+    using Type = Error;
+};
+
+template <>
+struct ConstructBitInt256<signed>
+{
+    using Type = BitInt256;
+};
+
+template <>
+struct ConstructBitInt256<unsigned>
+{
+    using Type = BitUInt256;
+};
+
+/// Converts a 256-bit wide integer to Clang's built-in 256-bit integer representation.
+/// The source and target types have the same byte order.
+template <size_t Bits, typename Signed>
+requires(Bits == 256)
+constexpr const auto & toBitInt256(const wide::integer<Bits, Signed> & n)
+{
+    using T = ConstructBitInt256<Signed>::Type;
+    return *reinterpret_cast<const T *>(&n);
+}
+
+/// Converts a Clang's built-in 256-bit integer representation to a 256-bit wide integer.
+/// The source and target types have the same byte order.
+template <typename T>
+requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
+constexpr const auto & fromBitInt256(const T & n)
+{
+    using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
+    return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
+}
+#endif
+
 template <typename T>
 struct IsWideInteger
 {
-    static const constexpr bool value = false;
+    static constexpr bool value = false;
 };
 
 template <size_t Bits, typename Signed>
 struct IsWideInteger<wide::integer<Bits, Signed>>
 {
-    static const constexpr bool value = true;
+    static constexpr bool value = true;
 };
 
 template <typename T>
@@ -85,7 +189,6 @@ public:
     static constexpr bool has_infinity = false;
     static constexpr bool has_quiet_NaN = false;
     static constexpr bool has_signaling_NaN = true;
-    static constexpr std::float_denorm_style has_denorm = std::denorm_absent;
     static constexpr bool has_denorm_loss = false;
     static constexpr std::float_round_style round_style = std::round_toward_zero;
     static constexpr bool is_iec559 = false;
@@ -175,6 +278,7 @@ struct common_type<Arithmetic, wide::integer<Bits, Signed>> : common_type<wide::
 
 }
 
+#pragma clang attribute push (__attribute__((no_sanitize("undefined"))), apply_to=function)
 namespace wide
 {
 
@@ -185,6 +289,12 @@ struct integer<Bits, Signed>::_impl
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
+
+    /// Use Clang's built-in 256-bit integer to improve performance if possible.
+    ///
+    /// Not implemented for 128 bit types because performance benefits are negligible as of 2025:
+    /// https://github.com/ClickHouse/ClickHouse/issues/70502
+    static constexpr bool use_BitInt256 = supportsBitInt256() && Bits == 256;
 
     static_assert(Bits % base_bits == 0);
 
@@ -239,7 +349,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename T>
-    __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
+    constexpr static auto to_Integral(T f) noexcept
     {
         /// NOTE: this can be called with DB::Decimal, and in this case, result
         /// will be wrong
@@ -308,7 +418,7 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
         static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-#if (LDBL_MANT_DIG == 64)
+#if (LDBL_MANT_DIG >= 64)
         if (!std::isfinite(t))
         {
             self = 0;
@@ -333,7 +443,14 @@ struct integer<Bits, Signed>::_impl
         }
 #endif
 
-        const T alpha = t / static_cast<T>(max_int);
+        T alpha = t / static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        // Round division result to 64-bit precision on platforms with higher precision (e.g., ARM Linux with 113-bit mantissa)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            alpha = detail::round_to_64bit_mantissa(alpha);
+        }
+#endif
 
         /** Here we have to use strict comparison.
           * The max_int is 2^64 - 1.
@@ -348,10 +465,25 @@ struct integer<Bits, Signed>::_impl
             set_multiplier<double>(self, static_cast<double>(alpha));
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
+
+        // Calculate remainder: t - floor(alpha) * max_int
+        // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
+        // to match x86's 80-bit extended behavior
+        T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            remainder_subtrahend = detail::round_to_64bit_mantissa(remainder_subtrahend);
+        }
+#endif
+        self += static_cast<uint64_t>(t - remainder_subtrahend); // += b_i
     }
 
-    CONSTEXPR_FROM_DOUBLE static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
+    /// Can only be constexpr when not using boost (boost types are not literal types)
+#if (LDBL_MANT_DIG >= 64)
+    constexpr
+#endif
+        static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
@@ -570,8 +702,7 @@ private:
     }
 
     template <typename T>
-    constexpr static integer<Bits, Signed>
-    multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
@@ -583,8 +714,8 @@ private:
             HalfType a0 = lhs.items[little(0)];
             HalfType a1 = lhs.items[little(1)];
 
-            HalfType b01 = rhs;
-            uint64_t b0 = b01;
+            HalfType b01 = static_cast<HalfType>(rhs);
+            uint64_t b0 = static_cast<uint64_t>(b01);
             uint64_t b1 = 0;
             HalfType b23 = 0;
             if constexpr (sizeof(T) > 8)
@@ -598,7 +729,7 @@ private:
             HalfType r12_x = a1 * b0;
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = r01;
+            res.items[little(0)] = static_cast<base_type>(r01);
             res.items[little(3)] = r23 >> 64;
 
             if constexpr (sizeof(T) > 8)
@@ -613,7 +744,7 @@ private:
             if (r12 < r12_x)
                 ++res.items[little(3)];
 
-            res.items[little(1)] = r12;
+            res.items[little(1)] = static_cast<base_type>(r12);
             res.items[little(2)] = r12 >> 64;
             return res;
         }
@@ -624,7 +755,7 @@ private:
             CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
             return res;
         }
@@ -692,10 +823,23 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (is_negative(rhs))
-                return minus(lhs, -rhs);
+            if constexpr (use_BitInt256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(rhs));
+            }
             else
-                return plus(lhs, rhs);
+            {
+                if (is_negative(rhs))
+                    return minus(lhs, -rhs);
+                else
+                    return plus(lhs, rhs);
+            }
         }
         else
         {
@@ -710,10 +854,23 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (is_negative(rhs))
-                return plus(lhs, -rhs);
+            if constexpr (use_BitInt256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(rhs));
+            }
             else
-                return minus(lhs, rhs);
+            {
+                if (is_negative(rhs))
+                    return plus(lhs, -rhs);
+                else
+                    return minus(lhs, rhs);
+            }
         }
         else
         {
@@ -728,22 +885,34 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> res;
-
-            if constexpr (std::is_signed_v<Signed>)
+            if constexpr (use_BitInt256)
             {
-                res = multiply((is_negative(lhs) ? make_positive(lhs) : lhs),
-                                  (is_negative(rhs) ? make_positive(rhs) : rhs));
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) * toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) * toBitInt256(rhs));
             }
             else
             {
-                res = multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
+                integer<Bits, Signed> res;
+
+                if constexpr (std::is_signed_v<Signed>)
+                {
+                    res = multiply((is_negative(lhs) ? make_positive(lhs) : lhs), (is_negative(rhs) ? make_positive(rhs) : rhs));
+                }
+                else
+                {
+                    res = multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
+                }
+
+                if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
+                    res = operator_unary_minus(res);
+
+                return res;
             }
-
-            if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
-                res = operator_unary_minus(res);
-
-            return res;
         }
         else
         {
@@ -884,6 +1053,9 @@ public:
     {
         static_assert(std::is_unsigned_v<Signed>);
 
+        if (is_zero(denominator))
+            throwError("Division by zero");
+
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
@@ -893,18 +1065,15 @@ public:
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[little(0)] = remainder;
+            numerator.items[little(0)] = static_cast<base_type>(remainder);
             numerator.items[little(1)] = remainder >> 64;
 
             return res;
         }
-
-        if (is_zero(denominator))
-            throwError("Division by zero");
 
         integer<Bits2, unsigned> x = 1;
         integer<Bits2, unsigned> quotient = 0;
@@ -935,13 +1104,26 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, unsigned> numerator = make_positive(lhs);
-            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            if constexpr (use_BitInt256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(rhs));
+            }
+            else
+            {
+                integer<Bits, unsigned> numerator = make_positive(lhs);
+                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+                integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
-            if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
-                quotient = operator_unary_minus(quotient);
-            return quotient;
+                if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
+                    quotient = operator_unary_minus(quotient);
+                return quotient;
+            }
         }
         else
         {
@@ -955,13 +1137,26 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, unsigned> remainder = make_positive(lhs);
-            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            if constexpr (use_BitInt256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(rhs));
+            }
+            else
+            {
+                integer<Bits, unsigned> remainder = make_positive(lhs);
+                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
-            if (std::is_same_v<Signed, signed> && is_negative(lhs))
-                remainder = operator_unary_minus(remainder);
-            return remainder;
+                if (std::is_same_v<Signed, signed> && is_negative(lhs))
+                    remainder = operator_unary_minus(remainder);
+                return remainder;
+            }
         }
         else
         {
@@ -1090,7 +1285,7 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[_impl::little(i)] = static_cast<base_type>(*it);
                 ++it;
             }
             else
@@ -1246,12 +1441,9 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <std::integral T>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
-
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;
@@ -1279,7 +1471,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
         long double t = res;
         res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
-        res += tmp.items[_impl::big(i)];
+        res += static_cast<long double>(tmp.items[_impl::big(i)]);
     }
 
     if (_impl::is_negative(*this))
@@ -1510,6 +1702,7 @@ constexpr bool operator!=(const Arithmetic & lhs, const Arithmetic2 & rhs)
 #undef CT
 
 }
+#pragma clang attribute pop
 
 namespace std
 {

@@ -3,6 +3,7 @@
 #if USE_MONGODB
 #include <Storages/StorageMongoDB.h>
 
+#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
 #include <Interpreters/Context.h>
@@ -15,6 +16,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionMongoDB.h>
 
 namespace DB
@@ -41,7 +43,7 @@ private:
             const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "MongoDB"; }
+    const char * getStorageEngineName() const override { return "MongoDB"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -55,12 +57,12 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context, is_insert_query);
     auto storage = std::make_shared<StorageMongoDB>(
-    StorageID(getDatabaseName(), table_name),
-    std::move(*configuration),
-    columns,
-    ConstraintsDescription(),
-    String{});
-    storage->startup();
+        StorageID(getDatabaseName(), table_name),
+        std::move(*configuration),
+        columns,
+        ConstraintsDescription(),
+        String{});
+        storage->startup();
     return storage;
 }
 
@@ -77,60 +79,43 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() == 6 || args.size() == 7)
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        ASTs main_arguments(args.begin(), args.begin() + 5);
+        if (!named_collection->has("structure"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required key (structure) is not specified.");
 
-        for (size_t i = 5; i < args.size(); ++i)
-        {
-            if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
-                if (arg_name == "structure")
-                    structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
-                else if (arg_name == "options")
-                    main_arguments.push_back(arg_value);
-            }
-            else if (i == 5)
-            {
-                structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-            }
-            else if (i == 6)
-            {
-                main_arguments.push_back(args[i]);
-            }
-        }
-
-        configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfiguration(main_arguments, context));
+        structure = named_collection->get<String>("structure");
+        named_collection->remove("structure");
+        configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfigurationFromCollection(named_collection, context));
+        return;
     }
-    else if (args.size() == 3)
-    {
-        ASTs main_arguments(args.begin(), args.begin() + 2);
 
-        for (size_t i = 2; i < args.size(); ++i)
-        {
-            if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
-                if (arg_name == "structure")
-                    structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
-                else if (arg_name == "options")
-                    main_arguments.push_back(arg_value);
-            }
-            else if (i == 2)
-            {
-                structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-            }
-        }
-
-        configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfiguration(main_arguments, context));
-    }
-    else
-    {
+    if ((args.size() < 3 || args.size() > 4) && (args.size() < 6 || args.size() > 8))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'mongodb' requires 3 or from 6 to 7 parameters: "
-                        "mongodb('host:port', database, collection, user, password, structure, [, options]) or mongodb(uri, collection, structure).");
+                        "Incorrect argument count for table function '{}'. Usage: "
+                        "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]]) or mongodb(uri, collection, structure[, oid_columns]).",
+                        getName());
+
+    ASTs main_arguments;
+    main_arguments.reserve(args.size() - 1);
+    const size_t structure_position = args.size() <= 4 ? 2 : 5;
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
+        {
+            const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
+            if (arg_name == "structure")
+                structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
+            else if (arg_name == "options" || arg_name == "oid_columns")
+                main_arguments.push_back(arg_value);
+        }
+        else if (i == structure_position)
+            structure = checkAndGetLiteralArgument<String>(args[i], "structure");
+        else
+            main_arguments.push_back(args[i]);
     }
+
+    configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfiguration(main_arguments, context));
 }
 
 }
@@ -153,15 +138,13 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMongoDB>(
     {
-            .documentation =
-            {
-                    .description = "Allows get data from MongoDB collection.",
-                    .examples = {
-                        {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
-                        {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
-                    },
-                    .categories = {"Integration"},
-            },
+        .description = "Allows get data from MongoDB collection.",
+        .examples = {
+            {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
+            {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
+            {"Fetch collection by named collection configuration with overrides", "SELECT * FROM mongodb(mongodb_creds, collection='example_collection', structure='key UInt64, data String')", ""},
+        },
+        .category = FunctionDocumentation::Category::TableFunction
     });
 }
 

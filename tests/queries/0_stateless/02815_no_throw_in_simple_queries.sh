@@ -31,7 +31,13 @@ log_user 0
 set timeout 60
 match_max 100000
 
-spawn bash -c "$command"
+exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
+expect_after {
+    -i \$any_spawn_id eof { exp_continue }
+    -i \$any_spawn_id timeout { exit 1 }
+}
+
+spawn $command
 
 expect ":) "
 

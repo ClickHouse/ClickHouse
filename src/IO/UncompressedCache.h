@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/JemallocCacheAllocator.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -19,7 +20,7 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory<> data;
+    Memory<JemallocCacheAllocator> data;
     size_t compressed_size;
     UInt32 additional_bytes;
 };
@@ -42,7 +43,11 @@ private:
     using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    UncompressedCache(const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        double size_ratio);
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset);
@@ -61,9 +66,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
         ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
     }
 };
 

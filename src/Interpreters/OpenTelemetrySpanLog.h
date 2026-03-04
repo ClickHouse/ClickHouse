@@ -9,11 +9,13 @@
 namespace DB
 {
 
-struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
+struct OpenTelemetrySpanLogElement
 {
+    OpenTelemetry::Span span;
+
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
-        : OpenTelemetry::Span(span) {}
+    explicit OpenTelemetrySpanLogElement(OpenTelemetry::Span span_)
+        : span(std::move(span_)) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
 
@@ -28,6 +30,9 @@ class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
+
+    static const char * getDefaultPartitionBy() { return "toYYYYMM(finish_date)"; }
+    static const char * getDefaultOrderBy() { return "finish_date, finish_time_us"; }
 };
 
 }

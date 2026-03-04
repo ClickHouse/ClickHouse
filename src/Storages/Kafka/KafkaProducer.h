@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Storages/IMessageProducer.h>
 #include <cppkafka/cppkafka.h>
-
-#include <list>
 
 #include <Common/CurrentMetrics.h>
 

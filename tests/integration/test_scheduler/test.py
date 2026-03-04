@@ -54,26 +54,27 @@ def start_cluster():
 
 @pytest.fixture(scope="function", autouse=True)
 def set_default_configs():
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cp /etc/clickhouse-server/config.d/resources.xml.default /etc/clickhouse-server/config.d/resources.xml",
-        ]
-    )
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cp /etc/clickhouse-server/config.d/workloads.xml.default /etc/clickhouse-server/config.d/workloads.xml",
-        ]
-    )
-    node.query("system reload config")
+    for n in (node, node2):
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/config.d/resources.xml.default /etc/clickhouse-server/config.d/resources.xml",
+            ]
+        )
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/config.d/workloads.xml.default /etc/clickhouse-server/config.d/workloads.xml",
+            ]
+        )
+        n.query("system reload config")
     yield
 
 
 @pytest.fixture(scope="function", autouse=True)
-def clear_workloads_and_resources():
+def clear_workloads_and_resources(set_default_configs):
     node.query(
         f"""
         drop workload if exists production;
@@ -88,20 +89,26 @@ def clear_workloads_and_resources():
     yield
 
 
-def update_workloads_config(**settings):
+def update_workloads_config(*nodes, **settings):
     xml = ""
     for name in settings:
         xml += f"<{name}>{settings[name]}</{name}>"
     print(xml)
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"echo '<clickhouse>{xml}</clickhouse>' > /etc/clickhouse-server/config.d/workloads.xml",
-        ]
-    )
-    node.query("system reload config")
+    if nodes == ():
+        nodes = (node,)
+    for n in nodes:
+        n.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo '<clickhouse>{xml}</clickhouse>' > /etc/clickhouse-server/config.d/workloads.xml",
+            ]
+        )
+        n.query("system reload config")
 
+
+def update_workloads_config_on_cluster(**settings):
+    update_workloads_config(node, node2, **settings)
 
 def check_profile_event_for_query(workload, profile_event, amount=1):
     node.query("system flush logs")
@@ -610,7 +617,7 @@ def test_create_workload():
         f"""
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
-        create workload all settings max_cost = 1000000 for io_write, max_cost = 2000000 for io_read;
+        create workload all settings max_bytes_inflight = 1000000 for io_write, max_bytes_inflight = 2000000 for io_read;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
         create workload development in all settings priority = 1, weight = 1;
@@ -743,7 +750,7 @@ def test_resource_read_and_write():
         f"""
         create resource io_write (write disk s3_no_resource);
         create resource io_read (read disk s3_no_resource);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_bytes_inflight = 1000000;
         create workload admin in all settings priority = 0;
         create workload production in all settings priority = 1, weight = 9;
         create workload development in all settings priority = 1, weight = 1;
@@ -838,7 +845,7 @@ def test_resource_any_disk():
     node.query(
         f"""
         create resource io (write any disk, read any disk);
-        create workload all settings max_cost = 1000000;
+        create workload all settings max_bytes_inflight = 1000000;
     """
     )
 
@@ -966,3 +973,144 @@ def test_workload_entity_keeper_storage():
                 node.query(queries[query_idx])
 
         check_consistency()
+
+
+def test_throw_on_unknown_workload():
+    node.query(
+        f"""
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+    """
+    )
+
+    node.query(
+        f"""
+        create resource io (write any disk, read any disk);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    node.query(f"insert into data select * from numbers(1e5)")
+
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+        )
+        == "0\n"
+    )
+
+    update_workloads_config(throw_on_unknown_workload="true")
+
+    try:
+        node.query(f"insert into data select * from numbers(1e5)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        assert "RESOURCE_ACCESS_DENIED" in str(ex)
+
+
+def test_config_based_workloads_and_resources():
+    # Create a test configuration with resources and workloads
+    # It is important to update config on cluster, because otherwise node2 expectedly crashes with
+    # Logical error: 'Parent node 'all' for creating workload 'development' does not exist in resource 'sql_io_read''.
+    update_workloads_config_on_cluster(resources_and_workloads="""
+        CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
+        CREATE RESOURCE config_io_write (WRITE DISK s3_no_resource);
+        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000, max_bytes_inflight = 2000000 FOR config_io_write;
+        CREATE WORKLOAD production IN all SETTINGS priority = 1, weight = 3;
+    """
+    )
+
+    # Verify config-based entities are loaded
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "2\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )
+
+    # Verify scheduler nodes exist for config entities
+    assert (
+        node.query(
+            "SELECT count() == 2 FROM system.scheduler WHERE resource IN ('config_io_read', 'config_io_write') AND path = '/all'"
+        )
+        == "1\n"
+    )
+
+    # Try to create SQL entities with same names - should fail
+    try:
+        node.query("CREATE RESOURCE config_io_read (READ DISK non_existent_disk)")
+        assert False, "Should not be able to create resource with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    try:
+        node.query("CREATE WORKLOAD all")
+        assert False, "Should not be able to create workload with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    # Create SQL entities with different names
+    node.query("CREATE RESOURCE sql_io_read (READ DISK non_existent_disk)")
+    node.query("CREATE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
+
+    # Verify both config and SQL entities exist
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources WHERE name IN ('config_io_read', 'config_io_write', 'sql_io_read')"
+        )
+        == "3\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads WHERE name IN ('all', 'production', 'development')"
+        )
+        == "3\n"
+    )
+
+    # Test that config entities cannot be dropped
+    try:
+        node.query("DROP RESOURCE config_io_read")
+        assert False, "Should not be able to drop config-defined resource"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in read-only configuration storage" in str(ex)
+
+    try:
+        node.query("DROP WORKLOAD production")
+        assert False, "Should not be able to drop config-defined workload"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'production' that is stored in read-only configuration storage" in str(ex)
+
+    # But SQL entities can be dropped
+    node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
+    node.query("DROP RESOURCE sql_io_read")
+
+    # Update config to remove some entities
+    update_workloads_config_on_cluster(resources_and_workloads="""
+        CREATE RESOURCE config_io_read (READ DISK s3_no_resource);
+        CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read;
+    """
+    )
+
+    # Verify entities are updated
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )
+
+    # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
+    node.query("DROP WORKLOAD development")

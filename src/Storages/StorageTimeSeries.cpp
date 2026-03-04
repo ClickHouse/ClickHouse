@@ -5,6 +5,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -93,7 +94,7 @@ namespace
             {
                 /// Create the inner target table.
                 auto inner_table_engine = target_info ? target_info->inner_engine : nullptr;
-                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine);
+                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine->as<ASTStorage>());
             }
         }
 
@@ -108,11 +109,11 @@ void StorageTimeSeries::normalizeTableDefinition(ASTCreateQuery & create_query, 
     TimeSeriesSettings time_series_settings;
     if (create_query.storage)
         time_series_settings.loadFromQuery(*create_query.storage);
-    std::shared_ptr<const ASTCreateQuery> as_create_query;
+    boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
     if (!create_query.as_table.empty())
     {
         auto as_database = local_context->resolveDatabase(create_query.as_database);
-        as_create_query = typeid_cast<std::shared_ptr<const ASTCreateQuery>>(
+        as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
             DatabaseCatalog::instance().getDatabase(as_database)->getCreateTableQuery(create_query.as_table, local_context));
     }
     TimeSeriesDefinitionNormalizer normalizer{time_series_storage_id, time_series_settings, as_create_query.get()};
@@ -184,15 +185,6 @@ const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
     return *storage_settings;
 }
 
-void StorageTimeSeries::startup()
-{
-}
-
-void StorageTimeSeries::shutdown(bool)
-{
-}
-
-
 void StorageTimeSeries::drop()
 {
     /// Sync flag and the setting make sense for Atomic databases only.
@@ -254,7 +246,7 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 }
 
 
-std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) const
 {
     UInt64 total_rows = 0;
     if (has_inner_tables)
@@ -267,7 +259,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_rows_in_inner_table = inner_table->totalRows(settings);
+                auto total_rows_in_inner_table = inner_table->totalRows(query_context);
                 if (!total_rows_in_inner_table)
                     return std::nullopt;
 
@@ -278,7 +270,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(const Settings & settings) co
     return total_rows;
 }
 
-std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) const
+std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) const
 {
     UInt64 total_bytes = 0;
     if (has_inner_tables)
@@ -291,7 +283,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(const Settings & settings) c
                 if (!inner_table)
                     return std::nullopt;
 
-                auto total_bytes_in_inner_table = inner_table->totalBytes(settings);
+                auto total_bytes_in_inner_table = inner_table->totalBytes(query_context);
                 if (!total_bytes_in_inner_table)
                     return std::nullopt;
 
@@ -475,6 +467,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     });
 }
 

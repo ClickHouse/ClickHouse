@@ -8,6 +8,7 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/BackupSettings.h>
 #include <Backups/WithRetries.h>
 
 
@@ -22,8 +23,7 @@ public:
     static const constexpr std::string_view kInitiator = BackupCoordinationStageSync::kInitiator;
 
     BackupCoordinationOnCluster(
-        const UUID & backup_uuid_,
-        bool is_plain_backup_,
+        const BackupSettings & backup_settings_,
         const String & root_zookeeper_path_,
         zkutil::GetZooKeeper get_zookeeper_,
         const BackupKeeperSettings & keeper_settings_,
@@ -36,13 +36,18 @@ public:
 
     ~BackupCoordinationOnCluster() override;
 
+    void startup() override;
+
     void setBackupQueryIsSentToOtherHosts() override;
     bool isBackupQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    bool setError(std::exception_ptr exception, bool throw_if_error) override;
-    bool waitOtherHostsFinish(bool throw_if_error) const override;
-    bool finish(bool throw_if_error) override;
-    bool cleanup(bool throw_if_error) override;
+    void setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool isErrorSet() const override;
+    void waitOtherHostsFinish(bool throw_if_error) const override;
+    void finish(bool throw_if_error) override;
+    bool finished() const override;
+    bool allHostsFinished() const override;
+    void cleanup(bool throw_if_error) override;
 
     void addReplicatedPartNames(
         const String & table_zk_path,
@@ -98,15 +103,17 @@ private:
     void prepareKeeperMapTables() const TSA_REQUIRES(keeper_map_tables_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
+    const UUID backup_uuid;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const BackupKeeperSettings keeper_settings;
-    const UUID backup_uuid;
     const Strings all_hosts;
     const Strings all_hosts_without_initiator;
     const String current_host;
     const size_t current_host_index;
     const bool plain_backup;
+    const BackupDataFileNameGeneratorType data_file_name_gen;
+    const size_t data_file_name_prefix_length;
     const QueryStatusPtr process_list_element;
     const LoggerPtr log;
 

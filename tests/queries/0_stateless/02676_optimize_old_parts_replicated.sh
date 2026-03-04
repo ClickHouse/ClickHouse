@@ -24,6 +24,7 @@ wait_for_number_of_parts() {
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE IF EXISTS test_without_merge;
 DROP TABLE IF EXISTS test_replicated;
+DROP TABLE IF EXISTS test_replicated_limit;
 
 SELECT 'Without merge';
 
@@ -67,3 +68,36 @@ SELECT sleepEachRow(1) FROM numbers(9) SETTINGS function_sleep_max_microseconds_
 SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;"
+
+# Partition 2 will ignore max_bytes_to_merge_at_max_space_in_pool
+$CLICKHOUSE_CLIENT -mq "
+SELECT 'With merge replicated partition only and disable limit';
+
+CREATE TABLE test_replicated_limit (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only_limit', 'node')  ORDER BY i
+PARTITION BY i
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=false, max_bytes_to_merge_at_max_space_in_pool=1;
+INSERT INTO test_replicated_limit SELECT 1;
+INSERT INTO test_replicated_limit SELECT 2;
+SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
+INSERT INTO test_replicated_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
+
+wait_for_number_of_parts 'test_replicated_limit' 2 100
+
+# Partition 2 will limit by max_bytes_to_merge_at_max_space_in_pool
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE test_replicated_limit SYNC;
+
+SELECT 'With merge replicated partition only and enable limit';
+
+CREATE TABLE test_replicated_limit (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only_limit', 'node')  ORDER BY i
+PARTITION BY i
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=true, max_bytes_to_merge_at_max_space_in_pool=1;
+INSERT INTO test_replicated_limit SELECT 1;
+INSERT INTO test_replicated_limit SELECT 2;
+SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
+INSERT INTO test_replicated_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
+
+wait_for_number_of_parts 'test_replicated_limit' 3 100
+
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE test_replicated_limit;"

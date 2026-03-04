@@ -1,14 +1,18 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <utility>
 
@@ -17,6 +21,7 @@ namespace ProfileEvents
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
     extern const Event LoadingMarksTasksCanceled;
+    extern const Event MarksTasksFromCache;
     extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
@@ -94,6 +99,8 @@ MergeTreeMarksLoader::~MergeTreeMarksLoader()
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 {
+    OpenTelemetry::SpanHolder span("MergeTreeMarksLoader::loadMarks");
+
     std::lock_guard lock(load_mutex);
 
     if (marks)
@@ -152,7 +159,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
-    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
     std::unique_ptr<ReadBuffer> reader;
     if (!index_granularity_info.mark_type.compressed)
         reader = std::move(buffer);
@@ -162,7 +169,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));  /// NOLINT(bugprone-sizeof-expression)
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -197,15 +204,16 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                 full_mark_path, marks_count, expected_uncompressed_size);
     }
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    std::ranges::for_each(
-        plain_marks,
-        [](auto & plain_mark)
-        {
-            plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
-            plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
-        });
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        std::ranges::for_each(
+            plain_marks,
+            [](auto & plain_mark)
+            {
+                plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
+                plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
+            });
+    }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 
@@ -224,7 +232,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
 
         if (save_marks_in_cache)
         {
@@ -233,7 +241,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
         else
         {
-            loaded_marks = mark_cache->get(key);
+            loaded_marks = mark_cache->getWithoutMetrics(key);
             if (!loaded_marks)
                 loaded_marks = loadMarksImpl();
         }
@@ -254,9 +262,21 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
+    /// Avoid queueing jobs into thread pool if marks are in cache
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
+    {
+        ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
+        auto promise = std::promise<MarkCache::MappedPtr>();
+        promise.set_value(std::move(loaded_marks));
+        return promise.get_future();
+    }
+
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
+            auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
@@ -267,7 +287,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
             return loadMarksSync();
         },
         *load_marks_threadpool,
-        "LoadMarksThread");
+        ThreadName::LOAD_MARKS);
 }
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)
@@ -277,7 +297,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
+        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string());
         mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
     }
 }

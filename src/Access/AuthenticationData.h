@@ -1,8 +1,11 @@
 #pragma once
 
+#include "config.h"
+
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include <Access/Common/OneTimePassword.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/SSHWrapper.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
@@ -10,8 +13,6 @@
 #include <vector>
 #include <base/types.h>
 
-
-#include "config.h"
 
 namespace DB
 {
@@ -31,25 +32,27 @@ public:
     AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
-    void setPassword(const String & password_, bool validate);
+    void setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
     /// Sets the password as a string of hexadecimal digits.
-    void setPasswordHashHex(const String & hash, bool validate);
+    void setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
     String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
-    void setPasswordHashBinary(const Digest & hash, bool validate);
+    void setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
     void setSalt(String salt);
     String getSalt() const;
 
+    const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
+
     /// Sets the password using bcrypt hash with specified workfactor
-    void setPasswordBcrypt(const String & password_, int workfactor_, bool validate);
+    void setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
@@ -59,9 +62,11 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
-    void setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_);
-    void addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_);
+#if USE_SSL
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
+    void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
+#endif
 
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
@@ -81,13 +86,14 @@ public:
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
     static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
-    std::shared_ptr<ASTAuthenticationData> toAST() const;
+    boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util
     {
         static String digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
         static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(std::string_view text);
+        static Digest encodeScramSHA256(std::string_view password, std::string_view salt);
         static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
         static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
@@ -99,10 +105,15 @@ public:
 private:
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
+    std::optional<OneTimePasswordSecret> otp_secret;
     String ldap_server_name;
     String kerberos_realm;
-    SSLCertificateSubjects ssl_certificate_subjects;
+#if USE_SSL
+    X509Certificate::Subjects ssl_certificate_subjects;
+#endif
+
     String salt;
+
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;
 #endif

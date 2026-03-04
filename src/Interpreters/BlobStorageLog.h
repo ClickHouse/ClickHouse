@@ -5,6 +5,8 @@
 
 #include <Poco/Message.h>
 
+#include <Common/setThreadName.h>
+#include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
@@ -29,7 +31,7 @@ struct BlobStorageLogElement
 
     String query_id;
     UInt64 thread_id = 0;
-    String thread_name;
+    ThreadName thread_name;
 
     String disk_name;
     String bucket;
@@ -37,8 +39,9 @@ struct BlobStorageLogElement
     String local_path;
 
     size_t data_size;
+    size_t elapsed_microseconds;
 
-    Int32 error_code = -1; /// negative if no error
+    Int32 error_code = 0; /// 0 if no error
     String error_message;
 
     using EvenTime = std::chrono::time_point<std::chrono::system_clock>;
@@ -69,7 +72,7 @@ protected:
     void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;
 
 private:
-    mutable std::shared_mutex prepare_mutex;
+    mutable SharedMutex prepare_mutex;
     String prefix_to_ignore;
 };
 

@@ -1,10 +1,20 @@
 #pragma once
 
-#include <memory>
-#include <Access/Common/SSLCertificateSubjects.h>
+#include "config.h"
+
+#include <Common/SSHWrapper.h>
+
+#if USE_SSL
+#    include <Common/Crypto/X509Certificate.h>
+#endif
+
 #include <base/types.h>
 
-#include "config.h"
+namespace Poco::Net
+{
+    class HTTPRequest;
+    class SocketAddress;
+}
 
 namespace DB
 {
@@ -22,6 +32,7 @@ public:
 
     const String & getUserName() const;
     bool isReady() const;
+    virtual bool allowInteractiveBasicAuthenticationInTheBrowser() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotReady();
@@ -42,16 +53,18 @@ public:
     void setUserName(const String & user_name_);
 };
 
+#if USE_SSL
 class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
-    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
+    explicit SSLCertificateCredentials(const String & user_name_, X509Certificate::Subjects && subjects_);
+    const X509Certificate::Subjects & getSSLCertificateSubjects() const;
 
 private:
-    SSLCertificateSubjects certificate_subjects;
+    X509Certificate::Subjects certificate_subjects;
 };
+#endif
 
 class BasicCredentials
     : public Credentials
@@ -64,9 +77,12 @@ public:
     void setUserName(const String & user_name_);
     void setPassword(const String & password_);
     const String & getPassword() const;
+    bool allowInteractiveBasicAuthenticationInTheBrowser() const override { return allow_interactive_basic_authentication_in_the_browser; }
+    void enableInteractiveBasicAuthenticationInTheBrowser() { allow_interactive_basic_authentication_in_the_browser = true; }
 
 private:
     String password;
+    bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
 class CredentialsWithScramble : public Credentials
@@ -84,6 +100,36 @@ public:
 private:
     String scramble;
     String scrambled_password;
+};
+
+class ScramSHA256Credentials : public Credentials
+{
+public:
+    explicit ScramSHA256Credentials(const String& user_name_, const String& client_proof_, const String& auth_message_, int iterations_)
+        : Credentials(user_name_), client_proof(client_proof_), auth_message(auth_message_), iterations(iterations_)
+    {
+        is_ready = true;
+    }
+
+    const String& getClientProof() const
+    {
+        return client_proof;
+    }
+
+    const String& getAuthMessage() const
+    {
+        return auth_message;
+    }
+
+    int getIterations() const
+    {
+        return iterations;
+    }
+
+private:
+    String client_proof;
+    String auth_message;
+    int iterations;
 };
 
 class MySQLNative41Credentials : public CredentialsWithScramble
@@ -123,6 +169,30 @@ private:
     String signature;
     String original;
 };
+
+/// Credentials used only for logging in with PTY.
+class SSHPTYCredentials : public Credentials
+{
+public:
+    explicit SSHPTYCredentials(const String & user_name_, const SSHKey & key_)
+        : Credentials(user_name_), key(key_)
+    {
+        is_ready = true;
+    }
+
+    const SSHKey & getKey() const
+    {
+        if (!isReady())
+        {
+            throwNotReady();
+        }
+        return key;
+    }
+
+private:
+    SSHKey key;
+};
 #endif
+
 
 }

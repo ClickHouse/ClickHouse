@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
@@ -38,24 +39,24 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
-        {AccessType::FILE, "File"},
-        {AccessType::URL, "URL"},
-        {AccessType::REMOTE, "Distributed"},
-        {AccessType::MONGO, "MongoDB"},
-        {AccessType::REDIS, "Redis"},
-        {AccessType::MYSQL, "MySQL"},
-        {AccessType::POSTGRES, "PostgreSQL"},
-        {AccessType::SQLITE, "SQLite"},
-        {AccessType::ODBC, "ODBC"},
-        {AccessType::JDBC, "JDBC"},
-        {AccessType::HDFS, "HDFS"},
-        {AccessType::S3, "S3"},
-        {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"},
-        {AccessType::KAFKA, "Kafka"},
-        {AccessType::NATS, "NATS"},
-        {AccessType::RABBITMQ, "RabbitMQ"}
+    const std::vector<String> source_table_engines = {
+        "File",
+        "URL",
+        "Distributed",
+        "MongoDB",
+        "Redis",
+        "MySQL",
+        "PostgreSQL",
+        "SQLite",
+        "ODBC",
+        "JDBC",
+        "HDFS",
+        "S3",
+        "Hive",
+        "AzureBlobStorage",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
     };
 
 
@@ -79,11 +80,6 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
-
-    std::string_view getTableEngine() { return {}; }
-
-    template <typename... OtherArgs>
-    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -95,7 +91,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
                         const AccessFlags & min_flags_with_children,
                         const AccessFlags & max_flags_with_children,
                         const size_t level,
-                        bool /* grant_option */) -> AccessFlags
+                        bool /* grant_option */,
+                        bool leaf_or_wildcard) -> AccessFlags
     {
         AccessFlags res = flags;
 
@@ -126,6 +123,11 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if ((level == 0) && (max_flags_with_children & create_table))
             res |= create_arbitrary_temporary_table;
 
+        /// CREATE VIEW (on any database/table) => CREATE_TEMPORARY_VIEW (global)
+        static const AccessFlags create_temporary_view = AccessType::CREATE_TEMPORARY_VIEW;
+        if ((level == 0) && (max_flags_with_children & create_view))
+            res |= create_temporary_view;
+
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
         static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
@@ -153,7 +155,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allTableFlags())
             || (level <= 2 && (res & show_columns))
-            || (level == 2 && (max_flags_with_children & show_columns)))
+            /// GRANT SELECT(x) ON y => GRANT SELECT(x) ON y, GRANT SHOW_TABLES ON y
+            || (leaf_or_wildcard && level == 2 && (max_flags_with_children & show_columns)))
         {
             res |= show_tables;
         }
@@ -163,10 +166,16 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allDatabaseFlags())
             || (level <= 1 && (res & show_tables_or_dictionaries))
-            || (level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
+            || (leaf_or_wildcard && level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
         {
             res |= show_databases;
         }
+
+        static const AccessFlags alter_delete = AccessType::ALTER_DELETE;
+        static const AccessFlags select = AccessType::SELECT;
+        static const AccessFlags move_partition = AccessType::ALTER_MOVE_PARTITION;
+        if ((res & alter_delete) && (res & select) && level <= 2)
+            res |= move_partition;
 
         max_flags |= res;
 
@@ -198,6 +207,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "table_engines",
             "table_functions",
             "aggregate_function_combinators",
+            "completions",
 
             "functions", /// Can contain user-defined functions
 
@@ -243,33 +253,23 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
     }
 
-    /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
-
-    /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+    /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
     if (access_control.doesTableEnginesRequireGrant())
     {
-        for (const auto & source_and_table_engine : source_and_table_engines)
+        for (const auto & table_engine : source_table_engines)
         {
-            const auto & source = std::get<0>(source_and_table_engine);
-            if (res.isGranted(source))
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
                 res.grant(AccessType::TABLE_ENGINE, table_engine);
-            }
         }
     }
     else
     {
         /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
         res.grant(AccessType::TABLE_ENGINE);
-        for (const auto & source_and_table_engine : source_and_table_engines)
+        for (const auto & table_engine : source_table_engines)
         {
-            const auto & source = std::get<0>(source_and_table_engine);
-            if (!res.isGranted(source))
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
                 res.revoke(AccessType::TABLE_ENGINE, table_engine);
-            }
         }
     }
 
@@ -339,6 +339,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         /// User has been dropped.
         user_was_dropped = true;
         subscription_for_user_change = {};
+        subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
         access_with_implicit = nullptr;
@@ -387,10 +388,20 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     setRolesInfo(enabled_roles->getRolesInfo());
 
-    std::optional<UUID> initial_user_id;
-    if (!params.initial_user.empty())
-        initial_user_id = access_control->find<User>(params.initial_user);
-    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
+    if (params.initial_user_id)
+    {
+        subscription_for_initial_user_change = access_control->subscribeForChanges(
+            *params.initial_user_id,
+            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            {
+                if (auto ptr = weak_ptr.lock())
+                {
+                    std::lock_guard lock2{ptr->mutex};
+                    ptr->findRowPoliciesOfInitialUser();
+                }
+            });
+        findRowPoliciesOfInitialUser();
+    }
 }
 
 
@@ -425,6 +436,12 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
+}
+
+
+void ContextAccess::findRowPoliciesOfInitialUser() const
+{
+    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
 }
 
 
@@ -469,22 +486,45 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
-    std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-
     RowPolicyFilterPtr filter;
-    if (enabled_row_policies)
-        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
 
-    if (row_policies_of_initial_user)
     {
-        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
-        /// TODO: we need a better solution here. It seems we should pass the initial row policy
-        /// because a shard is allowed to not have the initial user or it might be another user
-        /// with the same name.
-        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        std::lock_guard lock{mutex};
+
+        if (initialized && !user && !user_was_dropped)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (enabled_row_policies)
+            filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+
+        if (row_policies_of_initial_user)
+        {
+            /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+            /// TODO: we need a better solution here. It seems we should pass the initial row policy
+            /// because a shard is allowed to not have the initial user or it might be another user
+            /// with the same name.
+            filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+        }
+    }
+
+    if (filter && filter->policies.empty())
+    {
+        if (access_control->shouldThrowOnUnmatchedRowPolicies())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "{}: Table {}.{} has row policies, but none of them are for the current user",
+                            getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name));
+        }
+        else
+        {
+            chassert(filter->isAlwaysTrue() || filter->isAlwaysFalse());
+            std::string_view filter_info =
+                filter->isAlwaysTrue() ? ", no filters will be used" :
+                (filter->isAlwaysFalse() ? ", no rows will be shown" : "");
+
+            LOG_TRACE(trace_log, "{}: Table {}.{} has row policies, but none of them are for the current user{}",
+                      getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name), filter_info);
+        }
     }
 
     return filter;
@@ -510,8 +550,7 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
         }
         else
         {
-            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
-            return unlimited_quota;
+            return nullptr;
         }
     }
 
@@ -521,7 +560,11 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    return getQuota()->getUsage();
+    auto quota = getQuota();
+    if (!quota) /// Detected by fuzzer
+        return {};
+    else
+        return quota->getUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
@@ -655,50 +698,30 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
             }
 
-            AccessRights difference;
-            difference.grant(flags, fmt_args...);
-            AccessRights original_rights = difference;
-            difference.makeDifference(*getAccessRights());
-
-            if (difference == original_rights)
+            if constexpr (!throw_if_denied)
+                return false;
+            else
             {
+                AccessRights difference;
+                difference.grant(flags, fmt_args...);
+                AccessRights original_rights = difference;
+                difference.makeDifference(*getAccessRights());
+
+                if (difference == original_rights)
+                {
+                    return access_denied(ErrorCodes::ACCESS_DENIED,
+                        "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+                        AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                }
+
                 return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
+                    "(Missing permissions: {}){}",
+                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                    difference.getElements().toStringWithoutOptions(),
+                    grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
             }
-
-
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
-                "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-                difference.getElements().toStringWithoutOptions(),
-                grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
-
-        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
-        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
-        if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
-        {
-            AccessFlags new_flags;
-
-            String table_engine_name{getTableEngine(args...)};
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
-                if (table_engine != table_engine_name) continue;
-                const auto & source = std::get<0>(source_and_table_engine);
-                /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
-                new_flags = source;
-                break;
-            }
-
-            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
-            if (new_flags.isEmpty())
-                return access_denied_no_grant(flags, args...);
-
-            return access_denied_no_grant(new_flags);
-        }
 
         return access_denied_no_grant(flags, args...);
     }
@@ -997,6 +1020,26 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
             checkGranteeIsAllowed(id, *user_entity);
     }
 }
+
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGranted(context, flags, parameter))
+        return;
+
+    if (!to_check_by_filter.empty())
+    {
+        auto access_rights = getAccessRights();
+        auto filters = access_rights->getFilters(parameter);
+        for (const auto & filter : filters)
+        {
+            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+                return;
+        }
+    }
+
+    checkAccess(context, flags, parameter);
+}
+
 
 std::shared_ptr<const ContextAccessWrapper> ContextAccessWrapper::fromContext(const ContextPtr & context)
 {

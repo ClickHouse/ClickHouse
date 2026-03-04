@@ -70,7 +70,7 @@ public:
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExplainQuery>(*this);
+        auto res = make_intrusive<ASTExplainQuery>(*this);
         res->children.clear();
         if (!children.empty())
             res->children.push_back(children[0]->clone());
@@ -114,7 +114,7 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        ostr << toString(kind);
 
         if (ast_settings)
         {

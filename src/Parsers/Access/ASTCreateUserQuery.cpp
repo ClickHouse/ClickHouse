@@ -4,7 +4,6 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <IO/Operators.h>
 
 
@@ -13,19 +12,18 @@ namespace DB
 
 namespace
 {
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(new_name);
+        ostr << " RENAME TO " << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         // safe because this method is only called if authentication_methods.size > 1
         // if the first type is present, include the `WITH` keyword
         if (authentication_methods[0]->type)
         {
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << " WITH";
         }
 
         for (std::size_t i = 0; i < authentication_methods.size(); i++)
@@ -34,35 +32,32 @@ namespace
 
             bool is_last = i < authentication_methods.size() - 1;
             if (is_last)
-            {
-                ostr << (settings.hilite ? IAST::hilite_keyword : ",");
-            }
+                ostr << ",";
         }
     }
 
     void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " VALID UNTIL ";
         valid_until.format(ostr, settings);
     }
 
-    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         if (prefix)
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << " HOST "
-                          << (settings.hilite ? IAST::hilite_none : "");
+            ostr << " " << prefix << " HOST ";
         else
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " HOST " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << " HOST ";
 
         if (hosts.empty())
         {
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "NONE";
             return;
         }
 
         if (hosts.containsAnyHost())
         {
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "ANY";
             return;
         }
 
@@ -71,7 +66,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LOCAL" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "LOCAL";
         }
 
         const auto & addresses = hosts.getAddresses();
@@ -80,7 +75,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "IP " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "IP ";
             bool need_comma2 = false;
             for (const auto & address : addresses)
             {
@@ -101,7 +96,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "NAME ";
             bool need_comma2 = false;
             for (const auto & name : names)
             {
@@ -116,7 +111,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "REGEXP ";
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {
@@ -131,7 +126,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LIKE " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "LIKE ";
             bool need_comma2 = false;
             for (const auto & like_pattern : like_patterns)
             {
@@ -143,15 +138,21 @@ namespace
     }
 
 
+    void formatRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " ROLE ";
+        roles.format(ostr, settings);
+    }
+
     void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " DEFAULT ROLE ";
         default_roles.format(ostr, settings);
     }
 
     void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        ostr << " SETTINGS ";
         settings.format(ostr, format);
     }
 
@@ -163,13 +164,13 @@ namespace
 
     void formatGrantees(const ASTRolesOrUsersSet & grantees, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " GRANTEES ";
         grantees.format(ostr, settings);
     }
 
     void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
+        ostr << " DEFAULT DATABASE ";
         default_database.format(ostr, settings);
     }
 }
@@ -183,31 +184,34 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateUserQuery>(*this);
+    auto res = make_intrusive<ASTCreateUserQuery>(*this);
     res->children.clear();
     res->authentication_methods.clear();
 
     if (names)
-        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (roles)
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (default_roles)
-        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
+        res->default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
 
     if (default_database)
-        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+        res->default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
 
     if (grantees)
-        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+        res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
 
     if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
     if (alter_settings)
-        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     for (const auto & authentication_method : authentication_methods)
     {
-        auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        auto ast_clone = boost::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
         res->authentication_methods.push_back(ast_clone);
         res->children.push_back(ast_clone);
     }
@@ -219,29 +223,22 @@ ASTPtr ASTCreateUserQuery::clone() const
 void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
-    {
-        ostr << (format.hilite ? hilite_keyword : "") << "ATTACH USER" << (format.hilite ? hilite_none : "");
-    }
+        ostr << "ATTACH USER";
     else
-    {
-        ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
-                    << (format.hilite ? hilite_none : "");
-    }
+        ostr << (alter ? "ALTER USER" : "CREATE USER");
 
     if (if_exists)
-        ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << " IF EXISTS";
     else if (if_not_exists)
-        ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << " IF NOT EXISTS";
     else if (or_replace)
-        ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        ostr << " OR REPLACE";
 
     ostr << " ";
     names->format(ostr, format);
 
     if (!storage_name.empty())
-        ostr << (format.hilite ? IAST::hilite_keyword : "")
-                    << " IN " << (format.hilite ? IAST::hilite_none : "")
-                    << backQuoteIfNeed(storage_name);
+        ostr << " IN " << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, format);
 
@@ -252,25 +249,19 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     {
         // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
         if (!alter)
-        {
-            ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
-        }
+            ostr << " IDENTIFIED WITH no_password";
     }
     else
     {
         if (add_identified_with)
-        {
-            ostr << (format.hilite ? IAST::hilite_keyword : "") << " ADD" << (format.hilite ? IAST::hilite_none : "");
-        }
+            ostr << " ADD";
 
-        ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
+        ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
 
     if (global_valid_until)
-    {
         formatValidUntil(*global_valid_until, ostr, format);
-    }
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);
@@ -281,6 +272,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (default_database)
         formatDefaultDatabase(*default_database, ostr, format);
+
+    if (roles)
+        formatRoles(*roles, ostr, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, ostr, format);
@@ -294,7 +288,7 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         formatGrantees(*grantees, ostr, format);
 
     if (reset_authentication_methods_to_new)
-        ostr << (format.hilite ? hilite_keyword : "") << " RESET AUTHENTICATION METHODS TO NEW" << (format.hilite ? hilite_none : "");
+        ostr << " RESET AUTHENTICATION METHODS TO NEW";
 }
 
 }

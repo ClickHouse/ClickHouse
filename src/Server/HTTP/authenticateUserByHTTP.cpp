@@ -1,7 +1,4 @@
-#include <Server/HTTP/authenticateUserByHTTP.h>
-
 #include <Access/Authentication.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
@@ -16,7 +13,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #if USE_SSL
-#include <Poco/Net/X509Certificate.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 
@@ -41,8 +38,17 @@ namespace
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
-    void checkUserNameNotEmpty(const String & user_name, std::string_view method)
+    void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
     {
+        auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
+        if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
+        {
+            LOG_TEST(getLogger("authenticateUserByHTTP"), "Checking memory limit for user: {}", user_name);
+            CurrentMemoryTracker::check();
+        }
+        else
+            LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
+
         if (user_name.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
     }
@@ -77,21 +83,23 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials();
+    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
     std::string spnego_challenge;
-    SSLCertificateSubjects certificate_subjects;
+#if USE_SSL
+    X509Certificate::Subjects certificate_subjects;
+#endif
 
     if (config_credentials)
     {
-        checkUserNameNotEmpty(config_credentials->getUserName(), "config authentication");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(config_credentials->getUserName(), "config authentication", global_context);
     }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
         /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
-        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -104,19 +112,23 @@ bool authenticateUserByHTTP(
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
         if (request.havePeerCertificate())
-            certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+        {
+            auto certificate = X509Certificate(request.peerCertificate());
+            certificate_subjects = certificate.extractAllSubjects();
+        }
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                             "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
 #else
+        UNUSED(log);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
     }
     else if (has_auth_headers)
     {
-        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -143,7 +155,7 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
-            checkUserNameNotEmpty(user, "Authorization HTTP header");
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -162,10 +174,15 @@ bool authenticateUserByHTTP(
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        checkUserNameNotEmpty(user, "authentication via parameters");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
     }
 
-    if (!certificate_subjects.empty())
+    if (has_config_credentials)
+    {
+        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
+    }
+#if USE_SSL
+    else if (!certificate_subjects.empty())
     {
         chassert(!user.empty());
         if (!current_credentials)
@@ -188,7 +205,6 @@ bool authenticateUserByHTTP(
 #pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
 #pragma clang diagnostic pop
-
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
 
@@ -204,10 +220,7 @@ bool authenticateUserByHTTP(
             return false;
         }
     }
-    else if (has_config_credentials)
-    {
-        current_credentials = std::make_unique<BasicCredentials>(*config_credentials);
-    }
+#endif
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)
@@ -216,6 +229,9 @@ bool authenticateUserByHTTP(
         auto * basic_credentials = dynamic_cast<BasicCredentials *>(current_credentials.get());
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
+
+        if (request.get("Authorization", "") != "never")
+            basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
 
         chassert(!user.empty());
         basic_credentials->setUserName(user);
@@ -239,11 +255,11 @@ bool authenticateUserByHTTP(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = session.getClientInfo().getLastForwardedFor();
+    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        if (!forwarded_address.empty() && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
-            session.authenticate(*current_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
+        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
+            session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());
     }

@@ -11,7 +11,7 @@ namespace DB
 
 bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTDeleteQuery>();
+    auto query = make_intrusive<ASTDeleteQuery>();
     node = query;
 
     ParserKeyword s_delete(Keyword::DELETE);
@@ -50,6 +50,18 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         if (!parser_exp_elem.parse(pos, query->predicate, expected))
+            return false;
+
+        /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
+        /// does not expect an alias after the expression. However, in certain cases,
+        /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
+        /// This is the case when it parses a single expression in parentheses, e.g.,
+        /// it does not allow
+        /// 1 AS x
+        /// but it can parse
+        /// (1 AS x)
+        /// which we should not allow as well.
+        if (!query->predicate->tryGetAlias().empty())
             return false;
 
         if (s_settings.ignore(pos, expected))

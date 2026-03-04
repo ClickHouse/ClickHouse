@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
@@ -19,9 +20,14 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+String ASTLiteral::getID(char delim) const
+{
+    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
+}
+
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = std::make_shared<ASTLiteral>(*this);
+    auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }
@@ -61,7 +67,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (use_legacy_column_name_of_tuple)
+    if (getUseLegacyColumnNameOfTuple())
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -73,8 +79,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
@@ -111,7 +117,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);

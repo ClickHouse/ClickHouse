@@ -1,6 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 
+#include <Functions/DateTimeTransforms.h>
+
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -19,6 +21,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool log_queries;
+    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ErrorCodes
@@ -35,10 +38,10 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
     Case case_sensitiveness)
 {
-    if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
+    if (!functions.emplace(name, FunctionFactoryData{creator, documentation}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
 
     String function_name_lowercase = Poco::toLower(name);
@@ -48,7 +51,7 @@ void FunctionFactory::registerFunction(
 
     if (case_sensitiveness == Case::Insensitive)
     {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
+        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, documentation}).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
                 name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
@@ -58,13 +61,13 @@ void FunctionFactory::registerFunction(
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionSimpleCreator creator,
-    FunctionDocumentation doc,
+    FunctionDocumentation documentation,
     Case case_sensitiveness)
 {
     registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
     {
         return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
-    }, std::move(doc), std::move(case_sensitiveness));
+    }, std::move(documentation), std::move(case_sensitiveness));
 }
 
 
@@ -139,6 +142,15 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+
+        /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
+        /// check this setting here and decide if we need to change the function to get
+        if (query_context && Poco::toLower(name) == "totime" && query_context->getSettingsRef()[Setting::use_legacy_to_time])
+        {
+            it = functions.find(ToTimeWithFixedDateImpl::name);
+            if (functions.end() != it)
+                res = it->second.first(context);
+        }
     }
 
     return res;

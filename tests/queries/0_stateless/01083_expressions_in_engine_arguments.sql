@@ -82,10 +82,11 @@ INSERT INTO buffer VALUES (1);
 --                                                     |                              |                      |-> distributed_tf -> buffer (1) -> file (1)
 --                                                     |                              |-> file (1)
 --                                                     |-> remote(127.0.0.2) --> ...
-SELECT sum(n) from rich_syntax;
+SELECT sum(n) from rich_syntax settings enable_parallel_replicas=0;
+SELECT sum(n) from rich_syntax settings serialize_query_plan=0;
 
 -- Clear cache to avoid future errors in the logs
-SYSTEM DROP DNS CACHE;
+SYSTEM CLEAR DNS CACHE;
 
 DROP TABLE file;
 DROP DICTIONARY dict;

@@ -1,12 +1,8 @@
-#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric MergeTreeIndexGranularityInternalArraysTotalSize;
-}
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -31,6 +27,14 @@ size_t MergeTreeIndexGranularityAdaptive::getMarkRows(size_t mark_index) const
         return marks_rows_partial_sums[0];
 
     return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
+}
+
+MarkRange MergeTreeIndexGranularityAdaptive::getMarkRangeForRowOffset(size_t row_offset) const
+{
+    auto position = std::lower_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), row_offset + 1);
+    size_t begin_mark = position - marks_rows_partial_sums.begin();
+
+    return {begin_mark, begin_mark + 1};
 }
 
 bool MergeTreeIndexGranularityAdaptive::hasFinalMark() const
@@ -66,7 +70,6 @@ void MergeTreeIndexGranularityAdaptive::appendMark(size_t rows_count)
     {
         marks_rows_partial_sums.push_back(marks_rows_partial_sums.back() + rows_count);
     }
-    CurrentMetrics::add(CurrentMetrics::MergeTreeIndexGranularityInternalArraysTotalSize, sizeof(decltype(marks_rows_partial_sums)::value_type));
 }
 
 void MergeTreeIndexGranularityAdaptive::adjustLastMark(size_t rows_count)
@@ -82,7 +85,6 @@ void MergeTreeIndexGranularityAdaptive::adjustLastMark(size_t rows_count)
     else
     {
         marks_rows_partial_sums.pop_back();
-        CurrentMetrics::sub(CurrentMetrics::MergeTreeIndexGranularityInternalArraysTotalSize, sizeof(decltype(marks_rows_partial_sums)::value_type));
         appendMark(rows_count);
     }
 }

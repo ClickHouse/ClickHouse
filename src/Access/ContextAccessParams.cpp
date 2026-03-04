@@ -3,6 +3,9 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/IPAddress.h>
+
 
 namespace DB
 {
@@ -21,7 +24,8 @@ ContextAccessParams::ContextAccessParams(
     const std::shared_ptr<const std::vector<UUID>> & external_roles_,
     const Settings & settings_,
     const String & current_database_,
-    const ClientInfo & client_info_)
+    const ClientInfo & client_info_,
+    const std::optional<UUID> & initial_user_id_)
     : user_id(user_id_)
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
@@ -33,10 +37,10 @@ ContextAccessParams::ContextAccessParams(
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
-    , address(client_info_.current_address.host())
-    , forwarded_address(client_info_.getLastForwardedFor())
+    , address(std::make_shared<Poco::Net::IPAddress>(client_info_.current_address->host()))
+    , forwarded_address(client_info_.getLastForwardedForHost())
     , quota_key(client_info_.quota_key)
-    , initial_user((client_info_.initial_user != client_info_.current_user) ? client_info_.initial_user : "")
+    , initial_user_id(initial_user_id_)
 {
 }
 
@@ -83,14 +87,14 @@ String ContextAccessParams::toString() const
     out << separator() << "interface = " << magic_enum::enum_name(interface);
     if (http_method != ClientInfo::HTTPMethod::UNKNOWN)
         out << separator() << "http_method = " << magic_enum::enum_name(http_method);
-    if (!address.isWildcard())
-        out << separator() << "address = " << address.toString();
+    if (!address->isWildcard())
+        out << separator() << "address = " << address->toString();
     if (!forwarded_address.empty())
         out << separator() << "forwarded_address = " << forwarded_address;
     if (!quota_key.empty())
         out << separator() << "quota_key = " << quota_key;
-    if (!initial_user.empty())
-        out << separator() << "initial_user = " << initial_user;
+    if (initial_user_id)
+        out << separator() << "initial_user_id = " << *initial_user_id;
     return out.str();
 }
 
@@ -130,7 +134,7 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(address)
     CONTEXT_ACCESS_PARAMS_EQUALS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_EQUALS(quota_key)
-    CONTEXT_ACCESS_PARAMS_EQUALS(initial_user)
+    CONTEXT_ACCESS_PARAMS_EQUALS(initial_user_id)
 
     #undef CONTEXT_ACCESS_PARAMS_EQUALS
 
@@ -181,7 +185,7 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(address)
     CONTEXT_ACCESS_PARAMS_LESS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_LESS(quota_key)
-    CONTEXT_ACCESS_PARAMS_LESS(initial_user)
+    CONTEXT_ACCESS_PARAMS_LESS(initial_user_id)
 
     #undef CONTEXT_ACCESS_PARAMS_LESS
 

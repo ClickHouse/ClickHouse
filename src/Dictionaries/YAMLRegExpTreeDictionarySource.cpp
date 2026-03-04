@@ -1,15 +1,14 @@
-#include "YAMLRegExpTreeDictionarySource.h"
+#include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/Logger.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypeArray.h"
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 
 #if USE_YAML_CPP
 
@@ -43,6 +42,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -64,7 +64,8 @@ namespace ErrorCodes
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const String & config_prefix,
                                    Block & ,
@@ -150,8 +151,8 @@ struct MatchNode
     UInt64 id;
     UInt64 parent_id;
     String reg_exp;
-    std::vector<Field> keys;
-    std::vector<Field> values;
+    VectorWithMemoryTracking<Field> keys;
+    VectorWithMemoryTracking<Field> values;
 };
 
 struct ResultColumns
@@ -164,7 +165,7 @@ struct ResultColumns
     ResultColumns() = default;
 };
 
-using StringToNode = std::unordered_map<String, YAML::Node>;
+using StringToNode = UnorderedMapWithMemoryTracking<String, YAML::Node>;
 
 YAML::Node loadYAML(const String & filepath)
 {
@@ -305,14 +306,16 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node, key_name, structure)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    return io;
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

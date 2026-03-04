@@ -5,7 +5,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
@@ -74,7 +73,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             s_eq.ignore(pos, expected);
             if (s_current_user.ignore(pos, expected))
                 is_definer_current_user = true;
-            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
+            else if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, definer, expected))
                 return false;
 
             continue;
@@ -107,11 +106,11 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (type == SQLSecurityType::DEFINER && !definer)
         is_definer_current_user = true;
 
-    auto result = std::make_shared<ASTSQLSecurity>();
+    auto result = make_intrusive<ASTSQLSecurity>();
     result->is_definer_current_user = is_definer_current_user;
     result->type = type;
     if (definer)
-        result->definer = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(definer);
+        result->definer = boost::static_pointer_cast<ASTUserNameWithHost>(definer);
 
     node = std::move(result);
     return true;
@@ -174,21 +173,9 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
-
-    if (granularity)
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    else
-    {
-        auto index_type = index->getType();
-        if (index_type->name == "vector_similarity")
-            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-    }
-
+    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
+    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
-
     return true;
 }
 
@@ -211,7 +198,7 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!types_p.parse(pos, types, expected))
         return false;
 
-    auto stat = std::make_shared<ASTStatisticsDeclaration>();
+    auto stat = make_intrusive<ASTStatisticsDeclaration>();
     stat->set(stat->columns, columns);
     stat->set(stat->types, types);
     node = stat;
@@ -229,7 +216,7 @@ bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node
     if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    auto stat = std::make_shared<ASTStatisticsDeclaration>();
+    auto stat = make_intrusive<ASTStatisticsDeclaration>();
     stat->set(stat->columns, columns);
     node = stat;
 
@@ -262,7 +249,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!expression_p.parse(pos, expr, expected))
         return false;
 
-    auto constraint = std::make_shared<ASTConstraintDeclaration>();
+    auto constraint = make_intrusive<ASTConstraintDeclaration>();
     constraint->name = name->as<ASTIdentifier &>().name();
     constraint->type = type;
     constraint->set(constraint->expr, expr);
@@ -276,26 +263,69 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 {
     ParserIdentifier name_p;
     ParserProjectionSelectQuery query_p;
+    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserExpressionWithOptionalArguments type_p;
+    ParserExpression expression_p;
+    ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
+    ASTPtr index;
+    ASTPtr type;
+    ASTPtr with_settings;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!s_lparen.ignore(pos, expected))
-        return false;
+    if (s_lparen.ignore(pos, expected))
+    {
+        if (!query_p.parse(pos, query, expected))
+            return false;
 
-    if (!query_p.parse(pos, query, expected))
-        return false;
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+    }
+    else if (s_index.ignore(pos, expected))
+    {
+        if (!expression_p.parse(pos, index, expected))
+            return false;
 
-    if (!s_rparen.ignore(pos, expected))
-        return false;
+        if (!s_type.ignore(pos, expected))
+            return false;
 
-    auto projection = std::make_shared<ASTProjectionDeclaration>();
+        if (!type_p.parse(pos, type, expected))
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (s_with_settings.ignore(pos, expected))
+    {
+        if (!s_lparen.ignore(pos, expected))
+            return false;
+
+        if (!settings_p.parse(pos, with_settings, expected))
+            return false;
+
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+    }
+
+    auto projection = make_intrusive<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->set(projection->query, query);
+    if (query)
+        projection->set(projection->query, query);
+    if (index)
+        projection->set(projection->index, index);
+    if (type)
+        projection->set(projection->type, type);
+    if (with_settings)
+        projection->set(projection->with_settings, with_settings);
     node = projection;
 
     return true;
@@ -345,7 +375,7 @@ bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
         }
     }
 
-    auto foreign_key = std::make_shared<ASTForeignKeyDeclaration>();
+    auto foreign_key = make_intrusive<ASTForeignKeyDeclaration>();
     foreign_key->name = "Foreign Key";
     node = foreign_key;
 
@@ -431,10 +461,10 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             .parse(pos, list, expected))
         return false;
 
-    ASTPtr columns = std::make_shared<ASTExpressionList>();
-    ASTPtr indices = std::make_shared<ASTExpressionList>();
-    ASTPtr constraints = std::make_shared<ASTExpressionList>();
-    ASTPtr projections = std::make_shared<ASTExpressionList>();
+    ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr indices = make_intrusive<ASTExpressionList>();
+    ASTPtr constraints = make_intrusive<ASTExpressionList>();
+    ASTPtr projections = make_intrusive<ASTExpressionList>();
     ASTPtr primary_key;
     ASTPtr primary_key_from_columns;
 
@@ -445,8 +475,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             if (cd->primary_key_specifier)
             {
                 if (!primary_key_from_columns)
-                    primary_key_from_columns = makeASTFunction("tuple");
-                auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
+                    primary_key_from_columns = makeASTOperator("tuple");
+                auto column_identifier = make_intrusive<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
             }
             columns->children.push_back(elem);
@@ -475,7 +505,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    auto res = std::make_shared<ASTColumns>();
+    auto res = make_intrusive<ASTColumns>();
 
     if (!columns->children.empty())
         res->set(res->columns, columns);
@@ -524,12 +554,12 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         return false;
 
     if (!order_list_p.parse(pos, order_by, expected))
-        order_by = std::make_shared<ASTExpressionList>();
+        order_by = make_intrusive<ASTExpressionList>();
 
     if (!s_rparen.ignore(pos, expected))
         return false;
 
-    auto tuple_function = std::make_shared<ASTFunction>();
+    auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->arguments = std::move(order_by);
 
@@ -627,10 +657,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// Do not allow SETTINGS clause without ENGINE,
-        /// because we cannot distinguish engine settings from query settings in this case.
-        /// And because settings for each engine are different.
-        if (parsed_engine_keyword && s_settings.ignore(pos, expected))
+        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
+        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
+        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
+        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -649,16 +679,16 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         switch (engine_kind)
         {
             case EngineKind::TABLE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::TABLE_ENGINE;
+                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
                 break;
 
             case EngineKind::DATABASE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::DATABASE_ENGINE;
+                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::DATABASE_ENGINE);
                 break;
         }
     }
 
-    auto storage = std::make_shared<ASTStorage>();
+    auto storage = make_intrusive<ASTStorage>();
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
@@ -699,8 +729,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserNameList names_p;
 
     ASTPtr table;
+    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
-    std::shared_ptr<ASTStorage> storage;
+    boost::intrusive_ptr<ASTStorage> storage;
     bool is_time_series_table = false;
     ASTPtr targets;
     ASTPtr as_database;
@@ -730,11 +761,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
-
-    if (!replace && !or_replace && s_temporary.ignore(pos, expected))
-    {
+    if (s_temporary.ignore(pos, expected))
         is_temporary = true;
-    }
     if (!s_table.ignore(pos, expected))
         return false;
 
@@ -743,6 +771,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
+
+    if (ParserKeyword{Keyword::TO_INNER_UUID}.ignore(pos, expected))
+    {
+        ParserStringLiteral literal_p;
+        if (!literal_p.parse(pos, to_inner_uuid, expected))
+            return false;
+    }
 
     std::optional<bool> attach_as_replicated = std::nullopt;
     if (attach)
@@ -775,7 +810,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
-        auto query = std::make_shared<ASTCreateQuery>();
+        auto query = make_intrusive<ASTCreateQuery>();
         node = query;
 
         query->attach = attach;
@@ -786,6 +821,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+        query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
 
@@ -804,7 +840,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!storage_p.parse(pos, ast, expected))
             return false;
 
-        storage = typeid_cast<std::shared_ptr<ASTStorage>>(ast);
+        storage = boost::static_pointer_cast<ASTStorage>(ast);
 
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
@@ -815,21 +851,18 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     };
 
-    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
+    /// Try to parse EMPTY or CLONE keywords (they can appear before or after COMMENT).
+    auto try_parse_empty_or_clone = [&is_create_empty, &is_clone_as, &pos, &expected]()
     {
-        if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
-        {
+        if (is_create_empty || is_clone_as)
+            return;
+        if (ParserKeyword{Keyword::EMPTY}.ignore(pos, expected))
             is_create_empty = true;
-            return true;
-        }
-        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
-        {
+        else if (ParserKeyword{Keyword::CLONE}.ignore(pos, expected))
             is_clone_as = true;
-            return true;
-        }
-
-        return ParserKeyword{Keyword::AS}.ignore(pos, expected);
     };
+
+    ASTPtr comment;
 
     /// List of columns.
     if (s_lparen.ignore(pos, expected))
@@ -847,15 +880,31 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = parse_storage();
 
-        if ((storage_parse_result || is_temporary) && need_parse_as_select())
+        /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
+        try_parse_empty_or_clone();
+        comment = parseComment(pos, expected);
+        try_parse_empty_or_clone();
+
+        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+        bool has_as = false;
+        if (is_create_empty || is_clone_as)
+        {
+            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                return false;
+            has_as = true;
+        }
+        else
+            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
+
+        if ((storage_parse_result || is_temporary) && has_as)
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
         }
 
-        if (!storage_parse_result && !is_temporary)
+        if (!storage_parse_result && !is_temporary && has_as)
         {
-            if (need_parse_as_select() && !table_function_p.parse(pos, as_table_function, expected))
+            if (!table_function_p.parse(pos, as_table_function, expected))
                 return false;
         }
 
@@ -869,8 +918,24 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         parse_storage();
 
+        try_parse_empty_or_clone();
+        if (!comment)
+            comment = parseComment(pos, expected);
+        try_parse_empty_or_clone();
+
+        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+        bool has_as = false;
+        if (is_create_empty || is_clone_as)
+        {
+            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                return false;
+            has_as = true;
+        }
+        else
+            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
+
         /// CREATE|ATTACH TABLE ... AS ...
-        if (need_parse_as_select())
+        if (has_as)
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
@@ -896,9 +961,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
     }
 
-    auto comment = parseComment(pos, expected);
+    if (!comment)
+        comment = parseComment(pos, expected);
 
-    auto query = std::make_shared<ASTCreateQuery>();
+    auto query = make_intrusive<ASTCreateQuery>();
     node = query;
 
     query->attach = attach;
@@ -906,7 +972,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
-    query->temporary = is_temporary;
+    query->setIsTemporary(is_temporary);
     query->is_time_series_table = is_time_series_table;
 
     query->database = table_id->getDatabase();
@@ -931,11 +997,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         /// If engine is not set will use default one
         if (!query->storage)
-            query->set(query->storage, std::make_shared<ASTStorage>());
+            query->set(query->storage, make_intrusive<ASTStorage>());
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->primary_key = query->columns_list->primary_key;
+        query->storage->set(query->storage->primary_key, query->columns_list->primary_key->ptr());
 
     }
 
@@ -943,153 +1009,44 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         /// If engine is not set will use default one
         if (!query->storage)
-            query->set(query->storage, std::make_shared<ASTStorage>());
+            query->set(query->storage, make_intrusive<ASTStorage>());
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->primary_key = query->columns_list->primary_key_from_columns;
+        query->storage->set(query->storage->primary_key, query->columns_list->primary_key_from_columns->ptr());
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (to_inner_uuid)
+    {
+        if (!storage || !storage->engine || (storage->engine->name != "SharedSet" && storage->engine->name != "SharedJoin"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not inner UUID", storage->engine->name);
+
+        if (targets)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
+
+        auto view_targets = make_intrusive<ASTViewTargets>();
+        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+
+        targets = view_targets;
+    }
+
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
     query->is_clone_as = is_clone_as;
 
     if (from_path)
+    {
         query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
+        query->has_attach_from_path = true;
+    }
 
     return true;
 }
 
-bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_create(Keyword::CREATE);
-    ParserKeyword s_attach(Keyword::ATTACH);
-    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
-    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
-    ParserKeyword s_as(Keyword::AS);
-    ParserKeyword s_view(Keyword::VIEW);
-    ParserKeyword s_live(Keyword::LIVE);
-    ParserToken s_dot(TokenType::Dot);
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-    ParserStorage storage_inner{ParserStorage::TABLE_ENGINE};
-    ParserTablePropertiesDeclarationList table_properties_p;
-    ParserSelectWithUnionQuery select_p;
-    ParserSQLSecurity sql_security_p;
-
-    ASTPtr table;
-    ASTPtr to_table;
-    ASTPtr columns_list;
-    ASTPtr as_database;
-    ASTPtr as_table;
-    ASTPtr select;
-    ASTPtr sql_security;
-
-    String cluster_str;
-    bool attach = false;
-    bool if_not_exists = false;
-
-    if (!s_create.ignore(pos, expected))
-    {
-        if (s_attach.ignore(pos, expected))
-            attach = true;
-        else
-            return false;
-    }
-
-    sql_security_p.parse(pos, sql_security, expected);
-
-    if (!s_live.ignore(pos, expected))
-        return false;
-
-    if (!s_view.ignore(pos, expected))
-       return false;
-
-    if (s_if_not_exists.ignore(pos, expected))
-       if_not_exists = true;
-
-    if (!table_name_p.parse(pos, table, expected))
-        return false;
-
-    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-            return false;
-    }
-
-    // TO [db.]table
-    if (ParserKeyword{Keyword::TO}.ignore(pos, expected))
-    {
-        if (!table_name_p.parse(pos, to_table, expected))
-            return false;
-    }
-
-    std::shared_ptr<ASTViewTargets> targets;
-    if (to_table)
-    {
-        targets = std::make_shared<ASTViewTargets>();
-        targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
-    }
-
-    /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
-    {
-        if (!table_properties_p.parse(pos, columns_list, expected))
-            return false;
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
-    }
-
-    if (!sql_security && !sql_security_p.parse(pos, sql_security, expected))
-        sql_security = std::make_shared<ASTSQLSecurity>();
-
-    /// AS SELECT ...
-    if (!s_as.ignore(pos, expected))
-        return false;
-
-    if (!select_p.parse(pos, select, expected))
-        return false;
-
-    auto comment = parseComment(pos, expected);
-
-    auto query = std::make_shared<ASTCreateQuery>();
-    node = query;
-
-    query->attach = attach;
-    query->if_not_exists = if_not_exists;
-    query->is_live_view = true;
-
-    auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
-    query->uuid = table_id->uuid;
-    query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
-
-    query->set(query->columns_list, columns_list);
-
-    tryGetIdentifierNameInto(as_database, query->as_database);
-    tryGetIdentifierNameInto(as_table, query->as_table);
-    query->set(query->select, select);
-    query->set(query->targets, targets);
-
-    if (comment)
-        query->set(query->comment, comment);
-
-    if (sql_security)
-        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
-
-    return true;
-}
 
 bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1195,10 +1152,10 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         storage_p.parse(pos, storage, expected);
     }
 
-    std::shared_ptr<ASTViewTargets> targets;
+    boost::intrusive_ptr<ASTViewTargets> targets;
     if (to_table || storage || inner_storage)
     {
-        targets = std::make_shared<ASTViewTargets>();
+        targets = make_intrusive<ASTViewTargets>();
         if (to_table)
             targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
         if (storage)
@@ -1232,10 +1189,20 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (s_populate.ignore(pos, expected))
-        is_populate = true;
-    else if (s_empty.ignore(pos, expected))
-        is_create_empty = true;
+    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings.
+    auto try_parse_populate_or_empty = [&is_populate, &is_create_empty, &pos, &expected, &s_populate, &s_empty]()
+    {
+        if (is_populate || is_create_empty)
+            return;
+        if (s_populate.ignore(pos, expected))
+            is_populate = true;
+        else if (s_empty.ignore(pos, expected))
+            is_create_empty = true;
+    };
+
+    try_parse_populate_or_empty();
+    auto comment = parseComment(pos, expected);
+    try_parse_populate_or_empty();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1244,9 +1211,10 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!select_p.parse(pos, select, expected))
         return false;
 
-    auto comment = parseComment(pos, expected);
+    if (!comment)
+        comment = parseComment(pos, expected);
 
-    auto query = std::make_shared<ASTCreateQuery>();
+    auto query = make_intrusive<ASTCreateQuery>();
     node = query;
 
     query->attach = attach;
@@ -1271,9 +1239,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
-    query->watermark_function = watermark;
+    query->set(query->watermark_function, watermark);
     query->allowed_lateness = allowed_lateness;
-    query->lateness_function = lateness;
+    query->set(query->lateness_function, lateness);
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
 
@@ -1372,14 +1340,14 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     if (is_standalone && !rparen_p.ignore(pos, expected))
         return false;
 
-    auto storage = std::make_shared<ASTStorage>();
+    auto storage = make_intrusive<ASTStorage>();
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
 
-    auto res = std::make_shared<ASTTableOverride>();
+    auto res = make_intrusive<ASTTableOverride>();
     if (table_name)
         res->table_name = table_name->as<ASTIdentifier>()->name();
     res->is_standalone = is_standalone;
@@ -1396,7 +1364,7 @@ bool ParserTableOverridesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Ex
 {
     ParserTableOverrideDeclaration table_override_p;
     ParserToken s_comma(TokenType::Comma);
-    auto res = std::make_shared<ASTTableOverrideList>();
+    auto res = make_intrusive<ASTTableOverrideList>();
     auto parse_element = [&]
     {
         ASTPtr element;
@@ -1477,13 +1445,14 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!table_overrides_p.parse(pos, table_overrides, expected))
         return false;
 
-    auto query = std::make_shared<ASTCreateQuery>();
+    auto query = make_intrusive<ASTCreateQuery>();
     node = query;
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
 
     query->uuid = uuid;
+    query->has_uuid = uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1514,12 +1483,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_empty(Keyword::EMPTY);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_to{Keyword::TO};
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
+    ParserAliasesExpressionList expr_list_aliases;
     ParserSelectWithUnionQuery select_p;
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
@@ -1528,6 +1499,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr to_table;
     ASTPtr to_inner_uuid;
     ASTPtr columns_list;
+    ASTPtr aliases_list;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -1543,6 +1515,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_populate = false;
     bool is_create_empty = false;
     bool replace_view = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1566,6 +1539,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
         is_ordinary_view = true;
+
+    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    {
+        is_temporary = true;
+    }
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -1605,13 +1583,31 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected)) // Parsing cases like CREATE VIEW (a Int64, b Int64) (a, b) SELECT ...
     {
+        bool has_aliases = false;
         if (!table_properties_p.parse(pos, columns_list, expected))
-            return false;
+        {
+            if (!expr_list_aliases.parse(pos, aliases_list, expected))
+                return false;
+            else
+                has_aliases = true;
+        }
+        else
+        {
+            if (!s_rparen.ignore(pos, expected))
+                return false;
+            if (s_lparen.ignore(pos, expected))
+            {
+                has_aliases = true;
+                if (!expr_list_aliases.parse(pos, aliases_list, expected))
+                    return false;
+            }
+        }
 
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+        if (has_aliases)
+            if (!s_rparen.ignore(pos, expected))
+                return false;
     }
 
     if (is_materialized_view)
@@ -1655,6 +1651,39 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!sql_security)
         sql_security_p.parse(pos, sql_security, expected);
 
+    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings for materialized views.
+    auto try_parse_populate_or_empty = [&]()
+    {
+        if (!is_materialized_view || is_populate || is_create_empty)
+            return;
+        if (!to_table)
+        {
+            if (s_populate.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
+                is_create_empty = true;
+        }
+        else
+        {
+            if (s_populate.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+
+            if (s_empty.ignore(pos, expected))
+            {
+                if (!refresh_strategy)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
+
+                is_create_empty = true;
+            }
+        }
+    };
+
+    try_parse_populate_or_empty();
+    auto comment = parseComment(pos, expected);
+    try_parse_populate_or_empty();
+
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
         return false;
@@ -1662,9 +1691,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!select_p.parse(pos, select, expected))
         return false;
 
-    auto comment = parseComment(pos, expected);
+    if (!comment)
+        comment = parseComment(pos, expected);
 
-    auto query = std::make_shared<ASTCreateQuery>();
+    auto query = make_intrusive<ASTCreateQuery>();
     node = query;
 
     query->attach = attach;
@@ -1674,6 +1704,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
+    query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
@@ -1687,42 +1718,51 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
+    query->set(query->aliases_list, aliases_list);
 
     if (refresh_strategy)
         query->set(query->refresh_strategy, refresh_strategy);
     if (comment)
         query->set(query->comment, comment);
     if (sql_security)
-        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+        query->set(query->sql_security, sql_security);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
         /// If engine is not set will use default one
         if (!storage)
-            storage = std::make_shared<ASTStorage>();
+            storage = make_intrusive<ASTStorage>();
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.primary_key = query->columns_list->primary_key;
+        storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key->ptr());
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
     {
         /// If engine is not set will use default one
         if (!storage)
-            storage = std::make_shared<ASTStorage>();
+            storage = make_intrusive<ASTStorage>();
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.primary_key = query->columns_list->primary_key_from_columns;
+        storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key_from_columns->ptr());
     }
 
-    std::shared_ptr<ASTViewTargets> targets;
+    boost::intrusive_ptr<ASTViewTargets> targets;
     if (to_table || to_inner_uuid || storage)
     {
-        targets = std::make_shared<ASTViewTargets>();
+        targets = make_intrusive<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+        {
+            if (!to_table->as<ASTTableIdentifier>()->isParam())
+                targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            else
+            {
+                chassert(is_materialized_view);
+                targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
+            }
+        }
         if (to_inner_uuid)
             targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
         if (storage)
@@ -1794,7 +1834,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
             overridability.emplace(changes.back().name, true);
     }
 
-    auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
+    auto query = make_intrusive<ASTCreateNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_not_exists = if_not_exists;
@@ -1819,6 +1859,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
 
@@ -1871,6 +1912,10 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
         if (!attributes_p.parse(pos, attributes, expected))
             return false;
 
+        /// We allow a trailing comma in the columns list for user convenience.
+        /// Although it diverges from the SQL standard slightly.
+        s_comma.ignore(pos, expected);
+
         if (!s_right_paren.ignore(pos, expected))
             return false;
 
@@ -1880,7 +1925,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
     auto comment = parseComment(pos, expected);
 
-    auto query = std::make_shared<ASTCreateQuery>();
+    auto query = make_intrusive<ASTCreateQuery>();
     node = query;
     query->is_dictionary = true;
     query->attach = attach;
@@ -1915,14 +1960,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateDatabaseQuery database_p;
     ParserCreateViewQuery view_p;
     ParserCreateDictionaryQuery dictionary_p;
-    ParserCreateLiveViewQuery live_view_p;
     ParserCreateWindowViewQuery window_view_p;
 
     return table_p.parse(pos, node, expected)
         || database_p.parse(pos, node, expected)
         || view_p.parse(pos, node, expected)
         || dictionary_p.parse(pos, node, expected)
-        || live_view_p.parse(pos, node, expected)
         || window_view_p.parse(pos, node, expected);
 }
 

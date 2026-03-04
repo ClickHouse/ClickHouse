@@ -6,10 +6,14 @@ import select
 import socket
 import subprocess
 import time
+import struct
 from os import path as p
 from typing import Iterable, List, Optional, Sequence, Union
 
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
+from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
+from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.client import EventType, KazooClient
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -72,14 +76,24 @@ class KeeperException(Exception):
 
 
 class KeeperClient(object):
+    # In tests-mode, the keeper-client writes this separator to stdout after
+    # each command so we can detect where one command's output ends.
+    # Four BEL (0x07) characters were chosen because they never appear in
+    # normal command output.
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30):
+    def __init__(
+        self, bin_path: str, host: str, port: int, connection_tries=30, identity=None
+    ):
         self.bin_path = bin_path
         self.host = host
         self.port = port
 
         retry_count = 0
+
+        identity_arg = []
+        if identity:
+            identity_arg = ["--identity", identity]
 
         while True:
             try:
@@ -95,6 +109,7 @@ class KeeperClient(object):
                         "error",
                         "--tests-mode",
                         "--no-confirmation",
+                        *identity_arg,
                     ],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -132,35 +147,40 @@ class KeeperClient(object):
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
+        error = b""
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Keeper client returned no output")
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError(f"Keeper client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
-                file = self._fd_nums[fd_num]
+            # Process stderr events before stdout to ensure errors are
+            # collected before checking the stdout separator.
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stderr:
+                        error += self.proc.stderr.readline()
+                elif not (event & select.EPOLLHUP):
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
 
-                if file == self.proc.stdout:
-                    while True:
-                        chunk = file.readline()
-                        if chunk.endswith(self.SEPARATOR):
-                            break
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stdout:
+                        while True:
+                            chunk = file.readline()
+                            if chunk.endswith(self.SEPARATOR):
+                                if error:
+                                    raise KeeperException(
+                                        error.strip().decode()
+                                    )
+                                return output.getvalue().strip().decode()
 
-                        output.write(chunk)
-
-                elif file == self.proc.stderr:
-                    self.proc.stdout.readline()
-                    raise KeeperException(self.proc.stderr.readline().strip().decode())
-
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
-
-        data = output.getvalue().strip().decode()
-        return data
+                            output.write(chunk)
 
     def cd(self, path: str, timeout: float = 60.0):
         self.execute_query(f"cd '{path}'", timeout)
@@ -181,6 +201,9 @@ class KeeperClient(object):
 
     def rm(self, path: str, version: Optional[int] = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
+
+    def rmr(self, path: str) -> None:
+        self.execute_query(f"rmr '{path}'")
 
     def exists(self, path: str, timeout: float = 60.0) -> bool:
         return bool(int(self.execute_query(f"exists '{path}'", timeout)))
@@ -210,6 +233,9 @@ class KeeperClient(object):
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
+
+    def get_acl(self, path: str, timeout: float = 60.0):
+        return self.execute_query(f"get_acl '{path}'", timeout)
 
     def reconfig(
         self,
@@ -241,12 +267,25 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None
+        cls,
+        cluster: ClickHouseCluster,
+        keeper_node: Optional[str] = None,
+        keeper_ip: Optional[str] = None,
+        port: Optional[int] = None,
+        identity: Optional[str] = None,
     ) -> "KeeperClient":
+        if keeper_node is None and keeper_ip is None:
+            raise ValueError("Must specify either keeper_node or keeper_ip")
+
+        instance_ip = keeper_ip
+        if instance_ip is None:
+            instance_ip = cluster.get_instance_ip(keeper_node)
+
         client = cls(
             cluster.server_bin_path,
-            cluster.get_instance_ip(keeper_node),
+            instance_ip,
             port or cluster.zookeeper_port,
+            identity=identity,
         )
 
         try:
@@ -255,19 +294,26 @@ class KeeperClient(object):
             client.stop()
 
 
-def get_keeper_socket(cluster, node, port=9181):
-    hosts = cluster.get_instance_ip(node.name)
+def get_keeper_socket(cluster, nodename, port=9181, timeout_sec=60):
+    host = cluster.get_instance_ip(nodename)
     client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, port))
+    client.settimeout(timeout_sec)
+    client.connect((host, port))
     return client
 
 
-def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
+def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_sec=60):
     client = None
+    logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
-        client = get_keeper_socket(cluster, node, port)
-        client.send(cmd.encode())
+        client = get_keeper_socket(cluster, node.name, port, timeout_sec)
+        if argument is not None:
+            client.send(
+                cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
+            )
+        else:
+            client.send(cmd.encode())
+
         data = client.recv(100_000)
         data = data.decode()
         return data
@@ -279,9 +325,17 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 
-def wait_until_connected(cluster, node, port=9181, timeout=30.0):
+def wait_until_connected(
+    cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True, password=None
+):
     start = time.time()
 
+    logging.debug(
+        "Waiting until keeper will be ready on %s:%d (timeout=%f)",
+        node.name,
+        port,
+        timeout,
+    )
     while send_4lw_cmd(cluster, node, "mntr", port) == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
 
@@ -289,6 +343,45 @@ def wait_until_connected(cluster, node, port=9181, timeout=30.0):
             raise Exception(
                 f"{timeout}s timeout while waiting for {node.name} to start serving requests"
             )
+
+    if wait_complete_readiness:
+        host = cluster.get_instance_ip(node.name)
+        logging.debug(
+            "Waiting until keeper can create sessions on %s:%d (timeout=%f)",
+            host,
+            port,
+            timeout,
+        )
+        while True:
+            zk_cli = None
+            try:
+                time_passed = time.time() - start
+                if time_passed >= timeout:
+                    raise Exception(
+                        f"{timeout}s timeout while waiting for {node.name} to start serving requests"
+                    )
+                client_id = None
+                if password is not None:
+                    client_id = (0, password)
+
+                zk_cli = KazooClient(
+                    hosts=f"{host}:9181",
+                    timeout=min(timeout - time_passed, 5.0),
+                    client_id=client_id,
+                )
+                zk_cli.start()
+                zk_cli.get("/keeper/api_version")
+                break
+            except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
+                pass
+            finally:
+                if zk_cli:
+                    try:
+                        # stop() can raise if the connection is already broken
+                        zk_cli.stop()
+                    except Exception:
+                        pass
+                    zk_cli.close()
 
 
 def wait_until_quorum_lost(cluster, node, port=9181):
@@ -325,11 +418,26 @@ def get_any_follower(cluster, nodes):
     raise Exception("No followers in Keeper cluster.")
 
 
-def get_fake_zk(cluster, node, timeout: float = 30.0) -> KazooClient:
-    _fake = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+def get_fake_zk(
+    cluster, nodename, timeout: float = 30.0, password=None, retries=10, start=True
+) -> KazooClientWithImplicitRetries:
+    kazoo_retry = {
+        "max_tries": retries,
+    }
+
+    client_id = None
+    if password is not None:
+        client_id = (0, password)
+
+    _fake = KazooClientWithImplicitRetries(
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        client_id=client_id,
+        timeout=timeout,
+        connection_retry=kazoo_retry,
+        command_retry=kazoo_retry,
     )
-    _fake.start()
+    if start:
+        _fake.start()
     return _fake
 
 
@@ -377,3 +485,12 @@ def reset_zookeeper_config(
     """Resets the keeper config to default or to a given path on the disk"""
     with open(file_path, "r", encoding="utf-8") as cf:
         replace_zookeeper_config(nodes, cf.read())
+
+
+def is_znode_watch_event(event: EventType) -> bool:
+    return event.type in [
+        EventType.CREATED,
+        EventType.DELETED,
+        EventType.CHANGED,
+        EventType.CHILD,
+    ]

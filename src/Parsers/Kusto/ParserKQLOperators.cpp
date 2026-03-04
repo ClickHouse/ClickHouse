@@ -6,7 +6,6 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -116,9 +115,9 @@ void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
 
     if (useLowerCase)
     {
-        auto args = std::make_shared<ASTExpressionList>();
+        auto args = make_intrusive<ASTExpressionList>();
         args->children.push_back(selectColumns->children[0]);
-        auto func_lower = std::make_shared<ASTFunction>();
+        auto func_lower = make_intrusive<ASTFunction>();
         func_lower->name = "lower";
         func_lower->children.push_back(selectColumns->children[0]);
         func_lower->arguments = args;
@@ -127,7 +126,7 @@ void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
         else if (selectColumns->children[0]->as<ASTFunction>())
             func_lower->alias = std::move(selectColumns->children[0]->as<ASTFunction>()->alias);
 
-        auto funcs = std::make_shared<ASTExpressionList>();
+        auto funcs = make_intrusive<ASTExpressionList>();
         funcs->children.push_back(func_lower);
         selectColumns->children[0] = std::move(funcs);
     }
@@ -209,7 +208,7 @@ String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, true);
-        new_expr += ch_op + " (" + serializeAST(*select) + ")";
+        new_expr += ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -256,7 +255,7 @@ std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, false);
-        auto new_expr = ch_op + " (" + serializeAST(*select) + ")";
+        auto new_expr = ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -375,7 +374,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         else
             --pos;
 
-        if (KQLOperator.find(op) == KQLOperator.end())
+        if (!KQLOperator.contains(op))
         {
             pos = begin;
             return false;

@@ -9,18 +9,32 @@
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
             </s3_disk_02944>
-            <s3_cache_02944>
+            <s3_cache_02944_lru>
                 <type>cache</type>
-                <disk>s3_disk</disk>
-                <path>s3_cache_02944/</path>
+                <disk>s3_disk_02944</disk>
+                <path>s3_cache_02944_lru/</path>
+                <cache_policy>LRU</cache_policy>
                 <max_size>100</max_size>
                 <max_elements>10</max_elements>
                 <max_file_segment_size>10</max_file_segment_size>
                 <boundary_alignment>10</boundary_alignment>
-                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_on_write_operations>0</cache_on_write_operations>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
-            </s3_cache_02944>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+            </s3_cache_02944_lru>
+            <s3_cache_02944_slru>
+                <type>cache</type>
+                <disk>s3_disk_02944</disk>
+                <path>s3_cache_02944_slru/</path>
+                <cache_policy>SLRU</cache_policy>
+                <max_size>100</max_size>
+                <max_elements>10</max_elements>
+                <max_file_segment_size>4</max_file_segment_size>
+                <boundary_alignment>4</boundary_alignment>
+                <cache_on_write_operations>0</cache_on_write_operations>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+            </s3_cache_02944_slru>
         </disks>
     </storage_configuration>
 </clickhouse>

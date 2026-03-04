@@ -2,6 +2,7 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Epoll.h>
 #include <Common/logger_useful.h>
 
@@ -132,7 +133,7 @@ void TimerDescriptor::drain() const
             throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd {}", timer_fd);
         }
 
-        chassert(res == sizeof(buf));  /// NOLINT(bugprone-sizeof-expression)
+        chassert(res == sizeof(buf));
     }
 }
 

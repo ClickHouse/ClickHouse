@@ -9,7 +9,7 @@
 
 #include <snappy-c.h>
 
-#include "HadoopSnappyReadBuffer.h"
+#include <IO/HadoopSnappyReadBuffer.h>
 
 #include <IO/WithFileName.h>
 
@@ -216,7 +216,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
 
     if (decoder->result == Status::OK)
     {
-        decoder->reset();
+        (*decoder).reset();
         if (in->eof())
         {
             eof = true;

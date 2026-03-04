@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 set -e
 
@@ -11,6 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 container="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
+
+hostname="${HOSTNAME}"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists test_azure_mt"
 
@@ -24,6 +27,7 @@ settings disk = disk(
     path='/var/lib/clickhouse/disks/${container}/tables',
     container_name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables/',
+    endpoint_subpath = '${hostname}',
     account_name = 'devstoreaccount1',
     account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
 "

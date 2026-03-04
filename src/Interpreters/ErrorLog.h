@@ -19,7 +19,10 @@ struct ErrorLogElement
     ErrorCodes::ErrorCode code{};
     ErrorCodes::Value value{};
     bool remote{};
-
+    UInt64 last_error_time = 0;
+    String last_error_message{};
+    String last_error_query_id{};
+    std::vector<void *> last_error_trace{};
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -33,6 +36,16 @@ class ErrorLog : public PeriodicLog<ErrorLogElement>
 
 protected:
     void stepFunction(TimePoint current_time) override;
+
+private:
+    struct ValuePair
+    {
+        UInt64 local = 0;
+        UInt64 remote = 0;
+    };
+    /// stepFunction and flushBufferToLog may be executed concurrently, hence the mutex
+    std::vector<ValuePair> previous_values TSA_GUARDED_BY(previous_values_mutex) = std::vector<ValuePair>(ErrorCodes::end());
+    mutable std::mutex previous_values_mutex;
 };
 
 }

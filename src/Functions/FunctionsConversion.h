@@ -10,22 +10,26 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObjectDeprecated.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Core/callOnTypeIndex.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -36,8 +40,8 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -46,8 +50,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
@@ -58,6 +62,7 @@
 #include <Functions/FunctionsCodingIP.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/TransformTime64.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/toFixedString.h>
 #include <IO/Operators.h>
@@ -66,7 +71,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
 #include <Common/Concepts.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
@@ -81,11 +85,14 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -104,15 +111,45 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
-    extern const int TYPE_MISMATCH;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
+
+struct FunctionConvertSettings
+{
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    const bool precise_float_parsing;
+    const bool cast_ipv4_ipv6_default_on_conversion_error;
+    const bool cast_string_to_variant_use_inference;
+    const bool cast_string_to_dynamic_use_inference;
+    const bool input_format_ipv4_default_on_conversion_error;
+    const bool input_format_ipv6_default_on_conversion_error;
+    const bool check_conversion_from_numbers_to_enum;
+    const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
+    const FormatSettings format_settings;
+
+    /// Note: context may be nullptr (i.e. via castColumn())
+    explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
+        /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
+        : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
+        , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
+        , cast_ipv4_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error])
+        , cast_string_to_variant_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_variant_use_inference])
+        , cast_string_to_dynamic_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference])
+        , input_format_ipv4_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error])
+        , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
+        , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
+        , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
+        , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
+        , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+    {
+    }
+};
 
 namespace detail
 {
@@ -140,7 +177,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -186,132 +223,145 @@ struct ToDateTimeImpl
     }
 };
 
+/** Conversion of Date to Time: adding 00:00:00 time component.
+  */
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
+struct ToTimeImpl
+{
+    static constexpr auto name = "toTime";
+
+    static Int32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Day number {} is out of bounds of type Time", d);
+        }
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        {
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
+        }
+        return static_cast<Int32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(time_zone.toTime(d)))));
+    }
+
+    static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        {
+            d = static_cast<Int32>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
+        }
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
+        }
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(d)))));
+    }
+
+    static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
+    {
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt))))));
+    }
+
+    static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
+    {
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
+        Int64 offset = time_zone.timezoneOffset(dt64);
+        Int64 local_seconds = (dt64 + offset) % 86400;
+        if (local_seconds < 0)
+            local_seconds += 86400;
+
+        if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
+            }
+            else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            {
+                return MAX_TIME_TIMESTAMP;
+            }
+        }
+
+        return static_cast<Int32>(local_seconds);
+    }
+};
 
 /// Implementation of toDate function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform32Or64
+requires is_arithmetic_v<FromType>
+struct ToDateTransformFromSecondsOrDays
 {
     static constexpr auto name = "toDate";
 
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
             if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
         }
+
+        if constexpr (is_signed_v<FromType>)
+            if (from < 0)
+            {
+                if constexpr (overflow_throw)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                else
+                    return 0;
+            }
+
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
-        if (from <= DATE_LUT_MAX_DAY_NUM)
-            return from;
-        else
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
-    }
-};
+        if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
+            if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
+                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
 
-
-template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform32Or64Signed
-{
-    static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        // TODO: decide narrow or extended range based on FromType
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < 0 || from > MAX_DATE_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-        }
-        else
-        {
-            if (from < 0)
-                return 0;
-        }
-        return (from <= DATE_LUT_MAX_DAY_NUM)
-            ? static_cast<UInt16>(from)
-            : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
-    }
-};
-
-template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform8Or16Signed
-{
-    static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl &)
-    {
-        if (from < 0)
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-            else
-                return 0;
-        }
-        return from;
+        return static_cast<UInt16>(from);
     }
 };
 
 /// Implementation of toDate32 function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDate32Transform32Or64
+requires is_arithmetic_v<FromType>
+struct ToDate32TransformFromSecondsOrDays
 {
     static constexpr auto name = "toDate32";
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+        constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
+
+        if constexpr (is_signed_v<FromType>)
         {
-            return static_cast<Int32>(from);
-        }
-        else
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            bool is_nan = false;
+            if constexpr (is_floating_point<FromType>)
+                 is_nan = isNaN(from);
+            if (is_nan || from < daynum_min_offset)
             {
-                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+                if constexpr (overflow_throw)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                return daynum_min_offset;
             }
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
-        }
-    }
-};
-
-template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDate32Transform32Or64Signed
-{
-    static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
-
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
         }
 
-        if (from < daynum_min_offset)
-            return daynum_min_offset;
+        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
+            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
 
-        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? static_cast<Int32>(from)
-            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+        if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
+            if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
+                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+
+        return static_cast<Int32>(from);
     }
 };
 
-template <typename FromType>
-struct ToDate32Transform8Or16Signed
-{
-    static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl &)
-    {
-        return from;
-    }
-};
+/// Implementation of toDateTime function.
 
 template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransform64
@@ -363,6 +413,81 @@ struct ToDateTimeTransform64Signed
         if (from < 0)
             return 0;
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+    }
+};
+
+/** Conversion of numeric to Time
+  */
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTimeTransformFromDateTime
+{
+    static constexpr auto name = "toTime";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        auto utc_seconds = from;
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
+        Int64 offset = time_zone.timezoneOffset(utc_seconds);
+        /// compute local time-of-day in seconds
+        Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
+        if (local_seconds < 0)
+            local_seconds += 86400;
+
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+        }
+
+        return static_cast<ToType>(std::min(time_t(local_seconds), time_t(MAX_TIME_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTimeTransform64
+{
+    static constexpr auto name = "toTime";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from > MAX_TIME_TIMESTAMP || from < (-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+        }
+
+        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTimeTransformSigned
+{
+    static constexpr auto name = "toTime";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        return static_cast<ToType>(from);
+    }
+};
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTimeTransform64Signed
+{
+    static constexpr auto name = "toTime";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+        }
+        if (from > 0)
+            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+        else
+            return static_cast<ToType>(std::max(time_t(from), time_t(-1 * MAX_TIME_TIMESTAMP)));
     }
 };
 
@@ -456,8 +581,17 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
-        return execute(dt, time_zone);
+        /*
+         * Previous implementation delegated to ToDateTimeImpl, which returns a
+         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
+         * This caused overflows when casting Date values beyond that day to
+         * DateTime64.
+         *
+         * Compute the timestamp directly in 64-bit space from the day number so we
+         * can represent the full range supported by DateTime64.
+         */
+        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
@@ -469,6 +603,116 @@ struct ToDateTime64Transform
     DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+};
+
+/** Conversion of numeric to Time64
+  */
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTime64TransformUnsigned
+{
+    static constexpr auto name = "toTime64";
+
+    const Time64::NativeType scale_multiplier;
+
+    ToTime64TransformUnsigned(UInt32 scale) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
+    {}
+
+    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
+    {
+        const auto converted = time_zone.toTime(from);
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+            else
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
+        }
+        else
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+    }
+};
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTime64TransformSigned
+{
+    static constexpr auto name = "toTime64";
+
+    const Time64::NativeType scale_multiplier;
+
+    ToTime64TransformSigned(UInt32 scale) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
+    {}
+
+    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+        }
+
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
+    }
+};
+
+template <typename FromDataType, typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToTime64TransformFloat
+{
+    static constexpr auto name = "toTime64";
+
+    const UInt32 scale;
+
+    ToTime64TransformFloat(UInt32 scale_) /// NOLINT
+        : scale(scale_)
+    {}
+
+    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+        } // need to reconsider this
+
+        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
+    }
+};
+
+struct ToTime64Transform
+{
+    static constexpr auto name = "toTime64";
+
+    const Time64::NativeType scale_multiplier;
+
+    ToTime64Transform(UInt32 scale) /// NOLINT
+        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
+    {}
+
+    Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    {
+        const auto dt = ToTimeImpl<>::execute(d, time_zone);
+        return execute(dt, time_zone);
+    }
+
+    Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    {
+        // DataTypeTime stores seconds (or total seconds for hhh:mm:ss). Preserve value and add scale
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(d, 0, scale_multiplier);
+    }
+
+    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
+    {
+        /// Compute local seconds-of-day using timezone offset at this moment.
+        Int64 offset = time_zone.timezoneOffset(dt);
+        Int64 local_seconds = (static_cast<Int64>(dt) + offset) % 86400;
+        if (local_seconds < 0)
+            local_seconds += 86400;
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(local_seconds, 0, scale_multiplier);
     }
 };
 
@@ -529,6 +773,28 @@ struct FormatImpl<DataTypeDateTime64>
     }
 };
 
+template <>
+struct FormatImpl<DataTypeTime>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeTime::FieldType x, WriteBuffer & wb, const DataTypeTime *, const DateLUTImpl * time_zone)
+    {
+        writeTimeText(x, wb, *time_zone);
+        return ReturnType(true);
+    }
+};
+
+template <>
+struct FormatImpl<DataTypeTime64>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeTime64::FieldType x, WriteBuffer & wb, const DataTypeTime64 * type, const DateLUTImpl *)
+    {
+        writeTime64Text(Time64(x), type->getScale(), wb);
+        return ReturnType(true);
+    }
+};
+
 
 template <typename FieldType>
 struct FormatImpl<DataTypeEnum<FieldType>>
@@ -544,7 +810,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
         }
         else
         {
-            StringRef res;
+            std::string_view res;
             bool is_ok = type->getNameForValue(x, res);
             if (is_ok)
                 writeString(res, wb);
@@ -571,7 +837,7 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 template <typename StringColumnType>
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const ContextPtr & context)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const FormatSettings & format_settings)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to serialize to ColumnString or ColumnFixedString");
@@ -586,18 +852,17 @@ struct ConvertImplGenericToString
         auto col_to = removeNullable(result_type)->createColumn();
 
         {
-            ColumnStringHelpers::WriteHelper write_helper(
+            ColumnStringHelpers::WriteHelper<StringColumnType> write_helper(
                     assert_cast<StringColumnType &>(*col_to),
                     size);
 
             auto & write_buffer = write_helper.getWriteBuffer();
 
-            FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
-                write_helper.rowWritten();
+                write_helper.finishRow();
             }
 
             write_helper.finalize();
@@ -626,6 +891,15 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
         x = MAX_DATETIME_TIMESTAMP;
     else
         x = static_cast<UInt32>(time);
+}
+
+template <>
+inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & time)
+{
+    if (unlikely(time > MAX_TIME_TIMESTAMP))
+        x = MAX_TIME_TIMESTAMP;
+    else
+        x = static_cast<Int32>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -668,6 +942,14 @@ inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuf
     time_t time = 0;
     readDateTimeText(time, rb, *time_zone);
     convertFromTime<DataTypeDateTime>(x, time);
+}
+
+template <>
+inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+{
+    time_t time = 0;
+    readTimeText(time, rb, *time_zone);
+    convertFromTime<DataTypeTime>(x, time);
 }
 
 template <>
@@ -739,6 +1021,16 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 }
 
 template <>
+[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+{
+    time_t time = 0;
+    if (!tryReadTimeText(time, rb, *time_zone))
+        return false;
+    convertFromTime<DataTypeTime>(x, time);
+    return true;
+}
+
+template <>
 inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
 {
     UUID tmp;
@@ -804,7 +1096,7 @@ enum class ConvertFromStringExceptionMode : uint8_t
 
 enum class ConvertFromStringParsingMode : uint8_t
 {
-    Normal,
+    Basic,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
     BestEffortUS
 };
@@ -826,11 +1118,13 @@ struct ConvertThroughParsing
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
+    static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero bytes at end.
+        /// In case of FixedString, skip zero padding at the end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -864,7 +1158,7 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count, const FunctionConvertSettings & settings,
                         Additions additions [[maybe_unused]] = Additions())
     {
         using ColVecTo = typename ToDataType::ColumnType;
@@ -872,8 +1166,8 @@ struct ConvertThroughParsing
         const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
-        /// For conversion to Date or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
+        /// For conversion to Date/Time or DateTime type, second argument with time zone could be specified.
+        if constexpr (to_datetime || std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
         {
             const auto result_type = removeNullable(res_type);
             // Time zone is already figured out during result type resolution, no need to do it here.
@@ -914,6 +1208,10 @@ struct ConvertThroughParsing
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
             }
+            else if constexpr (to_time64)
+            {
+                ToDataType check_bounds_in_ctor(scale);
+            }
             else
             {
                 ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
@@ -950,32 +1248,34 @@ struct ConvertThroughParsing
 
         size_t current_offset = 0;
 
-        bool precise_float_parsing = false;
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
-        }
-
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
@@ -984,13 +1284,25 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
@@ -1005,6 +1317,12 @@ struct ConvertThroughParsing
                     {
                         DateTime64 value = 0;
                         readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 value = 0;
+                        readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
@@ -1025,13 +1343,21 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID>)
+                            {
+                                if (fixed_string_size == UUID_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    break;
+                                }
+                            }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
-                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
+                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing))
                                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
                             }
                             else
-                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
                         } while (false);
                     }
                 }
@@ -1043,13 +1369,25 @@ struct ConvertThroughParsing
             {
                 bool parsed;
 
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1058,13 +1396,25 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1081,20 +1431,28 @@ struct ConvertThroughParsing
                         parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 value = 0;
+                        parsed = tryReadTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
-                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
-                            && fixed_string_size == IPV6_BINARY_LENGTH)
+                    else if (
+                        std::is_same_v<FromDataType, DataTypeFixedString>
+                        && ((std::is_same_v<ToDataType, DataTypeIPv6> && fixed_string_size == IPV6_BINARY_LENGTH)
+                            || (std::is_same_v<ToDataType, DataTypeUUID> && fixed_string_size == UUID_BINARY_LENGTH)))
                     {
                         readBinary(vec_to[i], read_buffer);
                         parsed = true;
                     }
                     else
                     {
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
                     }
                 }
 
@@ -1138,6 +1496,305 @@ enum class BehaviourOnErrorFromString : uint8_t
     ConvertReturnZeroOnErrorTag
 };
 
+
+/// All helper functions below are extracted from `ConvertImpl::execute` which was marked
+/// NO_SANITIZE_UNDEFINED. The attribute must be preserved on each extracted function to
+/// keep the same UBSan behavior as before the refactoring.
+template <typename FromFieldType, typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertToBool(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    for (size_t i = 0; i < input_rows_count; i++)
+        vec_to[i] = vec_from[i] != FromFieldType(0);
+}
+
+template <typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromUUIDToUInt128(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    static_assert(
+        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
+        "UInt128 and UUID types must be same");
+
+    for (size_t i = 0; i < input_rows_count; i++)
+    {
+        vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
+        vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
+    }
+}
+
+template <typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromUInt128toIPv6(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    static_assert(
+        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
+        "IPv6 and UInt128 types must be same");
+
+    for (size_t i = 0; i < input_rows_count; i++)
+    {
+        vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
+        vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
+    }
+}
+
+template <typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromIPv6ToUInt128(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    static_assert(
+        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
+        "UInt128 and IPv6 types must be same");
+
+    for (size_t i = 0; i < input_rows_count; i++)
+    {
+        vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
+        vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
+    }
+}
+
+template <typename ToFieldType, typename ColVecToData>
+static void NO_SANITIZE_UNDEFINED convertDateTimeToZero(ColVecToData & vec_to, size_t input_rows_count)
+{
+    for (size_t i = 0; i < input_rows_count; i++)
+        vec_to[i] = static_cast<ToFieldType>(0);
+}
+
+template <typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromIPv6ToIPv4(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count, const ColumnWithTypeAndName & named_from)
+{
+    const uint8_t ip4_cidr[] {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00};
+
+    for (size_t i = 0; i < input_rows_count; i++)
+    {
+        const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+        if (!matchIPv6Subnet(src, ip4_cidr, 96))
+        {
+            char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+            char * paddr = addr;
+            formatIPv6(src, paddr);
+
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 {} in column {} is not in IPv4 mapping block", addr, named_from.column->getName());
+        }
+
+        uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            dst[0] = src[15];
+            dst[1] = src[14];
+            dst[2] = src[13];
+            dst[3] = src[12];
+        }
+        else
+        {
+            dst[0] = src[12];
+            dst[1] = src[13];
+            dst[2] = src[14];
+            dst[3] = src[15];
+        }
+    }
+}
+
+template <typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromIPv4ToIPv6(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    for (size_t i = 0; i < input_rows_count; i++)
+    {
+        const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
+        uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
+        std::memset(dst, '\0', IPV6_BINARY_LENGTH);
+        dst[10] = dst[11] = 0xff;
+
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            dst[12] = src[3];
+            dst[13] = src[2];
+            dst[14] = src[1];
+            dst[15] = src[0];
+        }
+        else
+        {
+            dst[12] = src[0];
+            dst[13] = src[1];
+            dst[14] = src[2];
+            dst[15] = src[3];
+        }
+    }
+}
+
+template <typename ToFieldType, typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertFromUInt64ToIPv4(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    for (size_t i = 0; i < input_rows_count; i++)
+        vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
+}
+
+template <typename ToFieldType, typename ColVecToData, typename ColVecFromData>
+static void NO_SANITIZE_UNDEFINED convertToUnixTimestampFromDate(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
+{
+    for (size_t i = 0; i < input_rows_count; i++)
+        vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
+}
+
+template <typename Additions, typename FromDataType, typename ToDataType, typename ColTo, typename ColFrom>
+static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom & col_from, size_t input_rows_count)
+{
+    const auto & vec_from = col_from->getData();
+    auto & vec_to = col_to->getData();
+
+    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    {
+        using ToFieldType = typename ToDataType::FieldType;
+        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+        ColumnUInt8::Container & vec_null_map_to = col_null_map_to->getData();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            ToFieldType result;
+            bool convert_result = false;
+
+            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
+            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
+
+            if (convert_result)
+                vec_to[i] = result;
+            else
+            {
+                vec_to[i] = static_cast<ToFieldType>(0);
+                vec_null_map_to[i] = true;
+            }
+        }
+
+        return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
+            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
+            else
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported data type in conversion function");
+        }
+
+        return std::forward<ColTo>(col_to);
+    }
+}
+
+
+template <typename Additions, typename FromFieldType, typename ToFieldType, typename ColVecToData, typename ColVecFromData>
+static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
+    typename ColumnVector<ToFieldType>::MutablePtr && col_to,
+    ColVecToData & vec_to,
+    ColVecFromData & vec_from,
+    size_t input_rows_count,
+    const ColumnWithTypeAndName & named_from,
+    const DataTypePtr & result_type)
+{
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    {
+        col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        /// Handle NaN/Inf when converting from float to integer
+        if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
+        {
+            if (!isFinite(vec_from[i]))
+            {
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    vec_to[i] = 0;
+                    (*vec_null_map_to)[i] = true;
+                    continue;
+                }
+                else
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+            }
+        }
+
+        /// Accurate conversion with overflow checks
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+        {
+            bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
+
+            if (!convert_result)
+            {
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    vec_to[i] = 0;
+                    (*vec_null_map_to)[i] = true;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                        named_from.column->getName(), result_type->getName());
+                }
+            }
+        }
+#if defined(__aarch64__)
+        /// ARM64 optimized conversion: UInt64 -> BFloat16
+        else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
+        {
+            const UInt64* __restrict s = &vec_from[i];
+            BFloat16* __restrict d = &vec_to[i];
+            size_t remaining = input_rows_count - i;
+
+#if !defined(OS_DARWIN)
+            _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+#endif
+            for (size_t j = 0; j < remaining; ++j)
+            {
+                double tmp = static_cast<double>(s[j]);
+                float f = static_cast<float>(tmp);
+                d[j] = BFloat16(f);
+            }
+
+            i += remaining - 1;
+        }
+        /// ARM64 optimized conversion: UInt64 -> Float32
+        else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
+        {
+            const UInt64* __restrict s = &vec_from[i];
+            Float32* __restrict d = &vec_to[i];
+            size_t remaining = input_rows_count - i;
+
+#if !defined(OS_DARWIN)
+            _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+#endif
+            for (size_t j = 0; j < remaining; ++j)
+            {
+                double tmp = static_cast<double>(s[j]);
+                d[j] = Float32(tmp);
+            }
+
+            i += remaining - 1;
+        }
+#endif
+        /// Default: simple static_cast conversion
+        else
+        {
+            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+        }
+    }
+
+    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+    else
+        return std::move(col_to);
+}
+
+
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
@@ -1148,7 +1805,7 @@ struct ConvertImpl
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], Additions additions = Additions())
+        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], const FunctionConvertSettings & settings, Additions additions = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1186,115 +1843,134 @@ struct ConvertImpl
             return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
-          * Float32, Float64) to Date. If the
+        /** Special case of converting Int8, Int16, (U)Int32, (U)Int64, (U)Int128 or (U)Int256 (and also, for convenience,
+          * Float32, Float64, BFloat16) to Date. If the
           * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
           * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
           * It's a bit illogical, as we actually have two functions in one.
           * But allows to support frequent case,
           *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
           *  (otherwise such usage would be frequent mistake).
+          *
+          * Same for converting to Date32, but the threshold is 120530 (DATE_LUT_MAX_EXTEND_DAY_NUM)
+          * instead of 65536.
           */
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>)
-            && std::is_same_v<ToDataType, DataTypeDate>)
+            std::is_same_v<FromDataType, DataTypeUInt16>
+            || std::is_same_v<FromDataType, DataTypeUInt32>
+            || std::is_same_v<FromDataType, DataTypeUInt64>
+            || std::is_same_v<FromDataType, DataTypeUInt128>
+            || std::is_same_v<FromDataType, DataTypeUInt256>
+            || std::is_same_v<FromDataType, DataTypeInt8>
+            || std::is_same_v<FromDataType, DataTypeInt16>
+            || std::is_same_v<FromDataType, DataTypeInt32>
+            || std::is_same_v<FromDataType, DataTypeInt64>
+            || std::is_same_v<FromDataType, DataTypeInt128>
+            || std::is_same_v<FromDataType, DataTypeInt256>
+            || std::is_same_v<FromDataType, DataTypeFloat32>
+            || std::is_same_v<FromDataType, DataTypeFloat64>
+            || std::is_same_v<FromDataType, DataTypeBFloat16>
+            ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeInt8>
-                || std::is_same_v<FromDataType, DataTypeInt16>)
-            && std::is_same_v<ToDataType, DataTypeDate>)
+            std::is_same_v<FromDataType, DataTypeUInt16>
+            || std::is_same_v<FromDataType, DataTypeUInt32>
+            || std::is_same_v<FromDataType, DataTypeUInt64>
+            || std::is_same_v<FromDataType, DataTypeUInt128>
+            || std::is_same_v<FromDataType, DataTypeUInt256>
+            || std::is_same_v<FromDataType, DataTypeInt16>
+            || std::is_same_v<FromDataType, DataTypeInt32>
+            || std::is_same_v<FromDataType, DataTypeInt64>
+            || std::is_same_v<FromDataType, DataTypeInt128>
+            || std::is_same_v<FromDataType, DataTypeInt256>
+            || std::is_same_v<FromDataType, DataTypeFloat32>
+            || std::is_same_v<FromDataType, DataTypeFloat64>
+            || std::is_same_v<FromDataType, DataTypeBFloat16>
+            ) && std::is_same_v<ToDataType, DataTypeDate32>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeInt32>
-                || std::is_same_v<FromDataType, DataTypeInt64>
-                || std::is_same_v<FromDataType, DataTypeFloat32>
-                || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDate>)
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>)
-            && std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeInt8>
-                || std::is_same_v<FromDataType, DataTypeInt16>)
-            && std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeInt32>
-                || std::is_same_v<FromDataType, DataTypeInt64>
-                || std::is_same_v<FromDataType, DataTypeFloat32>
-                || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>)
-            && std::is_same_v<ToDataType, DataTypeDateTime>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && std::is_same_v<ToDataType, DataTypeDateTime>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt64>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>
                 || std::is_same_v<FromDataType, DataTypeInt64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
+            else
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
@@ -1309,6 +1985,12 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
+            && std::is_same_v<ToDataType, DataTypeTime>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
@@ -1319,7 +2001,96 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeTime>)
+                            && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64Transform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
+                        && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            using ToFieldType = typename ToDataType::FieldType;
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+            typename ColVecTo::MutablePtr col_to = nullptr;
+
+            const DateLUTImpl * time_zone = nullptr;
+
+            UInt32 scale;
+
+            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                scale = additions.scale;
+            else
+                scale = additions;
+
+            col_to = ColVecTo::create(0, scale);
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
+            vec_to.resize(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to = nullptr;
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+
+            // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
+            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+            time_zone = &from_type.getTimeZone();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
+
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    ToFieldType result;
+                    bool convert_result = false;
+
+                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+
+                    if (convert_result)
+                        vec_to[i] = result;
+                    else
+                    {
+                        vec_to[i] = static_cast<ToFieldType>(0);
+                        (*vec_null_map_to)[i] = true;
+                    }
+                }
+                else
+                {
+                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                }
+
+                auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
+
+                // Get the UTC seconds (the integer part) from the input value
+                auto utc_seconds = vec_to[i] / scale_mult;
+                auto fraction = vec_to[i] % scale_mult;
+
+                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
+                Int64 offset = time_zone->timezoneOffset(utc_seconds);
+                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
+                if (local_seconds < 0)
+                    local_seconds += 86400;
+
+                // Reassemble the result
+                vec_to[i] = local_seconds * scale_mult + fraction;
+            }
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            else
+                return col_to;
+        }
+        else if constexpr (IsDataTypeDateOrDateTimeOrTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
         {
             /// Date or DateTime to String
@@ -1365,13 +2136,17 @@ struct ConvertImpl
                 size_t size = vec_from.size();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+                    data_to.resize(size * strlen("hhh:mm:ss"));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
+                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale()));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
@@ -1382,14 +2157,7 @@ struct ConvertImpl
 
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
-                bool cut_trailing_zeros_align_to_groups_of_thousands = false;
-                if (DB::CurrentThread::isInitialized())
-                {
-                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-                    if (query_context)
-                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
-                }
+                bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -1400,8 +2168,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -1413,12 +2181,18 @@ struct ConvertImpl
                             else
                                 is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
+                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
+                            else
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         else
                         {
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1428,8 +2202,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -1440,11 +2214,17 @@ struct ConvertImpl
                             else
                                 FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
+                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
+                            else
+                                FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         else
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1475,7 +2255,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
+                data_to.resize(size * n);
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1491,8 +2271,6 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
-                    data_to[offset_to] = 0;
-                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
@@ -1527,7 +2305,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3);
+                data_to.resize(size * 3); /// A guess (arbitrary).
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -1539,7 +2317,6 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1548,7 +2325,6 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1568,34 +2344,52 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeUInt32>)
         {
             return ConvertImpl<FromDataType, DataTypeDateTime, Name, date_time_overflow_behavior>::template execute<Additions>(
-                arguments, result_type, input_rows_count, from_string_tag);
+                arguments, result_type, input_rows_count, from_string_tag, settings);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>))
         {
+#define GENERATE_PARSING_MODE_CASE(PARSING_MODE, EXCEPTION_MODE) \
+    case FormatSettings::DateTimeInputFormat::PARSING_MODE: \
+    { \
+        return ConvertThroughParsing<FromDataType, \
+                                     ToDataType, \
+                                     Name, \
+                                     ConvertFromStringExceptionMode::EXCEPTION_MODE, \
+                                     ConvertFromStringParsingMode::PARSING_MODE>::execute(arguments, result_type, input_rows_count, settings, additions); \
+    }
+
             switch (from_string_tag)
             {
-            case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Throw,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
-            case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Null,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
-            case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
-                return ConvertThroughParsing<FromDataType,
-                                             ToDataType,
-                                             Name,
-                                             ConvertFromStringExceptionMode::Zero,
-                                             ConvertFromStringParsingMode::Normal>::execute(
-                        arguments, result_type, input_rows_count, additions);
+                case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
+                {
+                    switch (settings.cast_string_to_date_time_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Throw)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Throw)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Throw)
+                    }
+                }
+                case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
+                {
+                    switch (settings.cast_string_to_date_time_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Null)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Null)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Null)
+                    }
+                }
+                case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
+                {
+                    switch (settings.cast_string_to_date_time_mode)
+                    {
+                        GENERATE_PARSING_MODE_CASE(Basic, Zero)
+                        GENERATE_PARSING_MODE_CASE(BestEffort, Zero)
+                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Zero)
+                    }
+                }
             }
+
+#undef GENERATE_PARSING_MODE_CASE
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -1635,10 +2429,11 @@ struct ConvertImpl
 
             if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>)
+                && !(std::is_same_v<DataTypeTime64, FromDataType> || std::is_same_v<DataTypeTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
-                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    named_from.column->getName(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -1671,207 +2466,111 @@ struct ConvertImpl
             auto & vec_to = col_to->getData();
             vec_to.resize(input_rows_count);
 
-            ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            /// Helper macro to wrap result in Nullable if needed (creates empty null map for special conversions)
+            #define RETURN_NULLABLE_IF_NEEDED(col_name) \
+                do { \
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>) \
+                    { \
+                        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false); \
+                        return ColumnNullable::create(std::move(col_name), std::move(col_null_map_to)); \
+                    } \
+                    else \
+                        return col_name; \
+                } while (false)
+
+            /// Bool conversion
+            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                vec_null_map_to = &col_null_map_to->getData();
-            }
-
-            bool result_is_bool = isBool(result_type);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                if (isBool(result_type))
                 {
-                    if (result_is_bool)
-                    {
-                        vec_to[i] = vec_from[i] != FromFieldType(0);
-                        continue;
-                    }
-                }
-
-                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType, DataTypeUInt128>)
-                {
-                    static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
-                        "UInt128 and UUID types must be same");
-
-                    vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
-                    vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
-                {
-                    static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
-                        "UInt128 and IPv6 types must be same");
-
-                    vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
-                    vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Conversion between numeric types and UUID is not supported. "
-                                    "Probably the passed UUID is unquoted");
-                }
-                else if constexpr (
-                    (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6>
-                        || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeIPv6>))
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
-                                    TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>
-                    && !(std::is_same_v<ToDataType, DataTypeIPv4> || std::is_same_v<FromDataType, DataTypeIPv4>))
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Conversion between numeric types and IPv6 is not supported. "
-                                    "Probably the passed IPv6 is unquoted");
-                }
-                else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
-                {
-                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                    {
-                        ToFieldType result;
-                        bool convert_result = false;
-
-                        if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-                        else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                            convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
-                        else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
-
-                        if (convert_result)
-                            vec_to[i] = result;
-                        else
-                        {
-                            vec_to[i] = static_cast<ToFieldType>(0);
-                            (*vec_null_map_to)[i] = true;
-                        }
-                    }
-                    else
-                    {
-                        if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-                        else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                            vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
-                        else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                            vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
-                        else
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported data type in conversion function");
-                    }
-                }
-                else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeIPv6>)
-                {
-                    const uint8_t ip4_cidr[] {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00};
-                    const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
-                    if (!matchIPv6Subnet(src, ip4_cidr, 96))
-                    {
-                        char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
-                        char * paddr = addr;
-                        formatIPv6(src, paddr);
-
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 {} in column {} is not in IPv4 mapping block", addr, named_from.column->getName());
-                    }
-
-                    uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        dst[0] = src[15];
-                        dst[1] = src[14];
-                        dst[2] = src[13];
-                        dst[3] = src[12];
-                    }
-                    else
-                    {
-                        dst[0] = src[12];
-                        dst[1] = src[13];
-                        dst[2] = src[14];
-                        dst[3] = src[15];
-                    }
-                }
-                else if constexpr (std::is_same_v<ToDataType, DataTypeIPv6> && std::is_same_v<FromDataType, DataTypeIPv4>)
-                {
-                    const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_from[i].toUnderType());
-                    uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_to[i].toUnderType());
-                    std::memset(dst, '\0', IPV6_BINARY_LENGTH);
-                    dst[10] = dst[11] = 0xff;
-
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        dst[12] = src[3];
-                        dst[13] = src[2];
-                        dst[14] = src[1];
-                        dst[15] = src[0];
-                    }
-                    else
-                    {
-                        dst[12] = src[0];
-                        dst[13] = src[1];
-                        dst[14] = src[2];
-                        dst[15] = src[3];
-                    }
-                }
-                else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
-                {
-                    vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
-                }
-                else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
-                    && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
-                {
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
-                }
-                else
-                {
-                    /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                    if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
-                    {
-                        if (!isFinite(vec_from[i]))
-                        {
-                            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                            {
-                                vec_to[i] = 0;
-                                (*vec_null_map_to)[i] = true;
-                                continue;
-                            }
-                            else
-                                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
-                        }
-                    }
-
-                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                            || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                    {
-                        bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
-
-                        if (!convert_result)
-                        {
-                            if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                            {
-                                vec_to[i] = 0;
-                                (*vec_null_map_to)[i] = true;
-                            }
-                            else
-                            {
-                                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                                    named_from.column->getName(), result_type->getName());
-                            }
-                        }
-                    }
-                    else
-                    {
-                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                    }
+                    convertToBool<FromFieldType>(vec_to, vec_from, input_rows_count);
+                    RETURN_NULLABLE_IF_NEEDED(col_to);
                 }
             }
 
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            /// UUID <-> UInt128 conversions
+            if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType, DataTypeUInt128>)
+            {
+                convertFromUUIDToUInt128(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// IPv6 <-> UInt128 conversions
+            if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
+            {
+                convertFromIPv6ToUInt128(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+            else if constexpr (std::is_same_v<FromDataType, DataTypeUInt128> && std::is_same_v<ToDataType, DataTypeIPv6>)
+            {
+                convertFromUInt128toIPv6(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// Date/Time conversions
+            else if constexpr (
+                ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
+                    && (std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeTime64>))
+                || ((std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
+                    && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
+            {
+                convertDateTimeToZero<ToFieldType>(vec_to, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// IPv4 <-> IPv6 conversions
+            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeIPv6>)
+            {
+                convertFromIPv6ToIPv4(vec_to, vec_from, input_rows_count, named_from);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv6> && std::is_same_v<FromDataType, DataTypeIPv4>)
+            {
+                convertFromIPv4ToIPv6(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// UInt64 -> IPv4 conversion
+            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
+            {
+                convertFromUInt64ToIPv4<ToFieldType>(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// Date to Unix timestamp conversion
+            else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
+                && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
+            {
+                convertToUnixTimestampFromDate<ToFieldType>(vec_to, vec_from, input_rows_count);
+                RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// Type compatibility checks
+            else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Conversion between numeric types and UUID is not supported. "
+                                "Probably the passed UUID is unquoted");
+            else if constexpr (
+                (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
+                && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeIPv6>
+                    || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeIPv6>))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
+                                TypeName<typename FromDataType::FieldType>, TypeName<typename ToDataType::FieldType>);
+            else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>
+                && !(std::is_same_v<ToDataType, DataTypeIPv4> || std::is_same_v<FromDataType, DataTypeIPv4>))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Conversion between numeric types and IPv6 is not supported. "
+                                "Probably the passed IPv6 is unquoted");
+
+            /// Decimal conversions
+            else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count);
+
+            /// General numeric conversion
             else
-                return col_to;
+                return convertNumericGeneral<Additions, FromFieldType, ToFieldType>(std::move(col_to), vec_to, vec_from, input_rows_count, named_from, result_type);
+
+#undef RETURN_NULLABLE_IF_NEEDED
         }
     }
 };
@@ -1881,7 +2580,7 @@ struct ConvertImpl
 template <bool throw_on_error>
 struct ConvertImplGenericFromString
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count, const ContextPtr & context)
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count, const FunctionConvertSettings & settings)
     {
         const IColumn & column_from = *arguments[0].column;
         const IDataType & data_type_to = *result_type;
@@ -1889,7 +2588,7 @@ struct ConvertImplGenericFromString
         auto serialization = data_type_to.getDefaultSerialization();
         const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
 
-        executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get(), context);
+        executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get(), settings);
         return res;
     }
 
@@ -1900,11 +2599,10 @@ struct ConvertImplGenericFromString
         size_t input_rows_count,
         const PaddedPODArray<UInt8> * null_map,
         const IDataType * result_type,
-        const ContextPtr & context)
+        const FunctionConvertSettings & settings)
     {
         column_to.reserve(input_rows_count);
 
-        FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (null_map && (*null_map)[i])
@@ -1913,11 +2611,11 @@ struct ConvertImplGenericFromString
                 continue;
             }
 
-            const auto & val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val.data, val.size);
+            const auto val = column_from.getDataAt(i);
+            ReadBufferFromMemory read_buffer(val);
             try
             {
-                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+                serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
             }
             catch (const Exception &)
             {
@@ -1958,118 +2656,15 @@ struct ConvertImplFromDynamicToColumn
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
-    {
-        /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
-        /// and construct the result based on discriminators.
-        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
-        const auto & variant_column = column_dynamic.getVariantColumn();
-        const auto & variant_info = column_dynamic.getVariantInfo();
-
-        /// First, cast usual variants to result type.
-        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-        std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-        for (size_t i = 0; i != variant_types.size(); ++i)
-        {
-            /// Skip shared variant, it will be processed later.
-            if (i == column_dynamic.getSharedVariantDiscriminator())
-                continue;
-
-            ColumnsWithTypeAndName new_args = arguments;
-            new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
-            cast_variant_columns[i] = nested_convert(new_args, result_type);
-        }
-
-        /// Second, collect all variants stored in shared variant and cast them to result type.
-        std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
-        DataTypes variant_types_from_shared_variant;
-        /// We will need to know what variant to use when we see discriminator of a shared variant.
-        /// To do it, we remember what variant was extracted from each row and what was it's offset.
-        PaddedPODArray<UInt64> shared_variant_indexes;
-        PaddedPODArray<UInt64> shared_variant_offsets;
-        std::unordered_map<String, UInt64> shared_variant_to_index;
-        const auto & shared_variant = column_dynamic.getSharedVariant();
-        const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-        const auto & local_discriminators = variant_column.getLocalDiscriminators();
-        const auto & offsets = variant_column.getOffsets();
-        if (!shared_variant.empty())
-        {
-            shared_variant_indexes.reserve(input_rows_count);
-            shared_variant_offsets.reserve(input_rows_count);
-            FormatSettings format_settings;
-            const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                if (local_discriminators[i] == shared_variant_local_discr)
-                {
-                    auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data, value.size);
-                    auto type = decodeDataType(buf);
-                    auto type_name = type->getName();
-                    auto it = shared_variant_to_index.find(type_name);
-                    /// Check if we didn't create column for this variant yet.
-                    if (it == shared_variant_to_index.end())
-                    {
-                        it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
-                        variant_columns_from_shared_variant.push_back(type->createColumn());
-                        variant_types_from_shared_variant.push_back(type);
-                    }
-
-                    shared_variant_indexes.push_back(it->second);
-                    shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
-                    type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
-                }
-                else
-                {
-                    shared_variant_indexes.emplace_back();
-                    shared_variant_offsets.emplace_back();
-                }
-            }
-        }
-
-        /// Cast all extracted variants into result type.
-        std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-        for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
-        {
-            ColumnsWithTypeAndName new_args = arguments;
-            new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
-            cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
-        }
-
-        /// Construct result column from all cast variants.
-        auto res = result_type->createColumn();
-        res->reserve(input_rows_count);
-        for (size_t i = 0; i != input_rows_count; ++i)
-        {
-            auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
-            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-            {
-                res->insertDefault();
-            }
-            else if (global_discr == shared_variant_discr)
-            {
-                if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
-                else
-                    res->insertDefault();
-            }
-            else
-            {
-                if (cast_variant_columns[global_discr])
-                    res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
-                else
-                    res->insertDefault();
-            }
-        }
-
-        return res;
-    }
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert);
 };
 
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDate32 { static constexpr auto name = "toDate32"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
+struct NameToTime { static constexpr auto name = "toTime"; };
+struct NameToTime64 { static constexpr auto name = "toTime64"; };
 struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
 struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
 struct NameToString { static constexpr auto name = "toString"; };
@@ -2117,6 +2712,19 @@ constexpr bool mightBeDateTime()
     return false;
 }
 
+template <typename Name, typename ToDataType>
+constexpr bool mightBeTime()
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
+        return true;
+    else if constexpr (
+        std::is_same_v<Name, NameToTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
+        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
+        return true;
+
+    return false;
+}
+
 template<typename Name, typename ToDataType>
 inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 {
@@ -2131,6 +2739,24 @@ inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
     return false;
 }
 
+template <typename Name, typename ToDataType>
+inline bool isTime64(const ColumnsWithTypeAndName & arguments)
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
+        return true;
+    else if constexpr (std::is_same_v<Name, NameToTime>)
+    {
+        return (arguments.size() == 2 && isUInt(arguments[1].type)) || arguments.size() == 3;
+    }
+
+    return false;
+}
+
+#if USE_EMBEDDED_COMPILER
+bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type);
+llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
+#endif
+
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
@@ -2139,10 +2765,28 @@ public:
 
     static constexpr auto name = Name::name;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
+    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
-    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionConvert>(context, default_date_time_overflow_behavior);
+    }
+
+    static FunctionPtr createFromSettings(const FunctionConvertSettings & settings)
+    {
+        return std::make_shared<FunctionConvert>(settings);
+    }
+
+    FunctionConvert(ContextPtr context, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+        : settings(context, date_time_overflow_behavior)
+    {
+    }
+
+    explicit FunctionConvert(const FunctionConvertSettings & settings_)
+        : settings(settings_)
+    {
+    }
 
     String getName() const override
     {
@@ -2157,8 +2801,7 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
-    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
-    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
 
@@ -2169,20 +2812,11 @@ public:
         if (null_presence.has_nullable)
         {
             auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-            auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+            auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
         }
 
-        return getter(arguments);
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
-        auto res = getReturnTypeDefaultImplementationForNulls(arguments, getter);
-        to_nullable = res->isNullable();
-        checked_return_type = true;
-        return res;
+        return getReturnTypeImplRemovedNullable(arguments);
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -2195,7 +2829,7 @@ public:
             mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
         }
 
-        if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
+        if (!to_decimal && (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments)))
         {
             mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
         }
@@ -2220,6 +2854,12 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
+            if (isDecimal(arguments[0].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), getName());
+
             return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)
@@ -2255,41 +2895,101 @@ public:
 
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
+            else if (isTime64<Name, ToDataType>(arguments))
+            {
+                timezone_arg_position += 1;
+                scale = static_cast<UInt32>(arguments[1].column->get64(0));
+
+                if (to_time64 || scale != 0) /// toTime('xxx:xx:xx', 0) return Time
+                    return std::make_shared<DataTypeTime64>(scale);
+
+                return std::make_shared<DataTypeTime>();
+            }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                return std::make_shared<DataTypeTime>();
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
                 return std::make_shared<ToDataType>();
         }
     }
 
-    /// Function actually uses default implementation for nulls,
-    /// but we need to know if return type is Nullable or not,
-    /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
-    bool useDefaultImplementationForNulls() const override
-    {
-        bool to_nullable_string = to_nullable && std::is_same_v<ToDataType, DataTypeString>;
-        return checked_return_type && !to_nullable_string;
-    }
-
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             return {};
-        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            return {2};
+        /// Note: If ToDataType is DateTime, return type may be either DateTime or DateTime64, determined at runtime.
+        ///       Then why is ToDataType == DataTypeDateTime64 allowed, instead of always using DateTime? I don't know.
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeDateTime>)
+            return {1, 2};
         return {1};
     }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & weird_result_type, size_t input_rows_count) const override
     {
+        /// FunctionCast does something complicated and sometimes ends up calling FunctionConvert::executeImpl
+        /// with `result_type` argument that doesn't come from a corresponding getReturnTypeImpl call.
+        /// In particular, with non-nullable result_type when arguments are nullable; it then expects
+        /// executeImpl to return a ColumnNullable anyway.
+        /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
+        /// For now, here's a workaround.
+        DataTypePtr result_type = weird_result_type;
+        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+            result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
+
         try
         {
-            return executeInternal(arguments, result_type, input_rows_count);
+            /// Do something like IExecutableFunction::defaultImplementationForNulls.
+            /// We can't just enable default implementation for nulls because we need to know
+            /// whether the result is nullable (`to_nullable`).
+            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            {
+                if (result_type->onlyNull())
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                ColumnPtr result_null_map;
+                for (const auto & arg : arguments)
+                {
+                    if (!arg.type->isNullable())
+                        continue;
+                    if (isColumnConst(*arg.column))
+                    {
+                        if (arg.column->onlyNull())
+                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                        else
+                            continue;
+                    }
+                    if (result_null_map)
+                    {
+                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            result_null_map_data[i] |= null_map[i];
+                        result_null_map = std::move(mut);
+                    }
+                    else
+                    {
+                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                    }
+                }
+
+                ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
+                auto temporary_result_type = removeNullable(result_type);
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
+
+                return wrapInNullable(res, std::move(result_null_map));
+            }
+            else
+            {
+                return executeInternal(arguments, result_type, input_rows_count, result_type->isNullable());
+            }
         }
         catch (Exception & e)
         {
@@ -2321,6 +3021,18 @@ public:
         }
     }
 
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        return convertIsCompilableImpl(types, result_type);
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        return convertCompileImpl(builder, arguments, result_type);
+    }
+#endif
+
     bool hasInformationAboutMonotonicity() const override
     {
         return Monotonic::has();
@@ -2332,11 +3044,9 @@ public:
     }
 
 private:
-    ContextPtr context;
-    mutable bool checked_return_type = false;
-    mutable bool to_nullable = false;
+    const FunctionConvertSettings settings;
 
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool to_nullable) const
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
@@ -2347,16 +3057,11 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
-
-        if (context)
-            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
-
         if (isDynamic(from_type))
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
-                return executeInternal(args, to_type, args[0].column->size());
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
             return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
@@ -2370,7 +3075,7 @@ private:
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
-                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
+                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
@@ -2384,44 +3089,44 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                switch (date_time_overflow_behavior)
+                switch (settings.date_time_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, scale);
                         break;
                 }
             }
-            else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
+            else if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                switch (date_time_overflow_behavior)
+                switch (settings.date_time_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, settings, dt64->getScale());
                         break;
                 }
             }
             else if constexpr ((IsDataTypeNumber<LeftDataType>
-                                || IsDataTypeDateOrDateTime<LeftDataType>)&&IsDataTypeDateOrDateTime<RightDataType>)
+                                || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)&&IsDataTypeDateOrDateTimeOrTime<RightDataType>)
             {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-            arguments, result_type, input_rows_count, from_string_tag); \
+            arguments, result_type, input_rows_count, from_string_tag, settings); \
         break;
-                switch (date_time_overflow_behavior)
+                switch (settings.date_time_overflow_behavior)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
                     GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -2449,11 +3154,11 @@ private:
                 else
                 {
                     result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(
-                        arguments, result_type, input_rows_count, from_string_tag);
+                        arguments, result_type, input_rows_count, from_string_tag, settings);
                 }
             }
             else
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag, settings);
 
             return true;
         };
@@ -2481,10 +3186,32 @@ private:
             }
         }
 
+        if  constexpr (mightBeTime<Name, ToDataType>())
+        {
+            if (isTime64<Name, ToDataType>(arguments))
+            {
+                const ColumnWithTypeAndName & scale_column = arguments[1];
+                UInt32 scale = extractToDecimalScale(scale_column);
+
+                if (to_time64 || scale != 0) /// When scale = 0, the data type is Time otherwise the data type is Time64
+                {
+                    if (!callOnIndexAndDataType<DataTypeTime64>(
+                            from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}",
+                            arguments[0].type->getName(),
+                            getName());
+
+                    return result_column;
+                }
+            }
+        }
+
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
         {
             if (from_type->getCustomSerialization())
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, context);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
         }
 
         bool done = false;
@@ -2497,7 +3224,8 @@ private:
             bool cast_ipv4_ipv6_default_on_conversion_error = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
             {
-                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error]))
+                cast_ipv4_ipv6_default_on_conversion_error = settings.cast_ipv4_ipv6_default_on_conversion_error;
+                if (cast_ipv4_ipv6_default_on_conversion_error)
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag);
             }
 
@@ -2521,7 +3249,7 @@ private:
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, context);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
@@ -2541,15 +3269,22 @@ private:
   */
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
-    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
+    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
 class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
+    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvertFromString>(context); }
+
+    static FunctionPtr createFromSettings(const FunctionConvertSettings & settings) { return std::make_shared<FunctionConvertFromString>(settings); }
+
+    explicit FunctionConvertFromString(ContextPtr context) : settings(context, default_date_time_overflow_behavior) {}
+
+    explicit FunctionConvertFromString(const FunctionConvertSettings & settings_) : settings(settings_) {}
 
     String getName() const override
     {
@@ -2569,22 +3304,34 @@ public:
     {
         DataTypePtr res;
 
-        if (isDateTime64<Name, ToDataType>(arguments))
+        if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
-            validateFunctionArguments(*this, arguments,
-                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
-                // optional
-                FunctionArgumentDescriptors{
-                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
-                });
+            const auto required = FunctionArgumentDescriptors{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            };
+            const auto precision_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
+            };
+            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
+            };
 
-            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+            if (isTime64<Name, ToDataType>(arguments))
+                validateFunctionArguments(*this, arguments, required, precision_opt);
+            else
+                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
+
+            UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
+
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
-            res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+            if (isTime64<Name, ToDataType>(arguments))
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+            else
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -2633,13 +3380,13 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: DataTypeDateTime64 is not expected here.", getName());
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
                 res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
                 if (!res)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: createDecimalMaxPrecision didn't return any value.", getName());
             }
             else
                 res = std::make_shared<ToDataType>();
@@ -2659,12 +3406,12 @@ public:
         if (checkAndGetDataType<DataTypeString>(from_type))
         {
             return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, settings, scale);
         }
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
         {
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, settings, scale);
         }
 
         return nullptr;
@@ -2702,6 +3449,29 @@ public:
                 result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
             }
         }
+        else if constexpr (mightBeTime<Name, ToDataType>())
+        {
+            if (isTime64<Name, ToDataType>(arguments))
+            {
+                UInt64 scale = to_time64 ? DataTypeTime64::default_scale : 0;
+                if (arguments.size() > 1)
+                    scale = extractToDecimalScale(arguments[1]);
+
+                if (scale == 0)
+                {
+                    result_column = executeInternal<DataTypeTime>(arguments, result_type, input_rows_count, 0);
+                }
+                else
+                {
+                    result_column
+                        = executeInternal<DataTypeTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                }
+            }
+            else
+            {
+                result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
+            }
+        }
         else
         {
             result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
@@ -2714,6 +3484,9 @@ public:
 
         return result_column;
     }
+
+private:
+    const FunctionConvertSettings settings;
 };
 
 
@@ -2759,13 +3532,9 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { .is_monotonic = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
         /// Float cases.
-
-        /// When converting to Float, the conversion is always monotonic.
-        if constexpr (is_floating_point<T>)
-            return { .is_monotonic = true, .is_always_monotonic = true };
 
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
         const IDataType * low_cardinality_dictionary_type = nullptr;
@@ -2776,6 +3545,24 @@ struct ToNumberMonotonicity
         WhichDataType which_inner_type = low_cardinality
             ? WhichDataType(low_cardinality_dictionary_type)
             : WhichDataType(type);
+
+        /// When converting to Float, the conversion is always monotonic.
+        if constexpr (is_floating_point<T>)
+        {
+            if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
+                || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            return { .is_monotonic = true, .is_always_monotonic = true };
+        }
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (which_inner_type.isFloat())
@@ -2800,8 +3587,23 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
-            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
+        /// For null Field, check if the type is valid.
+        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
+        auto is_valid_uint64_or_int64_or_null = [&](const Field & f)
+        {
+            /// allow NULL only when inner type is a nativeInteger/enum/date/date32/datetime
+            if (f.isNull())
+                return which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32()
+                    || which_inner_type.isDateTime();
+
+            /// otherwise must be one of the two 64-bit types
+            auto t = f.getType();
+            return t == Field::Types::UInt64
+                || t == Field::Types::Int64;
+        };
+
+        if (!is_valid_uint64_or_int64_or_null(left)
+            || !is_valid_uint64_or_int64_or_null(right))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
@@ -2822,7 +3624,7 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
             if (left_in_first_half == right_in_first_half)
                 return { .is_monotonic = true };
@@ -2834,10 +3636,10 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
             if (!to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true };
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
@@ -2872,6 +3674,7 @@ struct ToNumberMonotonicity
     }
 };
 
+template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
@@ -2879,20 +3682,27 @@ struct ToDateMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         auto which = WhichDataType(type);
-        if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
+        if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
         {
+            if (std::is_same_v<T, DataTypeDate> && (which.isDate() || which.isInt8() || which.isUInt8() || which.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8()
+                || which.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
         else if (
             ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() < 0xFFFF) && (right.isNull() || right.safeGet<UInt64>() >= 0xFFFF)))
+             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() < 0xFFFF) && (right.isNull() || right.safeGet<Int64>() >= 0xFFFF)))
+                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() < 0xFFFF) && (right.isNull() || right.safeGet<Float64>() >= 0xFFFF))))
+                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
             || !isNativeNumber(type))
         {
             return {};
@@ -2904,6 +3714,7 @@ struct ToDateMonotonicity
     }
 };
 
+template <typename T>
 struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
@@ -2911,7 +3722,23 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
+        {
+            auto which = WhichDataType(type);
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+                || which.isUInt32()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            /// Converting to Time/Time64 is only monotonic from Time/Time64.
+            /// Converting from other types (integers, DateTime, etc.) extracts the time-of-day
+            /// component using toTime, which is not monotonic.
+            if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
+                return {};
+
             return {.is_monotonic = true, .is_always_monotonic = true};
+        }
         else
             return {};
     }
@@ -2938,7 +3765,7 @@ struct ToStringMonotonicity
             return not_monotonic;
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
-        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeString>(type_ptr))
+        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
             return positive;
 
         if (left.isNull() || right.isNull())
@@ -3000,15 +3827,19 @@ extern template class FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumber
 extern template class FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 extern template class FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
-extern template class FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
+extern template class FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity<DataTypeDate>>;
 
-extern template class FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
+extern template class FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity<DataTypeDate32>>;
 
-extern template class FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
+extern template class FunctionConvert<DataTypeTime, NameToTime, ToDateTimeMonotonicity<DataTypeTime>>;
 
-extern template class FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
+extern template class FunctionConvert<DataTypeTime64, NameToTime64, ToDateTimeMonotonicity<DataTypeTime64>>;
 
-extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
+extern template class FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity<DataTypeDateTime>>;
+
+extern template class FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity<DataTypeDateTime>>;
+
+extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
 
 extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
@@ -3037,15 +3868,19 @@ using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToN
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
-using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
+using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity<DataTypeDate>>;
 
-using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
+using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity<DataTypeDate32>>;
 
-using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
+using FunctionToTime = FunctionConvert<DataTypeTime, NameToTime, ToDateTimeMonotonicity<DataTypeTime>>;
 
-using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
+using FunctionToTime64 = FunctionConvert<DataTypeTime64, NameToTime64, ToDateTimeMonotonicity<DataTypeTime64>>;
 
-using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity<DataTypeDateTime>>;
+
+using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity<DataTypeDateTime>>;
+
+using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
 
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
@@ -3075,17 +3910,12 @@ template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat1
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate, date_time_overflow_behavior> { using Type = FunctionToDate; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate32, date_time_overflow_behavior> { using Type = FunctionToDate32; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime, date_time_overflow_behavior> { using Type = FunctionToDateTime; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime64, date_time_overflow_behavior> { using Type = FunctionToDateTime64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
+template <> struct FunctionTo<DataTypeTime> { using Type = FunctionToTime; };
+template <> struct FunctionTo<DataTypeTime64> { using Type = FunctionToTime64; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
@@ -3119,6 +3949,8 @@ struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
 struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; };
+struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; };
+struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
 struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; };
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
@@ -3146,6 +3978,8 @@ extern template class FunctionConvertFromString<DataTypeFloat32, NameToFloat32Or
 extern template class FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
+extern template class FunctionConvertFromString<DataTypeTime, NameToTimeOrZero, ConvertFromStringExceptionMode::Zero>;
+extern template class FunctionConvertFromString<DataTypeTime64, NameToTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3173,6 +4007,8 @@ using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDate32OrZero = FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToTimeOrZero = FunctionConvertFromString<DataTypeTime, NameToTimeOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToTime64OrZero = FunctionConvertFromString<DataTypeTime64, NameToTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTime64OrZero = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3200,6 +4036,8 @@ struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
 struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; };
+struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; };
+struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
 struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; };
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
@@ -3227,6 +4065,8 @@ extern template class FunctionConvertFromString<DataTypeFloat32, NameToFloat32Or
 extern template class FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
+extern template class FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
+extern template class FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3254,6 +4094,8 @@ using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDate32OrNull = FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToTimeOrNull = FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToTime64OrNull = FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3408,38 +4250,28 @@ public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    FunctionCast(ContextPtr context_
+    FunctionCast(ContextPtr context
             , const char * cast_name_
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_)
-        : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
-        , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
+            , CastType cast_type_
+            , FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+        : settings(context, date_time_overflow_behavior)
+        , cast_name(cast_name_)
+        , monotonicity_for_range(std::move(monotonicity_for_range_))
+        , argument_types(argument_types_)
+        , return_type(return_type_)
+        , diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
-        , context(context_)
     {
     }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override
-    {
-        try
-        {
-            return std::make_unique<ExecutableFunctionCast>(
-                prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
-        }
-        catch (Exception & e)
-        {
-            if (diagnostic)
-                e.addMessage("while converting source column " + backQuoteIfNeed(diagnostic->column_from) +
-                             " to destination column " + backQuoteIfNeed(diagnostic->column_to));
-            throw;
-        }
-    }
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
 
@@ -3455,7 +4287,16 @@ public:
         return monotonicity_for_range(type, left, right);
     }
 
+#if USE_EMBEDDED_COMPILER
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const override { return {1}; }
+
+    bool isCompilable() const override;
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override;
+#endif
+
 private:
+    const FunctionConvertSettings settings;
+
     const char * cast_name;
     MonotonicityForRange monotonicity_for_range;
 
@@ -3464,7 +4305,6 @@ private:
 
     std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
-    ContextPtr context;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -3486,1604 +4326,98 @@ private:
     }
 
     template <typename ToDataType>
-    WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * const to_type, bool requested_result_is_nullable) const
-    {
-        TypeIndex from_type_index = from_type->getTypeId();
-        WhichDataType which(from_type_index);
-        TypeIndex to_type_index = to_type->getTypeId();
-        WhichDataType to(to_type_index);
-        bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-            && (which.isInt() || which.isUInt() || which.isFloat());
-        can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
-
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
-        if (context)
-            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
-
-        if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
-        {
-            /// In case when converting to Nullable type, we apply different parsing rule,
-            /// that will not throw an exception but return NULL in case of malformed input.
-            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::create(context);
-            return createFunctionAdaptor(function, from_type);
-        }
-        else if (!can_apply_accurate_cast)
-        {
-            FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
-            return createFunctionAdaptor(function, from_type);
-        }
-
-        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
-        {
-            ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
-            {
-                using Types = std::decay_t<decltype(types)>;
-                using LeftDataType = typename Types::LeftType;
-                using RightDataType = typename Types::RightType;
-
-                if constexpr (IsDataTypeNumber<LeftDataType>)
-                {
-                    if constexpr (IsDataTypeDateOrDateTime<RightDataType>)
-                    {
-#define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-        result_column \
-            = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
-                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
-        break;
-                        if (wrapper_cast_type == CastType::accurate)
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateConvertStrategyAdditions)
-                            }
-                        }
-                        else
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateOrNullConvertStrategyAdditions)
-                            }
-                        }
-#undef GENERATE_OVERFLOW_MODE_CASE
-
-                        return true;
-                    }
-                    else if constexpr (IsDataTypeNumber<RightDataType>)
-                    {
-                        if (wrapper_cast_type == CastType::accurate)
-                        {
-                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                                arguments,
-                                result_type,
-                                input_rows_count,
-                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                                AccurateConvertStrategyAdditions());
-                        }
-                        else
-                        {
-                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                                arguments,
-                                result_type,
-                                input_rows_count,
-                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                                AccurateOrNullConvertStrategyAdditions());
-                        }
-
-                        return true;
-                    }
-                }
-                else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
-                {
-                    if constexpr (IsDataTypeNumber<RightDataType>)
-                    {
-                        chassert(wrapper_cast_type == CastType::accurate);
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments,
-                            result_type,
-                            input_rows_count,
-                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                            AccurateConvertStrategyAdditions());
-                    }
-                    return true;
-                }
-
-                return false;
-            });
-
-            /// Additionally check if callOnIndexAndDataType wasn't called at all.
-            if (!res)
-            {
-                if (wrapper_cast_type == CastType::accurateOrNull)
-                {
-                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
-                    return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                        "Conversion from {} to {} is not supported",
-                        from_type_index, to_type->getName());
-                }
-            }
-
-            return result_column;
-        };
-    }
+    WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
     template <typename ToDataType>
-    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * const to_type, bool requested_result_is_nullable) const
-    {
-        if (checkAndGetDataType<DataTypeString>(from_type.get()))
-        {
-            if (cast_type == CastType::accurateOrNull)
-            {
-                return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-                {
-                    return ConvertImplGenericFromString<false>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-                };
-            }
+    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
+    WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
 
-        return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
-    }
+    WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createUInt8ToBoolWrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
-    {
-        return [from_type, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
-        {
-            /// Special case when we convert UInt8 column to Bool column.
-            /// both columns have type UInt8, but we shouldn't use identity wrapper,
-            /// because Bool column can contain only 0 and 1.
-            auto res_column = to_type->createColumn();
-            const auto & data_from = checkAndGetColumn<ColumnUInt8>(*arguments[0].column).getData();
-            auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
-            data_to.resize(data_from.size());
-            for (size_t i = 0; i != data_from.size(); ++i)
-                data_to[i] = static_cast<bool>(data_from[i]);
-            return res_column;
-        };
-    }
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
 
-    WrapperType createStringWrapper(const DataTypePtr & from_type) const
-    {
-        FunctionPtr function = FunctionToString::create(context);
-        return createFunctionAdaptor(function, from_type);
-    }
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
-    {
-        if (!isStringOrFixedString(from_type))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CAST AS FixedString is only implemented for types String and FixedString");
-
-        bool exception_mode_null = cast_type == CastType::accurateOrNull;
-        return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
-        {
-            if (exception_mode_null)
-                return FunctionToFixedString::executeForN<ConvertToFixedStringExceptionMode::Null>(arguments, N);
-            else
-                return FunctionToFixedString::executeForN<ConvertToFixedStringExceptionMode::Throw>(arguments, N);
-        };
-    }
-
-#define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
-            case IntervalKind::Kind::INTERVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(context), from_type);
-
-    WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
-    {
-        switch (kind.kind)
-        {
-            GENERATE_INTERVAL_CASE(Nanosecond)
-            GENERATE_INTERVAL_CASE(Microsecond)
-            GENERATE_INTERVAL_CASE(Millisecond)
-            GENERATE_INTERVAL_CASE(Second)
-            GENERATE_INTERVAL_CASE(Minute)
-            GENERATE_INTERVAL_CASE(Hour)
-            GENERATE_INTERVAL_CASE(Day)
-            GENERATE_INTERVAL_CASE(Week)
-            GENERATE_INTERVAL_CASE(Month)
-            GENERATE_INTERVAL_CASE(Quarter)
-            GENERATE_INTERVAL_CASE(Year)
-        }
-        throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion to unexpected IntervalKind: {}", kind.toString()};
-    }
-
-#undef GENERATE_INTERVAL_CASE
+    WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;
 
     template <typename ToDataType>
     requires IsDataTypeDecimal<ToDataType>
-    WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
-    {
-        TypeIndex type_index = from_type->getTypeId();
-        UInt32 scale = to_type->getScale();
+    WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-        WhichDataType which(type_index);
-        bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
-            || which.isStringOrFixedString();
-        if (!ok)
-        {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type->getName(), to_type->getName());
-        }
+    WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const;
 
-        auto wrapper_cast_type = cast_type;
-
-        return [wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
-        {
-            ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
-            {
-                using Types = std::decay_t<decltype(types)>;
-                using LeftDataType = typename Types::LeftType;
-                using RightDataType = typename Types::RightType;
-
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
-                {
-                    if (wrapper_cast_type == CastType::accurate)
-                    {
-                        AccurateConvertStrategyAdditions additions;
-                        additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
-
-                        return true;
-                    }
-                    else if (wrapper_cast_type == CastType::accurateOrNull)
-                    {
-                        AccurateOrNullConvertStrategyAdditions additions;
-                        additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
-
-                        return true;
-                    }
-                }
-                else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
-                {
-                    if (requested_result_is_nullable)
-                    {
-                        /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
-                        /// In case when converting to Nullable type, we apply different parsing rule,
-                        /// that will not throw an exception but return NULL in case of malformed input.
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
-
-                        return true;
-                    }
-                }
-
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, scale);
-
-                return true;
-            });
-
-            /// Additionally check if callOnIndexAndDataType wasn't called at all.
-            if (!res)
-            {
-                if (wrapper_cast_type == CastType::accurateOrNull)
-                {
-                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
-                    return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
-                }
-                else
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                        "Conversion from {} to {} is not supported",
-                        type_index, to_type->getName());
-            }
-
-            return result_column;
-        };
-    }
-
-    WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
-    {
-        /// Conversion from String through parsing.
-        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
-        else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
-        {
-            if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
-            {
-                return [function = to_type->getFunction()](
-                           ColumnsWithTypeAndName & arguments,
-                           const DataTypePtr & /* result_type */,
-                           const ColumnNullable * /* nullable_source */,
-                           size_t /*input_rows_count*/) -> ColumnPtr
-                {
-                    const auto & argument_column = arguments.front();
-                    const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
-                    if (col_agg)
-                    {
-                        auto new_col_agg = ColumnAggregateFunction::create(*col_agg);
-                        new_col_agg->set(function);
-                        return new_col_agg;
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Illegal column {} for function CAST AS AggregateFunction",
-                            argument_column.column->getName());
-                    }
-                };
-            }
-        }
-
-        if (cast_type == CastType::accurateOrNull)
-            return createToNullableColumnWrapper();
-        else
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                from_type_untyped->getName(), to_type->getName());
-    }
-
-    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
-    {
-        /// Conversion from String through parsing.
-        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
-
-        DataTypePtr from_type_holder;
-        const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
-        const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
-
-        /// Convert from Map
-        if (from_type_map)
-        {
-            /// Recreate array of unnamed tuples because otherwise it may work
-            /// unexpectedly while converting to array of named tuples.
-            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
-            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
-        }
-
-        if (!from_type)
-        {
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "CAST AS Array can only be performed between same-dimensional Array, Map or String types");
-        }
-
-        DataTypePtr from_nested_type = from_type->getNestedType();
-
-        /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
-        bool from_empty_array = isNothing(from_nested_type);
-
-        if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "CAST AS Array can only be performed between same-dimensional array types");
-
-        const DataTypePtr & to_nested_type = to_type.getNestedType();
-
-        /// Prepare nested type conversion
-        const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
-
-        return [nested_function, from_nested_type, to_nested_type](
-                ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
-        {
-            const auto & argument_column = arguments.front();
-
-            const ColumnArray * col_array = nullptr;
-
-            if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(argument_column.column.get()))
-                col_array = &col_map->getNestedColumn();
-            else
-                col_array = checkAndGetColumn<ColumnArray>(argument_column.column.get());
-
-            if (col_array)
-            {
-                /// create columns for converting nested column containing original and result columns
-                ColumnsWithTypeAndName nested_columns{{ col_array->getDataPtr(), from_nested_type, "" }};
-
-                /// convert nested column
-                auto result_column = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
-
-                /// set converted nested column to result
-                return ColumnArray::create(result_column, col_array->getOffsetsPtr());
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Illegal column {} for function CAST AS Array",
-                    argument_column.column->getName());
-            }
-        };
-    }
+    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
     using ElementWrappers = std::vector<WrapperType>;
 
-    ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const
-    {
-        ElementWrappers element_wrappers;
-        element_wrappers.reserve(from_element_types.size());
+    ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
-        /// Create conversion wrapper for each element in tuple
-        for (size_t i = 0; i < from_element_types.size(); ++i)
-        {
-            const DataTypePtr & from_element_type = from_element_types[i];
-            const DataTypePtr & to_element_type = to_element_types[i];
-            element_wrappers.push_back(prepareUnpackDictionaries(from_element_type, to_element_type));
-        }
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const;
 
-        return element_wrappers;
-    }
+    WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
-    {
-        /// Conversion from String through parsing.
-        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
+    template <typename FloatType>
+    static ColumnPtr convertArrayToQBit(
+        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size);
 
-        const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
-        if (!from_type)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types or from String.\n"
-                            "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
-
-        const auto & from_element_types = from_type->getElements();
-        const auto & to_element_types = to_type->getElements();
-
-        std::vector<WrapperType> element_wrappers;
-        std::vector<std::optional<size_t>> to_reverse_index;
-
-        /// For named tuples allow conversions for tuples with
-        /// different sets of elements. If element exists in @to_type
-        /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
-        {
-            const auto & from_names = from_type->getElementNames();
-            std::unordered_map<String, size_t> from_positions;
-            from_positions.reserve(from_names.size());
-            for (size_t i = 0; i < from_names.size(); ++i)
-                from_positions[from_names[i]] = i;
-
-            const auto & to_names = to_type->getElementNames();
-            element_wrappers.reserve(to_names.size());
-            to_reverse_index.reserve(from_names.size());
-
-            for (size_t i = 0; i < to_names.size(); ++i)
-            {
-                auto it = from_positions.find(to_names[i]);
-                if (it != from_positions.end())
-                {
-                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                    to_reverse_index.emplace_back(it->second);
-                }
-                else
-                {
-                    element_wrappers.emplace_back();
-                    to_reverse_index.emplace_back();
-                }
-            }
-        }
-        else
-        {
-            if (from_element_types.size() != to_element_types.size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
-                                "with the same number of elements or from String.\nLeft type: {}, right type: {}",
-                                from_type->getName(), to_type->getName());
-
-            element_wrappers = getElementWrappers(from_element_types, to_element_types);
-            to_reverse_index.reserve(to_element_types.size());
-            for (size_t i = 0; i < to_element_types.size(); ++i)
-                to_reverse_index.emplace_back(i);
-        }
-
-        return [element_wrappers, from_element_types, to_element_types, to_reverse_index]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
-        {
-            const auto * col = arguments.front().column.get();
-
-            size_t tuple_size = to_element_types.size();
-            const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
-
-            Columns converted_columns(tuple_size);
-
-            /// invoke conversion for each element
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                if (to_reverse_index[i])
-                {
-                    size_t from_idx = *to_reverse_index[i];
-                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[from_idx], from_element_types[from_idx], "" }};
-                    converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
-                }
-                else
-                {
-                    converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
-                }
-            }
-
-            return ColumnTuple::create(converted_columns);
-        };
-    }
+    template <typename T>
+    WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
-    WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
-    {
-        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
-        {
-            const auto * col = arguments.front().column.get();
-            const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
+    WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;
 
-            Columns offsets(2);
-            Columns converted_columns(2);
-            for (size_t i = 0; i < 2; ++i)
-            {
-                const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
-                ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
-                offsets[i] = column_array.getOffsetsPtr();
-            }
-
-            const auto & keys_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[0]).getData();
-            const auto & values_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[1]).getData();
-            if (keys_offsets != values_offsets)
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map can only be performed from tuple of arrays with equal sizes.");
-
-            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets[0]);
-        };
-    }
-
-    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
-    {
-        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
-        {
-            const auto * col = arguments.front().column.get();
-            const auto & column_map = typeid_cast<const ColumnMap &>(*col);
-            const auto & nested_data = column_map.getNestedData();
-
-            Columns converted_columns(2);
-            for (size_t i = 0; i < 2; ++i)
-            {
-                ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
-            }
-
-            return ColumnMap::create(converted_columns[0], converted_columns[1], column_map.getNestedColumn().getOffsetsPtr());
-        };
-    }
+    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;
 
     /// The case of: [(key1, value1), (key2, value2), ...]
-    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
-    {
-        return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
-        {
-            const auto * col = arguments.front().column.get();
-            const auto & column_array = typeid_cast<const ColumnArray &>(*col);
-            const auto & nested_data = typeid_cast<const ColumnTuple &>(column_array.getData());
+    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;
 
-            Columns converted_columns(2);
-            for (size_t i = 0; i < 2; ++i)
-            {
-                ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
-            }
+    WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const;
 
-            return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
-        };
-    }
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const;
 
-
-    WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
-    {
-        if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
-        {
-            if (from_tuple->getElements().size() != 2)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map from tuple requires 2 elements. "
-                    "Left type: {}, right type: {}",
-                    from_tuple->getName(),
-                    to_type->getName());
-
-            DataTypes from_kv_types;
-            const auto & to_kv_types = to_type->getKeyValueTypes();
-
-            for (const auto & elem : from_tuple->getElements())
-            {
-                const auto * type_array = checkAndGetDataType<DataTypeArray>(elem.get());
-                if (!type_array)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "CAST AS Map can only be performed from tuples of array. Got: {}", from_tuple->getName());
-
-                from_kv_types.push_back(type_array->getNestedType());
-            }
-
-            return createTupleToMapWrapper(from_kv_types, to_kv_types);
-        }
-        else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type_untyped.get()))
-        {
-            if (typeid_cast<const DataTypeNothing *>(from_array->getNestedType().get()))
-                return [nested = to_type->getNestedType()](ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t size)
-                {
-                    return ColumnMap::create(nested->createColumnConstWithDefaultValue(size)->convertToFullColumnIfConst());
-                };
-
-            const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
-            if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map from array requires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}",
-                    from_array->getName(),
-                    to_type->getName());
-
-            return createArrayToMapWrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
-        }
-        else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
-        {
-            return createMapToMapWrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
-        }
-        else
-        {
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported types to CAST AS Map. "
-                "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
-        }
-    }
-
-    WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
-    {
-        if (!from_tuple.haveExplicitNames())
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
-
-        PathsInData paths;
-        DataTypes from_types;
-
-        std::tie(paths, from_types) = flattenTuple(from_tuple.getPtr());
-        auto to_types = from_types;
-
-        for (auto & type : to_types)
-        {
-            if (isTuple(type) || isNested(type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}",
-                    from_tuple.getName());
-
-            type = recursiveRemoveLowCardinality(type);
-        }
-
-        return [element_wrappers = getElementWrappers(from_types, to_types),
-            has_nullable_subcolumns, from_types, to_types, paths]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
-        {
-            size_t tuple_size = to_types.size();
-            auto flattened_column = flattenTuple(arguments.front().column);
-            const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
-
-            if (tuple_size != column_tuple.getColumns().size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Expected tuple with {} subcolumn, but got {} subcolumns",
-                    tuple_size, column_tuple.getColumns().size());
-
-            auto res = ColumnObjectDeprecated::create(has_nullable_subcolumns);
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
-                auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                res->addSubcolumn(paths[i], converted_column->assumeMutable());
-            }
-
-            return res;
-        };
-    }
-
-    WrapperType createMapToObjectDeprecatedWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
-    {
-        auto key_value_types = from_map.getKeyValueTypes();
-
-        if (!isStringOrFixedString(key_value_types[0]))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Cast to Object from Map can be performed only from Map "
-                "with String or FixedString key. Got: {}", from_map.getName());
-
-        const auto & value_type = key_value_types[1];
-        auto to_value_type = value_type;
-
-        if (!has_nullable_subcolumns && value_type->isNullable())
-            to_value_type = removeNullable(value_type);
-
-        if (has_nullable_subcolumns && !value_type->isNullable())
-            to_value_type = makeNullable(value_type);
-
-        DataTypes to_key_value_types{std::make_shared<DataTypeString>(), std::move(to_value_type)};
-        auto element_wrappers = getElementWrappers(key_value_types, to_key_value_types);
-
-        return [has_nullable_subcolumns, element_wrappers, key_value_types, to_key_value_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
-        {
-            const auto & column_map = assert_cast<const ColumnMap &>(*arguments.front().column);
-            const auto & offsets = column_map.getNestedColumn().getOffsets();
-            auto key_value_columns = column_map.getNestedData().getColumnsCopy();
-
-            for (size_t i = 0; i < 2; ++i)
-            {
-                ColumnsWithTypeAndName element{{key_value_columns[i], key_value_types[i], ""}};
-                key_value_columns[i] = element_wrappers[i](element, to_key_value_types[i], nullable_source, key_value_columns[i]->size());
-            }
-
-            const auto & key_column_str = assert_cast<const ColumnString &>(*key_value_columns[0]);
-            const auto & value_column = *key_value_columns[1];
-
-            using SubcolumnsMap = HashMap<StringRef, MutableColumnPtr, StringRefHash>;
-            SubcolumnsMap subcolumns;
-
-            for (size_t row = 0; row < offsets.size(); ++row)
-            {
-                for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
-                {
-                    auto ref = key_column_str.getDataAt(i);
-
-                    bool inserted;
-                    SubcolumnsMap::LookupResult it;
-                    subcolumns.emplace(ref, it, inserted);
-                    auto & subcolumn = it->getMapped();
-
-                    if (inserted)
-                        subcolumn = value_column.cloneEmpty()->cloneResized(row);
-
-                    /// Map can have duplicated keys. We insert only first one.
-                    if (subcolumn->size() == row)
-                        subcolumn->insertFrom(value_column, i);
-                }
-
-                /// Insert default values for keys missed in current row.
-                for (const auto & [_, subcolumn] : subcolumns)
-                    if (subcolumn->size() == row)
-                        subcolumn->insertDefault();
-            }
-
-            auto column_object = ColumnObjectDeprecated::create(has_nullable_subcolumns);
-            for (auto && [key, subcolumn] : subcolumns)
-            {
-                PathInData path(key.toView());
-                column_object->addSubcolumn(path, std::move(subcolumn));
-            }
-
-            return column_object;
-        };
-    }
-
-    WrapperType createObjectDeprecatedWrapper(const DataTypePtr & from_type, const DataTypeObjectDeprecated * to_type) const
-    {
-        if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
-        {
-            return createTupleToObjectDeprecatedWrapper(*from_tuple, to_type->hasNullableSubcolumns());
-        }
-        else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
-        {
-            return createMapToObjectDeprecatedWrapper(*from_map, to_type->hasNullableSubcolumns());
-        }
-        else if (checkAndGetDataType<DataTypeString>(from_type.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
-                res->finalize();
-                return res;
-            };
-        }
-        else if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()))
-        {
-            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
-            {
-                const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*arguments.front().column);
-                auto res = ColumnObjectDeprecated::create(is_nullable);
-                for (size_t i = 0; i < column_object.size(); i++)
-                    res->insert(column_object[i]);
-
-                res->finalize();
-                return res;
-            };
-        }
-
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
-    }
-
-
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
-    {
-        if (checkAndGetDataType<DataTypeString>(from_type.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
-            };
-        }
-
-        /// Cast Tuple/Object/Map to JSON type through serializing into JSON string and parsing back into JSON column.
-        /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
-        /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
-        if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()) || checkAndGetDataType<DataTypeTuple>(from_type.get()) || checkAndGetDataType<DataTypeMap>(from_type.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                auto json_string = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
-                auto & write_buffer = write_helper.getWriteBuffer();
-                FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
-                auto serialization = arguments[0].type->getDefaultSerialization();
-                format_settings.json.quote_64bit_integers = false;
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                    write_helper.rowWritten();
-                }
-                write_helper.finalize();
-
-                ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
-                return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, context);
-            };
-        }
-
-        /// TODO: support CAST between JSON types with different parameters
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
-    }
-
-    WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
-    {
-        /// We support only extension of variant type, so, only new types can be added.
-        /// For example: Variant(T1, T2) -> Variant(T1, T2, T3) is supported, but Variant(T1, T2) -> Variant(T1, T3) is not supported.
-        /// We want to extend Variant type for free without rewriting the data, but we sort data types inside Variant during type creation
-        /// (we do it because we want Variant(T1, T2) to be the same as Variant(T2, T1)), but after extension the order of variant types
-        /// (and so their discriminators) can be different. For example: Variant(T1, T3) -> Variant(T1, T2, T3).
-        /// To avoid full rewrite of discriminators column, ColumnVariant supports it's local order of variant columns (and so local
-        /// discriminators) and stores mapping global order -> local order.
-        /// So, to extend Variant with new types for free, we should keep old local order for old variants, append new variants and change
-        /// mapping global order -> local order according to the new global order.
-
-        /// Create map (new variant type) -> (it's global discriminator in new order).
-        const auto & new_variants = to_variant.getVariants();
-        std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
-        new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
-            new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
-
-        /// Create set of old variant types.
-        const auto & old_variants = from_variant.getVariants();
-        std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
-        old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-        for (size_t i = 0; i != old_variants.size(); ++i)
-            old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
-
-        /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
-        std::unordered_map<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
-        old_global_discriminator_to_new.reserve(old_variants.size());
-        for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
-        {
-            auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
-            if (it == new_variant_types_to_new_global_discriminator.end())
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE,
-                    "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
-                    "of an initial one", from_variant.getName(), to_variant.getName());
-            old_global_discriminator_to_new[old_discriminator] = it->second;
-        }
-
-        /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
-        std::vector<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
-        variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
-        {
-            if (!old_variant_types_to_old_global_discriminator.contains(new_variants[i]->getName()))
-                variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
-        }
-
-        return [old_global_discriminator_to_new, variant_types_and_discriminators_to_add]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
-            size_t num_old_variants = column_variant.getNumVariants();
-            Columns new_variant_columns;
-            new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
-            new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            for (size_t i = 0; i != num_old_variants; ++i)
-            {
-                new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
-                new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
-            }
-
-            for (const auto & [new_variant_type, new_global_discriminator] : variant_types_and_discriminators_to_add)
-            {
-                new_variant_columns.push_back(new_variant_type->createColumn());
-                new_local_to_global_discriminators.push_back(new_global_discriminator);
-            }
-
-            return ColumnVariant::create(column_variant.getLocalDiscriminatorsPtr(), column_variant.getOffsetsPtr(), new_variant_columns, new_local_to_global_discriminators);
-        };
-    }
+    WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const;
 
     /// Create wrapper only if we support this conversion.
-    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const
-    {
-        try
-        {
-            /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
-            /// requires quite a lot of work. By now let's simply use try/catch.
-            /// First, check that we can create a wrapper.
-            WrapperType wrapper = prepareUnpackDictionaries(from, to);
-            /// Second, check if we can perform a conversion on column with default value.
-            /// (we cannot just check empty column as we do some checks only during iteration over rows).
-            auto test_col = from->createColumn();
-            test_col->insertDefault();
-            ColumnsWithTypeAndName column_from = {{test_col->getPtr(), from, "" }};
-            wrapper(column_from, to, nullptr, 1);
-            return wrapper;
-        }
-        catch (const Exception &)
-        {
-            return {};
-        }
-    }
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const;
 
-    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
-    {
-        const auto & variant_types = from_variant.getVariants();
-        std::vector<WrapperType> variant_wrappers;
-        variant_wrappers.reserve(variant_types.size());
+    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const;
 
-        /// Create conversion wrapper for each variant.
-        for (const auto & variant_type : variant_types)
-        {
-            WrapperType wrapper;
-            if (cast_type == CastType::accurateOrNull)
-            {
-                /// Create wrapper only if we support conversion from variant to the resulting type.
-                wrapper = createWrapperIfCanConvert(variant_type, to_type);
-            }
-            else
-            {
-                wrapper = prepareUnpackDictionaries(variant_type, to_type);
-            }
-            variant_wrappers.push_back(wrapper);
-        }
+    static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr);
 
-        return [variant_wrappers, variant_types, to_type]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-        {
-            const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
+    WrapperType createStringToVariantWrapper() const;
 
-            /// First, cast each variant to the result type.
-            std::vector<ColumnPtr> cast_variant_columns;
-            cast_variant_columns.reserve(variant_types.size());
-            for (size_t i = 0; i != variant_types.size(); ++i)
-            {
-                auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
-                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
-                const auto & variant_wrapper = variant_wrappers[i];
-                ColumnPtr cast_variant;
-                /// Check if we have wrapper for this variant.
-                if (variant_wrapper)
-                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                cast_variant_columns.push_back(std::move(cast_variant));
-            }
-
-            /// Second, construct resulting column from cast variant columns according to discriminators.
-            const auto & local_discriminators = column_variant.getLocalDiscriminators();
-            auto res = result_type->createColumn();
-            res->reserve(input_rows_count);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !cast_variant_columns[global_discr])
-                    res->insertDefault();
-                else
-                    res->insertFrom(*cast_variant_columns[global_discr], column_variant.offsetAt(i));
-            }
-
-            return res;
-        };
-    }
-
-    static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr)
-    {
-        Columns variants;
-        variants.reserve(variant_types.size());
-        for (size_t i = 0; i != variant_types.size(); ++i)
-        {
-            if (i == variant_discr)
-                variants.emplace_back(variant);
-            else
-                variants.push_back(variant_types[i]->createColumn());
-        }
-
-        return ColumnVariant::create(discriminators, variants);
-    }
-
-    WrapperType createStringToVariantWrapper() const
-    {
-        return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-        {
-            auto column = arguments[0].column->convertToFullColumnIfLowCardinality();
-            auto args = arguments;
-            args[0].column = column;
-
-            const ColumnNullable * column_nullable = nullptr;
-            if (isColumnNullable(*args[0].column))
-            {
-                column_nullable = assert_cast<const ColumnNullable *>(args[0].column.get());
-                args[0].column = column_nullable->getNestedColumnPtr();
-            }
-
-            args[0].type = removeNullable(removeLowCardinality(args[0].type));
-
-            if (cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args, result_type, column_nullable, input_rows_count, context);
-            return ConvertImplGenericFromString<true>::execute(args, result_type, column_nullable, input_rows_count, context);
-        };
-    }
-
-    WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const
-    {
-        /// We allow converting NULL to Variant(...) as Variant can store NULLs.
-        if (from_type->onlyNull())
-        {
-            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-            {
-                auto result_column = result_type->createColumn();
-                result_column->insertManyDefaults(input_rows_count);
-                return result_column;
-            };
-        }
-
-        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
-        /// Cast String to Variant through parsing if it's not Variant(String).
-        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
-            return createStringToVariantWrapper();
-
-        if (!variant_discr_opt)
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
-
-        return [variant_discr = *variant_discr_opt]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
-            const auto & variant_types = result_variant_type.getVariants();
-            if (const ColumnNullable * col_nullable = typeid_cast<const ColumnNullable *>(arguments.front().column.get()))
-            {
-                const auto & column = col_nullable->getNestedColumnPtr();
-                const auto & null_map = col_nullable->getNullMapData();
-                IColumn::Filter filter;
-                filter.reserve(column->size());
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                auto & discriminators_data = discriminators->getData();
-                discriminators_data.reserve(column->size());
-                size_t variant_size_hint = 0;
-                for (size_t i = 0; i != column->size(); ++i)
-                {
-                    if (null_map[i])
-                    {
-                        discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
-                    }
-                    else
-                    {
-                        discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
-                        ++variant_size_hint;
-                    }
-                }
-
-                ColumnPtr variant_column;
-                /// If there were no NULLs, just use the column.
-                if (variant_size_hint == column->size())
-                    variant_column = column;
-                /// Otherwise we should use filtered column.
-                else
-                    variant_column = column->filter(filter, variant_size_hint);
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
-            }
-            else if (isColumnLowCardinalityNullable(*arguments.front().column))
-            {
-                const auto & column = arguments.front().column;
-
-                /// Variant column cannot have LowCardinality(Nullable(...)) variant, as Variant column stores NULLs itself.
-                /// We should create a null-map, insert NULL_DISCRIMINATOR on NULL values and filter initial column.
-                const auto & col_lc = assert_cast<const ColumnLowCardinality &>(*column);
-                const auto & indexes = col_lc.getIndexes();
-                auto null_index = col_lc.getDictionary().getNullValueIndex();
-                IColumn::Filter filter;
-                filter.reserve(col_lc.size());
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                auto & discriminators_data = discriminators->getData();
-                discriminators_data.reserve(col_lc.size());
-                size_t variant_size_hint = 0;
-                for (size_t i = 0; i != col_lc.size(); ++i)
-                {
-                    if (indexes.getUInt(i) == null_index)
-                    {
-                        discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
-                    }
-                    else
-                    {
-                        discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
-                        ++variant_size_hint;
-                    }
-                }
-
-                MutableColumnPtr variant_column;
-                /// If there were no NULLs, we can just clone the column.
-                if (variant_size_hint == col_lc.size())
-                    variant_column = IColumn::mutate(column);
-                /// Otherwise we should filter column.
-                else
-                    variant_column = IColumn::mutate(column->filter(filter, variant_size_hint));
-
-                assert_cast<ColumnLowCardinality &>(*variant_column).nestedRemoveNullable();
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), std::move(variant_column), variant_discr);
-            }
-            else
-            {
-                const auto & column = arguments.front().column;
-                auto discriminators = ColumnVariant::ColumnDiscriminators::create();
-                discriminators->getData().resize_fill(column->size(), variant_discr);
-                return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), column, variant_discr);
-            }
-        };
-    }
+    WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const;
 
     /// Wrapper for conversion to/from Variant type
-    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const
-    {
-        if (const auto * from_variant = checkAndGetDataType<DataTypeVariant>(from_type.get()))
-        {
-            if (const auto * to_variant = checkAndGetDataType<DataTypeVariant>(to_type.get()))
-                return createVariantToVariantWrapper(*from_variant, *to_variant);
+    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
 
-            return createVariantToColumnWrapper(*from_variant, to_type);
-        }
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const;
 
-        return createColumnToVariantWrapper(from_type, assert_cast<const DataTypeVariant &>(*to_type));
-    }
+    WrapperType createStringToDynamicThroughParsingWrapper() const;
 
-    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const
-    {
-        auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
-        {
-            WrapperType wrapper;
-            if (cast_type == CastType::accurateOrNull)
-            {
-                /// Create wrapper only if we support conversion from variant to the resulting type.
-                wrapper = createWrapperIfCanConvert(args[0].type, result_type);
-                if (!wrapper)
-                    return nullptr;
-            }
-            else
-            {
-                wrapper = prepareUnpackDictionaries(args[0].type, result_type);
-            }
+    WrapperType createVariantToDynamicWrapper(const DataTypeVariant & from_variant_type, const DataTypeDynamic & dynamic_type) const;
 
-            return wrapper(args, result_type, nullptr, args[0].column->size());
-        };
+    WrapperType createColumnToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const;
 
-        return [nested_convert]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-        {
-            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
-        };
-    }
-
-    WrapperType createStringToDynamicThroughParsingWrapper() const
-    {
-        return [&](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-        {
-            auto column = arguments[0].column->convertToFullColumnIfLowCardinality();
-            auto args = arguments;
-            args[0].column = column;
-
-            const ColumnNullable * column_nullable = nullptr;
-            if (isColumnNullable(*args[0].column))
-            {
-                column_nullable = assert_cast<const ColumnNullable *>(args[0].column.get());
-                args[0].column = column_nullable->getNestedColumnPtr();
-            }
-
-            args[0].type = removeNullable(removeLowCardinality(args[0].type));
-
-            if (cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args, result_type, column_nullable, input_rows_count, context);
-            return ConvertImplGenericFromString<true>::execute(args, result_type, column_nullable, input_rows_count, context);
-        };
-    }
-
-    WrapperType createVariantToDynamicWrapper(const DataTypeVariant & from_variant_type, const DataTypeDynamic & dynamic_type) const
-    {
-        /// First create extended Variant with shared variant type and cast this Variant to it.
-        auto variants_for_dynamic = from_variant_type.getVariants();
-        size_t number_of_variants = variants_for_dynamic.size();
-        variants_for_dynamic.push_back(ColumnDynamic::getSharedVariantDataType());
-        const auto & variant_type_for_dynamic = std::make_shared<DataTypeVariant>(variants_for_dynamic);
-        auto old_to_new_variant_wrapper = createVariantToVariantWrapper(from_variant_type, *variant_type_for_dynamic);
-        auto max_dynamic_types = dynamic_type.getMaxDynamicTypes();
-        return [old_to_new_variant_wrapper, variant_type_for_dynamic, number_of_variants, max_dynamic_types]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
-        {
-            auto variant_column_for_dynamic = old_to_new_variant_wrapper(arguments, result_type, col_nullable, input_rows_count);
-            /// If resulting Dynamic column can contain all variants from this Variant column, just create Dynamic column from it.
-            if (max_dynamic_types >= number_of_variants)
-                return ColumnDynamic::create(variant_column_for_dynamic, variant_type_for_dynamic, max_dynamic_types, max_dynamic_types);
-
-            /// Otherwise some variants should go to the shared variant. Create temporary Dynamic column from this Variant and insert
-            /// all data to the resulting Dynamic column, this insertion will do all the logic with shared variant.
-            auto tmp_dynamic_column = ColumnDynamic::create(variant_column_for_dynamic, variant_type_for_dynamic, number_of_variants, number_of_variants);
-            auto result_dynamic_column = ColumnDynamic::create(max_dynamic_types);
-            result_dynamic_column->insertRangeFrom(*tmp_dynamic_column, 0, tmp_dynamic_column->size());
-            return result_dynamic_column;
-        };
-    }
-
-    WrapperType createColumnToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const
-    {
-        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
-            return createVariantToDynamicWrapper(*variant_type, dynamic_type);
-
-        if (from_type->onlyNull())
-            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-            {
-                auto result = result_type->createColumn();
-                result->insertManyDefaults(input_rows_count);
-                return result;
-            };
-
-        if (context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
-            return createStringToDynamicThroughParsingWrapper();
-
-        /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.
-        auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullableOrLowCardinalityNullable(from_type)});
-        auto column_to_variant_wrapper = createColumnToVariantWrapper(from_type, *variant_type);
-        /// Second, cast this Variant to Dynamic.
-        auto variant_to_dynamic_wrapper = createVariantToDynamicWrapper(*variant_type, dynamic_type);
-        return [column_to_variant_wrapper, variant_to_dynamic_wrapper, variant_type]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
-        {
-            auto variant_res = column_to_variant_wrapper(arguments, variant_type, col_nullable, input_rows_count);
-            ColumnsWithTypeAndName args = {{variant_res, variant_type, ""}};
-            return variant_to_dynamic_wrapper(args, result_type, nullptr, input_rows_count);
-        };
-    }
-
-    WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const
-    {
-        size_t from_max_types = from_dynamic.getMaxDynamicTypes();
-        size_t to_max_types = to_dynamic.getMaxDynamicTypes();
-        if (from_max_types == to_max_types)
-            return createIdentityWrapper(from_dynamic.getPtr());
-
-        if (to_max_types > from_max_types)
-        {
-            return [to_max_types]
-                   (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
-            {
-                const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
-                /// We should use the same limit as already used in column and change only global limit.
-                /// It's needed because shared variant should contain values only when limit is exceeded,
-                /// so if there are already some data, we cannot increase the limit.
-                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
-            };
-        }
-
-        return [to_max_types]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
-            /// If real limit in the column is not greater than desired, just use the same variant column.
-            if (dynamic_column.getMaxDynamicTypes() <= to_max_types)
-                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
-
-            /// Otherwise some variants should go to the shared variant. We try to keep the most frequent variants.
-            const auto & variant_info = dynamic_column.getVariantInfo();
-            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-            const auto & statistics = dynamic_column.getStatistics();
-            const auto & variant_column = dynamic_column.getVariantColumn();
-            auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-            std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
-            variants_with_sizes.reserve(variant_info.variant_names.size());
-            for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
-            {
-                /// Don't include shared variant.
-                if (discr == shared_variant_discr)
-                    continue;
-
-                size_t size = variant_column.getVariantByGlobalDiscriminator(discr).size();
-                /// If column has statistics from the data part, use size from it for consistency.
-                /// It's important to keep the same dynamic structure of the result column during ALTER.
-                if (statistics)
-                {
-                    auto statistics_it = statistics->variants_statistics.find(name);
-                    if (statistics_it != statistics->variants_statistics.end())
-                        size = statistics_it->second;
-                }
-                variants_with_sizes.emplace_back(size, name, variants[discr]);
-            }
-
-            std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
-            DataTypes result_variants;
-            result_variants.reserve(to_max_types + 1); /// +1 for shared variant.
-            /// Add new variants from sorted list until we reach to_max_types.
-            for (const auto & [size, name, type] : variants_with_sizes)
-            {
-                if (result_variants.size() < to_max_types)
-                    result_variants.push_back(type);
-                else
-                    break;
-            }
-
-            /// Add shared variant.
-            result_variants.push_back(ColumnDynamic::getSharedVariantDataType());
-            /// Create resulting Variant type and Dynamic column.
-            auto result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
-            auto result_dynamic_column = ColumnDynamic::create(result_variant_type->createColumn(), result_variant_type, to_max_types, to_max_types);
-            const auto & result_variant_info = result_dynamic_column->getVariantInfo();
-            auto & result_variant_column = result_dynamic_column->getVariantColumn();
-            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
-            /// Create mapping from old discriminators to the new ones.
-            std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
-            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
-            for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
-            {
-                auto old_discr = variant_info.variant_name_to_discriminator.at(name);
-                old_to_new_discriminators[old_discr] = discr;
-                /// Reuse old variant column if it's not shared variant.
-                if (discr != result_shared_variant_discr)
-                    result_variant_column.getVariantPtrByGlobalDiscriminator(discr) = variant_column.getVariantPtrByGlobalDiscriminator(old_discr);
-            }
-
-            const auto & local_discriminators = variant_column.getLocalDiscriminators();
-            const auto & offsets = variant_column.getOffsets();
-            const auto & shared_variant = dynamic_column.getSharedVariant();
-            auto & result_local_discriminators = result_variant_column.getLocalDiscriminators();
-            result_local_discriminators.reserve(local_discriminators.size());
-            auto & result_offsets = result_variant_column.getOffsets();
-            result_offsets.reserve(offsets.size());
-            auto & result_shared_variant = result_dynamic_column->getSharedVariant();
-            for (size_t i = 0; i != local_discriminators.size(); ++i)
-            {
-                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                {
-                    result_local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                    result_offsets.emplace_back();
-                }
-                else if (global_discr == shared_variant_discr)
-                {
-                    result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
-                    result_offsets.push_back(result_shared_variant.size());
-                    result_shared_variant.insertFrom(shared_variant, offsets[i]);
-                }
-                else
-                {
-                    auto result_global_discr = old_to_new_discriminators[global_discr];
-                    if (result_global_discr == result_shared_variant_discr)
-                    {
-                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
-                        result_offsets.push_back(result_shared_variant.size());
-                        ColumnDynamic::serializeValueIntoSharedVariant(
-                            result_shared_variant,
-                            variant_column.getVariantByGlobalDiscriminator(global_discr),
-                            variants[global_discr],
-                            variants[global_discr]->getDefaultSerialization(),
-                            offsets[i]);
-                    }
-                    else
-                    {
-                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_global_discr));
-                        result_offsets.push_back(offsets[i]);
-                    }
-                }
-            }
-
-            return result_dynamic_column;
-        };
-    }
+    WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const;
 
     /// Wrapper for conversion to/from Dynamic type
-    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const
-    {
-        if (const auto * from_dynamic = checkAndGetDataType<DataTypeDynamic>(from_type.get()))
-        {
-            if (const auto * to_dynamic = checkAndGetDataType<DataTypeDynamic>(to_type.get()))
-                return createDynamicToDynamicWrapper(*from_dynamic, *to_dynamic);
-
-            return createDynamicToColumnWrapper(to_type);
-        }
-
-        return createColumnToDynamicWrapper(from_type, *checkAndGetDataType<DataTypeDynamic>(to_type.get()));
-    }
+    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
-    {
-        using EnumType = DataTypeEnum<FieldType>;
-        using Function = typename FunctionTo<EnumType>::Type;
-
-        if (const auto * from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
-            checkEnumToEnumConversion(from_enum8, to_type);
-        else if (const auto * from_enum16 = checkAndGetDataType<DataTypeEnum16>(from_type.get()))
-            checkEnumToEnumConversion(from_enum16, to_type);
-
-        if (checkAndGetDataType<DataTypeString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnString, EnumType>();
-        else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
-        {
-            auto function = Function::create(context);
-            return createFunctionAdaptor(function, from_type);
-        }
-        else
-        {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type->getName(), to_type->getName());
-        }
-    }
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const;
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
-    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const
-    {
-        const auto & from_values = from_type->getValues();
-        const auto & to_values = to_type->getValues();
-
-        using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
-        using NameValuePair = std::pair<std::string, ValueType>;
-        using EnumValues = std::vector<NameValuePair>;
-
-        EnumValues name_intersection;
-        std::set_intersection(std::begin(from_values), std::end(from_values),
-            std::begin(to_values), std::end(to_values), std::back_inserter(name_intersection),
-            [] (auto && from, auto && to) { return from.first < to.first; });
-
-        for (const auto & name_value : name_intersection)
-        {
-            const auto & old_value = name_value.second;
-            const auto & new_value = to_type->getValue(name_value.first);
-            if (old_value != new_value)
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Enum conversion changes value for element '{}' from {} to {}",
-                    name_value.first, toString(old_value), toString(new_value));
-        }
-    }
+    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const;
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper() const
-    {
-        const char * function_name = cast_name;
-        return [function_name] (
-            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
-        {
-            const auto & first_col = arguments.front().column.get();
-            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+    WrapperType createStringToEnumWrapper() const;
 
-            const ColumnStringType * col = typeid_cast<const ColumnStringType *>(first_col);
-
-            if (col && nullable_col && nullable_col->size() != col->size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
-
-            if (col)
-            {
-                const auto size = col->size();
-
-                auto res = result_type.createColumn();
-                auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
-                out_data.resize(size);
-
-                auto default_enum_value = result_type.getValues().front().second;
-
-                if (nullable_col)
-                {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (!nullable_col->isNullAt(i))
-                            out_data[i] = result_type.getValue(col->getDataAt(i));
-                        else
-                            out_data[i] = default_enum_value;
-                    }
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        out_data[i] = result_type.getValue(col->getDataAt(i));
-                }
-
-                return res;
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
-                    first_col->getName(), function_name);
-        };
-    }
+    template <typename ColumnNumberType, typename EnumType>
+    WrapperType createNumberToEnumWrapper() const;
 
     template <typename EnumType>
-    WrapperType createEnumToStringWrapper() const
-    {
-        const char * function_name = cast_name;
-        return [function_name] (
-            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
-        {
-            using ColumnEnumType = typename EnumType::ColumnType;
-
-            const auto & first_col = arguments.front().column.get();
-            const auto & first_type = arguments.front().type.get();
-
-            const ColumnEnumType * enum_col = typeid_cast<const ColumnEnumType *>(first_col);
-            const EnumType * enum_type = typeid_cast<const EnumType *>(first_type);
-
-            if (enum_col && nullable_col && nullable_col->size() != enum_col->size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
-
-            if (enum_col && enum_type)
-            {
-                const auto size = enum_col->size();
-                const auto & enum_data = enum_col->getData();
-
-                auto res = res_type->createColumn();
-
-                if (nullable_col)
-                {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (!nullable_col->isNullAt(i))
-                        {
-                            const auto & value = enum_type->getNameForValue(enum_data[i]);
-                            res->insertData(value.data, value.size);
-                        }
-                        else
-                            res->insertDefault();
-                    }
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        const auto & value = enum_type->getNameForValue(enum_data[i]);
-                        res->insertData(value.data, value.size);
-                    }
-                }
-
-                return res;
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
-                    first_col->getName(), function_name);
-        };
-    }
+    WrapperType createEnumToStringWrapper() const;
 
     static WrapperType createIdentityWrapper(const DataTypePtr &)
     {
@@ -5103,422 +4437,13 @@ private:
         };
     }
 
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
-    {
-        /// Conversion from/to Variant/Dynamic data type is processed in a special way.
-        /// We don't need to remove LowCardinality/Nullable.
-        if (isDynamic(to_type) || isDynamic(from_type))
-            return createDynamicWrapper(from_type, to_type);
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
 
-        if (isVariant(to_type) || isVariant(from_type))
-            return createVariantWrapper(from_type, to_type);
-
-        const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from_type.get());
-        const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to_type.get());
-        const auto & from_nested = from_low_cardinality ? from_low_cardinality->getDictionaryType() : from_type;
-        const auto & to_nested = to_low_cardinality ? to_low_cardinality->getDictionaryType() : to_type;
-
-        if (from_type->onlyNull())
-        {
-            if (!to_nested->isNullable() && !isVariant(to_type))
-            {
-                if (cast_type == CastType::accurateOrNull)
-                {
-                    return createToNullableColumnWrapper();
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert NULL to a non-nullable type");
-                }
-            }
-
-            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
-            {
-                return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
-            };
-        }
-
-        bool skip_not_null_check = false;
-
-        if (from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable())
-            /// Disable check for dictionary. Will check that column doesn't contain NULL in wrapper below.
-            skip_not_null_check = true;
-
-        auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check);
-        if (!from_low_cardinality && !to_low_cardinality)
-            return wrapper;
-
-        return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
-        {
-            ColumnsWithTypeAndName args = {arguments[0]};
-            auto & arg = args.front();
-            auto res_type = result_type;
-
-            ColumnPtr converted_column;
-
-            ColumnPtr res_indexes;
-            /// For some types default can't be cast (for example, String to Int). In that case convert column to full.
-            bool src_converted_to_full_column = false;
-
-            {
-                auto tmp_rows_count = input_rows_count;
-
-                if (to_low_cardinality)
-                    res_type = to_low_cardinality->getDictionaryType();
-
-                if (from_low_cardinality)
-                {
-                    const auto & col_low_cardinality = typeid_cast<const ColumnLowCardinality &>(*arguments[0].column);
-
-                    if (skip_not_null_check && col_low_cardinality.containsNull())
-                        throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
-
-                    arg.column = col_low_cardinality.getDictionary().getNestedColumn();
-                    arg.type = from_low_cardinality->getDictionaryType();
-
-                    /// TODO: Make map with defaults conversion.
-                    src_converted_to_full_column = !removeNullable(arg.type)->equals(*removeNullable(res_type));
-                    if (src_converted_to_full_column)
-                        arg.column = arg.column->index(col_low_cardinality.getIndexes(), 0);
-                    else
-                        res_indexes = col_low_cardinality.getIndexesPtr();
-
-                    tmp_rows_count = arg.column->size();
-                }
-
-                /// Perform the requested conversion.
-                converted_column = wrapper(args, res_type, nullable_source, tmp_rows_count);
-            }
-
-            if (to_low_cardinality)
-            {
-                auto res_column = to_low_cardinality->createColumn();
-                auto & col_low_cardinality = typeid_cast<ColumnLowCardinality &>(*res_column);
-
-                if (from_low_cardinality && !src_converted_to_full_column)
-                    col_low_cardinality.insertRangeFromDictionaryEncodedColumn(*converted_column, *res_indexes);
-                else
-                    col_low_cardinality.insertRangeFromFullColumn(*converted_column, 0, converted_column->size());
-
-                return res_column;
-            }
-            else if (!src_converted_to_full_column)
-                return converted_column->index(*res_indexes, 0);
-            else
-                return converted_column;
-        };
-    }
-
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const
-    {
-        /// Determine whether pre-processing and/or post-processing must take place during conversion.
-
-        bool source_is_nullable = from_type->isNullable();
-        bool result_is_nullable = to_type->isNullable();
-
-        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
-
-        if (result_is_nullable)
-        {
-            return [wrapper, source_is_nullable]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-            {
-                /// Create a temporary columns on which to perform the operation.
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*result_type);
-                const auto & nested_type = nullable_type.getNestedType();
-
-                ColumnsWithTypeAndName tmp_args;
-                if (source_is_nullable)
-                    tmp_args = createBlockWithNestedColumns(arguments);
-                else
-                    tmp_args = arguments;
-
-                const ColumnNullable * nullable_source = nullptr;
-
-                /// Add original ColumnNullable for createStringToEnumWrapper()
-                if (source_is_nullable)
-                {
-                    if (arguments.size() != 1)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of arguments");
-                    nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-                }
-
-                /// Perform the requested conversion.
-                auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
-
-                /// May happen in fuzzy tests. For debug purpose.
-                if (!tmp_res)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't convert {} to {} in prepareRemoveNullable wrapper.",
-                                    arguments[0].type->getName(), nested_type->getName());
-
-                return wrapInNullable(tmp_res, arguments, nested_type, input_rows_count);
-            };
-        }
-        else if (source_is_nullable)
-        {
-            /// Conversion from Nullable to non-Nullable.
-
-            return [wrapper, skip_not_null_check]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-            {
-                auto tmp_args = createBlockWithNestedColumns(arguments);
-                auto nested_type = removeNullable(result_type);
-
-                /// Check that all values are not-NULL.
-                /// Check can be skipped in case if LowCardinality dictionary is transformed.
-                /// In that case, correctness will be checked beforehand.
-                if (!skip_not_null_check)
-                {
-                    const auto & col = arguments[0].column;
-                    const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
-                    const auto & null_map = nullable_col.getNullMapData();
-
-                    if (!memoryIsZero(null_map.data(), 0, null_map.size()))
-                        throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
-                }
-                const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-                return wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
-            };
-        }
-        else
-            return wrapper;
-    }
+    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
 
     /// 'from_type' and 'to_type' are nested types in case of Nullable.
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
-    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
-    {
-        if (isUInt8(from_type) && isBool(to_type))
-            return createUInt8ToBoolWrapper(from_type, to_type);
-
-        /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
-        bool safe_convert_custom_types = true;
-
-        if (const auto * to_type_custom_name = to_type->getCustomName())
-            safe_convert_custom_types = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
-        else if (const auto * from_type_custom_name = from_type->getCustomName())
-            safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
-
-        if (from_type->equals(*to_type) && safe_convert_custom_types)
-        {
-            /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
-            if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))
-            {
-                if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
-                    return createIdentityWrapper(from_type);
-            }
-            else
-                return createIdentityWrapper(from_type);
-        }
-        else if (WhichDataType(from_type).isNothing())
-            return createNothingWrapper(to_type.get());
-
-        WrapperType ret;
-
-        auto make_default_wrapper = [&](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using ToDataType = typename Types::LeftType;
-
-            if constexpr (is_any_of<ToDataType,
-                DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-                DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-                DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
-                DataTypeDate, DataTypeDate32, DataTypeDateTime,
-                DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
-            {
-                ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
-                return true;
-            }
-            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
-            {
-                if (isBool(to_type))
-                    ret = createBoolWrapper<ToDataType>(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
-                else
-                    ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
-                return true;
-            }
-            if constexpr (
-                std::is_same_v<ToDataType, DataTypeEnum8> ||
-                std::is_same_v<ToDataType, DataTypeEnum16>)
-            {
-                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
-                return true;
-            }
-            if constexpr (is_any_of<ToDataType,
-                DataTypeDecimal<Decimal32>, DataTypeDecimal<Decimal64>,
-                DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal256>,
-                DataTypeDateTime64>)
-            {
-                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
-                return true;
-            }
-
-            return false;
-        };
-
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error];
-        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error];
-        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error];
-
-        auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using ToDataType = typename Types::RightType;
-            using FromDataType = typename Types::LeftType;
-
-            if constexpr (WhichDataType(FromDataType::type_id).isStringOrFixedString())
-            {
-                if constexpr (std::is_same_v<ToDataType, DataTypeIPv4>)
-                {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
-                           input_format_ipv4_default_on_conversion_error_value,
-                           requested_result_is_nullable](
-                              ColumnsWithTypeAndName & arguments,
-                              const DataTypePtr & result_type,
-                              const ColumnNullable * column_nullable,
-                              size_t) -> ColumnPtr
-                    {
-                        if (!WhichDataType(result_type).isIPv4())
-                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
-
-                        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (requested_result_is_nullable)
-                            return convertToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
-                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value)
-                            return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
-                        else
-                            return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
-                    };
-
-                    return true;
-                }
-
-                if constexpr (std::is_same_v<ToDataType, DataTypeIPv6>)
-                {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
-                           input_format_ipv6_default_on_conversion_error_value,
-                           requested_result_is_nullable](
-                              ColumnsWithTypeAndName & arguments,
-                              const DataTypePtr & result_type,
-                              const ColumnNullable * column_nullable,
-                              size_t) -> ColumnPtr
-                    {
-                        if (!WhichDataType(result_type).isIPv6())
-                            throw Exception(
-                                ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv6", result_type->getName());
-
-                        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (requested_result_is_nullable)
-                            return convertToIPv6<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
-                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value)
-                            return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
-                        else
-                            return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
-                    };
-
-                    return true;
-                }
-
-                if (to_type->getCustomSerialization() && to_type->getCustomName())
-                {
-                    ret = [requested_result_is_nullable, this](
-                              ColumnsWithTypeAndName & arguments,
-                              const DataTypePtr & result_type,
-                              const ColumnNullable * column_nullable,
-                              size_t input_rows_count) -> ColumnPtr
-                    {
-                        auto wrapped_result_type = result_type;
-                        if (requested_result_is_nullable)
-                            wrapped_result_type = makeNullable(result_type);
-                        if (this->cast_type == CastType::accurateOrNull)
-                            return ConvertImplGenericFromString<false>::execute(
-                                arguments, wrapped_result_type, column_nullable, input_rows_count, context);
-                        return ConvertImplGenericFromString<true>::execute(
-                            arguments, wrapped_result_type, column_nullable, input_rows_count, context);
-                    };
-                    return true;
-                }
-            }
-            else if constexpr (WhichDataType(FromDataType::type_id).isIPv6() && WhichDataType(ToDataType::type_id).isIPv4())
-            {
-                ret = [cast_ipv4_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
-                                ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                        -> ColumnPtr
-                {
-                    if (!WhichDataType(result_type).isIPv4())
-                        throw Exception(
-                            ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
-
-                    const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                    if (requested_result_is_nullable)
-                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
-                    else if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
-                    else
-                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
-                };
-
-                return true;
-            }
-
-            if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
-            {
-                if constexpr (WhichDataType(FromDataType::type_id).isEnum())
-                {
-                    ret = createEnumToStringWrapper<FromDataType>();
-                    return true;
-                }
-                else if (from_type->getCustomSerialization())
-                {
-                    ret = [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
-                    {
-                        return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count, context);
-                    };
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        if (callOnTwoTypeIndexes(from_type->getTypeId(), to_type->getTypeId(), make_custom_serialization_wrapper))
-            return ret;
-
-        if (callOnIndexAndDataType<void>(to_type->getTypeId(), make_default_wrapper))
-            return ret;
-
-        switch (to_type->getTypeId())
-        {
-            case TypeIndex::String:
-                return createStringWrapper(from_type);
-            case TypeIndex::FixedString:
-                return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN());
-            case TypeIndex::Array:
-                return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
-            case TypeIndex::Tuple:
-                return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
-            case TypeIndex::Map:
-                return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
-            case TypeIndex::ObjectDeprecated:
-                return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
-            case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
-            case TypeIndex::AggregateFunction:
-                return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
-            case TypeIndex::Interval:
-                return createIntervalWrapper(from_type, checkAndGetDataType<DataTypeInterval>(to_type.get())->getKind());
-            default:
-                break;
-        }
-
-        if (cast_type == CastType::accurateOrNull)
-            return createToNullableColumnWrapper();
-        else
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                from_type->getName(), to_type->getName());
-    }
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const;
 };
 
 }

@@ -1,17 +1,21 @@
 #pragma once
 
-#include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
+#include <base/memcmpSmall.h>
 #include <Common/TargetSpecific.h>
-
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Columns/ColumnArray.h>
+#include <Common/quoteString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnArray.h>
-
+#include <Core/AccurateComparison.h>
+#include <Core/DecimalComparison.h>
+#include <Core/Settings.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -23,26 +27,36 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
-
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
-
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-
-#include <Core/AccurateComparison.h>
-#include <Core/DecimalComparison.h>
-
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-
-#include <limits>
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 #include <type_traits>
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <Functions/castTypeToEither.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+}
+
+FormatSettings getFormatSettings(const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -60,6 +74,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Time64:
+            return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -76,6 +92,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicTypeSecondArg<DateTime64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Time64:
+            return callOnBasicTypeSecondArg<Time64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -137,7 +155,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -164,27 +182,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImplAVX512BW(a, b, c);
+            vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorVectorImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorVectorImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorVectorImplSSE42(a, b, c);
+            vectorVectorImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -193,7 +199,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -213,27 +219,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImplAVX512BW(a, b, c);
+            vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorConstantImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42(a, b, c);
+            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -268,8 +262,8 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
-                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset - 1), 0);
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset), 0);
 
             prev_a_offset = a_offsets[i];
             prev_b_offset = b_offsets[i];
@@ -287,7 +281,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data() + i * b_n, b_n), 0);
 
             prev_a_offset = a_offsets[i];
@@ -305,7 +299,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data(), b_size), 0);
 
             prev_a_offset = a_offsets[i];
@@ -425,8 +419,8 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
-            auto b_size = b_offsets[i] - prev_b_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
+            auto b_size = b_offsets[i] - prev_b_offset;
 
             c[i] = positive == memequalSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -447,7 +441,7 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto a_size = a_offsets[i] - prev_a_offset;
 
             c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -475,7 +469,7 @@ struct StringEqualsImpl
              */
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 if (a_size == 0)
                     c[i] = positive;
@@ -489,7 +483,7 @@ struct StringEqualsImpl
         {
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset - 1;
+                auto a_size = a_offsets[i] - prev_a_offset;
 
                 c[i] = positive == memequalSmallAllowOverflow15(
                     a_data.data() + prev_a_offset, a_size,
@@ -630,6 +624,69 @@ struct GenericComparisonImpl
     }
 };
 
+
+#if USE_EMBEDDED_COMPILER
+
+template <template <typename, typename> typename Op> struct CompileOp;
+
+template <> struct CompileOp<EqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
+    }
+};
+
+template <> struct CompileOp<IsNotDistinctFromOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y);
+    }
+};
+
+template <> struct CompileOp<NotEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpUNE(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
+    }
+};
+
+#endif
+
 struct NameEquals          { static constexpr auto name = "equals"; };
 struct NameNotEquals       { static constexpr auto name = "notEquals"; };
 struct NameLess            { static constexpr auto name = "less"; };
@@ -637,19 +694,39 @@ struct NameGreater         { static constexpr auto name = "greater"; };
 struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
+struct ComparisonParams
+{
+    bool check_decimal_overflow = false;
+    bool validate_enum_literals_in_operators = false;
+    bool use_variant_default_implementation = true;
+    FormatSettings format_settings;
 
-template <template <typename, typename> class Op, typename Name>
+    explicit ComparisonParams(const ContextPtr & context)
+        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
+        , format_settings(getFormatSettings(context))
+    {
+        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    }
+
+    ComparisonParams() = default;
+};
+
+template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
 class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
 
-    explicit FunctionComparison(bool check_decimal_overflow_)
-        : check_decimal_overflow(check_decimal_overflow_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
 
+    explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
+
+    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
+    bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
 private:
-    bool check_decimal_overflow = true;
+    const ComparisonParams params;
 
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
@@ -755,6 +832,8 @@ private:
 
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
+        checkStackSize();
+
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
@@ -779,7 +858,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size;
+                c0_const_size = c0_const_string->getDataAt(0).size();
             }
             else if (c0_const_fixed_string)
             {
@@ -798,7 +877,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size;
+                c1_const_size = c1_const_string->getDataAt(0).size();
             }
             else if (c1_const_fixed_string)
             {
@@ -867,6 +946,8 @@ private:
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
+        checkStackSize();
+
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
         /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
@@ -881,7 +962,26 @@ private:
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
         Field string_value = left_const ? left_const->getField() : right_const->getField();
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+
+        auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
+        {
+            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+                return false;
+            if (params.validate_enum_literals_in_operators)
+                return false;
+            if (!enum_values || string_value.getType() != Field::Types::String)
+                return false;
+            T res;
+            return !enum_values->tryGetValue(res, string_value.safeGet<String>());
+        };
+
+        if (is_string_not_in_enum(typeid_cast<const DataTypeEnum8 *>(type_to_compare.get()))
+         || is_string_not_in_enum(typeid_cast<const DataTypeEnum16 *>(type_to_compare.get())))
+        {
+            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
@@ -916,7 +1016,6 @@ private:
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
-
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
@@ -927,6 +1026,25 @@ private:
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
+        /// comparisons would produce ColumnNothing which doesn't match the declared
+        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
+        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
+        /// and the element-wise null-safe comparison handles Nothing types correctly.
+        if constexpr (!is_null_safe_cmp_mode)
+        {
+            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
+            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
+                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
+                {
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                }
+            }
+        }
 
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
@@ -1106,7 +1224,6 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
-
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1126,6 +1243,26 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if ((name == NameEquals::name || name == NameNotEquals::name))
+        {
+            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
+                    backQuote(arguments[0]->getName()),
+                    backQuote(arguments[1]->getName()),
+                    backQuote(getName()));
+        }
+        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                backQuote(arguments[0]->getName()),
+                backQuote(arguments[1]->getName()),
+                backQuote(getName()));
+        }
+
         WhichDataType left(arguments[0].get());
         WhichDataType right(arguments[1].get());
 
@@ -1137,7 +1274,7 @@ public:
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
-            /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
+            /// You can compare the date, datetime, or datetime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
@@ -1147,30 +1284,48 @@ public:
         {
             if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
+                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
         }
 
-        if (left_tuple && right_tuple)
+        bool both_tuples = left_tuple && right_tuple;
+        if (both_tuples || (left_tuple && right.isStringOrFixedString()) || (left.isStringOrFixedString() && right_tuple))
         {
-            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
+            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
 
             bool has_nullable = false;
             bool has_null = false;
+            bool has_nothing = false;
 
-            size_t size = left_tuple->getElements().size();
+            const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
+            size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                               {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = func->build(args)->getResultType();
-                has_nullable = has_nullable || element_type->isNullable();
+                DataTypePtr element_type = any_tuple->getElement(i);
+                if (both_tuples)
+                {
+                    ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
+                                                   {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
+                has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
+
+                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nothing
+                has_nothing = has_nothing || isNothing(element_type);
             }
 
+            // In null-safe cmp mode, return DataTypeUInt8 (null-safe comparison always produces a definite result)
+            if (is_null_safe_cmp_mode)
+                return std::make_shared<DataTypeUInt8>();
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
@@ -1185,6 +1340,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        checkStackSize();
+
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
@@ -1245,8 +1402,8 @@ public:
                 assert_cast<const DataTypeFixedString &>(*left_type).getN() :
                 (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
-            && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
+        bool date_and_time_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isTime() || which_left.isTime64() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDate32() || which_right.isTime() || which_right.isTime64() || which_right.isDateTime() || which_right.isDateTime64());
 
         /// Interval data types can be compared only when having equal units.
         bool left_is_interval = which_left.isInterval();
@@ -1255,7 +1412,7 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_datetime
+        if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
@@ -1305,17 +1462,17 @@ public:
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
                 return executeDecimal<Op, Name>(
-                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow);
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow);
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_time_datetime)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "No operation {} between {} and {}",
@@ -1334,9 +1491,9 @@ public:
                     = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
                 return executeImpl(new_arguments, result_type, input_rows_count);
             }
-            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, check_decimal_overflow);
+            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, params.check_decimal_overflow);
         }
-        if (date_and_datetime)
+        if (date_and_time_datetime)
         {
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1345,7 +1502,7 @@ public:
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeDecimal<Op, Name>(
-                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow))))
+                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow))))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
@@ -1356,6 +1513,123 @@ public:
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
     }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        for (const auto & argument : arguments)
+        {
+            ColumnPtr column = argument.column;
+
+            if (!column || !isColumnConst(*column))
+                continue;
+
+            if (column->isNullAt(0))
+                return result_type->createColumnConst(1, Null());
+        }
+
+        return nullptr;
+    }
+
+#if USE_EMBEDDED_COMPILER
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeFloat32,
+            DataTypeFloat64>(type, std::forward<F>(f));
+    }
+
+    template <typename F>
+    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+    {
+        return castType(left, [&](const auto & left_)
+        {
+            return castType(right, [&](const auto & right_)
+            {
+                return f(left_, right_);
+            });
+        });
+    }
+
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        if (2 != arguments.size())
+            return false;
+
+        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
+            return false;
+
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
+        /// TODO support date/date32
+        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
+            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
+            return false;
+
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
+            {
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                return OpSpec::compilable;
+            }
+            return false;
+        });
+        return false;
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
+    {
+        assert(2 == arguments.size());
+
+        llvm::Value * result = nullptr;
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
+            {
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (OpSpec::compilable)
+                {
+                    auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
+                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                    auto * left_value = nativeCast(b, arguments[0], promoted_type);
+                    auto * right_value = nativeCast(b, arguments[1], promoted_type);
+                    result = b.CreateSelect(
+                        CompileOp<Op>::compile(b, left_value, right_value, std::is_signed_v<PromotedType>), b.getInt8(1), b.getInt8(0));
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        return result;
+    }
+#endif
 };
 
 }

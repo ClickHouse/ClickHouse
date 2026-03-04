@@ -37,7 +37,7 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     query_with_experimental_setting = (
         "SELECT 1 SETTINGS allow_experimental_time_series_table=1"
     )
-    query_with_beta_setting = "SELECT 1 SETTINGS enable_parallel_replicas=1"
+    query_with_beta_setting = "SELECT 1 SETTINGS allow_experimental_lightweight_update=1"
 
     assert "0" == get_current_tier_value(instance)
     output, error = instance.query_and_get_answer_with_error(
@@ -154,6 +154,7 @@ def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     """
     )
     assert output == ""
+    assert error == ""
 
     output, error = instance.query_and_get_answer_with_error(
         """
@@ -168,6 +169,30 @@ def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP TABLE IF EXISTS test_experimental")
+
+
+def test_allow_feature_tier_in_mergetree_settings_with_old_compatibility(start_cluster):
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_experimental")
+
+    # Disable experimental settings
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    basic_merge_tree_query = """
+        create table b (a Int64) ENGINE=MergeTree() order by a;
+    """
+
+    output, error = instance.query_and_get_answer_with_error(basic_merge_tree_query)
+    assert output == ""
+    assert error is ""
+
+    # Go back
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS b")
 
 
 def test_allow_feature_tier_in_user(start_cluster):

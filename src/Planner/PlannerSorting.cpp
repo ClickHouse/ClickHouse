@@ -2,7 +2,7 @@
 
 #include <Core/Settings.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>
 
@@ -96,7 +96,7 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     ///////////////////////////////////
 
-    if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
+    if (accurateEquals(fill_column_description.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
             "WITH FILL STEP value cannot be zero");
 
@@ -109,16 +109,16 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     if (sort_node.getSortDirection() == SortDirection::ASCENDING)
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_step, Field{0}))
+        if (accurateLess(fill_column_description.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
-        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_staleness, Field{0}))
+        if (accurateLess(fill_column_description.fill_staleness, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_to, fill_column_description.fill_from))
+            accurateLess(fill_column_description.fill_to, fill_column_description.fill_from))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
@@ -126,16 +126,16 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
     }
     else
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_step))
+        if (accurateLess(Field{0}, fill_column_description.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_staleness))
+        if (accurateLess(Field{0}, fill_column_description.fill_staleness))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_from, fill_column_description.fill_to))
+            accurateLess(fill_column_description.fill_from, fill_column_description.fill_to))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
@@ -170,11 +170,17 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
         if (sort_node_typed.withFill())
         {
             FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
         }
         else
         {
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator);
         }
     }
 

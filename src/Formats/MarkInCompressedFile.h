@@ -1,9 +1,11 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <Common/JemallocCacheAllocator.h>
 
 
 namespace DB
@@ -48,6 +50,8 @@ public:
     MarkInCompressedFile get(size_t idx) const;
 
     size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
 
 private:
     /** Throughout this class:
@@ -96,8 +100,8 @@ private:
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
     size_t num_marks;
-    PODArray<BlockInfo> blocks;
-    PODArray<UInt64> packed;
+    PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
+    PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;

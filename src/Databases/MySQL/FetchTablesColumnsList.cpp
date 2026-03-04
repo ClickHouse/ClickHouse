@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_MYSQL
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -11,7 +12,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <memory>

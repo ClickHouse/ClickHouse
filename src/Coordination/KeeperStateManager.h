@@ -6,8 +6,9 @@
 #include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Coordination/KeeperStateMachine.h"
-#include "Coordination/RaftServerConfig.h"
+#include <Coordination/KeeperStateMachine.h>
+#include <Coordination/RaftServerConfig.h>
+#include <Access/AuthenticationData.h>
 
 namespace DB
 {
@@ -93,6 +94,8 @@ public:
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
     ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;
 
+    std::optional<AuthenticationData> getAuthenticationData() const;
+
 private:
     const String & getOldServerStatePath();
 
@@ -103,9 +106,11 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port;
+        int port = -1;
         /// Our config
         KeeperServerConfigPtr config;
+        /// Password to access keeper
+        std::optional<AuthenticationData> auth_data;
         /// Servers id's to start as followers
         std::unordered_set<int> servers_start_as_followers;
         /// Cluster config

@@ -23,7 +23,7 @@ def fill_nodes(nodes):
 
 
 cluster = ClickHouseCluster(__file__)
-configs = ["configs/remote_servers.xml"]
+configs = ["configs/remote_servers.xml", "configs/fast_background_pool.xml"]
 
 node_1 = cluster.add_instance("replica1", with_zookeeper=True, main_configs=configs)
 node_2 = cluster.add_instance("replica2", with_zookeeper=True, main_configs=configs)
@@ -42,6 +42,10 @@ def fill_table():
     node_1.query("INSERT INTO test SELECT number + 600 FROM numbers(200)")
     node_1.query("INSERT INTO test SELECT number + 800 FROM numbers(200)")
     check_data(499500, 1000)
+
+def drop_tables():
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS test SYNC")
 
 
 # kazoo.delete may throw NotEmptyError on concurrent modifications of the path
@@ -124,6 +128,7 @@ def test_restore_replica_sequential(start_cluster):
     node_3.query("SYSTEM SYNC REPLICA test")
 
     check_after_restoration()
+    drop_tables()
 
 
 def test_restore_replica_parallel(start_cluster):
@@ -152,6 +157,7 @@ def test_restore_replica_parallel(start_cluster):
     node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)")
 
     check_after_restoration()
+    drop_tables()
 
 
 def test_restore_replica_alive_replicas(start_cluster):
@@ -181,3 +187,4 @@ def test_restore_replica_alive_replicas(start_cluster):
     node_3.query("SYSTEM SYNC REPLICA test")
 
     check_after_restoration()
+    drop_tables()

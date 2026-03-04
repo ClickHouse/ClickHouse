@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
@@ -15,9 +16,14 @@ namespace DB
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
-    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
+    extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
+    extern const ObjectStorageQueueSettingsString partition_regex;
+    extern const ObjectStorageQueueSettingsString partition_component;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
@@ -55,20 +61,44 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ColumnsDescription & columns_,
     const std::string & format_)
     : format_name(format_)
-    , columns(columns_.toString())
+    , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
-    , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , bucketing_mode(engine_settings[ObjectStorageQueueSetting::bucketing_mode].toString())
+    , partitioning_mode(
+          engine_settings[ObjectStorageQueueSetting::use_hive_partitioning]
+              ? "hive"
+              : engine_settings[ObjectStorageQueueSetting::partitioning_mode].toString())
+    , partition_regex(engine_settings[ObjectStorageQueueSetting::partition_regex])
+    , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
+    , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
     if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
         processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
+
+    // Validate regex partitioning configuration
+    if (partitioning_mode == "regex")
+    {
+        if (partition_regex.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partition_regex must be specified when using partitioning_mode='regex'");
+        if (partition_component.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partition_component must be specified when using partitioning_mode='regex'");
+    }
+
+    if (bucketing_mode == "partition" && partitioning_mode == "none")
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "bucketing_mode='partition' requires partitioning_mode to be set to 'hive' or 'regex'");
+    }
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -79,11 +109,15 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
     json.set("processing_threads_num", processing_threads_num.load());
-    json.set("buckets", buckets);
+    json.set("buckets", buckets.load());
     json.set("format_name", format_name);
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
     json.set("loading_retries", loading_retries.load());
+    json.set("bucketing_mode", bucketing_mode);
+    json.set("partitioning_mode", partitioning_mode);
+    json.set("partition_regex", partition_regex);
+    json.set("partition_component", partition_component);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -97,6 +131,10 @@ ObjectStorageQueueAction ObjectStorageQueueTableMetadata::actionFromString(const
         return ObjectStorageQueueAction::KEEP;
     if (action == "delete")
         return ObjectStorageQueueAction::DELETE;
+    if (action == "move")
+        return ObjectStorageQueueAction::MOVE;
+    if (action == "tag")
+        return ObjectStorageQueueAction::TAG;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
 }
 
@@ -108,12 +146,36 @@ std::string ObjectStorageQueueTableMetadata::actionToString(ObjectStorageQueueAc
             return "delete";
         case ObjectStorageQueueAction::KEEP:
             return "keep";
+        case ObjectStorageQueueAction::MOVE:
+            return "move";
+        case ObjectStorageQueueAction::TAG:
+            return "tag";
     }
 }
 
 ObjectStorageQueueMode ObjectStorageQueueTableMetadata::getMode() const
 {
     return modeFromString(mode);
+}
+
+ObjectStorageQueueBucketingMode ObjectStorageQueueTableMetadata::getBucketingMode() const
+{
+    if (bucketing_mode == "path")
+        return ObjectStorageQueueBucketingMode::PATH;
+    if (bucketing_mode == "partition")
+        return ObjectStorageQueueBucketingMode::PARTITION;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue bucketing mode: {}", bucketing_mode);
+}
+
+ObjectStorageQueuePartitioningMode ObjectStorageQueueTableMetadata::getPartitioningMode() const
+{
+    if (partitioning_mode == "none")
+        return ObjectStorageQueuePartitioningMode::NONE;
+    if (partitioning_mode == "hive")
+        return ObjectStorageQueuePartitioningMode::HIVE;
+    if (partitioning_mode == "regex")
+        return ObjectStorageQueuePartitioningMode::REGEX;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue partitioning mode: {}", partitioning_mode);
 }
 
 template <typename T>
@@ -136,13 +198,17 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     : format_name(json->getValue<String>("format_name"))
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
-    , buckets(getOrDefault(json, "buckets", "", 0))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , bucketing_mode(getOrDefault<String>(json, "bucketing_mode", "", "path"))
+    , partitioning_mode(getOrDefault<String>(json, "partitioning_mode", "", "none"))
+    , partition_regex(getOrDefault<String>(json, "partition_regex", "", ""))
+    , partition_component(getOrDefault<String>(json, "partition_component", "", ""))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
-    , loading_retries(getOrDefault(json, "loading_retries", "", 10))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
-    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
-    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
+    , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
+    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
+    , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
 }
@@ -161,7 +227,7 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
         auto log = getLogger("ObjectStorageQueueTableMetadata");
         const std::string message = fmt::format(
             "Using `processing_threads_num` from keeper: {} (local: {})",
-            from_zk.processing_threads_num, processing_threads_num);
+            from_zk.processing_threads_num.load(), processing_threads_num.load());
 
         if (processing_threads_num_changed)
             LOG_WARNING(log, "{}", message);
@@ -195,21 +261,53 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             from_zk.mode,
             mode);
 
+    if (bucketing_mode != from_zk.bucketing_mode)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in bucketing mode. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.bucketing_mode,
+            bucketing_mode);
+
+    if (partitioning_mode != from_zk.partitioning_mode)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partitioning mode. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partitioning_mode,
+            partitioning_mode);
+
+    if (partition_regex != from_zk.partition_regex)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partition_regex. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partition_regex,
+            partition_regex);
+
+    if (partition_component != from_zk.partition_component)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partition_component. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partition_component,
+            partition_component);
+
     if (tracked_files_limit != from_zk.tracked_files_limit)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_limit,
-            tracked_files_limit);
+            from_zk.tracked_files_limit.load(),
+            tracked_files_limit.load());
 
     if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
             "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_ttl_sec,
-            tracked_files_ttl_sec);
+            from_zk.tracked_files_ttl_sec.load(),
+            tracked_files_ttl_sec.load());
 
     if (format_name != from_zk.format_name)
         throw Exception(
@@ -235,16 +333,16 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in buckets setting. "
                 "Stored in ZooKeeper: {}, local: {}",
-                from_zk.buckets, buckets);
+                from_zk.buckets.load(), buckets.load());
         }
 
-        if (ObjectStorageQueueMetadata::getBucketsNum(*this) != ObjectStorageQueueMetadata::getBucketsNum(from_zk))
+        if (getBucketsNum() != from_zk.getBucketsNum())
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in processing buckets. "
                 "Stored in ZooKeeper: {}, local: {}",
-                ObjectStorageQueueMetadata::getBucketsNum(from_zk), ObjectStorageQueueMetadata::getBucketsNum(*this));
+                from_zk.getBucketsNum(), getBucketsNum());
         }
     }
 

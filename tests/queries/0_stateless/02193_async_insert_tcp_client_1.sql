@@ -17,11 +17,11 @@ INSERT INTO t_async_insert_02193_1 FORMAT JSONEachRow {"id": 4, "s": "ddd"};
 
 SELECT * FROM t_async_insert_02193_1 ORDER BY id;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT count(), sum(ProfileEvents['AsyncInsertQuery']) FROM system.query_log
 WHERE
-    event_date >= yesterday() AND
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' AND
     current_database = currentDatabase() AND
     query ILIKE 'INSERT INTO t_async_insert_02193_1%';

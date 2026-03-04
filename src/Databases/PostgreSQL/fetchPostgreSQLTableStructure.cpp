@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -43,7 +44,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+            postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
@@ -58,7 +59,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            quoteString(schema));
+            quoteStringPostgreSQL(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
@@ -101,7 +102,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     else if (type.starts_with("timestamp"))
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
-        res = std::make_shared<DataTypeDate>();
+        res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")
         res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
@@ -298,11 +299,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 {
     PostgreSQLTableStructure table;
 
-    auto where = fmt::format("relname = {}", quoteString(postgres_table));
+    auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
     where += postgres_schema.empty()
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
+        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;
     if (!columns.empty())
@@ -414,8 +415,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
-            quoteString(postgres_table),
-            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
+            quoteStringPostgreSQL(postgres_table),
+            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);

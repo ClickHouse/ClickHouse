@@ -1,6 +1,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
@@ -20,9 +21,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,6 +47,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -57,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -116,11 +121,18 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/{},
+            planner_context,
+            empty_correlated_columns_set);
+        correlated_subtrees.assertEmpty("in constant expression without query context");
 
         if (actions.getOutputs().size() != 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
+            // Expression can return more than one column using untuple()
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
         }
 
         const auto & output = actions.getOutputs()[0];
@@ -128,6 +140,12 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -200,13 +218,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return make_intrusive<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -359,7 +377,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -564,11 +582,12 @@ namespace
         if (!col_set || !col_set->getData())
             return {};
 
-        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
-        if (!set_from_tuple)
-            return {};
+        SetPtr set = nullptr;
+        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
+            set = set_from_tuple->buildOrderedSetInplace(context);
+        else
+            set = col_set->getData().get()->get();
 
-        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 
@@ -602,7 +621,7 @@ namespace
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            cast_col = tryCastColumn(column, type, node->result_type);
             if (!cast_col)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
@@ -686,8 +705,11 @@ namespace
                 if (lists.empty())
                     return {};
 
+                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
+                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
+                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;
@@ -725,7 +747,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1);
         for (const auto & column : columns)
             if (!column.column)
                 return {};
@@ -740,10 +762,13 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, inverted_dag, false);
+    if (!predicate)
+        return {};
 
-    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    auto matches = matchTrees(expr, *filter_dag.dag, false);
+
+    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
 
     if (!predicates)
         return {};

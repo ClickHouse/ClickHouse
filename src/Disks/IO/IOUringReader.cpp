@@ -1,18 +1,19 @@
-#include "IOUringReader.h"
+#include <Disks/IO/IOUringReader.h>
+#include <Common/ErrnoException.h>
 
 #if USE_LIBURING
 
-#include <base/errnoToString.h>
-#include <Common/assert_cast.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
-#include <future>
-#include <memory>
+#    include <future>
+#    include <memory>
+#    include <base/MemorySanitizer.h>
+#    include <base/errnoToString.h>
+#    include <Common/CurrentMetrics.h>
+#    include <Common/ProfileEvents.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/ThreadPool.h>
+#    include <Common/assert_cast.h>
+#    include <Common/logger_useful.h>
+#    include <Common/setThreadName.h>
 
 namespace ProfileEvents
 {
@@ -208,7 +209,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 
 void IOUringReader::monitorRing()
 {
-    setThreadName("IOUringMonitor");
+    DB::setThreadName(ThreadName::IO_URING_MONITOR);
 
     while (!cancelled.load(std::memory_order_relaxed))
     {
@@ -321,7 +322,7 @@ void IOUringReader::monitorRing()
         else
         {
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
-            enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
+            enqueued.promise.set_value(Result{ .buf = enqueued.request.buf, .size = total_bytes_read, .offset = enqueued.request.ignore, .file_offset_of_buffer_end = enqueued.request.offset + total_bytes_read });
             finalizeRequest(it);
         }
 

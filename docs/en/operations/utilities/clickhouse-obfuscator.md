@@ -1,6 +1,8 @@
 ---
-slug: /en/operations/utilities/clickhouse-obfuscator
-title: clickhouse-obfuscator 
+description: 'Documentation for Clickhouse Obfuscator'
+slug: /operations/utilities/clickhouse-obfuscator
+title: 'clickhouse-obfuscator'
+doc_type: 'reference'
 ---
 
 A simple tool for table data obfuscation.
@@ -31,7 +33,6 @@ It works in a deterministic fashion: you define a seed value and the transformat
 Some transformations are one to one and could be reversed, so you need to have a large seed and keep it in secret.
 
 It uses some cryptographic primitives to transform data but from the cryptographic point of view, it does not do it properly, that is why you should not consider the result as secure unless you have another reason. The result may retain some data you don't want to publish.
-
 
 It always leaves 0, 1, -1 numbers, dates, lengths of arrays, and null flags exactly as in source data.
 For example, you have a column `IsMobile` in your table with values 0 and 1. In transformed data, it will have the same value.

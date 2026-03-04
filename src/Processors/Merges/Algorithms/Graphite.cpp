@@ -7,12 +7,14 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 
 #include <string_view>
 #include <vector>
 #include <unordered_map>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -70,7 +72,7 @@ void Pattern::updateHash(SipHash & hash) const
     {
         hash.update(function->getName());
         for (const auto & p : function->getParameters())
-            hash.update(toString(p));
+            hash.update(fieldToString(p));
     }
     for (const auto & r : retentions)
     {

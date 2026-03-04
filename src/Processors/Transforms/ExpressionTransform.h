@@ -1,6 +1,7 @@
 #pragma once
-#include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Core/Block_fwd.h>
 
 namespace DB
 {
@@ -9,6 +10,9 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
@@ -19,8 +23,7 @@ class ExpressionTransform final : public ISimpleTransform
 {
 public:
     ExpressionTransform(
-            const Block & header_,
-            ExpressionActionsPtr expression_);
+        SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -31,14 +34,16 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform
 {
 public:
     ConvertingTransform(
-            const Block & header_,
-            ExpressionActionsPtr expression_);
+        SharedHeader header_,
+        ExpressionActionsPtr expression_);
 
     String getName() const override { return "ConvertingTransform"; }
 

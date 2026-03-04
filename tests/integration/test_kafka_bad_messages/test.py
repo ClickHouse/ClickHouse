@@ -1,116 +1,12 @@
-import logging
-import time
-
-import pytest
-from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
-from kafka.admin import NewTopic
-
-from helpers.cluster import ClickHouseCluster, is_arm
-
-if is_arm():
-    pytestmark = pytest.mark.skip
-
+from helpers.kafka.common_direct import *
+import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml"],
+    main_configs=["configs/kafka.xml", "configs/dead_letter_queue.xml"],
     with_kafka=True,
 )
-
-
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
-
-
-def get_kafka_producer(port, serializer, retries):
-    errors = []
-    for _ in range(retries):
-        try:
-            producer = KafkaProducer(
-                bootstrap_servers="localhost:{}".format(port),
-                value_serializer=serializer,
-            )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
-            return producer
-        except Exception as e:
-            errors += [str(e)]
-            time.sleep(1)
-
-    raise Exception("Connection not establised, {}".format(errors))
-
-
-def producer_serializer(x):
-    return x.encode() if isinstance(x, str) else x
-
-
-def kafka_produce(
-    kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None
-):
-    logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kafka_port, topic
-        )
-    )
-    producer = get_kafka_producer(
-        kafka_cluster.kafka_port, producer_serializer, retries
-    )
-    for message in messages:
-        producer.send(
-            topic=topic, value=message, timestamp_ms=timestamp, partition=partition
-        )
-        producer.flush()
 
 
 @pytest.fixture(scope="module")
@@ -124,7 +20,45 @@ def kafka_cluster():
         cluster.shutdown()
 
 
-def test_bad_messages_parsing_stream(kafka_cluster):
+# check_method for bad_messages_parsing_mode
+def view_test(expected_num_messages, *_):
+    rows = instance.query_with_retry(
+        "SELECT count() FROM view",
+        retry_count=500,
+        sleep_time=0.1,
+        check_callback=lambda x: int(x) == expected_num_messages,
+    )
+
+    assert int(rows) == expected_num_messages
+
+
+# check_method for bad_messages_parsing_mode
+def dead_letter_queue_test(expected_num_messages, topic_name):
+    # we have a problem:
+    #  it make sense to flush logs when data already processed,
+    #  but since nothing goes to target MV we don't know when it happens
+    instance.query("SYSTEM FLUSH LOGS")
+
+    rows = instance.query_with_retry(
+        f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'",
+        retry_count=500,
+        sleep_time=0.1,
+        check_callback=lambda x: int(x) == expected_num_messages,
+    )
+    assert int(rows) == expected_num_messages
+
+    result = instance.query(
+        f"SELECT * FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
+    )
+    logging.debug(f"system.dead_letter_queue contains {result}")
+
+    # nothing goes to target table
+    view_test(0)
+
+
+def bad_messages_parsing_mode(
+    kafka_cluster, handle_error_mode, additional_dml, check_method
+):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -152,8 +86,9 @@ def test_bad_messages_parsing_stream(kafka_cluster):
         "MySQLDump",
     ]:
         print(format_name)
+        topic_name = f"{format_name}_{handle_error_mode}_err_{int(time.time())}"
 
-        kafka_create_topic(admin_client, f"{format_name}_err")
+        k.kafka_create_topic(admin_client, f"{topic_name}")
 
         instance.query(
             f"""
@@ -163,30 +98,22 @@ def test_bad_messages_parsing_stream(kafka_cluster):
             CREATE TABLE kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{format_name}_err',
-                         kafka_group_name = '{format_name}',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
                          kafka_format = '{format_name}',
-                         kafka_handle_error_mode='stream';
+                         kafka_flush_interval_ms = 500,
+                         kafka_handle_error_mode= '{handle_error_mode}';
 
-            CREATE MATERIALIZED VIEW view Engine=Log AS
-                SELECT _error FROM kafka WHERE length(_error) != 0 ;
+            {additional_dml}
         """
         )
 
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        k.kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-        attempt = 0
-        rows = 0
-        while attempt < 500:
-            rows = int(instance.query("SELECT count() FROM view"))
-            if rows == len(messages):
-                break
-            attempt += 1
+        check_method(len(messages), topic_name)
 
-        assert rows == len(messages)
-
-        kafka_delete_topic(admin_client, f"{format_name}_err")
+        k.kafka_delete_topic(admin_client, f"{topic_name}")
 
     protobuf_schema = """
 syntax = "proto3";
@@ -200,6 +127,7 @@ message Message {
     instance.create_format_schema("schema_test_errors.proto", protobuf_schema)
 
     for format_name in ["Protobuf", "ProtobufSingle", "ProtobufList"]:
+        topic_name = f"{format_name}_{handle_error_mode}_err_{int(time.time())}"
         instance.query(
             f"""
             DROP TABLE IF EXISTS view;
@@ -208,35 +136,27 @@ message Message {
             CREATE TABLE kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{format_name}_err',
-                         kafka_group_name = '{format_name}',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
                          kafka_format = '{format_name}',
-                         kafka_handle_error_mode='stream',
+                         kafka_flush_interval_ms = 500,
+                         kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
-            CREATE MATERIALIZED VIEW view Engine=Log AS
-                SELECT _error FROM kafka WHERE length(_error) != 0 ;
+            {additional_dml}
         """
         )
 
         print(format_name)
 
-        kafka_create_topic(admin_client, f"{format_name}_err")
+        k.kafka_create_topic(admin_client, f"{topic_name}")
 
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
-        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
+        k.kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-        attempt = 0
-        rows = 0
-        while attempt < 500:
-            rows = int(instance.query("SELECT count() FROM view"))
-            if rows == len(messages):
-                break
-            attempt += 1
+        check_method(len(messages), topic_name)
 
-        assert rows == len(messages)
-
-        kafka_delete_topic(admin_client, f"{format_name}_err")
+        k.kafka_delete_topic(admin_client, f"{topic_name}")
 
     capn_proto_schema = """
 @0xd9dd7b35452d1c4f;
@@ -249,6 +169,7 @@ struct Message
 """
 
     instance.create_format_schema("schema_test_errors.capnp", capn_proto_schema)
+    topic_name = f"CapnProto_{handle_error_mode}_err_{int(time.time())}"
     instance.query(
         f"""
             DROP TABLE IF EXISTS view;
@@ -257,35 +178,45 @@ struct Message
             CREATE TABLE kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = 'CapnProto_err',
+                         kafka_topic_list = '{topic_name}',
                          kafka_group_name = 'CapnProto',
                          kafka_format = 'CapnProto',
-                         kafka_handle_error_mode='stream',
+                         kafka_flush_interval_ms = 500,
+                         kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
-            CREATE MATERIALIZED VIEW view Engine=Log AS
-                SELECT _error FROM kafka WHERE length(_error) != 0;
+            {additional_dml}
         """
     )
 
     print("CapnProto")
 
-    kafka_create_topic(admin_client, "CapnProto_err")
+    k.kafka_create_topic(admin_client, f"{topic_name}")
 
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    kafka_produce(kafka_cluster, "CapnProto_err", messages)
+    k.kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-    attempt = 0
-    rows = 0
-    while attempt < 500:
-        rows = int(instance.query("SELECT count() FROM view"))
-        if rows == len(messages):
-            break
-        attempt += 1
+    check_method(len(messages), topic_name)
 
-    assert rows == len(messages)
+    k.kafka_delete_topic(admin_client, f"{topic_name}")
 
-    kafka_delete_topic(admin_client, "CapnProto_err")
+
+def test_bad_messages_parsing_stream(kafka_cluster):
+    bad_messages_parsing_mode(
+        kafka_cluster,
+        "stream",
+        "CREATE MATERIALIZED VIEW view Engine=Log AS SELECT _error FROM kafka WHERE length(_error) != 0",
+        view_test,
+    )
+
+
+def test_bad_messages_parsing_dead_letter_queue(kafka_cluster):
+    bad_messages_parsing_mode(
+        kafka_cluster,
+        "dead_letter_queue",
+        "CREATE MATERIALIZED VIEW view Engine=Log AS SELECT key FROM kafka",
+        dead_letter_queue_test,
+    )
 
 
 def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
@@ -299,7 +230,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     ]:
         print(format_name)
 
-        kafka_create_topic(admin_client, f"{format_name}_parsing_err")
+        k.kafka_create_topic(admin_client, f"{format_name}_parsing_exc")
 
         instance.query(
             f"""
@@ -310,9 +241,10 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             CREATE TABLE kafka_{format_name} (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{format_name}_parsing_err',
-                         kafka_group_name = '{format_name}',
+                         kafka_topic_list = '{format_name}_parsing_exc',
+                         kafka_group_name = '{format_name}_parsing_exc',
                          kafka_format = '{format_name}',
+                         kafka_flush_interval_ms=500,
                          kafka_num_consumers = 1;
 
             CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
@@ -320,14 +252,14 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
         """
         )
 
-        kafka_produce(
+        k.kafka_produce(
             kafka_cluster,
-            f"{format_name}_parsing_err",
+            f"{format_name}_parsing_exc",
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
         )
 
-    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_err, partition:|1|1|1|default|kafka_JSONEachRow
+    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition:|1|1|1|default|kafka_JSONEachRow
 """
     # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
     result_system_kafka_consumers = instance.query_with_retry(
@@ -345,7 +277,7 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: wh
         "Avro",
         "JSONEachRow",
     ]:
-        kafka_delete_topic(admin_client, f"{format_name}_parsing_err")
+        k.kafka_delete_topic(admin_client, f"{format_name}_parsing_exc")
 
 
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
@@ -353,7 +285,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    kafka_create_topic(admin_client, "tomv")
+    k.kafka_create_topic(admin_client, "tomv")
 
     instance.query(
         f"""
@@ -367,6 +299,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
                      kafka_topic_list = 'tomv',
                      kafka_group_name = 'tomv',
                      kafka_format = 'JSONEachRow',
+                     kafka_flush_interval_ms=500,
                      kafka_num_consumers = 1;
 
         CREATE TABLE kafka_materialized(`key` UInt64, `value` UInt64) ENGINE = Log;
@@ -378,7 +311,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     """
     )
 
-    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
+    k.kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
     expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
 """
@@ -393,7 +326,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
 
     assert result_system_kafka_consumers.replace("\t", "|") == expected_result
 
-    kafka_delete_topic(admin_client, "tomv")
+    k.kafka_delete_topic(admin_client, "tomv")
 
 
 if __name__ == "__main__":

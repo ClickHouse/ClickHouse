@@ -1,4 +1,4 @@
-#include "ExternalLoaderDictionaryStorageConfigRepository.h"
+#include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/StorageDictionary.h>

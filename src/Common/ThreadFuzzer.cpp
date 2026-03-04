@@ -15,6 +15,7 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
@@ -52,15 +53,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
-
-    if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
-        return;
-    }
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -280,6 +274,9 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
+    if (!needsSetup())
+        return;
+
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
@@ -382,6 +379,8 @@ void ThreadFuzzer::setup() const
     #    define GLIBC_SYMVER "GLIBC_2.17"
     #elif (defined(__S390X__) || defined(__s390x__))
     #    define GLIBC_SYMVER "GLIBC_2.2"
+    #elif defined(__e2k__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
     #else
     #    error Your platform is not supported.
     #endif

@@ -1,49 +1,50 @@
 #pragma once
 
-#include <memory> // for std::unique_ptr
 #include <cmath>
-#include <stdexcept>
 #include <limits>
-#include <iostream>
+#include <memory> // for std::unique_ptr
 #include <base/types.h>
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-
+#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
 #include <AggregateFunctions/DDSketch/Mapping.h>
 #include <AggregateFunctions/DDSketch/Store.h>
-#include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
+extern const int BAD_ARGUMENTS;
+extern const int INCORRECT_DATA;
 }
 
 class DDSketchDenseLogarithmic
 {
 public:
     explicit DDSketchDenseLogarithmic(Float64 relative_accuracy = 0.01)
-        : mapping(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy)),
-          store(std::make_unique<DDSketchDenseStore>()),
-          negative_store(std::make_unique<DDSketchDenseStore>()),
-          zero_count(0.0),
-          count(0.0)
+        : mapping(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy))
+        , store(std::make_unique<DDSketchDenseStore>())
+        , negative_store(std::make_unique<DDSketchDenseStore>())
+        , zero_count(0.0)
+        , count(0.0)
     {
     }
 
-    DDSketchDenseLogarithmic(std::unique_ptr<DDSketchLogarithmicMapping> mapping_,
-             std::unique_ptr<DDSketchDenseStore> store_,
-             std::unique_ptr<DDSketchDenseStore> negative_store_,
-             Float64 zero_count_)
-        : mapping(std::move(mapping_)),
-          store(std::move(store_)),
-          negative_store(std::move(negative_store_)),
-          zero_count(zero_count_),
-          count(store->count + negative_store->count + zero_count_)
+    DDSketchDenseLogarithmic(
+        std::unique_ptr<DDSketchLogarithmicMapping> mapping_,
+        std::unique_ptr<DDSketchDenseStore> store_,
+        std::unique_ptr<DDSketchDenseStore> negative_store_,
+        Float64 zero_count_)
+        : mapping(std::move(mapping_))
+        , store(std::move(store_))
+        , negative_store(std::move(negative_store_))
+        , zero_count(zero_count_)
+        , count(store->count + negative_store->count + zero_count_)
     {
     }
 
@@ -97,7 +98,11 @@ public:
         return quantile_value;
     }
 
-    void copy(const DDSketchDenseLogarithmic& other)
+    Float64 getGamma() const { return mapping->getGamma(); }
+
+    Float64 getCount() const { return count; }
+
+    void copy(const DDSketchDenseLogarithmic & other)
     {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
         mapping = std::make_unique<DDSketchLogarithmicMapping>(rel_acc);
@@ -109,9 +114,9 @@ public:
         count = other.count;
     }
 
-    void merge(const DDSketchDenseLogarithmic& other)
+    void merge(const DDSketchDenseLogarithmic & other)
     {
-        if (mapping->getGamma() != other.mapping->getGamma())
+        if (*mapping != *other.mapping)
         {
             // modify the one with higher precision to match the one with lower precision
             if (mapping->getGamma() > other.mapping->getGamma())
@@ -147,7 +152,7 @@ public:
 
     /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-    void serialize(WriteBuffer& buf) const
+    void serialize(WriteBuffer & buf) const
     {
         // Write the mapping
         writeBinary(enc.FlagIndexMappingBaseLogarithmic.byte, buf);
@@ -165,7 +170,7 @@ public:
         writeBinary(zero_count, buf);
     }
 
-    void deserialize(ReadBuffer& buf)
+    void deserialize(ReadBuffer & buf)
     {
         // Read the mapping
         UInt8 flag = 0;
@@ -198,7 +203,12 @@ public:
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for zero count");
         }
         readBinary(zero_count, buf);
+        if (!std::isfinite(zero_count) || zero_count < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid zero_count in DDSketch: {}", zero_count);
+
         count = negative_store->count + zero_count + store->count;
+        if (!std::isfinite(count))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid total count in DDSketch: {}", count);
     }
 
     /// NOLINTEND(readability-static-accessed-through-instance)
@@ -219,21 +229,32 @@ private:
         auto new_positive_store = std::make_unique<DDSketchDenseStore>();
         auto new_negative_store = std::make_unique<DDSketchDenseStore>();
 
-        auto remap_store = [this, &new_mapping](DDSketchDenseStore& old_store, std::unique_ptr<DDSketchDenseStore>& target_store)
+        auto remap_store = [this, &new_mapping](DDSketchDenseStore & old_store, std::unique_ptr<DDSketchDenseStore> & target_store)
         {
             for (int i = 0; i < old_store.length(); ++i)
             {
                 int old_index = i + old_store.offset;
                 Float64 old_bin_count = old_store.bins[i];
 
+                if (old_bin_count == 0)
+                    continue;
+
                 Float64 in_lower_bound = this->mapping->lowerBound(old_index);
                 Float64 in_upper_bound = this->mapping->lowerBound(old_index + 1);
                 Float64 in_size = in_upper_bound - in_lower_bound;
 
+                if (!std::isfinite(in_lower_bound) || !std::isfinite(in_upper_bound) || in_size <= 0)
+                    continue;
+
                 int new_index = new_mapping->key(in_lower_bound);
                 // Distribute counts to new bins
+                static constexpr int max_remap_iterations = 100000;
+                int iterations = 0;
                 for (; new_mapping->lowerBound(new_index) < in_upper_bound; ++new_index)
                 {
+                    if (++iterations > max_remap_iterations)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many iterations in DDSketch changeMapping");
+
                     Float64 out_lower_bound = new_mapping->lowerBound(new_index);
                     Float64 out_upper_bound = new_mapping->lowerBound(new_index + 1);
                     Float64 lower_intersection_bound = std::max(out_lower_bound, in_lower_bound);

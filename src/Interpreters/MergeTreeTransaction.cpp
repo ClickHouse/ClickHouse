@@ -5,6 +5,8 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
@@ -125,6 +127,8 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             covered->version.lockRemovalTID(tid, transaction_context);
+            if (covered->wasInvolvedInTransaction())
+                covered->appendRemovalTIDToVersionMetadata();
         }
     }
 }
@@ -239,6 +243,17 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     for (const auto & part : removed_parts)
     {
+        /// Ensure creation_csn is set before removal_csn.
+        /// The creating transaction's afterCommit may still be running on another thread,
+        /// so creation_csn might not yet be stored even though the creation is committed.
+        /// Without this, a concurrent reader could observe removal_csn != 0 with creation_csn == 0.
+        if (!part->version.creation_csn.load(std::memory_order_relaxed))
+        {
+            auto creation = TransactionLog::getCSN(part->version.creation_tid, &part->version.creation_csn);
+            if (creation)
+                part->version.creation_csn.store(creation, std::memory_order_relaxed);
+        }
+
         part->version.removal_csn.store(csn);
         part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }
@@ -367,7 +382,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

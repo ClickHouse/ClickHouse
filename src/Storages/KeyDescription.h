@@ -1,11 +1,18 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
+#include <Core/Block.h>
+#include <Core/Names.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
+
+class ColumnsDescription;
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {
@@ -37,6 +44,10 @@ struct KeyDescription
     /// initialization with non empty value. Doesn't stored in definition_ast,
     /// but added to expression_list_ast and all its derivatives.
     std::optional<String> additional_column;
+
+    /// ID of this specific order by key, make sense for engines which allow to change sorting key
+    /// for example Iceberg.
+    std::optional<Int32> sort_order_id;
 
     /// Parse key structure from key definition. Requires all columns, available
     /// in storage.

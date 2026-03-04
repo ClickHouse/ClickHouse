@@ -49,13 +49,13 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     String storage_name;
     String cluster;
 
     if ((type == AccessEntityType::USER) || (type == AccessEntityType::ROLE))
     {
-        if (!parseUserNames(pos, expected, names))
+        if (!parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             return false;
     }
     else if (type == AccessEntityType::ROW_POLICY)
@@ -65,7 +65,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         parser.allowOnCluster();
         if (!parser.parse(pos, ast, expected))
             return false;
-        row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+        row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
         cluster = std::exchange(row_policy_names->cluster, "");
     }
     else
@@ -80,7 +80,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTMoveAccessEntityQuery>();
+    auto query = make_intrusive<ASTMoveAccessEntityQuery>();
     node = query;
 
     query->type = type;

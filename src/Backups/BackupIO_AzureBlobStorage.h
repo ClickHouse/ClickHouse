@@ -4,7 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(
         const String & path_in_backup,
@@ -81,7 +81,6 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
-    void removeEmptyDirectories() override {}
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;

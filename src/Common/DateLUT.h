@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -9,12 +10,6 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-
-namespace DB
-{
-class Context;
-using ContextPtr = std::shared_ptr<const Context>;
-}
 
 class DateLUTImpl;
 
@@ -28,7 +23,7 @@ public:
     /// If setting is not set, returns the server timezone.
     static const DateLUTImpl & instance();
 
-    static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
+    static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone)
     {
         if (time_zone.empty())
             return instance();
@@ -45,7 +40,7 @@ public:
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    static void setDefaultTimezone(const std::string & time_zone)
+    static void setDefaultTimezone(std::string_view time_zone)
     {
         auto & date_lut = getInstance();
         const auto & impl = date_lut.getImplementation(time_zone);
@@ -58,9 +53,7 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    static std::string extractTimezoneFromContext(DB::ContextPtr query_context);
-
-    const DateLUTImpl & getImplementation(const std::string & time_zone) const;
+    const DateLUTImpl & getImplementation(std::string_view time_zone) const;
 
     using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
 
@@ -90,3 +83,15 @@ inline UInt64 timeInNanoseconds(std::chrono::time_point<std::chrono::system_cloc
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
 }
+
+/// A few helper functions to avoid having to include DateLUTImpl.h in some heavy headers
+
+ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0);
+std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
+
+Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
+Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+
+const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut);
+UInt32 getDayNumOffsetEpoch();

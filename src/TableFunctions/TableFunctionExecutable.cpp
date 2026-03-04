@@ -1,20 +1,23 @@
 
-#include <Common/Exception.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageExecutable.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <boost/algorithm/string.hpp>
-#include "registerTableFunctions.h"
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -49,7 +52,7 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "Executable"; }
+    const char * getStorageEngineName() const override { return "Executable"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -58,7 +61,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String script_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
     String format;
     String structure;
     std::vector<ASTPtr> input_queries;
@@ -120,7 +123,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
-    std::vector<String> script_name_with_arguments;
+    VectorWithMemoryTracking<String> script_name_with_arguments;
     boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
 
     script_name = std::move(script_name_with_arguments[0]);
@@ -188,7 +191,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExecutable>();
+    factory.registerFunction<TableFunctionExecutable>({});
 }
 
 }

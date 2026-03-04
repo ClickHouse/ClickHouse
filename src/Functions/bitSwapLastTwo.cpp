@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 
 namespace DB
@@ -48,14 +49,27 @@ static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 };
 
 struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
-using FunctionBitSwapLastTwo = FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>;
+
+/// The result of this function is always UInt8 regardless of the argument type.
+/// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
+/// produce Nullable(UInt8) instead of Dynamic.
+class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>
+{
+public:
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSwapLastTwo>(); }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+};
 
 }
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }
@@ -63,7 +77,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
 
 REGISTER_FUNCTION(BitSwapLastTwo)
 {
-    factory.registerFunction<FunctionBitSwapLastTwo>();
+    factory.registerFunction<FunctionBitSwapLastTwo>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

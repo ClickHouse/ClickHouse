@@ -68,10 +68,10 @@ function test_distributed_push_down_limit_with_query_log()
     $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from $table group by key limit $offset, 10"
 
     $CLICKHOUSE_CLIENT -m -q "
-        system flush logs;
+        system flush logs query_log;
         select read_rows from system.query_log
             where
-                event_date >= yesterday()
+                event_date >= yesterday() AND event_time >= now() - 600
                 and query_kind = 'Select' /* exclude DESC TABLE */
                 and type = 'QueryFinish'
                 and initial_query_id = '$query_id' and initial_query_id != query_id;

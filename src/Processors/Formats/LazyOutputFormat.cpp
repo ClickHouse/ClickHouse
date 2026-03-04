@@ -1,6 +1,7 @@
-#include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <IO/NullWriteBuffer.h>
+#include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Port.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -8,8 +9,8 @@ namespace DB
 
 NullWriteBuffer LazyOutputFormat::out;
 
-LazyOutputFormat::LazyOutputFormat(const Block & header)
-: IOutputFormat(header, out), queue(2)
+LazyOutputFormat::LazyOutputFormat(SharedHeader header)
+    : IOutputFormat(header, out), queue(2)
 {
 }
 

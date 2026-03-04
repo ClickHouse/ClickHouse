@@ -1,30 +1,91 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
+#include <base/sleep.h>
 #include <Common/checkStackSize.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
-#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
 {
 
-std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
+namespace FailPoints
+{
+    extern const char slowdown_parallel_replicas_local_plan_read[];
+}
+
+/// Finds and returns the QueryPlan node containing the specified ReadingStep type or nullptr
+template <class ReadingStep>
+static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
+{
+    ReadingStep * reading_step = nullptr;
+    while (node)
+    {
+        reading_step = typeid_cast<ReadingStep *>(node->step.get());
+        if (reading_step)
+            break;
+
+        if (!node->children.empty())
+        {
+            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
+            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
+            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+                || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
+                node = node->children.at(1);
+            else
+                node = node->children.at(0);
+        }
+        else
+            node = nullptr;
+    }
+
+    return node;
+}
+
+std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
+    const ASTPtr & query_ast,
+    const Block & header,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage)
+{
+    checkStackSize();
+
+    auto new_context = Context::createCopy(context);
+
+    /// Do not apply AST optimizations, because query
+    /// is already optimized and some optimizations
+    /// can be applied only for non-distributed tables
+    /// and we can produce query, inconsistent with remote plans.
+    auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
+    select_query_options.build_logical_plan = true;
+
+    /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
+    /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
+    /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+    new_context->setSetting("enable_positional_arguments", Field(false));
+    new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+    auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    addConvertingActions(*query_plan, header, context);
+
+    auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
+    if (node)
+        typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
+
+    return query_plan;
+}
+
+std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
@@ -34,9 +95,6 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     size_t replica_number)
 {
     checkStackSize();
-
-    auto query_plan = std::make_unique<QueryPlan>();
-    auto new_context = Context::createCopy(context);
 
     /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
     if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
@@ -51,35 +109,18 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
     /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+    auto new_context = Context::createCopy(context);
     new_context->setSetting("enable_positional_arguments", Field(false));
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
-    query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
-    QueryPlan::Node * node = query_plan->getRootNode();
-    ReadFromMergeTree * reading = nullptr;
-    while (node)
-    {
-        reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
-        if (reading)
-            break;
-
-        if (!node->children.empty())
-        {
-            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
-            if (join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-                node = node->children.at(1);
-            else
-                node = node->children.at(0);
-        }
-        else
-            node = nullptr;
-    }
-
-    if (!reading)
+    auto * node = findReadingStep<ReadFromMergeTree>(query_plan->getRootNode());
+    if (!node)
         /// it can happened if merge tree table is empty, - it'll be replaced with ReadFromPreparedSource
         return {std::move(query_plan), false};
+
+    auto * reading = typeid_cast<ReadFromMergeTree*>(node->step.get());
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (analyzed_read_from_merge_tree.get())
@@ -93,13 +134,19 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
-    { return coordinator->handleRequest(std::move(req)); };
+    {
+        fiu_do_on(FailPoints::slowdown_parallel_replicas_local_plan_read,
+        {
+            sleepForMilliseconds(20);
+        });
+        return coordinator->handleRequest(std::move(req));
+    };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
-    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
+    addConvertingActions(*query_plan, header, context);
 
     return {std::move(query_plan), true};
 }

@@ -1,5 +1,16 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
+include(cmake/utils.cmake)
+
+set(CHCACHE_EXECUTABLE_PATH "" CACHE STRING "Path to chcache executable to use. If the compiler cache is set to use chcache, chcache will be used from here instead of building it.")
+
+# Defensive programming: early return to avoid configuring any cache after we've set dummy launchers.
+# If something includes this file by mistake after the first setup, it'd override the dummy launchers.
+if(USING_DUMMY_LAUNCHERS)
+    message(STATUS "Skipping cache integration a second time because dummy launchers are in use")
+    return()
+endif()
+
 # Matches both ccache and sccache
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
@@ -13,12 +24,18 @@ set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the cachin
 
 if(COMPILER_CACHE STREQUAL "auto")
     find_program (CCACHE_EXECUTABLE NAMES sccache ccache)
-elseif (COMPILER_CACHE STREQUAL "ccache")
+elseif(COMPILER_CACHE STREQUAL "ccache")
     find_program (CCACHE_EXECUTABLE ccache)
 elseif(COMPILER_CACHE STREQUAL "sccache")
     find_program (CCACHE_EXECUTABLE sccache)
 elseif(COMPILER_CACHE STREQUAL "chcache")
-    set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/rust/chcache/chcache)
+    if(CHCACHE_EXECUTABLE_PATH STREQUAL "")
+        message(STATUS "Using self-built chcache")
+        set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/rust/chcache/chcache)
+    else()
+        message(STATUS "Using already built chcache from ${CHCACHE_EXECUTABLE_PATH}")
+        set(CCACHE_EXECUTABLE ${CHCACHE_EXECUTABLE_PATH})
+    endif()
 elseif(COMPILER_CACHE STREQUAL "disabled")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()

@@ -1,8 +1,11 @@
-#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <IO/WriteHelpers.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -14,10 +17,10 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
+TemplateBlockOutputFormat::TemplateBlockOutputFormat(SharedHeader header_, WriteBuffer & out_, const FormatSettings & settings_,
                                                      ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                      std::string row_between_delimiter_)
-    : IOutputFormat(header_, out_), settings(settings_), serializations(header_.getSerializations()), format(std::move(format_))
+    : IOutputFormat(header_, out_), settings(settings_), serializations(header_->getSerializations()), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
     /// Validate format string for whole output
@@ -62,9 +65,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     {
         if (!row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Cannot skip format field for output, it's a bug.", i);
-        if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
+        if (header_->columns() <= *row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
-                                          " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
+                                          " must be less then number of columns (" + std::to_string(header_->columns()) + ")", i);
         if (row_format.escaping_rules[i] == EscapingRule::None)
             row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }
@@ -199,7 +202,8 @@ void registerOutputFormatTemplate(FormatFactory & factory)
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         ParsedTemplateFormatString resultset_format;
         auto idx_resultset_by_name = [&](const String & partName)
@@ -226,9 +230,15 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         {
             /// Read format string from file
             resultset_format = ParsedTemplateFormatString(
-                    FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
-                            settings.schema.is_server, settings.schema.format_schema_path),
-                    idx_resultset_by_name);
+                FormatSchemaInfo(
+                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                    /*format_schema=*/settings.template_settings.resultset_format,
+                    /*format_schema_message_name=*/"",
+                    /*format=*/"Template",
+                    /*require_message=*/false,
+                    /*is_server=*/settings.schema.is_server,
+                    /*format_schema_path=*/settings.schema.format_schema_path),
+                idx_resultset_by_name);
             if (!settings.template_settings.resultset_format_template.empty())
             {
                 throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_resultset or format_template_resultset_format, but not both");
@@ -248,15 +258,21 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         else
         {
             row_format = ParsedTemplateFormatString(
-                FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
-                        settings.schema.is_server, settings.schema.format_schema_path),
+                FormatSchemaInfo(
+                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                    /*format_schema=*/settings.template_settings.row_format,
+                    /*format_schema_message_name=*/"",
+                    /*format=*/"Template",
+                    /*require_message=*/false,
+                    /*is_server=*/settings.schema.is_server,
+                    /*format_schema_path=*/settings.schema.format_schema_path),
                 idx_row_by_name);
             if (!settings.template_settings.row_format_template.empty())
             {
                 throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_template_row_format, but not both");
             }
         }
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
+        return std::make_shared<TemplateBlockOutputFormat>(std::make_shared<const Block>(sample), buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
     factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
@@ -264,12 +280,15 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         if (settings.template_settings.resultset_format.empty())
             return true;
         auto resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
-                             settings.schema.is_server, settings.schema.format_schema_path),
-            [&](const String & partName)
-            {
-                return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
-            });
+            FormatSchemaInfo(
+                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                /*format_schema=*/settings.template_settings.resultset_format,
+                /*format_schema_message_name=*/"",
+                /*format=*/"Template",
+                /*require_message=*/false,
+                /*is_server=*/settings.schema.is_server,
+                /*format_schema_path=*/settings.schema.format_schema_path),
+            [&](const String & partName) { return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName)); });
         return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
     });
 }

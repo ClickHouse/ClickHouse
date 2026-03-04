@@ -1,5 +1,6 @@
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -80,7 +81,7 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
     }
 }
 
@@ -142,7 +143,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 
 ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto table_function_ast = std::make_shared<ASTFunction>();
+    auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = table_function_name;
 
@@ -152,7 +153,7 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (!settings_changes.empty())
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->changes = settings_changes;
         settings_ast->is_standalone = false;
         table_function_ast->arguments->children.push_back(std::move(settings_ast));

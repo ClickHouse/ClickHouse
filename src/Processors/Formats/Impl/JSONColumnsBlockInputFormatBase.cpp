@@ -1,5 +1,7 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Port.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -78,15 +80,15 @@ void JSONColumnsReaderBase::skipColumn()
 }
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
-    ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
+    ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
     : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
-    , fields(header_.getNamesAndTypes())
-    , serializations(header_.getSerializations())
+    , fields(header_->getNamesAndTypes())
+    , serializations(header_->getSerializations())
     , reader(std::move(reader_))
     , block_missing_values(getPort().getHeader().columns())
 {
-    name_to_index = getPort().getHeader().getNamesToIndexesMap();
+    name_to_index = getNamesToIndexesMap(getPort().getHeader());
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(

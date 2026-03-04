@@ -1,6 +1,8 @@
-#include "SessionTracker.h"
+#include <Interpreters/SessionTracker.h>
 
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+
 
 namespace DB
 {

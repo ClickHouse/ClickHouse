@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 
 
 namespace DB
@@ -25,6 +25,8 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool empty() const override { return !has_elems; }
 
+    size_t memoryUsageBytes() const override;
+
     const String index_name;
     const BloomFilterParameters params;
 
@@ -40,7 +42,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
         const Names & index_columns_,
         const String & index_name_,
         const BloomFilterParameters & params_,
-        TokenExtractorPtr token_extractor_);
+        TokenizerPtr tokenizer_);
 
     ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
@@ -52,7 +54,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
 };
@@ -62,16 +64,18 @@ class MergeTreeConditionBloomFilterText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionBloomFilterText(
-            const ActionsDAG * filter_actions_dag,
+            const ActionsDAG::Node * predicate,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
-            TokenExtractorPtr token_extactor_);
+            TokenizerPtr token_extactor_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    std::string getDescription() const override { return ""; }
+
 private:
     struct KeyTuplePositionMapping
     {
@@ -94,6 +98,7 @@ private:
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
+            FUNCTION_HAS_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -137,12 +142,12 @@ private:
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
-        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);
+        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+    TokenizerPtr tokenizer;
     RPN rpn;
 };
 
@@ -152,22 +157,22 @@ public:
     MergeTreeIndexBloomFilterText(
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
-        std::unique_ptr<ITokenExtractor> && token_extractor_)
+        std::unique_ptr<ITokenizer> && tokenizer_)
         : IMergeTreeIndex(index_)
         , params(params_)
-        , token_extractor(std::move(token_extractor_)) {}
+        , tokenizer(std::move(tokenizer_)) {}
 
     ~MergeTreeIndexBloomFilterText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG * filter_dag, ContextPtr context) const override;
+            const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.
-    std::unique_ptr<ITokenExtractor> token_extractor;
+    std::unique_ptr<ITokenizer> tokenizer;
 };
 
 }

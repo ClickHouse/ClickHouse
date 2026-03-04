@@ -22,6 +22,7 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
@@ -63,14 +64,17 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
+    static void readMapSafe(DB::IColumn & column, std::function<void()> && read_func);
+
 private:
     template <typename KeyWriter, typename ValueWriter>
-    void serializeTextImpl(const IColumn & column, size_t row_num, const FormatSettings & settings, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
+    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
 
     template <typename ReturnType = void, typename Reader>
     ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;

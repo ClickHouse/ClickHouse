@@ -1,0 +1,1 @@
+SELECT number FROM system.numbers GROUP BY number SETTINGS max_bytes_before_external_group_by = 1, temporary_files_buffer_size = 9223372036854775806, group_by_two_level_threshold = 1; -- { serverError ARGUMENT_OUT_OF_BOUND }

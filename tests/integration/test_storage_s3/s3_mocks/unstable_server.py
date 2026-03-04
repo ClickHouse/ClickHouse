@@ -1,8 +1,6 @@
 import http.server
 import random
 import re
-import socket
-import struct
 import sys
 import time
 
@@ -99,7 +97,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     # self.wfile._sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 0, 0))
                     # self.wfile._sock.shutdown(socket.SHUT_RDWR)
                     # self.wfile._sock.close()
-                    print("Dropping connection")
+                    self.log_message("Dropping connection %s", self.path)
                     break
 
         if self.path == "/root/slow_send_test.csv":

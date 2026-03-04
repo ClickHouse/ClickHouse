@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# add_minmax_index_for_numeric_columns=0: Different rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +22,7 @@ CREATE TABLE set_idx
     INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE set(6) GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO set_idx VALUES
 (0, 5, 4.7, 6.5, 'cba', 'b', '2014-01-04'),
@@ -39,18 +39,18 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO set_idx VALUES
 (13, 5, 4.7, 6.5, 'cba', 'b', '2015-01-01')"
 
 # simple select
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba') ORDER BY dt"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba') ORDER BY dt FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba') ORDER BY dt SETTINGS use_query_condition_cache = 0"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba') ORDER BY dt SETTINGS use_query_condition_cache = 0 FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE NOT (i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba'))  ORDER BY dt"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE NOT (i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba')) ORDER BY dt FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE NOT (i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba'))  ORDER BY dt SETTINGS use_query_condition_cache = 0"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE NOT (i32 = 5 AND i32 + f64 < 12 AND 3 < d AND d < 7 AND (s = 'bac' OR s = 'cba')) ORDER BY dt SETTINGS use_query_condition_cache = 0 FORMAT JSON" | grep "rows_read"
 
 # select with hole made by primary key
 $CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR u64 > 10) AND s != 'cba' ORDER BY dt"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR u64 > 10) AND s != 'cba' ORDER BY dt FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR u64 > 10) AND s != 'cba' ORDER BY dt SETTINGS use_query_condition_cache = 0 FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR NOT u64 > 10) AND NOT (s = 'cba') ORDER BY dt"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR NOT u64 > 10) AND NOT (s = 'cba') ORDER BY dt FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR NOT u64 > 10) AND NOT (s = 'cba') ORDER BY dt SETTINGS use_query_condition_cache = 0"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE (u64 < 2 OR NOT u64 > 10) AND NOT (s = 'cba') ORDER BY dt SETTINGS use_query_condition_cache = 0 FORMAT JSON" | grep "rows_read"
 
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE set_idx;"

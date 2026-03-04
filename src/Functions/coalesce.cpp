@@ -1,6 +1,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +14,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
+}
 
 namespace
 {
@@ -26,15 +33,15 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionCoalesce>(context);
+        return std::make_shared<FunctionCoalesce>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_)
-        : context(context_)
-        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
+    explicit FunctionCoalesce(ContextPtr context, bool use_variant_as_common_type_)
+        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
+        , use_variant_as_common_type(use_variant_as_common_type_)
     {
     }
 
@@ -53,6 +60,22 @@ public:
         for (size_t i = 0; i + 1 < number_of_arguments; ++i)
             args.push_back(i);
         return args;
+    }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    {
+        /// coalesce() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
+        /// For Nullable types, coalesce() substitutes NULLs with other arguments and is not
+        /// monotonic in general. We treat it as monotonic only when the analyzed range is guaranteed to not contain
+        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
+        /// So, we do not need to check left.isNull().
+        bool can_contain_null = canContainNull(type);
+        if (can_contain_null && right.isNull())
+            return {};
+
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -87,7 +110,8 @@ public:
         if (new_args.size() == 1)
             return new_args.front();
 
-        auto res = getLeastSupertype(new_args);
+        bool has_variant = std::any_of(new_args.begin(), new_args.end(), [](const auto & t) { return isVariant(t); });
+        auto res = (use_variant_as_common_type || has_variant) ? getLeastSupertypeOrVariant(new_args) : getLeastSupertype(new_args);
 
         /// if last argument is not nullable, result should be also not nullable
         if (!canContainNull(*new_args.back()) && res->isNullable())
@@ -169,18 +193,60 @@ public:
     }
 
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
     FunctionOverloadResolverPtr multi_if_function;
+    bool use_variant_as_common_type = false;
 };
 
 }
 
 REGISTER_FUNCTION(Coalesce)
 {
-    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the leftmost non-`NULL` argument.
+    )";
+    FunctionDocumentation::Syntax syntax = "coalesce(x[, y, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x[, y, ...]", "Any number of parameters of non-compound type. All parameters must be of mutually compatible data types.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the first non-`NULL` argument, otherwise `NULL`, if all arguments are `NULL`.", {"Any", "NULL"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example",
+         R"(
+-- Consider a list of contacts that may specify multiple ways to contact a customer.
+
+CREATE TABLE aBook
+(
+    name String,
+    mail Nullable(String),
+    phone Nullable(String),
+    telegram Nullable(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO aBook VALUES ('client 1', NULL, '123-45-67', 123), ('client 2', NULL, NULL, NULL);
+
+-- The mail and phone fields are of type String, but the telegram field is UInt32 so it needs to be converted to String.
+
+-- Get the first available contact method for the customer from the contact list
+
+SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook;
+        )",
+         R"(
+┌─name─────┬─coalesce(mail, phone, CAST(telegram, 'Nullable(String)'))─┐
+│ client 1 │ 123-45-67                                                 │
+│ client 2 │ ᴺᵁᴸᴸ                                                      │
+└──────────┴───────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCoalesce>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

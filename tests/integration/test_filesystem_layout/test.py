@@ -12,6 +12,7 @@ node = cluster.add_instance(
     ],
     with_minio=True,
     stay_alive=True,
+    with_remote_database_disk=False,  # The tests work on the local disk and check symlink
 )
 
 
@@ -25,8 +26,9 @@ def started_cluster():
 
 
 def test_file_path_escaping(started_cluster):
+    node.query("DROP DATABASE IF EXISTS test")
     node.query(
-        "CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary",
+        "CREATE DATABASE test ENGINE = Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
     node.query(
@@ -53,7 +55,8 @@ def test_file_path_escaping(started_cluster):
         ]
     )
 
-    node.query("CREATE DATABASE IF NOT EXISTS `test 2` ENGINE = Atomic")
+    node.query("DROP DATABASE IF EXISTS `test 2`")
+    node.query("CREATE DATABASE `test 2` ENGINE = Atomic")
     node.query(
         """
         CREATE TABLE `test 2`.`T.a_b,l-e!` UUID '12345678-1000-4000-8000-000000000001' (`~Id` UInt32)
@@ -96,7 +99,8 @@ def test_file_path_escaping(started_cluster):
 
 
 def test_data_directory_symlinks(started_cluster):
-    node.query("CREATE DATABASE IF NOT EXISTS test_symlinks ENGINE = Atomic")
+    node.query("DROP DATABASE IF EXISTS test_symlinks")
+    node.query("CREATE DATABASE test_symlinks ENGINE = Atomic")
 
     node.query(
         sql="""
@@ -138,35 +142,22 @@ def test_data_directory_symlinks(started_cluster):
     s3_symlink = database_dir / "s3"
     jbod_symlink = database_dir / "jbod"
 
-    default_data = (
-        clickhouse_dir / "store" / "876" / "87654321-1000-4000-8000-000000000001"
-    )
-    s3_data = (
-        clickhouse_dir
-        / "disks"
-        / "s3"
-        / "store"
-        / "876"
-        / "87654321-1000-4000-8000-000000000002"
-    )
-    jbod_data = Path("jbod1") / "store" / "876" / "87654321-1000-4000-8000-000000000003"
-
     node.restart_clickhouse()
 
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {default_symlink}"])
         .strip()
-        .endswith(f"{default_symlink} -> {default_data}")
+        .endswith(f"{default_symlink} -> ../../store/876/87654321-1000-4000-8000-000000000001")
     )
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {s3_symlink}"])
         .strip()
-        .endswith(f"{s3_symlink} -> {s3_data}")
+        .endswith(f"{s3_symlink} -> ../../disks/s3/store/876/87654321-1000-4000-8000-000000000002")
     )
     assert (
         node.exec_in_container(["bash", "-c", f"ls -l {jbod_symlink}"])
         .strip()
-        .endswith(f"{jbod_symlink} -> /{jbod_data}")
+        .endswith(f"{jbod_symlink} -> ../../../../../jbod1/store/876/87654321-1000-4000-8000-000000000003")
     )
 
     node.query("DROP TABLE test_symlinks.default SYNC")

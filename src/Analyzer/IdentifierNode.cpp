@@ -64,7 +64,7 @@ QueryTreeNodePtr IdentifierNode::cloneImpl() const
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
-    return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+    return make_intrusive<ASTIdentifier>(std::move(identifier_parts));
 }
 
 }

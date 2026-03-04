@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -25,7 +26,7 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
 
     bool canBePromoted() const override { return true; }
@@ -90,5 +91,9 @@ using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
 
 bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
+
+/// Function helper to create a type for column that contains indexes.
+/// It chooses the smallest numeric type based on the desired number of indexes.
+DataTypePtr getSmallestIndexesType(size_t num_indexes);
 
 }

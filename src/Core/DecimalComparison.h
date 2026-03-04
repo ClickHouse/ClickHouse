@@ -1,17 +1,14 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-#include <Core/Block.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Functions/FunctionHelpers.h>  /// TODO Core should not depend on Functions
-
+#include <Common/TargetSpecific.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -174,7 +171,7 @@ private:
             A a = c0_const.template getValue<A>();
             B b = c1_const.template getValue<B>();
             UInt8 res = apply<check_overflow, scale_left, scale_right>(a, b, scale);
-            return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
+            return DataTypeUInt8().createColumnConst(c0->size(), Field(res));
         }
 
         ColumnUInt8::Container & vec_res = c_res->getData();
@@ -215,7 +212,7 @@ private:
     }
 
     template <bool check_overflow, bool scale_left, bool scale_right>
-    static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
+    static ALWAYS_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
         if constexpr (is_decimal<A>)
@@ -279,12 +276,15 @@ private:
         }
     }
 
-    template <bool check_overflow, bool scale_left, bool scale_right>
-    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_HEADER(
+    template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
+    ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -293,6 +293,26 @@ private:
             ++a_pos;
             ++c_pos;
         }
+    }))
+
+    template <bool check_overflow, bool scale_left, bool scale_right>
+    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            vectorConstantImpl_x86_64_v4<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorConstantImpl_x86_64_v3<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+#endif
+
+        vectorConstantImpl<check_overflow, scale_left, scale_right>(a, b, c, scale);
     }
 
     template <bool check_overflow, bool scale_left, bool scale_right>

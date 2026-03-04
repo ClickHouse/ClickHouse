@@ -39,7 +39,7 @@ public:
         size_t /*num_streams*/) override
     {
         return Pipe(
-            std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+            std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
     }
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
@@ -52,18 +52,18 @@ public:
 
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
-        return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+        return std::make_shared<NullSinkToStorage>(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override
+    std::optional<UInt64> totalRows(ContextPtr) const override
     {
         return {0};
     }
-    std::optional<UInt64> totalBytes(const Settings &) const override
+    std::optional<UInt64> totalBytes(ContextPtr) const override
     {
         return {0};
     }

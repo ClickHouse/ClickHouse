@@ -1,7 +1,13 @@
 ---
-slug: /en/operations/system-tables/numbers
+description: 'System table containing a single UInt64 column named `number` that contains
+  almost all the natural numbers starting from zero.'
+keywords: ['system table', 'numbers']
+slug: /operations/system-tables/numbers
+title: 'system.numbers'
+doc_type: 'reference'
 ---
-# numbers
+
+# system.numbers
 
 This table contains a single UInt64 column named `number` that contains almost all the natural numbers starting from zero.
 
@@ -35,7 +41,7 @@ SELECT * FROM system.numbers LIMIT 10;
 You can also limit the output by predicates.
 
 ```sql
-SELECT * FROM system.numbers < 10;
+SELECT * FROM system.numbers WHERE number < 10;
 ```
 
 ```response

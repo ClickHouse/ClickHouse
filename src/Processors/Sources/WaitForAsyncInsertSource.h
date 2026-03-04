@@ -18,7 +18,7 @@ class WaitForAsyncInsertSource : public ISource, WithContext
 public:
     WaitForAsyncInsertSource(
         std::future<void> insert_future_, size_t timeout_ms_)
-        : ISource(Block())
+        : ISource(std::make_shared<const Block>())
         , insert_future(std::move(insert_future_))
         , timeout_ms(timeout_ms_)
     {

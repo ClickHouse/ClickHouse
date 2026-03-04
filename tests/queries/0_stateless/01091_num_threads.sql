@@ -6,13 +6,13 @@ set max_threads=0;
 set use_concurrency_control=0;
 
 WITH 01091 AS id SELECT 1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_thread_log;
 
 WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -21,13 +21,13 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 with 01091 as id select sum(number) from numbers(1000000);
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_thread_log;
 
 WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -36,13 +36,13 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 with 01091 as id select sum(number) from numbers_mt(1000000);
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_thread_log;
 
 WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id

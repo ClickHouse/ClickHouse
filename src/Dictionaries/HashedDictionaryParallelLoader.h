@@ -15,7 +15,7 @@
 #include <boost/noncopyable.hpp>
 #include <numeric>
 #include <optional>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace CurrentMetrics
 {
@@ -68,21 +68,16 @@ public:
             {
                 pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
                 {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
+
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(
                         LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
                             dictionary_name, shard, statistic.total_blocks, statistic.total_rows, statistic.total_elapsed_ms);
-
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
                     );
 
                     /// Do not account memory that was occupied by the dictionaries for the query/user context.
                     MemoryTrackerBlockerInThread memory_blocker;
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("HashedDictLoad");
 
                     LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
 
@@ -166,11 +161,11 @@ private:
     const size_t shards;
     ThreadPool pool;
     std::atomic_bool stop_all_workers{false};
-    std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
+    VectorWithMemoryTracking<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::chrono::seconds loading_timeout;
     Stopwatch total_loading_time;
 
-    std::vector<UInt64> shards_slots;
+    VectorWithMemoryTracking<UInt64> shards_slots;
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
     struct WorkerStatistic
@@ -191,8 +186,16 @@ private:
             if (!shard_queue.tryPop(block, /* milliseconds= */ 100))
             {
                 /// Check if we need to stop
-                if (stop_all_workers || shard_queue.isFinished())
+                if (stop_all_workers)
                     break;
+
+                /// Note: we use isFinishedAndEmpty() instead of isFinished() to avoid
+                /// a race condition where items could be pushed to the queue between
+                /// tryPop timing out and this check. With isFinished(), the worker
+                /// could exit while the queue still had unprocessed blocks.
+                if (shard_queue.isFinishedAndEmpty())
+                    break;
+
                 /// Timeout expired, but the queue is not finished yet, try again
                 continue;
             }
@@ -220,15 +223,15 @@ private:
         size_t columns = block.columns();
         for (size_t col = 0; col < columns; ++col)
         {
-            MutableColumns splitted_columns = block.getByPosition(col).column->scatter(shards, selector);
+            MutableColumns split_columns = block.getByPosition(col).column->scatter(shards, selector);
             for (size_t shard = 0; shard < shards; ++shard)
-                out_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
+                out_blocks[shard].getByPosition(col).column = std::move(split_columns[shard]);
         }
 
         return out_blocks;
     }
 
-    IColumn::Selector createShardSelector(const Block & block, const std::vector<UInt64> & slots)
+    IColumn::Selector createShardSelector(const Block & block, const VectorWithMemoryTracking<UInt64> & slots)
     {
         size_t num_rows = block.rows();
         IColumn::Selector selector(num_rows);

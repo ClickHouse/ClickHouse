@@ -34,7 +34,7 @@ namespace
 bool isLargerThanFifty(std::string_view str)
 {
     int number;
-    auto [_, ec] = std::from_chars(str.begin(), str.end(), number);
+    auto [_, ec] = std::from_chars(str.data(), str.data() + str.size(), number);
     if (ec != std::errc())
         return false;
     return number > 50;
@@ -45,7 +45,7 @@ bool isLargerThanFifty(std::string_view str)
 /// Check for sub-patterns of the form x{n} or x{n,} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 {
-    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view haystack = regexp;
     std::string_view matches[2];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
@@ -67,7 +67,7 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 /// Check if sub-patterns of the form x{n,m} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
 {
-    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view haystack = regexp;
     std::string_view matches[3];
     size_t start_pos = 0;
     while (start_pos < haystack.size())

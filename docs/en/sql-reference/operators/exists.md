@@ -1,6 +1,10 @@
 ---
-slug: /en/sql-reference/operators/exists
+description: 'Documentation for the `EXISTS` operator'
+slug: /sql-reference/operators/exists
+title: 'EXISTS'
+doc_type: 'reference'
 ---
+
 # EXISTS
 
 The `EXISTS` operator checks how many records are in the result of a subquery. If it is empty, then the operator returns `0`. Otherwise, it returns `1`.
@@ -13,7 +17,7 @@ References to main query tables and columns are not supported in a subquery.
 
 **Syntax**
 
-``` sql
+```sql
 EXISTS(subquery)
 ```
 
@@ -21,13 +25,13 @@ EXISTS(subquery)
 
 Query checking existence of values in a subquery:
 
-``` sql
+```sql
 SELECT EXISTS(SELECT * FROM numbers(10) WHERE number > 8), EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
 ```
 
 Result:
 
-``` text
+```text
 ┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
 │                 1 │                 0 │
 └───────────────────┴───────────────────┘
@@ -35,13 +39,13 @@ Result:
 
 Query with a subquery returning several rows:
 
-``` sql
+```sql
 SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
 ```
 
 Result:
 
-``` text
+```text
 ┌─count()─┐
 │      10 │
 └─────────┘
@@ -49,13 +53,13 @@ Result:
 
 Query with a subquery that returns an empty result:
 
-``` sql
+```sql
 SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
 ```
 
 Result:
 
-``` text
+```text
 ┌─count()─┐
 │       0 │
 └─────────┘
