@@ -1353,18 +1353,6 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
                                       || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
-    /// Count successfully processed files in a failed batch.
-    /// If the batch had multiple files, don't reduce retry counts:
-    /// the failure may have been caused by just one bad file.
-    /// The batch will be halved on the next iteration until the bad file is alone.
-    size_t processed_count = 0;
-    if (!insert_succeeded && reduce_retry_count)
-    {
-        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
-            if (file_state == FileState::Processed)
-                ++processed_count;
-    }
-
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
@@ -1405,7 +1393,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
-                        reduce_retry_count && processed_count <= 1);
+                        reduce_retry_count);
                 }
                 break;
             }
@@ -1429,7 +1417,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-                    reduce_retry_count && processed_count <= 1);
+                    reduce_retry_count);
                 break;
             }
             case FileState::ErrorOnRead:
@@ -1489,14 +1477,6 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeProcessed();
                     }
-                    else if (file_metadata->wasProcessingResetWithoutFailure())
-                    {
-                        /// The file was just reset for retry (processing node removed),
-                        /// not actually marked as failed. This happens when reduce_retry_count
-                        /// is false (e.g. due to TOO_MANY_PARTS, or when batch halving is used
-                        /// to isolate a bad file).
-                        file_metadata->finalizeResetProcessing();
-                    }
                     else
                     {
                         file_metadata->finalizeFailed(exception_message);
@@ -1514,10 +1494,7 @@ void ObjectStorageQueueSource::finalizeCommit(
                             file_state, file_metadata->getPath());
                     }
 
-                    if (file_metadata->wasProcessingResetWithoutFailure())
-                        file_metadata->finalizeResetProcessing();
-                    else
-                        file_metadata->finalizeFailed(exception_message);
+                    file_metadata->finalizeFailed(exception_message);
                     break;
                 }
                 case FileState::ErrorOnRead:

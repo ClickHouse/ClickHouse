@@ -8,7 +8,6 @@ insert into test_10m select number, number*100 from numbers(10e6);
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set cluster_for_parallel_replicas='';
-set max_parallel_replicas=100;
 
 select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings distributed_index_analysis=1; -- { serverError CLUSTER_DOESNT_EXIST }
 
@@ -22,18 +21,17 @@ select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings clus
 -- { echoOff }
 system flush logs query_log;
 select format(
-  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisReplicaUnavailable={}, DistributedIndexAnalysisReplicaFallback={}',
+  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
   Settings['distributed_index_analysis'],
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
   ProfileEvents['DistributedIndexAnalysisMissingParts'],
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'],
-  ProfileEvents['DistributedIndexAnalysisReplicaUnavailable'],
-  ProfileEvents['DistributedIndexAnalysisReplicaFallback']
+  ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0
 )
 from system.query_log
 where
   current_database = currentDatabase()
-  and event_date >= yesterday() AND event_time >= now() - 600
+  and event_date >= yesterday()
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and is_initial_query

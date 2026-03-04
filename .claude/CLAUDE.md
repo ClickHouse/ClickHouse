@@ -1,16 +1,17 @@
 When working with a branch, do not use rebase or amend - add new commits instead.
 
-Do not commit to the master branch. Create a new branch for every task.
-
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
-Links to ClickHouse CI, such as `https://s3.amazonaws.com/clickhouse-test-reports/json.html?...` should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser:
+Links to ClickHouse CI, such as `https://s3.amazonaws.com/clickhouse-test-reports/json.html?...` should be interpreted with a headless browser, e.g., Playwright, because they contain JavaScript. Use the tool at `.claude/tools/fetch_ci_report.js`:
 
 ```bash
+# Install playwright if needed (one-time setup)
+cd /tmp && npm install playwright && npx playwright install chromium
+
 # Fetch and analyze CI report
 node /path/to/ClickHouse/.claude/tools/fetch_ci_report.js "<ci-url>" [options]
 
@@ -20,7 +21,6 @@ node /path/to/ClickHouse/.claude/tools/fetch_ci_report.js "<ci-url>" [options]
 #   --all            Show all test results
 #   --links          Show artifact links (logs.tar.gz, etc.)
 #   --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
-#   --credentials <user,password>  HTTP Basic Auth for private repositories
 
 # Examples:
 node .claude/tools/fetch_ci_report.js "https://s3.amazonaws.com/..." --failed --links
@@ -70,7 +70,7 @@ When writing messages, say ASan, not ASAN, and similar (because there are two wo
 
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
 
-Do not use `-j` argument with ninja; do not use `nproc` - let it decide automatically.
+Do not use `-j` argument with ninja - let it decide automatically.
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message.
 
@@ -78,15 +78,10 @@ When creating a pull request, append Changelog category and Changelog entry acco
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
-Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
-
-When there are crucial findings (when I corrected your behavior, you when you found a crucial insight about the code), append them to `.claude/learnings.md`, but be concise. You can commit the changes in learnings.md along with the other changes. Read this file at start.
-
 Always load and apply the following skills:
 
+- .claude/skills/install-skills
 - .claude/skills/build
 - .claude/skills/test
 - .claude/skills/fix-sync
 - .claude/skills/alloc-profile
-- .claude/skills/bisect
-- .claude/skills/create-worktree

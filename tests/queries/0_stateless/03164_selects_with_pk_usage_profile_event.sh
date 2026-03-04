@@ -43,8 +43,7 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        event_date >= yesterday() AND event_time >= now() - 600
-        AND current_database = currentDatabase()
+        current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -61,8 +60,7 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        event_date >= yesterday() AND event_time >= now() - 600
-        AND current_database = currentDatabase()
+        current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -79,8 +77,7 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        event_date >= yesterday() AND event_time >= now() - 600
-        AND current_database = currentDatabase()
+        current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -97,8 +94,7 @@ $CLICKHOUSE_CLIENT -m -q "
     FROM
         system.query_log
     WHERE
-        event_date >= yesterday() AND event_time >= now() - 600
-        AND current_database = currentDatabase()
+        current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;

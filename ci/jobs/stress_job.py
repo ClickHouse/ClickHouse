@@ -226,31 +226,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             failed_results.append(test_result)
 
     if server_died:
-        # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
-        # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
-        # sc1/sc2: their dedicated server log + matching stderr log
-        replica_log_pairs = []
-
-        main_stderr = result_path / "stderr.log"
-        if server_log_path.exists():
-            main_server_logs = sorted(
-                p
-                for p in server_log_path.iterdir()
-                if p.is_file()
-                and ".err." in p.name
-                and "sc1" not in p.name
-                and "sc2" not in p.name
-            )
-            for log_file in main_server_logs:
-                replica_log_pairs.append(("main", log_file, main_stderr))
-
-        for sc in ("sc1", "sc2"):
-            sc_server_log = server_log_path / f"clickhouse-server-{sc}.err.log"
-            sc_stderr = result_path / f"stderr-{sc}.log"
-            if sc_server_log.exists():
-                replica_log_pairs.append((sc, sc_server_log, sc_stderr))
-
-        if not replica_log_pairs:
+        server_err_log = server_log_path / "clickhouse-server.err.log"
+        stderr_log = result_path / "stderr.log"
+        if not (server_err_log.exists() and stderr_log.exists()):
             failed_results.append(
                 Result.create_from(
                     name="Unknown error",
@@ -259,36 +237,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            definitive_result = None
-            fallback_result = None
-
-            for replica_name, server_log_file, stderr_log in replica_log_pairs:
-                log_parser = FuzzerLogParser(
-                    server_log=server_log_file,
-                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
-                    fuzzer_log="",
-                )
-                try:
-                    name, description, files = log_parser.parse_failure()
-                    file_pair_info = f"Log files: {server_log_file.name}"
-                    if stderr_log.exists():
-                        file_pair_info += f", {stderr_log.name}"
-                    description = f"{file_pair_info}\n{description}"
-                    if name != FuzzerLogParser.UNKNOWN_ERROR:
-                        definitive_result = (name, description, files)
-                        break
-                    if fallback_result is None:
-                        fallback_result = (name, description, files)
-                except Exception as e:
-                    print(
-                        f"ERROR: Failed to parse failure logs for {replica_name} "
-                        f"({server_log_file.name}): {e}\n"
-                        f"Server logs should still be collected."
-                    )
-
-            result = definitive_result or fallback_result
-            if result:
-                name, description, files = result
+            log_parser = FuzzerLogParser(
+                server_log=server_err_log,
+                stderr_log=stderr_log if stderr_log.exists() else "",
+                fuzzer_log="",
+            )
+            try:
+                name, description, files = log_parser.parse_failure()
                 failed_results.append(
                     Result.create_from(
                         name=name,
@@ -297,11 +252,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                         files=files,
                     )
                 )
-            else:
+            except Exception as e:
+                print(
+                    f"ERROR: Failed to parse failure logs: {e}\nServer logs should still be collected."
+                )
                 failed_results.append(
                     Result.create_from(
                         name="Parse failure error",
-                        info="All log parsing attempts failed",
+                        info=f"Error parsing failure logs: {e}",
                         status=Result.Status.FAILED,
                     )
                 )

@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-void ColumnSparse::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    values->getValueNameImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
 }
 
 bool ColumnSparse::getBool(size_t n) const

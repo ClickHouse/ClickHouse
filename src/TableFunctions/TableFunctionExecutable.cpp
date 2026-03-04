@@ -191,7 +191,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExecutable>({});
+    factory.registerFunction<TableFunctionExecutable>();
 }
 
 }

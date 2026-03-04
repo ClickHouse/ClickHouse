@@ -44,8 +44,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -417,7 +416,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         try
         {
             if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             else
                 res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
         }
@@ -1118,11 +1117,7 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
         }
     }
 
-    if (const auto * create_function = ast->as<ASTCreateSQLFunctionQuery>())
-    {
-        new_words.push_back(create_function->getFunctionName());
-    }
-    if (const auto * create_function = ast->as<ASTCreateWasmFunctionQuery>())
+    if (const auto * create_function = ast->as<ASTCreateFunctionQuery>())
     {
         new_words.push_back(create_function->getFunctionName());
     }
@@ -1887,15 +1882,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        /// Wrap cleanup in try-catch to prevent connection errors
-        /// (e.g., NETWORK_ERROR from sendCancel) from replacing
-        /// the original exception (e.g., a parsing error with row number).
-        try
-        {
-            if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
-        }
-        catch (...) {} // NOLINT
+        if (sendCancel(std::current_exception()))
+            receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -3628,7 +3616,6 @@ void ClientBase::runInteractive()
         .in_fd = stdin_fd,
         .out_fd = stdout_fd,
         .err_fd = stderr_fd,
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
 
     lr = std::make_unique<ReplxxLineReader>(std::move(options));

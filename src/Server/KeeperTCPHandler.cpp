@@ -512,10 +512,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            /// Restart the stopwatch after poll() returns so that the time spent
-            /// waiting inside poll() (which can be up to session_timeout, e.g. 10s
-            /// between heartbeats) is not attributed to the next operation.
-            logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
