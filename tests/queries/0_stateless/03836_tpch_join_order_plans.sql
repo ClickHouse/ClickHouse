@@ -1,13 +1,5 @@
 -- Verifies join order and distributed execution strategies for all TPC-H queries
 -- using SF100 cardinalities injected via `_internal_join_table_stat_hints`.
--- Tables are empty but correctly schemed; a sentinel row per table prevents
--- 0-row short-circuits.  The Cascades optimizer with `make_distributed_plan=1`
--- produces a distributed plan: queries with large fact tables may use
--- `BroadcastExchange` or `ShuffleExchange`, while queries with only small
--- dimension tables may use `Local HashJoin` directly with `ReadFromMergeTree`.
--- Three queries (Q11, Q15, Q22) have non-correlated scalar subqueries evaluated
--- at analysis time; these are planned without cascades/distributed to avoid
--- the "Stateless worker client" restriction at that phase.
 
 DROP TABLE IF EXISTS region;
 DROP TABLE IF EXISTS nation;
@@ -18,40 +10,49 @@ DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS lineitem;
 
+-- SETTINGS pin `auto_statistics_types=''` and `min_bytes_for_wide_part` to
+-- prevent real statistics interfere with hints
 CREATE TABLE region (
     r_regionkey Int32, r_name String, r_comment String
-) ENGINE = MergeTree() ORDER BY r_regionkey;
+) ENGINE = MergeTree() ORDER BY r_regionkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE nation (
     n_nationkey Int32, n_name String, n_regionkey Int32, n_comment String
-) ENGINE = MergeTree() ORDER BY n_nationkey;
+) ENGINE = MergeTree() ORDER BY n_nationkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE part (
     p_partkey Int32, p_name String, p_mfgr String, p_brand String,
     p_type String, p_size Int32, p_container String,
     p_retailprice Decimal(15,2), p_comment String
-) ENGINE = MergeTree() ORDER BY p_partkey;
+) ENGINE = MergeTree() ORDER BY p_partkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE supplier (
     s_suppkey Int32, s_name String, s_address String, s_nationkey Int32,
     s_phone String, s_acctbal Decimal(15,2), s_comment String
-) ENGINE = MergeTree() ORDER BY s_suppkey;
+) ENGINE = MergeTree() ORDER BY s_suppkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE partsupp (
     ps_partkey Int32, ps_suppkey Int32, ps_availqty Int32,
     ps_supplycost Decimal(15,2), ps_comment String
-) ENGINE = MergeTree() ORDER BY (ps_partkey, ps_suppkey);
+) ENGINE = MergeTree() ORDER BY (ps_partkey, ps_suppkey)
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE customer (
     c_custkey Int32, c_name String, c_address String, c_nationkey Int32,
     c_phone String, c_acctbal Decimal(15,2), c_mktsegment String, c_comment String
-) ENGINE = MergeTree() ORDER BY c_custkey;
+) ENGINE = MergeTree() ORDER BY c_custkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE orders (
     o_orderkey Int32, o_custkey Int32, o_orderstatus String,
     o_totalprice Decimal(15,2), o_orderdate Date, o_orderpriority String,
     o_clerk String, o_shippriority Int32, o_comment String
-) ENGINE = MergeTree() ORDER BY o_orderkey;
+) ENGINE = MergeTree() ORDER BY o_orderkey
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 CREATE TABLE lineitem (
     l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
@@ -59,7 +60,8 @@ CREATE TABLE lineitem (
     l_tax Decimal(15,2), l_returnflag String, l_linestatus String,
     l_shipdate Date, l_commitdate Date, l_receiptdate Date,
     l_shipinstruct String, l_shipmode String, l_comment String
-) ENGINE = MergeTree() ORDER BY (l_orderkey, l_linenumber);
+) ENGINE = MergeTree() ORDER BY (l_orderkey, l_linenumber)
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
 
 -- One sentinel row per table prevents 0-row short-circuit optimizations.
 INSERT INTO region    VALUES (1, 'A', '');
@@ -79,14 +81,27 @@ SET allow_statistic_optimize = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
-SET distributed_plan_execute_locally = 0;
+SET distributed_plan_execute_locally = 1;
 SET enable_cascades_optimizer = 1;
 SET rewrite_in_to_join = 1;
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET allow_experimental_correlated_subqueries = 1;
+SET query_plan_join_swap_table = 0;
 SET send_logs_level = 'error';
 
--- SF100 cardinalities and key column NDVs for all TPC-H tables.
+-- Simulate 20 node cluster, and set cost weights to optimize for lower sequential time, i.e. more parallelism
+SET param__internal_cascades_cluster_node_count = 20;
+SET param__internal_cascades_cost_config = '{
+    "cpu_weight":1,
+    "exchange_fixed_overhead":100,
+    "io_weight":1,
+    "memory_weight":1,
+    "network_weight":1,
+    "sequential_weight":100
+}';
+
+-- SF100 baseline cardinalities and key column NDVs for all TPC-H tables.
+-- Individual queries override this with post-filter cardinalities where needed.
 SET param__internal_join_table_stat_hints = '{
     "lineitem":  { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_linenumber": 7, "l_returnflag": 3, "l_linestatus": 2, "l_shipdate": 2526, "l_commitdate": 2466, "l_receiptdate": 2554, "l_quantity": 50, "l_discount": 11, "l_shipmode": 7, "l_shipinstruct": 4 } },
     "orders":    { "cardinality": 150000000,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_orderdate": 2406, "o_orderstatus": 3, "o_orderpriority": 5, "o_clerk": 1000 } },
@@ -107,7 +122,17 @@ SELECT l_returnflag, l_linestatus, sum(l_quantity), sum(l_extendedprice),
 FROM lineitem WHERE l_shipdate <= '1998-09-02'
 GROUP BY l_returnflag, l_linestatus ORDER BY l_returnflag, l_linestatus;
 
--- Q02: Minimum cost supplier (5-table join + correlated subquery)
+-- Q02: Minimum cost supplier (part+supplier+partsupp+nation+region + correlated subquery)
+-- Filters: r_name='EUROPE' (1/5 regions → 5 nations, 200K suppliers),
+--          p_size=15 (1/50) AND p_type LIKE '%BRASS' (30/150 types) → ~80K parts,
+--          partsupp filtered to matching ~80K parts × 4 avg suppliers = ~320K rows.
+SET param__internal_join_table_stat_hints = '{
+    "region":   { "cardinality": 1,      "distinct_keys": { "r_regionkey": 1,     "r_name": 1 } },
+    "nation":   { "cardinality": 5,      "distinct_keys": { "n_nationkey": 5,     "n_regionkey": 1, "n_name": 5 } },
+    "supplier": { "cardinality": 200000, "distinct_keys": { "s_suppkey": 200000,  "s_nationkey": 5, "s_acctbal": 199990 } },
+    "part":     { "cardinality": 80000,  "distinct_keys": { "p_partkey": 80000,   "p_type": 30, "p_size": 1, "p_brand": 25 } },
+    "partsupp": { "cardinality": 320000, "distinct_keys": { "ps_partkey": 80000,  "ps_suppkey": 200000, "ps_supplycost": 99865 } }
+}';
 SELECT '-- Q02';
 EXPLAIN
 SELECT s_acctbal, s_name, n_name, p_partkey, p_mfgr, s_address, s_phone, s_comment
@@ -121,6 +146,14 @@ WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey AND p_size = 15
 ORDER BY s_acctbal DESC, n_name, s_name, p_partkey LIMIT 100;
 
 -- Q03: Shipping priority (customer, orders, lineitem)
+-- Filters: c_mktsegment='BUILDING' (1/5 → 3M customers),
+--          o_orderdate < '1995-03-15' (~46% of 7yr span → ~69M orders, 1170 distinct dates),
+--          l_shipdate > '1995-03-15' (~54% → ~325M lineitem rows, 1386 distinct dates).
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 3000000,   "distinct_keys": { "c_custkey": 3000000,   "c_nationkey": 25, "c_mktsegment": 1 } },
+    "orders":   { "cardinality": 69000000,  "distinct_keys": { "o_orderkey": 69000000,  "o_custkey": 10000000, "o_orderdate": 1170, "o_orderstatus": 3 } },
+    "lineitem": { "cardinality": 325000000, "distinct_keys": { "l_orderkey": 100000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_shipdate": 1386 } }
+}';
 SELECT '-- Q03';
 EXPLAIN
 SELECT l_orderkey, sum(l_extendedprice * (1 - l_discount)) AS revenue, o_orderdate, o_shippriority
@@ -130,6 +163,11 @@ WHERE c_mktsegment = 'BUILDING' AND c_custkey = o_custkey AND l_orderkey = o_ord
 GROUP BY l_orderkey, o_orderdate, o_shippriority ORDER BY revenue DESC, o_orderdate LIMIT 10;
 
 -- Q04: Order priority (orders + EXISTS subquery on lineitem)
+-- Filter: o_orderdate in Q3 1993 (92 days / ~2556 day span → ~3.6% → ~5.4M orders).
+SET param__internal_join_table_stat_hints = '{
+    "orders":   { "cardinality": 5400000,   "distinct_keys": { "o_orderkey": 5400000,   "o_custkey": 5000000, "o_orderdate": 92, "o_orderpriority": 5 } },
+    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_commitdate": 2466, "l_receiptdate": 2554 } }
+}';
 SELECT '-- Q04';
 EXPLAIN
 SELECT o_orderpriority, count() AS order_count
@@ -139,6 +177,16 @@ WHERE o_orderdate >= '1993-07-01' AND o_orderdate < '1993-10-01'
 GROUP BY o_orderpriority ORDER BY o_orderpriority;
 
 -- Q05: Local supplier volume (customer, orders, lineitem, supplier, nation, region)
+-- Filters: r_name='ASIA' (1/5 → 1 region, 5 nations, 200K suppliers),
+--          o_orderdate in 1994 (1/7 → ~21.4M orders, 365 distinct dates).
+SET param__internal_join_table_stat_hints = '{
+    "region":   { "cardinality": 1,          "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 5,          "distinct_keys": { "n_nationkey": 5,        "n_regionkey": 1, "n_name": 5 } },
+    "supplier": { "cardinality": 200000,     "distinct_keys": { "s_suppkey": 200000,     "s_nationkey": 5 } },
+    "customer": { "cardinality": 15000000,   "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "orders":   { "cardinality": 21400000,   "distinct_keys": { "o_orderkey": 21400000,  "o_custkey": 12000000, "o_orderdate": 365, "o_orderstatus": 3 } },
+    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000 } }
+}';
 SELECT '-- Q05';
 EXPLAIN
 SELECT n_name, sum(l_extendedprice * (1 - l_discount)) AS revenue
@@ -156,7 +204,15 @@ FROM lineitem
 WHERE l_shipdate >= '1994-01-01' AND l_shipdate < '1995-01-01'
     AND l_discount BETWEEN 0.05 AND 0.07 AND l_quantity < 24;
 
--- Q07: Volume shipping (supplier, lineitem, orders, customer, nation n1, nation n2)
+-- Q07: Volume shipping (supplier, lineitem, orders, customer, nation x2)
+-- Filter: l_shipdate in 1995-1996 (2yr / 7yr ≈ 28.6% → ~171M lineitem rows, 730 distinct dates).
+SET param__internal_join_table_stat_hints = '{
+    "supplier": { "cardinality": 1000000,   "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "lineitem": { "cardinality": 171000000, "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_shipdate": 730 } },
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
+    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
+}';
 SELECT '-- Q07';
 EXPLAIN
 SELECT n1.n_name AS supp_nation, n2.n_name AS cust_nation,
@@ -168,7 +224,19 @@ WHERE s_suppkey = l_suppkey AND o_orderkey = l_orderkey AND c_custkey = o_custke
     AND l_shipdate BETWEEN '1995-01-01' AND '1996-12-31'
 GROUP BY supp_nation, cust_nation, l_year ORDER BY supp_nation, cust_nation, l_year;
 
--- Q08: National market share (part, supplier, lineitem, orders, customer, nation n1, nation n2, region)
+-- Q08: National market share (part, supplier, lineitem, orders, customer, nation x2, region)
+-- Filters: r_name='AMERICA' (1/5 → 1 region, 5 nations n1, 200K suppliers),
+--          p_type='ECONOMY ANODIZED STEEL' (1/150 → ~133K parts),
+--          o_orderdate in 1995-1996 (2/7 → ~42.9M orders, 730 distinct dates).
+SET param__internal_join_table_stat_hints = '{
+    "region":   { "cardinality": 1,          "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 5,          "distinct_keys": { "n_nationkey": 5,        "n_regionkey": 1, "n_name": 5 } },
+    "part":     { "cardinality": 133000,     "distinct_keys": { "p_partkey": 133000,     "p_type": 1 } },
+    "supplier": { "cardinality": 200000,     "distinct_keys": { "s_suppkey": 200000,     "s_nationkey": 5 } },
+    "orders":   { "cardinality": 42900000,   "distinct_keys": { "o_orderkey": 42900000,  "o_custkey": 12000000, "o_orderdate": 730 } },
+    "customer": { "cardinality": 15000000,   "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } }
+}';
 SELECT '-- Q08';
 EXPLAIN
 SELECT o_year,
@@ -183,6 +251,15 @@ FROM (SELECT toYear(o_orderdate) AS o_year, l_extendedprice * (1 - l_discount) A
 GROUP BY o_year ORDER BY o_year;
 
 -- Q09: Product type profit measure (part, supplier, lineitem, partsupp, orders, nation)
+-- Filter: p_name LIKE '%green%' (~20% of parts → ~4M rows).
+SET param__internal_join_table_stat_hints = '{
+    "part":     { "cardinality": 4000000,   "distinct_keys": { "p_partkey": 4000000,   "p_type": 150, "p_brand": 25 } },
+    "supplier": { "cardinality": 1000000,   "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } },
+    "partsupp": { "cardinality": 80000000,  "distinct_keys": { "ps_partkey": 20000000,  "ps_suppkey": 1000000 } },
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
+    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
+}';
 SELECT '-- Q09';
 EXPLAIN
 SELECT n_name AS nation, toYear(o_orderdate) AS o_year,
@@ -194,6 +271,14 @@ WHERE s_suppkey = l_suppkey AND ps_suppkey = l_suppkey AND ps_partkey = l_partke
 GROUP BY nation, o_year ORDER BY nation, o_year DESC;
 
 -- Q10: Returned item reporting (customer, orders, lineitem, nation)
+-- Filters: o_orderdate in Q4 1993 (92 days → ~5.4M orders),
+--          l_returnflag='R' (1/3 of 3 flag values → ~200M lineitem rows).
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000,  "c_nationkey": 25 } },
+    "orders":   { "cardinality": 5400000,   "distinct_keys": { "o_orderkey": 5400000,  "o_custkey": 5000000, "o_orderdate": 92 } },
+    "lineitem": { "cardinality": 200000000, "distinct_keys": { "l_orderkey": 100000000, "l_returnflag": 1 } },
+    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,       "n_name": 25 } }
+}';
 SELECT '-- Q10';
 EXPLAIN
 SELECT c_custkey, c_name, sum(l_extendedprice * (1 - l_discount)) AS revenue,
@@ -205,9 +290,12 @@ GROUP BY c_custkey, c_name, c_acctbal, c_phone, n_name, c_address, c_comment
 ORDER BY revenue DESC LIMIT 20;
 
 -- Q11: Important stock identification (partsupp, supplier, nation)
--- Non-correlated scalar subquery in HAVING is evaluated at analysis time;
--- cascades + distributed plan together cause "Stateless worker client" error,
--- so we disable both for this query only.
+-- Filter: n_name='GERMANY' (1/25 → 1 nation, 40K suppliers, ~3.2M partsupp rows).
+SET param__internal_join_table_stat_hints = '{
+    "nation":   { "cardinality": 1,       "distinct_keys": { "n_nationkey": 1,     "n_name": 1 } },
+    "supplier": { "cardinality": 40000,   "distinct_keys": { "s_suppkey": 40000,   "s_nationkey": 1 } },
+    "partsupp": { "cardinality": 3200000, "distinct_keys": { "ps_partkey": 3200000, "ps_suppkey": 40000, "ps_supplycost": 99865 } }
+}';
 SELECT '-- Q11';
 EXPLAIN
 SELECT ps_partkey, sum(ps_supplycost * ps_availqty) AS value
@@ -218,10 +306,15 @@ HAVING sum(ps_supplycost * ps_availqty) > (
     SELECT sum(ps_supplycost * ps_availqty) * 0.0001
     FROM partsupp, supplier, nation
     WHERE ps_suppkey = s_suppkey AND s_nationkey = n_nationkey AND n_name = 'GERMANY')
-ORDER BY value DESC
-SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+ORDER BY value DESC;
 
 -- Q12: Shipping modes and order priority (orders, lineitem)
+-- Filter: l_receiptdate in 1994 (1/7) AND l_shipmode IN ('MAIL','SHIP') (2/7)
+--         → ~24.5M lineitem rows.
+SET param__internal_join_table_stat_hints = '{
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_orderpriority": 5 } },
+    "lineitem": { "cardinality": 24500000,  "distinct_keys": { "l_orderkey": 24500000,  "l_shipmode": 2, "l_receiptdate": 365, "l_commitdate": 2466, "l_shipdate": 2526 } }
+}';
 SELECT '-- Q12';
 EXPLAIN
 SELECT l_shipmode,
@@ -234,6 +327,11 @@ WHERE o_orderkey = l_orderkey AND l_shipmode IN ('MAIL', 'SHIP')
 GROUP BY l_shipmode ORDER BY l_shipmode;
 
 -- Q13: Customer distribution (LEFT OUTER JOIN customer, orders)
+-- Filter: o_comment NOT LIKE '%special%requests%' (~98% pass, negligible selectivity).
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000 } },
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } }
+}';
 SELECT '-- Q13';
 EXPLAIN
 SELECT c_count, count() AS custdist
@@ -245,6 +343,11 @@ GROUP BY c_count ORDER BY custdist DESC, c_count DESC
 SETTINGS join_use_nulls = 1;
 
 -- Q14: Promotion effect (lineitem, part)
+-- Filter: l_shipdate in Sep 1995 (30 days / ~2556 total ≈ 1/84 → ~7.1M lineitem rows).
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 7100000,  "distinct_keys": { "l_orderkey": 7100000, "l_partkey": 7100000, "l_shipdate": 30 } },
+    "part":     { "cardinality": 20000000, "distinct_keys": { "p_partkey": 20000000, "p_type": 150 } }
+}';
 SELECT '-- Q14';
 EXPLAIN
 SELECT 100.00 * sum(CASE WHEN p_type LIKE 'PROMO%' THEN l_extendedprice * (1 - l_discount) ELSE 0 END)
@@ -253,8 +356,11 @@ FROM lineitem, part
 WHERE l_partkey = p_partkey AND l_shipdate >= '1995-09-01' AND l_shipdate < '1995-10-01';
 
 -- Q15: Top supplier (view + supplier join)
--- Non-correlated scalar subquery (max(total_revenue)) is evaluated at analysis time;
--- disable cascades + distributed plan for this query only.
+-- Filter in view: l_shipdate in Q1 1996 (90 days / ~2556 ≈ 1/28 → ~21.4M lineitem rows).
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 21400000, "distinct_keys": { "l_suppkey": 1000000, "l_shipdate": 90 } },
+    "supplier": { "cardinality": 1000000,  "distinct_keys": { "s_suppkey": 1000000 } }
+}';
 SELECT '-- Q15';
 DROP VIEW IF EXISTS revenue0;
 CREATE VIEW revenue0 AS
@@ -265,11 +371,17 @@ EXPLAIN
 SELECT s_suppkey, s_name, s_address, s_phone, total_revenue
 FROM supplier, revenue0
 WHERE s_suppkey = supplier_no AND total_revenue = (SELECT max(total_revenue) FROM revenue0)
-ORDER BY s_suppkey
-SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+ORDER BY s_suppkey;
 DROP VIEW revenue0;
 
--- Q16: Parts/supplier relationship (partsupp, part + NOT IN subquery)
+-- Q16: Parts/supplier relationship (partsupp, part + NOT IN subquery on supplier)
+-- Filter on part: p_brand <> 'Brand#45' (24/25) AND p_type NOT LIKE 'MEDIUM POLISHED%' (120/150)
+--                 AND p_size IN (8 values / 50) → ~20M × 0.96 × 0.80 × 0.16 ≈ 2.5M parts.
+SET param__internal_join_table_stat_hints = '{
+    "part":     { "cardinality": 2500000,  "distinct_keys": { "p_partkey": 2500000,  "p_brand": 24, "p_type": 120, "p_size": 8 } },
+    "partsupp": { "cardinality": 80000000, "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000 } },
+    "supplier": { "cardinality": 1000000,  "distinct_keys": { "s_suppkey": 1000000,   "s_comment": 999990 } }
+}';
 SELECT '-- Q16';
 EXPLAIN
 SELECT p_brand, p_type, p_size, count(DISTINCT ps_suppkey) AS supplier_cnt
@@ -280,6 +392,11 @@ WHERE p_partkey = ps_partkey AND p_brand <> 'Brand#45'
 GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size;
 
 -- Q17: Small-quantity orders (lineitem, part + correlated subquery)
+-- Filter: p_brand='Brand#23' (1/25) AND p_container='MED BOX' (1/40) → ~20K parts.
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_quantity": 50 } },
+    "part":     { "cardinality": 20000,     "distinct_keys": { "p_partkey": 20000,      "p_brand": 1, "p_container": 1 } }
+}';
 SELECT '-- Q17';
 EXPLAIN
 SELECT sum(l_extendedprice) / 7.0 AS avg_yearly
@@ -288,6 +405,12 @@ WHERE p_partkey = l_partkey AND p_brand = 'Brand#23' AND p_container = 'MED BOX'
     AND l_quantity < (SELECT 0.2 * avg(l_quantity) FROM lineitem WHERE l_partkey = p_partkey);
 
 -- Q18: Large volume customer (customer, orders, lineitem + IN subquery)
+-- No selective scan-level filters (HAVING sum > 300 is post-aggregation).
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000 } },
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_totalprice": 147999998 } },
+    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_quantity": 50 } }
+}';
 SELECT '-- Q18';
 EXPLAIN
 SELECT c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice, sum(l_quantity)
@@ -297,7 +420,14 @@ WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING 
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
 ORDER BY o_totalprice DESC, o_orderdate LIMIT 100;
 
--- Q19: Discounted revenue (lineitem, part)
+-- Q19: Discounted revenue (lineitem, part — complex OR filter)
+-- Filters: l_shipmode IN ('AIR','AIR REG') (2/7) AND l_shipinstruct='DELIVER IN PERSON' (1/4)
+--          → ~21M lineitem rows.
+--          3 brands × 4 containers each out of 25×40 combinations → ~50K parts.
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 21000000, "distinct_keys": { "l_orderkey": 21000000, "l_partkey": 3000000, "l_quantity": 50, "l_shipmode": 2, "l_shipinstruct": 1 } },
+    "part":     { "cardinality": 50000,   "distinct_keys": { "p_partkey": 50000,     "p_brand": 3, "p_container": 12, "p_size": 50 } }
+}';
 SELECT '-- Q19';
 EXPLAIN
 SELECT sum(l_extendedprice * (1 - l_discount)) AS revenue
@@ -314,6 +444,17 @@ WHERE p_partkey = l_partkey
             AND l_shipmode IN ('AIR','AIR REG') AND l_shipinstruct = 'DELIVER IN PERSON'));
 
 -- Q20: Potential part promotion (supplier, nation + nested IN subqueries)
+-- Filters: p_name LIKE 'forest%' (~1/26 → ~770K parts),
+--          n_name='CANADA' (1/25 → 1 nation, 40K suppliers),
+--          l_shipdate in 1994 (1/7 → ~85.7M lineitem rows),
+--          partsupp filtered to forest-parts' suppliers → ~3M rows.
+SET param__internal_join_table_stat_hints = '{
+    "nation":   { "cardinality": 1,        "distinct_keys": { "n_nationkey": 1,      "n_name": 1 } },
+    "supplier": { "cardinality": 40000,    "distinct_keys": { "s_suppkey": 40000,    "s_nationkey": 1 } },
+    "part":     { "cardinality": 770000,   "distinct_keys": { "p_partkey": 770000 } },
+    "partsupp": { "cardinality": 3000000,  "distinct_keys": { "ps_partkey": 770000,  "ps_suppkey": 40000 } },
+    "lineitem": { "cardinality": 85700000, "distinct_keys": { "l_partkey": 20000000, "l_suppkey": 1000000, "l_shipdate": 365 } }
+}';
 SELECT '-- Q20';
 EXPLAIN
 SELECT s_name, s_address
@@ -328,7 +469,15 @@ WHERE s_suppkey IN (
     AND s_nationkey = n_nationkey AND n_name = 'CANADA'
 ORDER BY s_name;
 
--- Q21: Suppliers who kept orders waiting (supplier, lineitem l1, orders, nation + EXISTS subqueries)
+-- Q21: Suppliers who kept orders waiting (supplier, lineitem, orders, nation + EXISTS subqueries)
+-- Filters: o_orderstatus='F' (~50% of orders → ~75M rows),
+--          n_name='SAUDI ARABIA' (1/25 → 1 nation, 40K suppliers).
+SET param__internal_join_table_stat_hints = '{
+    "nation":   { "cardinality": 1,          "distinct_keys": { "n_nationkey": 1,       "n_name": 1 } },
+    "supplier": { "cardinality": 40000,      "distinct_keys": { "s_suppkey": 40000,     "s_nationkey": 1 } },
+    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_receiptdate": 2554, "l_commitdate": 2466 } },
+    "orders":   { "cardinality": 75000000,   "distinct_keys": { "o_orderkey": 75000000,  "o_custkey": 15000000, "o_orderstatus": 1 } }
+}';
 SELECT '-- Q21';
 EXPLAIN
 SELECT s_name, count() AS numwait
@@ -342,8 +491,11 @@ WHERE s_suppkey = l1.l_suppkey AND o_orderkey = l1.l_orderkey AND o_orderstatus 
 GROUP BY s_name ORDER BY numwait DESC, s_name LIMIT 100;
 
 -- Q22: Global sales opportunity (customer + NOT EXISTS on orders)
--- Non-correlated scalar subquery (avg(c_acctbal)) is evaluated at analysis time;
--- disable cascades + distributed plan for this query only.
+-- Filter: substring(c_phone, 1, 2) IN (7 codes / 26 possible ≈ 27% → ~4M customers).
+SET param__internal_join_table_stat_hints = '{
+    "customer": { "cardinality": 4000000,   "distinct_keys": { "c_custkey": 4000000,   "c_acctbal": 3990000 } },
+    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } }
+}';
 SELECT '-- Q22';
 EXPLAIN
 SELECT cntrycode, count() AS numcust, sum(c_acctbal) AS totacctbal
@@ -354,8 +506,7 @@ FROM (SELECT substring(c_phone, 1, 2) AS cntrycode, c_acctbal
             WHERE c_acctbal > 0 AND substring(c_phone, 1, 2) IN ('13','31','23','29','30','18','17'))
         AND NOT EXISTS (SELECT * FROM orders WHERE o_custkey = c_custkey)
     ) AS custsale
-GROUP BY cntrycode ORDER BY cntrycode
-SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+GROUP BY cntrycode ORDER BY cntrycode;
 
 DROP TABLE lineitem;
 DROP TABLE orders;
