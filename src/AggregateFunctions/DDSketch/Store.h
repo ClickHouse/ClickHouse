@@ -29,9 +29,6 @@ extern const int INCORRECT_DATA;
 class DDSketchDenseStore
 {
 public:
-    static constexpr size_t max_bins_deserialize = 65536;
-    static constexpr Int64 max_key_range = 65536;
-
     Float64 count = 0;
     int min_key = std::numeric_limits<int>::max();
     int max_key = std::numeric_limits<int>::min();
@@ -165,9 +162,6 @@ public:
         {
             UInt64 num_bins;
             readVarUInt(num_bins, buf);
-            if (num_bins > max_bins_deserialize)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch dense store: {}", num_bins);
-
             int start_key;
             readVarInt(start_key, buf);
             int index_delta;
@@ -177,10 +171,7 @@ public:
             {
                 Float64 bin_count;
                 readFloatBinary(bin_count, buf);
-                if (!std::isfinite(bin_count) || bin_count < 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch dense store: {}", bin_count);
-                if (bin_count > 0)
-                    add(start_key, bin_count);
+                add(start_key, bin_count);
                 start_key += index_delta;
             }
         }
@@ -188,9 +179,6 @@ public:
         {
             UInt64 num_non_empty_bins;
             readVarUInt(num_non_empty_bins, buf);
-            if (num_non_empty_bins > max_bins_deserialize)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch sparse store: {}", num_non_empty_bins);
-
             int previous_index = 0;
             for (UInt64 i = 0; i < num_non_empty_bins; ++i)
             {
@@ -198,11 +186,8 @@ public:
                 readVarInt(index_delta, buf);
                 Float64 bin_count;
                 readFloatBinary(bin_count, buf);
-                if (!std::isfinite(bin_count) || bin_count < 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch sparse store: {}", bin_count);
                 previous_index += index_delta;
-                if (bin_count > 0)
-                    add(previous_index, bin_count);
+                add(previous_index, bin_count);
             }
         }
         else
@@ -228,18 +213,14 @@ private:
 
     UInt32 getNewLength(int new_min_key, int new_max_key) const
     {
-        Int64 desired_length = static_cast<Int64>(new_max_key) - static_cast<Int64>(new_min_key) + 1;
-        return static_cast<UInt32>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size));
+        int desired_length = new_max_key - new_min_key + 1;
+        return static_cast<UInt32>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size)); // Fixed float conversion
     }
 
     void extendRange(int key, int second_key)
     {
         int new_min_key = std::min({key, min_key});
         int new_max_key = std::max({second_key, max_key});
-
-        Int64 range = static_cast<Int64>(new_max_key) - static_cast<Int64>(new_min_key) + 1;
-        if (range > max_key_range)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "DDSketch store key range too large: {}", range);
 
         if (length() == 0)
         {

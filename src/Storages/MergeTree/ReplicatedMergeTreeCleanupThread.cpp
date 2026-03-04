@@ -467,19 +467,13 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 {
     String node;
     Int64 ctime = 0;
-    Int64 czxid = 0;
     Int32 version = 0;
 
-    NodeWithStat(String node_, Int64 ctime_, Int64 czxid_, Int32 version_) : node(std::move(node_)), ctime(ctime_), czxid(czxid_), version(version_) {}
+    NodeWithStat(String node_, Int64 ctime_, Int32 version_) : node(std::move(node_)), ctime(ctime_), version(version_) {}
 
-    /// Sort by (ctime, czxid) rather than (ctime, node_name) to ensure consistent ordering
-    /// across different deduplication directories (blocks/, deduplication_hashes/).
-    /// With COMPATIBLE_DOUBLE_HASHES, entries for the same insert exist in both directories
-    /// with different node names but the same czxid (created in the same multi-op).
-    /// Using czxid ensures both directories remove entries for the same logical inserts.
     static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
-        return std::forward_as_tuple(lhs.ctime, lhs.czxid) > std::forward_as_tuple(rhs.ctime, rhs.czxid);
+        return std::forward_as_tuple(lhs.ctime, lhs.node) > std::forward_as_tuple(rhs.ctime, rhs.node);
     }
 };
 
@@ -500,7 +494,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         current_time - static_cast<Int64>(1000 * window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
-    NodeWithStat block_threshold{{}, time_threshold, 0, 0};
+    NodeWithStat block_threshold{{}, time_threshold, 0};
 
     size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), window_size);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
@@ -593,8 +587,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
         else
         {
             /// Cached block
-            const auto & entry = it->second;
-            timed_blocks.emplace_back(block, entry.ctime, entry.czxid, entry.version);
+            const auto & ctime_and_version = it->second;
+            timed_blocks.emplace_back(block, ctime_and_version.first, ctime_and_version.second);
         }
     }
 
@@ -608,8 +602,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
         if (status.error != Coordination::Error::ZNONODE)
         {
             auto node_name = fs::path(exists_paths[i]).filename();
-            cached_block_stats.emplace(node_name, NodeCacheEntry{status.stat.ctime, status.stat.czxid, status.stat.version});
-            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.czxid, status.stat.version);
+            cached_block_stats.emplace(node_name, std::make_pair(status.stat.ctime, status.stat.version));
+            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.version);
         }
     }
 

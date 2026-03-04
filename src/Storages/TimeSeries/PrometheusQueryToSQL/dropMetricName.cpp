@@ -26,7 +26,6 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
         case StoreMethod::EMPTY:
         case StoreMethod::CONST_SCALAR:
         case StoreMethod::CONST_STRING:
-        case StoreMethod::SINGLE_SCALAR:
         case StoreMethod::SCALAR_GRID:
         {
             /// No metric name.
@@ -114,7 +113,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// dropMetricName() must not be called with StoreMethod::RAW_DATA.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot drop the metric name from the result of expression {} because of its store method {}",
-                            getPromQLText(query_piece, context), query_piece.store_method);
+                            getPromQLQuery(query_piece, context), query_piece.store_method);
         }
     }
 

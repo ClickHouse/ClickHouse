@@ -199,8 +199,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
-    virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
+    /// Returns true, if metadata is of the latest version, false if unknown.
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,

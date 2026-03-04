@@ -77,7 +77,10 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
-    configuration->update(object_storage, context_);
+    configuration->update(
+        object_storage,
+        context_,
+        /* if_not_updated_before */ false);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -136,17 +139,19 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->lazyInitializeIfNeeded(
+    configuration->update(
         object_storage,
-        query_context);
+        query_context,
+        /* if_not_updated_before */ true);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->lazyInitializeIfNeeded(
+    configuration->update(
         object_storage,
-        query_context);
+        query_context,
+        /* if_not_updated_before */ true);
     return configuration->totalBytes(query_context);
 }
 
@@ -214,7 +219,8 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     /// stale from the first query and silently omit new files.
     configuration->update(
         object_storage,
-        query_context);
+        query_context,
+        /* if_not_updated_before */ false);
 
     auto state = configuration->getTableStateSnapshot(query_context);
     if (!state)
@@ -296,4 +302,3 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
-

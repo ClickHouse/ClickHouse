@@ -99,7 +99,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -117,7 +116,6 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
 
@@ -710,15 +708,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         all_required_replicas = &extended_list_of_replicas;
     }
 
-    /// Get the process list element to check for query cancellation while waiting.
-    QueryStatusPtr process_list_element;
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context)
-            process_list_element = query_context->getProcessListElement();
-    }
-
     std::set<String> inactive_replicas;
     for (const String & replica : *all_required_replicas)
     {
@@ -758,9 +747,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
-                LOG_WARNING(log, "Replica {} was removed during mutation. "
-                    "Mutation will be done asynchronously when replica is restored.", replica);
-                inactive_replicas.emplace(replica);
+                LOG_WARNING(log, "Replica {} was removed", replica);
                 break;
             }
             if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
@@ -784,10 +771,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             {
                 LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id);
             }
-
-            /// Check if the query was cancelled while we were waiting.
-            if (process_list_element)
-                process_list_element->checkTimeLimit();
 
             /// If mutation status is empty, than local replica may just not loaded it into memory.
             if (mutation_status && !mutation_status->latest_fail_reason.empty())
@@ -826,6 +809,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED,
                             "Mutation is not finished because table shutdown was called. "
                             "It will be done after table restart.");
+
+        /// Replica inactive, don't check mutation status
+        if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
+            continue;
 
         /// At least we have our current mutation
         std::set<String> mutation_ids;
@@ -4283,11 +4270,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        /// Skip merge selection when merges are stopped (e.g. SYSTEM STOP MERGES).
-        /// Without this check, merge entries are created in ZooKeeper even though they cannot be executed,
-        /// and the source parts become "virtual" in the queue, which blocks TTL moves.
-        bool can_assign_merge = max_source_parts_bytes_for_merge > 0
-            && !merger_mutator.merges_blocker.isCancelled();
+        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
@@ -7026,13 +7009,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
-    /// Find the max metadata_version across all active parts.
-    /// Parts preserve their metadata_version.txt which records the table schema version
-    /// at the time they were written. After restoring ZK from scratch, the /metadata
-    /// ZNode version starts at 0, but parts may have higher versions from prior ALTERs.
-    /// We need to bump the ZK version to match so parts don't appear "from the future".
-    int32_t max_parts_metadata_version = 0;
-
     /// Why all parts (not only Active) are moved to detached/:
     /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
     /// potentially encounter a situation that a part we want to attach already exists.
@@ -7041,7 +7017,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         if (part->getState() == DataPartState::Active)
         {
             active_parts_names.push_back(part->name);
-            max_parts_metadata_version = std::max(max_parts_metadata_version, part->getMetadataVersion());
             forcefullyMovePartToDetachedAndRemoveFromMemory(part);
         }
         else
@@ -7063,20 +7038,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         createReplica(metadata_snapshot, zookeeper_retries_info);
 
     createNewZooKeeperNodes(zookeeper_retries_info);
-
-    /// Bump the /metadata ZNode version to match the max parts metadata version.
-    /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
-    /// during startup. Each SET increments the ZNode version by 1.
-    if (max_parts_metadata_version > 0)
-    {
-        auto zookeeper = getZooKeeper();
-        String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        for (int32_t i = 0; i < max_parts_metadata_version; ++i)
-            zookeeper->set(zookeeper_path + "/metadata", metadata_str);
-        zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
-
-        LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
-    }
 
     LOG_INFO(log, "Created ZK nodes for table");
 

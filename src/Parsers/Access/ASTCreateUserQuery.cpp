@@ -138,12 +138,6 @@ namespace
     }
 
 
-    void formatRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
-    {
-        ostr << " ROLE ";
-        roles.format(ostr, settings);
-    }
-
     void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         ostr << " DEFAULT ROLE ";
@@ -190,9 +184,6 @@ ASTPtr ASTCreateUserQuery::clone() const
 
     if (names)
         res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
-
-    if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (default_roles)
         res->default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
@@ -272,9 +263,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (default_database)
         formatDefaultDatabase(*default_database, ostr, format);
-
-    if (roles)
-        formatRoles(*roles, ostr, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, ostr, format);

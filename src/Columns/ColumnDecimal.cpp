@@ -21,6 +21,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 
+#include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -323,10 +324,11 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
 {
     if (options.notFull(name_buf))
         name_buf << FieldVisitorToString()(data[n], scale);
+    return FieldToDataType()(data[n], scale);
 }
 
 template <is_decimal T>

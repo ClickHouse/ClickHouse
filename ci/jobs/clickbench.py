@@ -32,10 +32,9 @@ def main():
 
         def start():
             res = ch.start_light()
-            if not info.is_local_run:
-                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
-                    print("WARNING: Failed to start log export")
-            return res
+            if info.is_local_run:
+                return res
+            return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
 
         results.append(
             Result.from_commands_run(

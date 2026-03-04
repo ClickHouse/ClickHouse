@@ -22,7 +22,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/StreamingStorageRegistry.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -398,7 +398,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
-    max_files_override_per_task.resize(task_count, 0);
 }
 
 void StorageObjectStorageQueue::startup()
@@ -442,10 +441,10 @@ void StorageObjectStorageQueue::startup()
     /// Register table as a Queue table on this server.
     /// This will allow to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown.
-    StreamingStorageRegistry::instance().registerTable(getStorageID());
+    ObjectStorageQueueFactory::instance().registerTable(getStorageID());
     SCOPE_EXIT_SAFE({
         if (!startup_finished)
-            StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
+            ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
     });
 
     fiu_do_on(FailPoints::object_storage_queue_fail_startup, {
@@ -470,7 +469,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown).
-    StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
+    ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
 
     table_is_being_dropped = is_drop;
     shutdown_called = true;
@@ -518,7 +517,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -671,8 +670,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
-    bool commit_once_processed,
-    size_t max_processed_files_override)
+    bool commit_once_processed)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
@@ -683,8 +681,6 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
-    if (max_processed_files_override)
-        commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -872,8 +868,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    size_t & effective_max_files = max_files_override_per_task[streaming_tasks_index];
-
     while (!shutdown_called && !file_iterator->isFinished())
     {
         /// FIXME:
@@ -919,8 +913,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                /*commit_once_processed=*/false,
-                effective_max_files);
+                /*commit_once_processed=*/false);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
@@ -957,19 +950,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
-
-                /// Halve the batch size so that on the next iteration the bad file
-                /// ends up in a smaller batch, eventually alone (batch size 1),
-                /// and only then its retry count will be reduced.
-                size_t current_max = effective_max_files;
-                if (!current_max)
-                {
-                    std::lock_guard lock(mutex);
-                    current_max = commit_settings.max_processed_files_before_commit;
-                }
-                if (!current_max)
-                    current_max = processing_progress->processed_files.load();
-                effective_max_files = std::max<size_t>(current_max / 2, 1);
             }
             catch (Exception & e)
             {
@@ -985,7 +965,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
-        effective_max_files = 0;
         total_rows += rows;
     }
 

@@ -151,10 +151,10 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (!do_lazy_init)
         {
-            if (is_table_function)
-                configuration->lazyInitializeIfNeeded(object_storage, context);
-            else
-                configuration->update(object_storage, context);
+            configuration->update(
+                object_storage,
+                context,
+                /* if_not_updated_before */ is_table_function);
             updated_configuration = true;
         }
     }
@@ -265,7 +265,7 @@ StorageObjectStorage::StorageObjectStorage(
         /// Additionally reload columns from the snapshot when the per-format setting is enabled.
         /// This is done eagerly because select queries for table functions may bypass
         /// updateExternalDynamicMetadataIfExists.
-        configuration->lazyInitializeIfNeeded(object_storage, context);
+        configuration->update(object_storage, context, /* if_not_updated_before */true);
         if (auto state = configuration->getTableStateSnapshot(context))
         {
             metadata.setDataLakeTableState(*state);
@@ -342,9 +342,12 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
-    return nullptr;
+        return nullptr;
 
-configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false);
 
     return configuration->getExternalMetadata();
 }
@@ -357,7 +360,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     /// Always force an update to pick up the latest snapshot version.
     /// Using if_not_updated_before=true would leave latest_snapshot_version
     /// stale from the first query and silently omit new files.
-    configuration->update(object_storage, query_context);
+    configuration->update(object_storage, query_context, /* if_not_updated_before */ false);
 
     auto state = configuration->getTableStateSnapshot(query_context);
     if (!state)
@@ -391,8 +394,10 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
-
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ is_table_function);
     return configuration->totalRows(query_context);
 }
 
@@ -404,7 +409,10 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ is_table_function);
     return configuration->totalBytes(query_context);
 }
 
@@ -424,7 +432,10 @@ void StorageObjectStorage::read(
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
-        configuration->update(object_storage, local_context);
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */ false);
     }
 
 
@@ -528,7 +539,10 @@ SinkToStoragePtr StorageObjectStorage::write(
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
-        configuration->update(object_storage, local_context);
+        configuration->update(
+            object_storage,
+            local_context,
+            /* if_not_updated_before */ false);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());

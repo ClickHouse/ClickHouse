@@ -521,12 +521,6 @@ Block ProjectionDescription::calculate(
 Block ProjectionDescription::calculateByQuery(
     const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
-    /// Nothing to project from an empty block. This can happen when TTL deletes all rows during merge.
-    /// Aggregate projections with constant GROUP BY keys (e.g., GROUP BY 0.674) would produce 1 row
-    /// from 0 input rows, violating the ProjectionDataSink row count invariant.
-    if (block.rows() == 0)
-        return sample_block.cloneEmpty();
-
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.

@@ -851,15 +851,20 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     };
 
-    /// Try to parse EMPTY or CLONE keywords (they can appear before or after COMMENT).
-    auto try_parse_empty_or_clone = [&is_create_empty, &is_clone_as, &pos, &expected]()
+    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
     {
-        if (is_create_empty || is_clone_as)
-            return;
-        if (ParserKeyword{Keyword::EMPTY}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
+        {
             is_create_empty = true;
-        else if (ParserKeyword{Keyword::CLONE}.ignore(pos, expected))
+            return true;
+        }
+        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
+        {
             is_clone_as = true;
+            return true;
+        }
+
+        return ParserKeyword{Keyword::AS}.ignore(pos, expected);
     };
 
     ASTPtr comment;
@@ -880,31 +885,17 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = parse_storage();
 
-        /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
-        try_parse_empty_or_clone();
         comment = parseComment(pos, expected);
-        try_parse_empty_or_clone();
 
-        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
-        bool has_as = false;
-        if (is_create_empty || is_clone_as)
-        {
-            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
-                return false;
-            has_as = true;
-        }
-        else
-            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
-
-        if ((storage_parse_result || is_temporary) && has_as)
+        if ((storage_parse_result || is_temporary) && need_parse_as_select())
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
         }
 
-        if (!storage_parse_result && !is_temporary && has_as)
+        if (!storage_parse_result && !is_temporary)
         {
-            if (!table_function_p.parse(pos, as_table_function, expected))
+            if (need_parse_as_select() && !table_function_p.parse(pos, as_table_function, expected))
                 return false;
         }
 
@@ -918,24 +909,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         parse_storage();
 
-        try_parse_empty_or_clone();
         if (!comment)
             comment = parseComment(pos, expected);
-        try_parse_empty_or_clone();
-
-        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
-        bool has_as = false;
-        if (is_create_empty || is_clone_as)
-        {
-            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
-                return false;
-            has_as = true;
-        }
-        else
-            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
 
         /// CREATE|ATTACH TABLE ... AS ...
-        if (has_as)
+        if (need_parse_as_select())
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
@@ -1189,20 +1167,12 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings.
-    auto try_parse_populate_or_empty = [&is_populate, &is_create_empty, &pos, &expected, &s_populate, &s_empty]()
-    {
-        if (is_populate || is_create_empty)
-            return;
-        if (s_populate.ignore(pos, expected))
-            is_populate = true;
-        else if (s_empty.ignore(pos, expected))
-            is_create_empty = true;
-    };
+    if (s_populate.ignore(pos, expected))
+        is_populate = true;
+    else if (s_empty.ignore(pos, expected))
+        is_create_empty = true;
 
-    try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
-    try_parse_populate_or_empty();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1651,38 +1621,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!sql_security)
         sql_security_p.parse(pos, sql_security, expected);
 
-    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings for materialized views.
-    auto try_parse_populate_or_empty = [&]()
-    {
-        if (!is_materialized_view || is_populate || is_create_empty)
-            return;
-        if (!to_table)
-        {
-            if (s_populate.ignore(pos, expected))
-                is_populate = true;
-            else if (s_empty.ignore(pos, expected))
-                is_create_empty = true;
-        }
-        else
-        {
-            if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-            if (s_empty.ignore(pos, expected))
-            {
-                if (!refresh_strategy)
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
-
-                is_create_empty = true;
-            }
-        }
-    };
-
-    try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
-    try_parse_populate_or_empty();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))

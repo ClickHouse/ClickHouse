@@ -499,10 +499,20 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
     {
-        LOG_INFO(
-            logger,
-            "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. "
-            "Hedged connections are not used for parallel reading from replicas");
+        if (settings[Setting::use_hedged_requests].changed)
+        {
+            LOG_WARNING(
+                logger,
+                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
+                "Hedged connections are not used for parallel reading from replicas");
+        }
+        else
+        {
+            LOG_INFO(
+                logger,
+                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
+                "not used for parallel reading from replicas");
+        }
 
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});

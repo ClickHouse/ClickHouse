@@ -67,13 +67,7 @@ private:
                           const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
                           size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
 
-    struct NodeCacheEntry
-    {
-        Int64 ctime = 0;
-        Int64 czxid = 0;
-        Int32 version = 0;
-    };
-    using NodeCTimeAndVersionCache = std::map<String, NodeCacheEntry>;
+    using NodeCTimeAndVersionCache = std::map<String, std::pair<Int64, Int32>>;
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks
     size_t clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats);
 

@@ -1,7 +1,5 @@
 import glob
-import json as json_module
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -58,7 +56,6 @@ class ClickHouseProc:
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
     ):
-        self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.ch_config_dir = f"/etc/clickhouse-server"
@@ -97,10 +94,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        # Fast test runs lightweight SQL tests that are not CPU-bound,
-        # so we can use more parallelism than the default cpu_count/2.
-        nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -413,10 +407,6 @@ profiles:
         )
 
     def start(self, replica_num=0):
-        if replica_num == 0:
-            # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
-            Shell.check("dmesg --clear", verbose=True)
-
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1
@@ -549,38 +539,20 @@ profiles:
 
         # Restart minio with a timeout to avoid hanging forever (see #97647).
         # If the restart hangs, kill minio and start it again.
-        # We use Popen with start_new_session=True so that on timeout we can
-        # kill the entire process group, avoiding orphaned child processes
-        # that would block communicate() indefinitely (see #98466).
         restart_timeout = 60
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
-            proc = subprocess.Popen(
-                [
-                    "/mc",
-                    "admin",
-                    "service",
-                    "restart",
-                    "clickminio",
-                    "--wait",
-                    "--json",
-                ],
+            result = subprocess.run(
+                "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
+                shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                start_new_session=True,
+                timeout=restart_timeout,
+                executable="/bin/bash",
             )
-            try:
-                stdout, _ = proc.communicate(timeout=restart_timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.communicate()
-                raise
-            try:
-                status = json_module.loads(stdout).get("status", "")
-            except (json_module.JSONDecodeError, AttributeError):
-                status = stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
+            status = result.stdout.strip()
+        except subprocess.TimeoutExpired:
             print(
                 f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
             )
@@ -781,16 +753,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if self.fast_test:
-                    # Use --force (SIGKILL) for fast test to avoid waiting for
-                    # graceful shutdown, which can take over a minute.
-                    # Graceful shutdown is not needed here because we already
-                    # flushed system logs above and don't need to preserve data.
-                    Shell.check(
-                        f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --force >/dev/null",
-                        verbose=True,
-                    )
-                elif not Shell.check(
+                if not Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):

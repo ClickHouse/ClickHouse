@@ -40,7 +40,7 @@ public:
     void run() override;
 
 protected:
-    static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & message = {});
+    static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
 
 private:
     HTTPContextPtr context;

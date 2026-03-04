@@ -261,12 +261,8 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     {
         for (size_t i = 0; i < hyperrectangle.size(); ++i)
         {
-            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, other.hyperrectangle[i].left)
-                ? hyperrectangle[i].left
-                : other.hyperrectangle[i].left;
-            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, other.hyperrectangle[i].right)
-                ? other.hyperrectangle[i].right
-                : hyperrectangle[i].right;
+            hyperrectangle[i].left = std::min(hyperrectangle[i].left, other.hyperrectangle[i].left);
+            hyperrectangle[i].right = std::max(hyperrectangle[i].right, other.hyperrectangle[i].right);
         }
     }
 }
@@ -2226,14 +2222,8 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         file.read(str_buf);
         bool valid_creation_tid = version.creation_tid == file.creation_tid;
         bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
-        /// CSN may have been learned from the transaction log and cached in memory
-        /// (e.g., by VersionMetadata::isVisible) but not yet appended to the on-disk file.
-        bool valid_creation_csn = version.creation_csn == file.creation_csn
-            || version.creation_csn == Tx::RolledBackCSN
-            || file.creation_csn == Tx::UnknownCSN;
-        bool valid_removal_csn = version.removal_csn == file.removal_csn
-            || version.removal_csn == Tx::PrehistoricCSN
-            || file.removal_csn == Tx::UnknownCSN;
+        bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
+        bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
         bool valid_removal_tid_lock = (version.removal_tid.isEmpty() && version.removal_tid_lock == 0)
             || (version.removal_tid_lock == version.removal_tid.getHash());
         if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
@@ -2433,7 +2423,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
-        .keep_metadata_version = true,
+        .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
@@ -2666,34 +2656,24 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         {
             ColumnSize substream_size;
 
-            auto index_stream_name = index_name + index_substream.suffix;
+            auto index_file_name = index_name + index_substream.suffix + index_substream.extension;
+            auto index_marks_file_name = index_name + index_substream.suffix + getMarksFileExtension();
 
-            /// Check for both original and hashed filenames (hashed if the name is too long)
-            auto actual_index_file_name = getStreamNameOrHash(index_stream_name, index_substream.extension, checksums);
-            if (actual_index_file_name)
+            auto bin_checksum = checksums.files.find(index_file_name);
+            if (bin_checksum != checksums.files.end())
             {
-                auto full_index_file_name = *actual_index_file_name + index_substream.extension;
-                auto bin_checksum = checksums.files.find(full_index_file_name);
-                if (bin_checksum != checksums.files.end())
-                {
-                    substream_size.data_compressed = bin_checksum->second.file_size;
+                substream_size.data_compressed = bin_checksum->second.file_size;
 
-                    /// For uncompressed files, the size of the uncompressed data is the same as the file size.
-                    if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
-                        substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
-                    else
-                        substream_size.data_uncompressed = bin_checksum->second.file_size;
-                }
+                /// For uncompressed files, the size of the uncompressed data is the same as the file size.
+                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                    substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+                else
+                    substream_size.data_uncompressed = bin_checksum->second.file_size;
             }
 
-            auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
-            if (actual_marks_file_name)
-            {
-                auto full_marks_file_name = *actual_marks_file_name + getMarksFileExtension();
-                auto mrk_checksum = checksums.files.find(full_marks_file_name);
-                if (mrk_checksum != checksums.files.end())
-                    substream_size.marks = mrk_checksum->second.file_size;
-            }
+            auto mrk_checksum = checksums.files.find(index_marks_file_name);
+            if (mrk_checksum != checksums.files.end())
+                substream_size.marks = mrk_checksum->second.file_size;
 
             total_secondary_indices_size.add(substream_size);
             secondary_index_sizes[index_description.name].add(substream_size);
@@ -2721,18 +2701,6 @@ const IMergeTreeDataPart::ColumnSizeByName & IMergeTreeDataPart::getColumnSizes(
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
     return columns_sizes;
-}
-
-ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) const
-{
-    /// First, check if we already calculated the size of this subcolumn and have it in cache.
-    if (auto size = subcolumns_sizes_cache.get(subcolumn_name))
-        return *size;
-
-    /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
-    subcolumns_sizes_cache.add(subcolumn_name, size);
-    return size;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
@@ -2769,9 +2737,7 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    /// Check for both original and hashed filenames
-    return getStreamNameOrHash(file_name, ".idx", checksums).has_value()
-        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value();
+    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
