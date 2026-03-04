@@ -3,6 +3,7 @@
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <memory>
+#include <vector>
 
 namespace DB
 {
