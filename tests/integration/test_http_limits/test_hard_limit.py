@@ -23,7 +23,7 @@ def clickhouse_cluster():
         cluster.shutdown()
 
 
-def test_both_https(clickhouse_cluster):
+def test_disk_hard_limit_hit(clickhouse_cluster):
     node = clickhouse_cluster.instances["node"]
     node.query(
     """
@@ -97,10 +97,24 @@ def test_both_https(clickhouse_cluster):
     node.query("ALTER TABLE test_table MODIFY SETTING min_bytes_for_wide_part=1")
 
     insert_query_id = f"insert_wide_{int(random.random() * 1000000)}"
-    error = node.query_and_get_error(
+    _, error = node.query_and_get_answer_with_error(
     """
         INSERT INTO test_table VALUES (2, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19');
     """,
     query_id=insert_query_id
     )
-    assert("HTTP_CONNECTION_LIMIT_REACHED" in error)
+
+    if error:
+        assert("HTTP_CONNECTION_LIMIT_REACHED" in error)
+    else:
+        # Some times we can get lucky and not hit the limit, but we should hit it in most cases
+        # that could be because of not enough connections are created in parallel, but we want to avoid flaky test,
+        # so we just check that if limit is not hit, then at least 90 gets and connections are made, which means that we are close to the limit and it is likely that it will be hit in next attempt
+        node.query("SYSTEM FLUSH LOGS")
+        puts, connections = node.query(
+        f"""
+            SELECT ProfileEvents['S3PutObject'], ProfileEvents['DiskConnectionsCreated'] FROM system.query_log WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
+        """
+        ).strip().split("\t")
+        assert(int(puts) >= 90)
+        assert(int(connections) >= 90)

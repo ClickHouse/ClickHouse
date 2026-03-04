@@ -1,4 +1,4 @@
 <clickhouse>
     <disk_connections_store_limit>0</disk_connections_store_limit>
-    <disk_connections_hard_limit>50</disk_connections_hard_limit>
+    <disk_connections_hard_limit>10</disk_connections_hard_limit>
 </clickhouse>
