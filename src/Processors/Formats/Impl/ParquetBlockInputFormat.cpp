@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -682,7 +683,6 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     if (io_pool)
         io_pool->wait();
 }
-
 
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
@@ -1443,15 +1443,9 @@ void registerInputFormatParquet(FormatFactory & factory)
             }
             else
             {
-                LOG_TRACE(lambda_logger, "using arrow reader in ParquetBlockInputFormat without metadata cache");
-                return std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    std::make_shared<const Block>(sample),
-                    settings,
-                    std::move(parser_shared_resources),
-                    std::move(format_filter_info),
-                    min_bytes_for_seek
-                );
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Implementation of ParquetBlockInputFormat using arrow reader didn't require blob metadata for initialization");
             }
         });
     factory.registerRandomAccessInputFormat(
