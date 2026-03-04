@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateAtomExtractor.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Storages/IStorage.h>
 #include <Processors/Chunk.h>
@@ -129,8 +130,12 @@ FilterTransform::FilterTransform(
                 const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
                 while (node->type == ActionsDAG::ActionType::ALIAS)
                     node = node->children[0];
-                predicate_atoms = extractPredicateAtoms(node);
-                collect_predicate_stats = !predicate_atoms.empty();
+                auto atoms = extractPredicateAtoms(node);
+                if (!atoms.empty())
+                {
+                    predicate_atoms = std::make_unique<std::vector<PredicateAtom>>(std::move(atoms));
+                    collect_predicate_stats = true;
+                }
             }
         }
     }
@@ -397,5 +402,7 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
     elem.query_id = query_id;
     predicate_stats_log->add(std::move(elem));
 }
+
+FilterTransform::~FilterTransform() = default;
 
 }
