@@ -292,7 +292,7 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
-    const String & parts_regexp_,
+    std::vector<String> parts_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
     : IStorage(table_id_)
@@ -306,10 +306,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
 
     data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
-    if (!parts_regexp_.empty())
+    if (!parts_.empty())
     {
-        OptimizedRegularExpression regexp(parts_regexp_);
-        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !regexp.match(part->name); });
+        std::unordered_set<String> parts_set(std::make_move_iterator(parts_.begin()), std::make_move_iterator(parts_.end()));
+        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !parts_set.contains(part->name); });
     }
 
     table_settings = merge_tree_data->getSettings();

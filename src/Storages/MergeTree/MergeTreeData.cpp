@@ -4525,7 +4525,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(getInMemoryMetadata()))
+        else if (command.isRequireMutationStage(getInMemoryMetadata(), local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -6094,12 +6094,15 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
     return nullptr;
 }
 
-void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const
+void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr /* local_context */) const
 {
-    /// Remove metadata version file and take it from table.
-    /// Currently we cannot attach parts with different schema, so
-    /// we can assume that it's equal to table's current schema.
-    part->writeMetadataVersion(local_context, getInMemoryMetadataPtr()->getMetadataVersion(), (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+    /// Do not overwrite metadata version from the table:
+    /// the part may have been detached before schema changes (e.g. RENAME COLUMN),
+    /// and its metadata_version should reflect which schema changes have actually been applied
+    /// to the part's data. Overwriting it would make the mutation/rename system think
+    /// the part is already up-to-date when it's not.
+    /// If the part has no metadata_version.txt (very old parts), the fallback in
+    /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
