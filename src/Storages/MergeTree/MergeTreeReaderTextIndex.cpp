@@ -623,9 +623,6 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    if (postings.empty())
-        return;
-
     if (!search_query->patterns.empty())
     {
         const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
@@ -643,12 +640,17 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
         if (search_query->function_name == "notLike")
         {
-            /// NOT LIKE: flip the result
+            /// NOT LIKE: flip the result here even if the column is still all-zero.
             for (size_t i = 0; i < num_rows; ++i)
                 column_data[old_size + i] ^= 1;
         }
+        return;
     }
-    else if (search_query->tokens.empty())
+
+    if (postings.empty())
+        return;
+
+    if (search_query->tokens.empty())
     {
         return;
     }
