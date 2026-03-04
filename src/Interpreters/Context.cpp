@@ -1390,7 +1390,7 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const
+DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const
 {
     auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
     std::lock_guard lock(shard.mutex);
@@ -1398,12 +1398,13 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (exception && !storage.second)
-            exception->emplace(Exception(
-                ErrorCodes::UNKNOWN_TABLE,
-                "Table {} does not exist anymore - maybe it was dropped",
-                id.getNameForLogs()));
-        return storage;
+        if (storage.second)
+            return storage;
+
+        /// The table was cached but no longer exists by its UUID
+        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
+        /// Remove the stale entry and fall through to a fresh lookup by name.
+        shard.set.erase(it);
     }
 
     auto storage = storage_getter();
