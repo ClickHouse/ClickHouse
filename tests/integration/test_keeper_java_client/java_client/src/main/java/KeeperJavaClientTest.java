@@ -292,7 +292,12 @@ public class KeeperJavaClientTest
             // Add a persistent watch
             AtomicInteger watchCount = new AtomicInteger(0);
             Watcher testWatcher = event -> {
-                watchCount.incrementAndGet();
+                // Only count actual data/child change events, not watch removal notifications
+                // (e.g. PersistentWatchRemoved) which the client generates locally on removeAllWatches.
+                if (event.getType().getIntValue() > 0)
+                {
+                    watchCount.incrementAndGet();
+                }
             };
             zk.addWatch(path, testWatcher, AddWatchMode.PERSISTENT);
 
