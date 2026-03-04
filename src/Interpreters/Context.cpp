@@ -41,6 +41,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -541,7 +542,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
+    mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
@@ -1020,6 +1021,14 @@ struct ContextSharedPart : boost::noncopyable
         }
         if (delete_zookeeper)
             delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -3716,14 +3725,17 @@ void Context::cancelAllBackupsAndRestores() const
         shared->backups_worker->cancelAll();
 }
 
-BackupsInMemoryHolder & Context::getBackupsInMemory()
+std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 {
+    std::lock_guard lock(mutex);
+    if (!backups_in_memory)
+        backups_in_memory = std::make_shared<BackupsInMemoryHolder>();
     return backups_in_memory;
 }
 
-const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
-    return backups_in_memory;
+    return const_cast<Context *>(this)->getBackupsInMemory();
 }
 
 
@@ -3801,6 +3813,8 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
@@ -3832,6 +3846,8 @@ void Context::clearPageCache() const
     }
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3868,6 +3884,8 @@ void Context::clearMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -4008,6 +4026,8 @@ void Context::clearIndexUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -4044,6 +4064,8 @@ void Context::clearIndexMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -4083,41 +4105,42 @@ void Context::clearVectorSimilarityIndexCache() const
         shared->vector_similarity_index_cache->clear();
 }
 
-void Context::setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache has been already created.");
+    if (shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache has been already created.");
 
-    shared->text_index_dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+    shared->text_index_tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("text_index_dictionary_block_cache_size", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_dictionary_block_cache_max_entries", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES);
-    shared->text_index_dictionary_block_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->text_index_dictionary_block_cache->setMaxCount(max_entries);
+    size_t max_size_in_bytes = config.getUInt64("text_index_tokens_cache_size", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_tokens_cache_max_entries", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES);
+    shared->text_index_tokens_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_tokens_cache->setMaxCount(max_entries);
 }
 
-std::shared_ptr<TextIndexDictionaryBlockCache> Context::getTextIndexDictionaryBlockCache() const
+std::shared_ptr<TextIndexTokensCache> Context::getTextIndexTokensCache() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->text_index_dictionary_block_cache;
+    return shared->text_index_tokens_cache;
 }
 
-void Context::clearTextIndexDictionaryBlockCache() const
+void Context::clearTextIndexTokensCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    auto cache = getTextIndexTokensCache();
 
-    if (shared->text_index_dictionary_block_cache)
-        shared->text_index_dictionary_block_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -4375,9 +4398,17 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
-    shared->text_index_dictionary_block_cache->clear();
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
+    shared->text_index_tokens_cache->clear();
+
+    if (!shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
+    shared->text_index_header_cache->clear();
+
+    if (!shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
+    shared->text_index_postings_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
