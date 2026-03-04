@@ -404,7 +404,7 @@ def test_attach_detach_partition(cluster, node_name):
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 - FILES_OVERHEAD_METADATA_VERSION)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
@@ -420,7 +420,7 @@ def test_attach_detach_partition(cluster, node_name):
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1 - FILES_OVERHEAD_METADATA_VERSION)
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1)
 
     node.query(
         "ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'",

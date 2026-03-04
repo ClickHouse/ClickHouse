@@ -2327,7 +2327,7 @@ message Expr {
         LiteralValue lit_val = 1;
         ComplicatedExpr comp_expr = 2;
     }
-    optional FieldAccess field = 3;
+    repeated FieldAccess fields = 3;
 }
 
 message ExprColAlias {
@@ -3259,7 +3259,6 @@ enum CompressionCodec {
     /// COMP_ZSTD_QAT = 14;
     /// COMP_DEFLATE_QPL = 15;
     /// COMP_SZ3 = 16;
-    COMP_ALP = 17;
 }
 
 message IndexKeyVal {
@@ -4154,7 +4153,7 @@ message SystemCommand {
         string disable_failpoint = 69;
         bool iceberg_metadata_cache = 70;
         bool reconnect_keeper = 71;
-        bool drop_text_index_dictionary_cache = 72;
+        bool drop_text_index_tokens_cache = 72;
         bool drop_text_index_header_cache = 73;
         bool drop_text_index_postings_cache = 74;
         bool drop_text_index_caches = 75;
