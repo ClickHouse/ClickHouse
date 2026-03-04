@@ -60,7 +60,7 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_from_metadata;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
@@ -68,11 +68,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
+        /// Resolve the position delete file path to get the correct storage and key
+        auto [delete_storage_to_use, resolved_key] = resolveObjectStorageForPath(
+            table_location, position_deletes_object.file_path, object_storage, secondary_storages, context);
 
-        auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
-        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
-
+        auto object_metadata = delete_storage_to_use->getObjectMetadata(resolved_key, /*with_tags=*/ false);
+        RelativePathWithMetadata object_info(resolved_key, object_metadata);
 
         String format = position_deletes_object.file_format;
         if (boost::to_lower_copy(format) != "parquet")
@@ -80,7 +81,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, delete_storage_to_use, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -91,9 +92,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             initial_header = Block(initial_header_data);
         }
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
+        CompressionMethod compression_method = chooseCompressionMethod(resolved_key, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(object_info, delete_storage_to_use, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -155,7 +156,7 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             {
                 // Add filename matching check
                 auto filename_in_delete_record = filename_column->getDataAt(i);
-                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key;
+                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_from_metadata;
 
                 // Only add to delete bitmap when the filename in delete record matches current data file path
                 if (filename_in_delete_record == current_data_file_path || filename_in_delete_record == "/" + current_data_file_path)
