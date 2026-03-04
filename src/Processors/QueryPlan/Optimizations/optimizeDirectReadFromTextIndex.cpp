@@ -381,10 +381,6 @@ private:
             if (!virtual_column_name)
                 continue;
 
-            /// Switch to exact mode when there is a single pattern e.g. %foo%
-            if (search_query->patterns.size() == 1 && search_query->tokens.empty())
-                search_query->direct_read_mode = TextIndexDirectReadMode::Exact;
-
             selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info);
             used_index_columns.insert(index_header.begin()->name);
         }
