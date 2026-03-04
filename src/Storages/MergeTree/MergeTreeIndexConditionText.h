@@ -77,6 +77,7 @@ public:
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     const std::vector<const OptimizedRegularExpression *> & getAllSearchPatterns() const { return all_search_patterns; }
+    const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 

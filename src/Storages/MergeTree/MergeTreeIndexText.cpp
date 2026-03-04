@@ -500,6 +500,19 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
             pattern_tokens.emplace(std::move(token), std::move(token_info));
         }
     }
+
+    for (const auto & [token, _] : pattern_tokens)
+    {
+        for (const auto & [query_hash, query] : condition_text.getAllSearchQueries())
+        {
+            if (query->patterns.empty())
+                continue;
+
+            if (std::ranges::any_of(
+                    query->patterns, [&](const OptimizedRegularExpression & pattern) { return pattern.match(token.data(), token.size()); }))
+                pattern_tokens_per_query[query_hash].push_back(token);
+        }
+    }
 }
 
 std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
@@ -703,22 +716,22 @@ bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & quer
     if (query.patterns.empty())
         return false;
 
-    /// For pattern matching, we check if any pattern-matched tokens exist
+    const auto & query_tokens = getPatternTokensForTextQuery(query);
+
     if (!current_range.has_value())
-    {
-        /// Without range, just check if we have any matched tokens
-        return !pattern_tokens.empty();
-    }
+        return !query_tokens.empty();
 
     PostingList range_posting;
     range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
-    /// Union all postings from pattern-matched tokens (ANY mode)
+    /// Union all postings from this query's pattern-matched tokens
     PostingList union_posting;
 
-    for (const auto & [token, token_info] : pattern_tokens)
+    for (const auto & token : query_tokens)
     {
-        bool has_any_range = std::ranges::any_of(token_info->ranges, [this](const auto & range)
+        const auto & token_info = *pattern_tokens.find(token)->second;
+
+        bool has_any_range = std::ranges::any_of(token_info.ranges, [this](const auto & range)
         {
             return current_range->intersects(range);
         });
@@ -740,6 +753,13 @@ bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & quer
     }
 
     return union_posting.cardinality() > 0;
+}
+
+const std::vector<std::string_view> & MergeTreeIndexGranuleText::getPatternTokensForTextQuery(const TextSearchQuery & query) const
+{
+    static const std::vector<std::string_view> empty;
+    auto it = pattern_tokens_per_query.find(query.getHash().get128());
+    return it == pattern_tokens_per_query.end() ? empty : it->second;
 }
 
 PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const

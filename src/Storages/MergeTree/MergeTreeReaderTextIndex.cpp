@@ -145,7 +145,6 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
-    const auto & pattern_tokens = granule_text.getPatternTokens();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -159,7 +158,8 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         }
         else if (!search_query->patterns.empty())
         {
-            for (const auto & [token, _] : pattern_tokens)
+            const auto & pattern_tokens = granule_text.getPatternTokensForTextQuery(*search_query);
+            for (const auto & token : pattern_tokens)
                 useful_tokens.insert(token);
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
@@ -625,15 +625,11 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
     if (!search_query->patterns.empty())
     {
-        const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-        const auto & pattern_tokens = granule_text.getPatternTokens();
-
+        const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
         std::vector<String> matched_tokens;
-        for (const auto & [token, _] : pattern_tokens)
-        {
+        for (const auto & token : granule_text.getPatternTokensForTextQuery(*search_query))
             if (postings.contains(token))
-                matched_tokens.push_back(token);
-        }
+                matched_tokens.push_back(String(token));
 
         if (!matched_tokens.empty())
             applyPostingsAny(column, postings, indices_buffer, matched_tokens, old_size, row_offset, num_rows);

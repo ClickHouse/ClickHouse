@@ -35,6 +35,9 @@ SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%bar%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%xyz%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%bar%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%abc%' AND message NOT LIKE '%foo%';
 
 SELECT '-- with optimization';
 
@@ -48,6 +51,9 @@ SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%bar%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%xyz%';
 SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%bar%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%abc%' AND message NOT LIKE '%foo%';
 
 DROP TABLE tab;
 

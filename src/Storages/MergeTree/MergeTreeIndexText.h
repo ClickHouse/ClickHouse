@@ -306,6 +306,7 @@ public:
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     const TokenToPostingsInfosMap & getPatternTokens() const { return pattern_tokens; }
+    const std::vector<std::string_view> & getPatternTokensForTextQuery(const TextSearchQuery & query) const;
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
@@ -337,6 +338,8 @@ private:
     TokenToPostingsInfosMap remaining_tokens;
     /// Tokens that are in the index granule after analysis of patterns.
     TokenToPostingsInfosMap pattern_tokens;
+    /// Tokens per a virtual column that are in the index granule after analysis of pattern.
+    std::unordered_map<UInt128, std::vector<std::string_view>> pattern_tokens_per_query;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
