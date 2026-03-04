@@ -68,7 +68,7 @@ void ProjectionIndexText::fillProjectionDescription(
     result.type = ProjectionDescription::Type::Aggregate;
     result.sample_block_for_keys.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "term"});
     auto posting_list_type
-        = createPostingListType(index_ast->as<ASTIndexDeclaration>()->getType()->arguments, POSTING_LIST_FORMAT_VERSION_INITIAL);
+        = createPostingListType(index_ast->as<ASTIndexDeclaration>()->getType()->arguments);
     result.sample_block
         = {result.sample_block_for_keys.getByPosition(0), {posting_list_type->createColumn(), posting_list_type, "posting"}};
 
@@ -144,7 +144,7 @@ Block tokenize(
     const ColumnUInt8::Container * null_map,
     const IColumn * index_column)
 {
-    alignas(16) uint8_t packed_buffer[128 * 4];
+    alignas(16) uint8_t packed_buffer[TURBOPFOR_BLOCK_SIZE * 4];
     ssize_t rows = array_offsets ? array_offsets->size() : (index_column ? index_column->size() : input_data_column.size());
     chassert(rows <= std::numeric_limits<UInt32>::max());
 

@@ -86,13 +86,15 @@ struct LargePostingBlockMeta
 {
     UInt32 last_doc_id;
     UInt32 block_doc_count;
-    UInt64 offset;
+    UInt64 offset;           /// Data Section start offset (shared by v1 and v2)
+    UInt64 index_offset;     /// Index Section start offset (v2 only; 0 for v1)
 
     /// Default constructor (required by std::vector, resize, etc.)
     LargePostingBlockMeta() noexcept
         : last_doc_id(0)
         , block_doc_count(0)
         , offset(0)
+        , index_offset(0)
     {
     }
 
@@ -101,14 +103,25 @@ struct LargePostingBlockMeta
         : last_doc_id(0)
         , block_doc_count(0)
         , offset(offset_)
+        , index_offset(0)
     {
     }
 
-    /// Fully initialized constructor
+    /// Fully initialized constructor (v1 compatible)
     LargePostingBlockMeta(UInt32 last_doc_id_, UInt32 doc_count_, UInt64 offset_) noexcept
         : last_doc_id(last_doc_id_)
         , block_doc_count(doc_count_)
         , offset(offset_)
+        , index_offset(0)
+    {
+    }
+
+    /// Fully initialized constructor (v2 with index_offset)
+    LargePostingBlockMeta(UInt32 last_doc_id_, UInt32 doc_count_, UInt64 offset_, UInt64 index_offset_) noexcept
+        : last_doc_id(last_doc_id_)
+        , block_doc_count(doc_count_)
+        , offset(offset_)
+        , index_offset(index_offset_)
     {
     }
 
@@ -143,6 +156,7 @@ struct ReaderStreamEntry
 struct ReaderStreamVector
 {
     std::vector<ReaderStreamEntry> entries;
+    size_t format_version = 0;
 
     ReaderStreamVector() = default;
 
@@ -182,6 +196,10 @@ struct LazyPostingStream
 using LazyPostingStreamPtr = std::unique_ptr<LazyPostingStream>;
 
 inline static constexpr UInt64 MAX_SIZE_OF_EMBEDDED_POSTINGS = 6;
+
+/// TurboPFor encodes/decodes deltas in fixed 128-element blocks.
+/// This constant is dictated by the TurboPFor library and must NOT be changed.
+inline static constexpr size_t TURBOPFOR_BLOCK_SIZE = 128;
 
 struct alignas(8) PostingListStream
 {
@@ -226,7 +244,7 @@ struct alignas(8) PostingListStream
         return *this;
     }
 
-    void read(ReadBuffer & in, const LargePostingListReaderStreamPtr & stream, const MergeTreeIndexTextParams & index_params);
+    void read(ReadBuffer & in, const LargePostingListReaderStreamPtr & stream, const MergeTreeIndexTextParams & index_params, size_t format_version);
 
     void write(WriteBuffer & wb, LargePostingListWriterStream & stream, const MergeTreeIndexTextParams & index_params) const;
 

@@ -1236,6 +1236,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_POSTING_LIST_VERSION = "posting_list_version";
 
 namespace
 {
@@ -1381,11 +1382,13 @@ MergeTreeIndexText::parseTextIndexArguments(const String & index_name, const Fie
     };
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index_name);
 
+    UInt64 posting_list_version = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_VERSION).value_or(2);
+
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     MergeTreeIndexTextParams index_params{
-        dictionary_block_size, dictionary_block_frontcoding_compression, posting_list_block_size, preprocessor};
+        dictionary_block_size, dictionary_block_frontcoding_compression, posting_list_block_size, preprocessor, posting_list_version};
 
     return {std::move(index_params), std::move(token_extractor), std::move(posting_list_codec)};
 }
@@ -1423,6 +1426,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
     extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+
+    UInt64 posting_list_version = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_VERSION).value_or(2);
+    if (posting_list_version != 1 && posting_list_version != 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 1 or 2, but got {}", ARGUMENT_POSTING_LIST_VERSION, posting_list_version);
 
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 

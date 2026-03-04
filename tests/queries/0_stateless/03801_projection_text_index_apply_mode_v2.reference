@@ -1,0 +1,44 @@
+Test 1: Multiple large blocks with small posting_list_block_size=128
+1000
+1000
+0
+2000
+Test 2: Seek across packed block boundaries with ngrams
+0
+500
+2000
+Test 3: Exact TurboPFor boundary (128, 256, 384 docs)
+129
+257
+385
+130
+Test 4: Multi-way intersection (3, 4, 5 tokens)
+29
+3
+0
+1155
+2310
+1
+0
+Test 5: High-density posting lists (brute-force intersection path)
+250
+250
+0
+Test 6: first_doc_id prepend correctness
+0
+0	499
+500
+Test 7: Seek beyond all packed blocks (empty result)
+0
+0
+Test 8: Multiple large blocks after merge
+1000
+1000
+0
+Test 9: Seek within and across large blocks with ngrams
+750
+1499
+0
+Test 10: Direct read mode with v2 format and large posting list
+200
+0

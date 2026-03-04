@@ -213,7 +213,7 @@ public:
                 {
                     auto & posting_list_data = reinterpret_cast<PostingListData &>(*place);
                     chassert(posting_list_data.isStream());
-                    posting_list_data.stream.read(*stream, large_posting_stream, function->index_params);
+                    posting_list_data.stream.read(*stream, large_posting_stream, function->index_params, function->version);
                 }
                 catch (...)
                 {
@@ -266,6 +266,21 @@ DataTypePtr createPostingListType(const ASTPtr & text_index_definition, size_t f
     }
 
     return buildPostingListType(params, index_params, format_version);
+}
+
+DataTypePtr createPostingListType(const ASTPtr & text_index_definition)
+{
+    Array params;
+    MergeTreeIndexTextParams index_params;
+
+    if (text_index_definition && !text_index_definition->children.empty())
+    {
+        auto index_arguments = MergeTreeIndexText::parseArgumentsListFromAST(text_index_definition);
+        params.assign_range(index_arguments);
+        index_params = std::get<0>(MergeTreeIndexText::parseTextIndexArguments("PostingList", index_arguments));
+    }
+
+    return buildPostingListType(params, index_params, resolvePostingListFormatVersion(index_params.posting_list_version));
 }
 
 DataTypePtr createPostingListTypeFromPartMetadata(const ASTPtr & parsed_fields)

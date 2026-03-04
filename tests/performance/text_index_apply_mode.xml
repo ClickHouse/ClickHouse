@@ -1,0 +1,225 @@
+<test>
+  <!--
+  Performance benchmark for text index apply modes:
+  - lazy: Compressed posting lists with lazy cursor-based decoding
+  - materialize: Compressed posting lists with full materialization to roaring bitmap
+  - uncompressed: Traditional uncompressed roaring bitmap storage
+
+  Test dimensions:
+  1. Query type: hasToken, hasAnyTokens (union/OR), hasAllTokens (intersection/AND)
+  2. Posting list length: short (rare tokens), medium, long (frequent tokens)
+  3. Posting list density: sparse (low selectivity), dense (high selectivity)
+  4. Number of tokens: single, few (2-3), many (4+)
+  -->
+
+  <settings>
+      <enable_full_text_index>1</enable_full_text_index>
+      <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+      <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+  </settings>
+
+  <!-- ==================== Table Creation ==================== -->
+  <!-- Table with LAZY apply mode (compressed + cursor-based) -->
+  <create_query>
+    CREATE TABLE text_index_lazy (
+        id UInt64,
+        text String,
+        INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', posting_list_apply_mode = 'lazy')
+    ) ENGINE = MergeTree ORDER BY id;
+  </create_query>
+
+  <!-- Table with MATERIALIZE apply mode (compressed + roaring bitmap) -->
+  <create_query>
+    CREATE TABLE text_index_materialize (
+        id UInt64,
+        text String,
+        INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', posting_list_apply_mode = 'materialize')
+    ) ENGINE = MergeTree ORDER BY id;
+  </create_query>
+
+  <!-- Table with UNCOMPRESSED mode (traditional roaring bitmap) -->
+  <create_query>
+    CREATE TABLE text_index_uncompressed (
+        id UInt64,
+        text String,
+        INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha')
+    ) ENGINE = MergeTree ORDER BY id;
+  </create_query>
+
+  <!-- ==================== Data Generation ==================== -->
+  <!--
+  Data design strategy:
+  - Total rows: 1,000,000 (1M rows for meaningful performance comparison)
+  - Token distribution:
+    * rare_XXX: appears in ~0.1% rows (sparse, short posting list ~1K entries)
+    * medium_XXX: appears in ~5% rows (medium density ~50K entries)
+    * frequent_XXX: appears in ~30% rows (dense, long posting list ~300K entries)
+    * common: appears in ~80% rows (very dense ~800K entries)
+  -->
+  <fill_query>
+    INSERT INTO text_index_lazy
+    SELECT
+        number AS id,
+        concat(
+            -- Rare tokens (0.1% each): sparse posting lists
+            if(rand(number) % 1000 = 0, 'rare_alpha ', ''),
+            if(rand(number + 1) % 1000 = 1, 'rare_beta ', ''),
+            if(rand(number + 2) % 1000 = 2, 'rare_gamma ', ''),
+            if(rand(number + 3) % 1000 = 3, 'rare_delta ', ''),
+            -- Medium tokens (5% each): medium posting lists
+            if(rand(number + 10) % 20 = 0, 'medium_one ', ''),
+            if(rand(number + 11) % 20 = 1, 'medium_two ', ''),
+            if(rand(number + 12) % 20 = 2, 'medium_three ', ''),
+            if(rand(number + 13) % 20 = 3, 'medium_four ', ''),
+            -- Frequent tokens (30% each): dense posting lists
+            if(rand(number + 20) % 10 &lt; 3, 'frequent_x ', ''),
+            if(rand(number + 21) % 10 &lt; 3, 'frequent_y ', ''),
+            if(rand(number + 22) % 10 &lt; 3, 'frequent_z ', ''),
+            -- Very common token (80%): very dense posting list
+            if(rand(number + 30) % 5 &lt; 4, 'common ', ''),
+            -- Base content
+            'text_content_', toString(number % 100)
+        ) AS text
+    FROM numbers(1000000);
+  </fill_query>
+
+  <fill_query>
+    INSERT INTO text_index_materialize SELECT * FROM text_index_lazy;
+  </fill_query>
+
+  <fill_query>
+    INSERT INTO text_index_uncompressed SELECT * FROM text_index_lazy;
+  </fill_query>
+
+  <!-- ==================== Benchmark Queries ==================== -->
+
+  <!-- ========== Group 1: Single Token Queries (hasToken) ========== -->
+  <!-- Tests basic posting list traversal performance -->
+
+  <!-- 1.1 Rare token (sparse, ~1K rows) -->
+  <query tag="single_rare_lazy">SELECT count() FROM text_index_lazy WHERE hasToken(text, 'rare_alpha') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_rare_materialize">SELECT count() FROM text_index_materialize WHERE hasToken(text, 'rare_alpha') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_rare_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasToken(text, 'rare_alpha') SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 1.2 Medium frequency token (~50K rows) -->
+  <query tag="single_medium_lazy">SELECT count() FROM text_index_lazy WHERE hasToken(text, 'medium_one') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_medium_materialize">SELECT count() FROM text_index_materialize WHERE hasToken(text, 'medium_one') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_medium_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasToken(text, 'medium_one') SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 1.3 Frequent token (dense, ~300K rows) -->
+  <query tag="single_frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasToken(text, 'frequent_x') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasToken(text, 'frequent_x') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasToken(text, 'frequent_x') SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 1.4 Very common token (very dense, ~800K rows) -->
+  <query tag="single_common_lazy">SELECT count() FROM text_index_lazy WHERE hasToken(text, 'common') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_common_materialize">SELECT count() FROM text_index_materialize WHERE hasToken(text, 'common') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="single_common_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasToken(text, 'common') SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- ========== Group 2: Union Queries (hasAnyTokens / OR) ========== -->
+  <!-- Tests lazyUnionPostingLists performance -->
+
+  <!-- 2.1 Union of 2 rare tokens (small union result) -->
+  <query tag="union_2rare_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2rare_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2rare_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.2 Union of 4 rare tokens -->
+  <query tag="union_4rare_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta', 'rare_gamma', 'rare_delta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_4rare_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta', 'rare_gamma', 'rare_delta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_4rare_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['rare_alpha', 'rare_beta', 'rare_gamma', 'rare_delta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.3 Union of 2 medium tokens -->
+  <query tag="union_2medium_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2medium_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2medium_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.4 Union of 4 medium tokens -->
+  <query tag="union_4medium_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_4medium_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_4medium_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.5 Union of 2 frequent tokens (large union result) -->
+  <query tag="union_2frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_2frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.6 Union of 3 frequent tokens -->
+  <query tag="union_3frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_3frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_3frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 2.7 Mixed union: rare + medium + frequent -->
+  <query tag="union_mixed_lazy">SELECT count() FROM text_index_lazy WHERE hasAnyTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_mixed_materialize">SELECT count() FROM text_index_materialize WHERE hasAnyTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="union_mixed_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAnyTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- ========== Group 3: Intersection Queries (hasAllTokens / AND) ========== -->
+  <!-- Tests lazyIntersectPostingLists performance -->
+
+  <!-- 3.1 Intersection of 2 rare tokens (very small result) -->
+  <query tag="intersect_2rare_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2rare_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2rare_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['rare_alpha', 'rare_beta']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.2 Intersection of 2 medium tokens -->
+  <query tag="intersect_2medium_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2medium_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2medium_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['medium_one', 'medium_two']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.3 Intersection of 4 medium tokens (smaller result) -->
+  <query tag="intersect_4medium_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_4medium_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_4medium_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['medium_one', 'medium_two', 'medium_three', 'medium_four']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.4 Intersection of 2 frequent tokens (medium result) -->
+  <query tag="intersect_2frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_2frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['frequent_x', 'frequent_y']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.5 Intersection of 3 frequent tokens -->
+  <query tag="intersect_3frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_3frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_3frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['frequent_x', 'frequent_y', 'frequent_z']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.6 Mixed intersection: rare + frequent (result bounded by rare) -->
+  <query tag="intersect_rare_frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['rare_alpha', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_rare_frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['rare_alpha', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_rare_frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['rare_alpha', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.7 Mixed intersection: medium + frequent -->
+  <query tag="intersect_medium_frequent_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_medium_frequent_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_medium_frequent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- 3.8 Complex intersection: rare + medium + frequent -->
+  <query tag="intersect_mixed_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_mixed_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_mixed_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['rare_alpha', 'medium_one', 'frequent_x']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- ========== Group 4: Non-existent Token (Edge Case) ========== -->
+  <!-- Tests early termination behavior -->
+  <query tag="nonexistent_lazy">SELECT count() FROM text_index_lazy WHERE hasToken(text, 'nonexistent_xyz') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="nonexistent_materialize">SELECT count() FROM text_index_materialize WHERE hasToken(text, 'nonexistent_xyz') SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="nonexistent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasToken(text, 'nonexistent_xyz') SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- Intersection with non-existent token (should return 0 quickly) -->
+  <query tag="intersect_nonexistent_lazy">SELECT count() FROM text_index_lazy WHERE hasAllTokens(text, ['frequent_x', 'nonexistent_xyz']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_nonexistent_materialize">SELECT count() FROM text_index_materialize WHERE hasAllTokens(text, ['frequent_x', 'nonexistent_xyz']) SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="intersect_nonexistent_uncompressed">SELECT count() FROM text_index_uncompressed WHERE hasAllTokens(text, ['frequent_x', 'nonexistent_xyz']) SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- ========== Group 5: Result Retrieval (not just count) ========== -->
+  <!-- Tests full row retrieval performance with LIMIT -->
+  <query tag="select_rare_lazy">SELECT id FROM text_index_lazy WHERE hasToken(text, 'rare_alpha') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="select_rare_materialize">SELECT id FROM text_index_materialize WHERE hasToken(text, 'rare_alpha') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="select_rare_uncompressed">SELECT id FROM text_index_uncompressed WHERE hasToken(text, 'rare_alpha') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <query tag="select_frequent_lazy">SELECT id FROM text_index_lazy WHERE hasToken(text, 'frequent_x') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="select_frequent_materialize">SELECT id FROM text_index_materialize WHERE hasToken(text, 'frequent_x') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+  <query tag="select_frequent_uncompressed">SELECT id FROM text_index_uncompressed WHERE hasToken(text, 'frequent_x') ORDER BY id LIMIT 100 SETTINGS force_data_skipping_indices='idx_text'</query>
+
+  <!-- ========== Cleanup ========== -->
+  <drop_query>DROP TABLE IF EXISTS text_index_lazy</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_materialize</drop_query>
+  <drop_query>DROP TABLE IF EXISTS text_index_uncompressed</drop_query>
+</test>

@@ -5,221 +5,25 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/ProjectionIndex/LengthPrefixedInt.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
 #include <base/scope_guard.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 
 #include <fmt/ranges.h>
 #include <turbopfor.h>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
-namespace VarInt
-{
-
-void throwReadAfterEOF()
-{
-    throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
-}
-
-/// Prefix-Based Variable-Length Integer Encoding (Prefix VarInt).
-///
-/// This encoding is a variation of the "Length-Descriptor" VarInt,
-/// originating from the SQLite 4 design and widely utilized in systems
-/// like ClickHouse for high-performance serialization.
-///
-/// ### Key Advantages:
-/// 1. **Instruction-Level Parallelism (ILP)**: Unlike LEB128 (Protobuf) which
-///    has a serial data dependency on the continuation bit, this format
-///    determines the total length solely from the first byte. This allows
-///    the CPU to load and process payload bytes in parallel.
-/// 2. **Branch-Prediction Friendly**: The implementation is loop-less and
-///    unrolled, reducing CPU pipeline stalls during decoding.
-/// 3. **Lexicographical Comparison**: The big-endian-like prefix structure
-///    is designed to be more compatible with memcmp-based sorting and indexing
-///    compared to little-endian VarInts.
-///
-/// ### Encoding Thresholds:
-/// - [0 - 176]        : 1 byte  (Value = B0)
-/// - [177 - 16560]    : 2 bytes (Value = (B0-177) * 256 + B1 + 177)
-/// - [16561 - 540848] : 3 bytes (Value = (B0-241) * 65536 + (B1<<8) + B2 + 16561)
-/// - [540849 - 2^24-1]: 4 bytes (Marker 249 + 3 bytes raw payload)
-/// - [Up to 2^32-1]   : 5 bytes (Marker 250 + 4 bytes raw payload)
-
-/// Encoding thresholds
-static constexpr UInt32 ONE_BYTE_MAX = 176;
-static constexpr UInt32 TWO_BYTE_MAX = 16560;
-static constexpr UInt32 THREE_BYTE_MAX = 540848;
-static constexpr UInt32 FOUR_BYTE_MAX = 16777215;  /// 2^24 - 1
-
-/// Marker byte boundaries
-static constexpr UInt8 TWO_BYTE_MARKER_START = 177;
-static constexpr UInt8 TWO_BYTE_MARKER_END = 240;
-static constexpr UInt8 THREE_BYTE_MARKER_START = 241;
-static constexpr UInt8 THREE_BYTE_MARKER_END = 248;
-static constexpr UInt8 FOUR_BYTE_MARKER = 249;
-static constexpr UInt8 FIVE_BYTE_MARKER = 250;
-
-/// Offsets for compact encodings (1-3 bytes only)
-static constexpr UInt32 TWO_BYTE_OFFSET = 177;
-static constexpr UInt32 THREE_BYTE_OFFSET = 16561;
-
-template <bool check_eof>
-inline void readVarUInt32Impl(UInt32 & x, ReadBuffer & istr)
-{
-    if constexpr (check_eof)
-        if (istr.eof()) [[unlikely]]
-            throwReadAfterEOF();
-
-    const UInt8 first_byte = *istr.position()++;
-
-    if (first_byte <= ONE_BYTE_MAX)
-    {
-        x = first_byte;
-        return;
-    }
-
-    if constexpr (check_eof)
-        if (istr.eof()) [[unlikely]]
-            throwReadAfterEOF();
-
-    const UInt8 second_byte = *istr.position()++;
-
-    if (first_byte <= TWO_BYTE_MARKER_END)
-    {
-        x = ((first_byte - TWO_BYTE_MARKER_START) << 8) + second_byte + TWO_BYTE_OFFSET;
-        return;
-    }
-
-    if constexpr (check_eof)
-        if (istr.eof()) [[unlikely]]
-            throwReadAfterEOF();
-
-    const UInt8 third_byte = *istr.position()++;
-
-    if (first_byte <= THREE_BYTE_MARKER_END)
-    {
-        x = ((first_byte - THREE_BYTE_MARKER_START) << 16) + (second_byte << 8) + third_byte + THREE_BYTE_OFFSET;
-        return;
-    }
-
-    if constexpr (check_eof)
-        if (istr.eof()) [[unlikely]]
-            throwReadAfterEOF();
-
-    const UInt8 fourth_byte = *istr.position()++;
-
-    if (first_byte == FOUR_BYTE_MARKER)
-    {
-        x = (second_byte << 16) | (third_byte << 8) | fourth_byte;
-        return;
-    }
-
-    if constexpr (check_eof)
-        if (istr.eof()) [[unlikely]]
-            throwReadAfterEOF();
-
-    const UInt8 fifth_byte = *istr.position()++;
-    x = (UInt32(second_byte) << 24) | (UInt32(third_byte) << 16) | (UInt32(fourth_byte) << 8) | fifth_byte;
-}
-
-template <bool check_eof>
-inline void writeVarUInt32Impl(UInt32 x, WriteBuffer & ostr)
-{
-    if (x <= ONE_BYTE_MAX)
-    {
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(x);
-        return;
-    }
-
-    if (x <= TWO_BYTE_MAX)
-    {
-        const UInt32 adjusted = x - TWO_BYTE_OFFSET;
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(TWO_BYTE_MARKER_START + (adjusted >> 8));
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(adjusted & 0xFF);
-        return;
-    }
-
-    if (x <= THREE_BYTE_MAX)
-    {
-        const UInt32 adjusted = x - THREE_BYTE_OFFSET;
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(THREE_BYTE_MARKER_START + (adjusted >> 16));
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>((adjusted >> 8) & 0xFF);
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(adjusted & 0xFF);
-        return;
-    }
-
-    if (x <= FOUR_BYTE_MAX)
-    {
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = FOUR_BYTE_MARKER;
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>((x >> 16) & 0xFF);
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>((x >> 8) & 0xFF);
-        if constexpr (check_eof)
-            ostr.nextIfAtEnd();
-        *ostr.position()++ = static_cast<UInt8>(x & 0xFF);
-        return;
-    }
-
-    if constexpr (check_eof)
-        ostr.nextIfAtEnd();
-    *ostr.position()++ = FIVE_BYTE_MARKER;
-    if constexpr (check_eof)
-        ostr.nextIfAtEnd();
-    *ostr.position()++ = static_cast<UInt8>((x >> 24) & 0xFF);
-    if constexpr (check_eof)
-        ostr.nextIfAtEnd();
-    *ostr.position()++ = static_cast<UInt8>((x >> 16) & 0xFF);
-    if constexpr (check_eof)
-        ostr.nextIfAtEnd();
-    *ostr.position()++ = static_cast<UInt8>((x >> 8) & 0xFF);
-    if constexpr (check_eof)
-        ostr.nextIfAtEnd();
-    *ostr.position()++ = static_cast<UInt8>(x & 0xFF);
-}
-
-inline void readVarUInt32(UInt32 & x, ReadBuffer & istr)
-{
-    if (istr.available() >= 5)
-        readVarUInt32Impl<false>(x, istr);
-    else
-        readVarUInt32Impl<true>(x, istr);
-}
-
-inline void writeVarUInt32(UInt32 x, WriteBuffer & ostr)
-{
-    if (ostr.available() >= 5)
-        writeVarUInt32Impl<false>(x, ostr);
-    else
-        writeVarUInt32Impl<true>(x, ostr);
-}
-
-}
+/// Alias: VarInt functions delegate to the shared LengthPrefixedInt header.
+namespace VarInt = LengthPrefixedInt;
 
 void PostingListChunk::write(WriteBuffer & wb) const
 {
@@ -253,13 +57,13 @@ void PostingListWriter::add(UInt32 doc_id, Arena * arena, uint8_t * packed_buffe
             break;
         case 17:
             doc_delta_buffer
-                = reinterpret_cast<UInt32 *>(arena->alignedRealloc(reinterpret_cast<char *>(doc_delta_buffer), 16 * 4, 128 * 4, 16));
+                = reinterpret_cast<UInt32 *>(arena->alignedRealloc(reinterpret_cast<char *>(doc_delta_buffer), 16 * 4, TURBOPFOR_BLOCK_SIZE * 4, 16));
             break;
         default:
             break;
     }
 
-    UInt8 doc_buffer_up_to = (doc_count - 1) % 128;
+    UInt8 doc_buffer_up_to = (doc_count - 1) % TURBOPFOR_BLOCK_SIZE;
     UInt32 doc_delta = doc_id - last_doc_id - 1;
     doc_delta_buffer[doc_buffer_up_to] = doc_delta;
 
@@ -267,9 +71,9 @@ void PostingListWriter::add(UInt32 doc_id, Arena * arena, uint8_t * packed_buffe
     ++doc_buffer_up_to;
     ++doc_count;
 
-    if (doc_buffer_up_to == 128)
+    if (doc_buffer_up_to == TURBOPFOR_BLOCK_SIZE)
     {
-        uint8_t * packed_buffer_end = turbopfor::p4Enc128v32(doc_delta_buffer, 128, packed_buffer);
+        uint8_t * packed_buffer_end = turbopfor::p4Enc128v32(doc_delta_buffer, TURBOPFOR_BLOCK_SIZE, packed_buffer);
         UInt32 len = static_cast<UInt32>(packed_buffer_end - packed_buffer);
         chassert(len <= 512);
         auto * place = arena->alignedAlloc(len + sizeof(PostingListChunk), alignof(PostingListChunk));
@@ -286,23 +90,39 @@ void PostingListWriter::add(UInt32 doc_id, Arena * arena, uint8_t * packed_buffe
 class LargePostingBlockWriter
 {
 public:
-    LargePostingBlockWriter(WriteBuffer & meta_out_, WriteBuffer & data_out_, UInt32 docs_per_large_block_)
+    LargePostingBlockWriter(WriteBuffer & meta_out_, WriteBuffer & data_out_, UInt32 docs_per_large_block_, bool write_block_index_)
         : meta_out(meta_out_)
         , data_out(data_out_)
         , docs_per_large_block(docs_per_large_block_)
-        , current_block_offset(data_out.count())
+        , write_block_index(write_block_index_)
     {
+        if (write_block_index)
+        {
+            UInt32 packed_blocks_per_large_block = docs_per_large_block / TURBOPFOR_BLOCK_SIZE;
+            packed_block_last_doc_ids.reserve(packed_blocks_per_large_block);
+            packed_block_offsets.reserve(packed_blocks_per_large_block);
+        }
     }
 
     void addBlock(UInt32 last_doc_id, const char * data, UInt32 bytes)
     {
-        VarInt::writeVarUInt32(bytes, data_out);
+        if (docs_in_current_block == 0)
+            large_block_start_offset = data_out.count();
+
+        if (write_block_index)
+        {
+            /// Record the absolute offset of this sub-block before writing.
+            packed_block_last_doc_ids.push_back(last_doc_id);
+            packed_block_offsets.push_back(data_out.count());
+        }
+
+        VarInt::writeUInt32(bytes, data_out);
         data_out.write(data, bytes);
 
-        /// Always count a packed block as 128 docs.
+        /// Always count a packed block as TURBOPFOR_BLOCK_SIZE docs.
         /// The tail block is the final one and will be flushed immediately,
         /// so treating it as full does not affect block layout.
-        docs_in_current_block += 128;
+        docs_in_current_block += TURBOPFOR_BLOCK_SIZE;
         current_block_last_doc_id = last_doc_id;
 
         if (docs_in_current_block >= docs_per_large_block)
@@ -320,10 +140,35 @@ public:
 private:
     void flushLargeBlock()
     {
-        VarInt::writeVarUInt32(current_block_last_doc_id, meta_out);
-        writeVarUInt(current_block_offset, meta_out);
+        /// V1/V2 shared: offset_in_lpst always points to Data Section start
+        VarInt::writeUInt32(current_block_last_doc_id, meta_out);
+        writeVarUInt(large_block_start_offset, meta_out);
 
-        current_block_offset = data_out.count();
+        if (write_block_index)
+        {
+            /// Data Section is already written to data_out. Now append the Index Section.
+            UInt64 index_section_offset = data_out.count();
+
+            UInt32 num_packed_blocks = static_cast<UInt32>(packed_block_last_doc_ids.size());
+
+            /// Write Index Section:
+            /// [PrefixVarInt: num_packed_blocks]
+            VarInt::writeUInt32(num_packed_blocks, data_out);
+            /// N × [PrefixVarInt: last_doc_id]
+            for (const auto & id : packed_block_last_doc_ids)
+                VarInt::writeUInt32(id, data_out);
+            /// N × [VarUInt64: absolute_offset]
+            for (const auto & off : packed_block_offsets)
+                writeVarUInt(off, data_out);
+
+            packed_block_last_doc_ids.clear();
+            packed_block_offsets.clear();
+
+            /// Write index_offset_in_lpst to dictionary stream (V2 only).
+            writeVarUInt(index_section_offset, meta_out);
+        }
+
+        /// Reset for next large block.
         docs_in_current_block = 0;
         ++num_large_blocks_written;
     }
@@ -332,21 +177,24 @@ private:
     WriteBuffer & data_out;
 
     UInt32 docs_per_large_block;
+    bool write_block_index;
     UInt32 docs_in_current_block = 0;
     UInt32 current_block_last_doc_id = 0;
-
-    UInt64 current_block_offset;
     UInt32 num_large_blocks_written = 0;
+    UInt64 large_block_start_offset = 0;
+
+    std::vector<UInt32> packed_block_last_doc_ids;
+    std::vector<UInt64> packed_block_offsets;
 };
 
 void PostingListWriter::finish(
     WriteBuffer & wb, WriteBuffer & large_posting, uint8_t * packed_buffer, const MergeTreeIndexTextParams & index_params) const
 {
-    VarInt::writeVarUInt32(doc_count, wb);
+    VarInt::writeUInt32(doc_count, wb);
     if (doc_count == 0)
         return;
 
-    VarInt::writeVarUInt32(first_doc_id, wb);
+    VarInt::writeUInt32(first_doc_id, wb);
 
     /// Single doc: nothing more to write
     if (doc_count == 1)
@@ -358,7 +206,7 @@ void PostingListWriter::finish(
     {
         uint8_t * packed_buffer_end = turbopfor::p4Enc32(doc_delta_buffer, doc_count - 1, packed_buffer);
         UInt32 len = static_cast<UInt32>(packed_buffer_end - packed_buffer);
-        VarInt::writeVarUInt32(len, wb);
+        VarInt::writeUInt32(len, wb);
         wb.write(reinterpret_cast<const char *>(packed_buffer), len);
         return;
     }
@@ -379,9 +227,9 @@ void PostingListWriter::finish(
     ///   ...
     /// --------------------------------------------
 
-    /// Align posting_list_block_size up to 128 docs, so that each large block
-    /// consists of an integral number of packed-128 blocks.
-    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + 127) & ~127;
+    /// Align posting_list_block_size up to TURBOPFOR_BLOCK_SIZE docs, so that each large block
+    /// consists of an integral number of packed blocks.
+    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
 
     /// The first document is stored inline, so only (doc_count - 1) documents
     /// are written into the large_posting stream.
@@ -391,11 +239,12 @@ void PostingListWriter::finish(
     const UInt32 num_large_blocks = (large_doc_count + docs_per_large_block - 1) / docs_per_large_block;
 
     chassert(num_large_blocks >= 1);
-    VarInt::writeVarUInt32(num_large_blocks, wb);
+    VarInt::writeUInt32(num_large_blocks, wb);
 
-    LargePostingBlockWriter block_writer(wb, large_posting, docs_per_large_block);
+    LargePostingBlockWriter block_writer(wb, large_posting, docs_per_large_block,
+        postingListFormatHasBlockIndex(resolvePostingListFormatVersion(index_params.posting_list_version)));
 
-    /// Iterate packed 128-doc chunks
+    /// Iterate packed TURBOPFOR_BLOCK_SIZE-doc chunks
     PostingListChunk * it = blocks_head;
     while (it != nullptr)
     {
@@ -403,8 +252,8 @@ void PostingListWriter::finish(
         it = it->next;
     }
 
-    /// Tail packed block (large_doc_count % 128)
-    UInt8 doc_buffer_up_to = large_doc_count % 128;
+    /// Tail packed block (large_doc_count % TURBOPFOR_BLOCK_SIZE)
+    UInt8 doc_buffer_up_to = large_doc_count % TURBOPFOR_BLOCK_SIZE;
     if (doc_buffer_up_to > 0)
     {
         uint8_t * packed_buffer_end = turbopfor::p4Enc32(doc_delta_buffer, doc_buffer_up_to, packed_buffer);
@@ -442,6 +291,9 @@ void ReaderStreamVector::merge(const ReaderStreamVector & other)
         }
         entries.emplace_back(oe);
     }
+    /// Propagate format_version from the other side if this side has no entries yet.
+    if (format_version == 0 && other.format_version != 0)
+        format_version = other.format_version;
 }
 
 struct ReaderStreamCursor
@@ -455,6 +307,19 @@ struct ReaderStreamCursor
     UInt32 pos;
     UInt64 offset;
     bool do_seek;
+
+    /// V2 large block boundary tracking: when Index Sections are interleaved
+    /// between Data Sections, we need to skip over them during sequential reads.
+    /// Each entry is (docs_remaining_in_this_block, next_block_data_offset).
+    /// When `remaining_in_large_block` hits 0, seek to the next block's offset.
+    struct LargeBlockSkip
+    {
+        UInt32 doc_count;
+        UInt64 next_data_offset; /// 0 means last block, no skip needed
+    };
+    std::vector<LargeBlockSkip> large_block_skips;
+    size_t current_large_block = 0;
+    UInt32 remaining_in_large_block = 0;
 
     /// Disk-based c'tor
     ReaderStreamCursor(
@@ -503,6 +368,22 @@ struct ReaderStreamCursor
         , do_seek(false)
     {
         chassert(doc_buffer);
+    }
+
+    /// Set up large block skip schedule for V2 format.
+    /// `blocks` contains per-large-block metadata; when a large block's Data Section
+    /// is fully consumed, the cursor seeks past its Index Section to the next block's
+    /// Data Section offset.
+    void setLargeBlockSkips(const LargePostingBlockMetas & blocks)
+    {
+        large_block_skips.resize(blocks.size());
+        for (size_t i = 0; i < blocks.size(); ++i)
+        {
+            large_block_skips[i].doc_count = blocks[i].block_doc_count;
+            large_block_skips[i].next_data_offset = (i + 1 < blocks.size()) ? blocks[i + 1].offset : 0;
+        }
+        current_large_block = 0;
+        remaining_in_large_block = blocks.empty() ? 0 : blocks[0].block_doc_count;
     }
 
     UInt32 ALWAYS_INLINE current() const
@@ -583,6 +464,24 @@ private:
         if (remaining_count == 0)
             return;
 
+        /// V2 large block boundary: if we've consumed all docs in the current
+        /// large block, skip over the trailing Index Section by seeking to the
+        /// next large block's Data Section offset.
+        if (!large_block_skips.empty() && remaining_in_large_block == 0)
+        {
+            ++current_large_block;
+            chassert(current_large_block < large_block_skips.size());
+            remaining_in_large_block = large_block_skips[current_large_block].doc_count;
+
+            /// Seek past the Index Section to the next Data Section
+            UInt64 next_offset = large_block_skips[current_large_block - 1].next_data_offset;
+            if (next_offset != 0)
+            {
+                stream->seek(next_offset);
+                do_seek = false;
+            }
+        }
+
         if (do_seek)
         {
             stream->seek(offset);
@@ -591,8 +490,8 @@ private:
 
         auto & data_buf = *stream->getDataBuffer();
         UInt32 bytes;
-        VarInt::readVarUInt32(bytes, data_buf);
-        UInt32 count = std::min(remaining_count, 128U);
+        VarInt::readUInt32(bytes, data_buf);
+        UInt32 count = std::min(remaining_count, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
         uint8_t * src_ptr;
         if (data_buf.available() >= bytes)
         {
@@ -606,8 +505,8 @@ private:
             src_ptr = stream->packed_buffer;
         }
 
-        if (count == 128)
-            turbopfor::p4D1Dec128v32(src_ptr, 128, doc_buffer, last_doc_id);
+        if (count == TURBOPFOR_BLOCK_SIZE)
+            turbopfor::p4D1Dec128v32(src_ptr, TURBOPFOR_BLOCK_SIZE, doc_buffer, last_doc_id);
         else
             turbopfor::p4D1Dec32(src_ptr, count, doc_buffer, last_doc_id);
 
@@ -615,6 +514,10 @@ private:
         remaining_count -= count;
         buf_size = count;
         pos = 0;
+
+        if (!large_block_skips.empty())
+            remaining_in_large_block -= count;
+
         if (stream->merged_part_offsets)
             stream->merged_part_offsets->mapOffsets(stream->part_index, doc_buffer, count);
     }
@@ -685,13 +588,22 @@ PostingListPtr ReaderStreamEntry::materializeLargeBlockIntoBitmap(
         block_doc_count,
         offset,
         include_first_doc);
-    ReaderStreamCursor cursor(&stream, last_doc_id, block_doc_count, offset, true /* do_seek */, include_first_doc);
+
+    stream.seek(offset);
+
+    ReaderStreamCursor cursor(
+        &stream,
+        last_doc_id,
+        block_doc_count,
+        offset,
+        false /* do_seek: already positioned at Data Section */,
+        include_first_doc);
     return cursor.materializeIntoBitmap();
 }
 
 std::string LargePostingBlockMeta::toString() const
 {
-    return fmt::format("{{last_doc_id: {}, block_doc_count: {}, offset: {}}}", last_doc_id, block_doc_count, offset);
+    return fmt::format("{{last_doc_id: {}, block_doc_count: {}, offset: {}, index_offset: {}}}", last_doc_id, block_doc_count, offset, index_offset);
 }
 
 std::string ReaderStreamEntry::toString() const
@@ -730,15 +642,15 @@ LazyPostingStream::LazyPostingStream(const UInt32 * embedded_postings, UInt32 nu
 
 LazyPostingStream::~LazyPostingStream() = default;
 
-void PostingListStream::read(ReadBuffer & in, const LargePostingListReaderStreamPtr & stream, const MergeTreeIndexTextParams & index_params)
+void PostingListStream::read(ReadBuffer & in, const LargePostingListReaderStreamPtr & stream, const MergeTreeIndexTextParams & index_params, size_t format_version)
 {
-    VarInt::readVarUInt32(doc_count, in);
+    VarInt::readUInt32(doc_count, in);
     if (doc_count == 0)
         return;
 
     /// Last document id, used as base for delta decoding
     UInt32 last_doc_id;
-    VarInt::readVarUInt32(last_doc_id, in);
+    VarInt::readUInt32(last_doc_id, in);
 
     chassert(stream);
 
@@ -748,7 +660,7 @@ void PostingListStream::read(ReadBuffer & in, const LargePostingListReaderStream
         if (doc_count > 1)
         {
             UInt32 bytes;
-            VarInt::readVarUInt32(bytes, in);
+            VarInt::readUInt32(bytes, in);
             if (in.available() >= bytes)
             {
                 uint8_t * packed_buffer_end
@@ -772,12 +684,12 @@ void PostingListStream::read(ReadBuffer & in, const LargePostingListReaderStream
     }
 
     UInt32 num_large_blocks;
-    VarInt::readVarUInt32(num_large_blocks, in);
+    VarInt::readUInt32(num_large_blocks, in);
 
     chassert(num_large_blocks >= 1);
 
     UInt32 remaining_docs = doc_count - 1;
-    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + 127) & ~127;
+    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
 
     LargePostingBlockMetas large_posting_blocks;
     large_posting_blocks.reserve(num_large_blocks);
@@ -787,20 +699,25 @@ void PostingListStream::read(ReadBuffer & in, const LargePostingListReaderStream
         UInt32 docs_in_large_block = std::min(remaining_docs, docs_per_large_block);
         UInt32 id;
         UInt64 offset;
-        VarInt::readVarUInt32(id, in);
+        VarInt::readUInt32(id, in);
         readVarUInt(offset, in);
 
-        large_posting_blocks.emplace_back(id, docs_in_large_block, offset);
+        UInt64 index_offset = 0;
+        if (postingListFormatHasBlockIndex(format_version))
+            readVarUInt(index_offset, in);
+
+        large_posting_blocks.emplace_back(id, docs_in_large_block, offset, index_offset);
         remaining_docs -= docs_in_large_block;
     }
 
     lazy_posting_stream = std::make_unique<LazyPostingStream>(
         nullptr, 0, ReaderStreamVector{stream, last_doc_id, doc_count, std::move(large_posting_blocks)});
+    lazy_posting_stream->streams.format_version = format_version;
 }
 
 void PostingListStream::write(WriteBuffer & wb, LargePostingListWriterStream & stream, const MergeTreeIndexTextParams & index_params) const
 {
-    VarInt::writeVarUInt32(doc_count, wb);
+    VarInt::writeUInt32(doc_count, wb);
     if (doc_count == 0)
         return;
 
@@ -809,7 +726,7 @@ void PostingListStream::write(WriteBuffer & wb, LargePostingListWriterStream & s
     /// --------------------------------------------
     if (doc_count == 1)
     {
-        VarInt::writeVarUInt32(embedded_postings[0], wb);
+        VarInt::writeUInt32(embedded_postings[0], wb);
         return;
     }
 
@@ -818,12 +735,12 @@ void PostingListStream::write(WriteBuffer & wb, LargePostingListWriterStream & s
 
     if (doc_count <= MAX_SIZE_OF_EMBEDDED_POSTINGS)
     {
-        VarInt::writeVarUInt32(embedded_postings[0], wb);
+        VarInt::writeUInt32(embedded_postings[0], wb);
         for (UInt32 i = 1; i < doc_count; ++i)
             doc_delta_buffer[i - 1] = embedded_postings[i] - embedded_postings[i - 1] - 1;
         uint8_t * end = turbopfor::p4Enc32(doc_delta_buffer, doc_count - 1, packed_buffer);
         UInt32 len = static_cast<UInt32>(end - packed_buffer);
-        VarInt::writeVarUInt32(len, wb);
+        VarInt::writeUInt32(len, wb);
         wb.write(reinterpret_cast<const char *>(packed_buffer), len);
         return;
     }
@@ -840,27 +757,38 @@ void PostingListStream::write(WriteBuffer & wb, LargePostingListWriterStream & s
     for (const auto & lazy_stream : lazy_posting_stream->streams)
     {
         chassert(!lazy_stream.large_posting_blocks.empty());
+        const auto & blocks = lazy_stream.large_posting_blocks;
+
+        lazy_stream.stream->seek(blocks.front().offset);
+
         cursors.emplace_back(
             lazy_stream.stream.get(),
             lazy_stream.first_doc_id,
-            lazy_stream.doc_count - 1, /* remaining doc counts */
-            lazy_stream.large_posting_blocks.front().offset,
+            lazy_stream.doc_count - 1, /* remaining doc count (first doc is inline) */
+            static_cast<UInt64>(lazy_stream.stream->getPosition()),
             false,
             true);
+
+        /// In V2 format, Index Sections are interleaved between Data Sections.
+        /// Set up skip schedule so the cursor seeks past each Index Section
+        /// at large block boundaries.
+        if (postingListFormatHasBlockIndex(lazy_posting_stream->streams.format_version))
+            cursors.back().setLargeBlockSkips(blocks);
     }
 
     UInt32 last_doc_id;
 
-    /// Align to 128-doc blocks
-    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + 127) & ~127;
+    /// Align to TURBOPFOR_BLOCK_SIZE-doc blocks
+    const UInt32 docs_per_large_block = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
     const UInt32 large_doc_count = doc_count - 1;
     const UInt32 num_large_blocks = (large_doc_count + docs_per_large_block - 1) / docs_per_large_block;
-    LargePostingBlockWriter block_writer(wb, stream.plain_hashing, docs_per_large_block);
+    LargePostingBlockWriter block_writer(wb, stream.plain_hashing, docs_per_large_block,
+        postingListFormatHasBlockIndex(resolvePostingListFormatVersion(index_params.posting_list_version)));
 
     UInt32 buffered = 0;
     auto flush128 = [&]()
     {
-        uint8_t * end = turbopfor::p4Enc128v32(doc_delta_buffer, 128, packed_buffer);
+        uint8_t * end = turbopfor::p4Enc128v32(doc_delta_buffer, TURBOPFOR_BLOCK_SIZE, packed_buffer);
         block_writer.addBlock(last_doc_id, reinterpret_cast<const char *>(packed_buffer), static_cast<UInt32>(end - packed_buffer));
         buffered = 0;
     };
@@ -880,15 +808,15 @@ void PostingListStream::write(WriteBuffer & wb, LargePostingListWriterStream & s
         [&](UInt32 first_doc_id)
         {
             last_doc_id = first_doc_id;
-            VarInt::writeVarUInt32(first_doc_id, wb);
-            VarInt::writeVarUInt32(num_large_blocks, wb);
+            VarInt::writeUInt32(first_doc_id, wb);
+            VarInt::writeUInt32(num_large_blocks, wb);
         },
         [&](UInt32 doc_id)
         {
             chassert(doc_id > last_doc_id);
             doc_delta_buffer[buffered++] = doc_id - last_doc_id - 1;
             last_doc_id = doc_id;
-            if (buffered == 128)
+            if (buffered == TURBOPFOR_BLOCK_SIZE)
                 flush128();
         });
 
@@ -922,13 +850,20 @@ void PostingListStream::collect(UInt32 * buf) const
     for (const auto & lazy_stream : lazy_posting_stream->streams)
     {
         chassert(!lazy_stream.large_posting_blocks.empty());
+        const auto & blocks = lazy_stream.large_posting_blocks;
+
+        lazy_stream.stream->seek(blocks.front().offset);
+
         cursors.emplace_back(
             lazy_stream.stream.get(),
             lazy_stream.first_doc_id,
-            lazy_stream.doc_count - 1, /* remaining doc counts */
-            lazy_stream.large_posting_blocks.front().offset,
-            true,
+            lazy_stream.doc_count - 1,
+            static_cast<UInt64>(lazy_stream.stream->getPosition()),
+            false,
             true);
+
+        if (postingListFormatHasBlockIndex(lazy_posting_stream->streams.format_version))
+            cursors.back().setLargeBlockSkips(blocks);
     }
 
     UInt32 buffered = 0;

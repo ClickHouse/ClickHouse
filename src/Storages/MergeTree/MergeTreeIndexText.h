@@ -80,6 +80,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     String preprocessor;
+    size_t posting_list_version = 2;
 };
 
 using PostingList = roaring::Roaring;

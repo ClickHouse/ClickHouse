@@ -1,0 +1,23 @@
+Test 1: posting_list_version=1 (auto materialize mode)
+100
+100
+0
+Test 2: posting_list_version=2 (auto lazy mode)
+100
+100
+0
+Test 3: Default posting_list_version (v2, auto lazy)
+100
+200
+Test 4: Large data with posting_list_version=1 (materialize, triggers large posting list)
+1000
+1000
+0
+Test 5: Large data with posting_list_version=2 (lazy)
+1000
+1000
+0
+Test 6: Large data with posting_list_version=2 after merge
+1000
+1000
+Test 7: Invalid posting_list_version

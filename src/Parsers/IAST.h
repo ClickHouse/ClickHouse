@@ -76,7 +76,7 @@ public:
                 "Derived RESERVED_BITS must be greater than parent's");
         }
 
-        return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
+        return *std::launder(reinterpret_cast<BitfieldStruct *>(&flags_storage));
     }
 
     template <typename BitfieldStruct>
@@ -94,7 +94,7 @@ public:
                 "Derived RESERVED_BITS must be greater than parent's");
         }
 
-        return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
+        return *std::launder(reinterpret_cast<const BitfieldStruct *>(&flags_storage));
     }
 
     UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }

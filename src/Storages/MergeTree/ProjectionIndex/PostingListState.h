@@ -70,10 +70,27 @@ struct DataTypePostingList : public IDataTypeCustomName
 };
 
 static constexpr auto POSTING_LIST_FORMAT_VERSION_INITIAL = 0;
+static constexpr auto POSTING_LIST_FORMAT_VERSION_V2 = 1;
+
+inline bool postingListFormatHasBlockIndex(size_t format_version)
+{
+    return format_version >= POSTING_LIST_FORMAT_VERSION_V2;
+}
+
+/// Maps DDL `posting_list_version` (1 or 2) to the on-disk format version constant.
+inline size_t resolvePostingListFormatVersion(size_t ddl_version)
+{
+    if (ddl_version == 1)
+        return POSTING_LIST_FORMAT_VERSION_INITIAL;
+    return POSTING_LIST_FORMAT_VERSION_V2;
+}
 
 /// Construct PostingList DataType from index definition using the specified posting list format version. This is used
 /// in metadata construction paths (projection definition, merge, and output parts) to control the on-disk format.
 DataTypePtr createPostingListType(const ASTPtr & text_index_definition, size_t format_version);
+
+/// Like above, but resolves the format version from the `posting_list_version` DDL parameter in the definition.
+DataTypePtr createPostingListType(const ASTPtr & text_index_definition);
 
 /// Reconstruct PostingList DataType from on-disk part metadata. The format version is inferred from stored fields and
 /// all historical posting list format versions are supported.

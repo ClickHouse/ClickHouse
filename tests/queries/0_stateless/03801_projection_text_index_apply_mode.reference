@@ -1,0 +1,161 @@
+Test text_index_posting_list_apply_mode = materialize (default)
+101	Alick a01
+106	Alick a06
+111	Alick b01
+116	Alick b06
+101	Alick a01
+101	Alick a01
+111	Alick b01
+Test text_index_posting_list_apply_mode = lazy
+101	Alick a01
+106	Alick a06
+111	Alick b01
+116	Alick b06
+101	Alick a01
+101	Alick a01
+111	Alick b01
+Test lazy mode with multi-token AND (hasToken intersection)
+101	Alick a01
+101	Alick a01
+Test lazy mode with IN operator
+101	Alick a01
+106	Alick a06
+101	Alick a01
+106	Alick a06
+Test lazy mode with merged parts
+101	Alick a01
+201	rick c01
+101	Alick a01
+201	rick c01
+Test lazy mode with hasAnyTokens (OR union)
+101	Alick a01
+103	Click a03
+106	Alick a06
+108	Click a08
+111	Alick b01
+113	Click b03
+116	Alick b06
+118	Click b08
+101	Alick a01
+103	Click a03
+106	Alick a06
+108	Click a08
+111	Alick b01
+113	Click b03
+116	Alick b06
+118	Click b08
+Test lazy mode with hasAllTokens (AND intersection)
+101	Alick a01
+101	Alick a01
+Test lazy mode with hasAnyTokens string form
+102	Blick a02
+103	Click a03
+107	Blick a07
+108	Click a08
+112	Blick b02
+113	Click b03
+117	Blick b07
+118	Click b08
+102	Blick a02
+103	Click a03
+107	Blick a07
+108	Click a08
+112	Blick b02
+113	Click b03
+117	Blick b07
+118	Click b08
+Test lazy mode with hasAllTokens string form
+106	Alick a06
+106	Alick a06
+Test lazy mode with empty result
+Test lazy mode with large dataset (>128 rows, TurboPFor block boundary)
+50
+50
+50
+50
+1
+1
+3
+3
+Test lazy mode with multiple segments (multi-insert without merge)
+1	alpha beta
+3	alpha gamma
+5	alpha epsilon
+9	alpha iota
+1	alpha beta
+3	alpha gamma
+5	alpha epsilon
+9	alpha iota
+1	alpha beta
+1	alpha beta
+5	alpha epsilon
+6	beta zeta
+5	alpha epsilon
+6	beta zeta
+1	alpha beta
+3	alpha gamma
+5	alpha epsilon
+9	alpha iota
+1	alpha beta
+3	alpha gamma
+5	alpha epsilon
+9	alpha iota
+Test lazy mode with UTF-8 data and ngram tokenizer
+1	你好世界
+3	你好朋友
+1	你好世界
+3	你好朋友
+1	你好世界
+2	世界和平
+1	你好世界
+2	世界和平
+Test lazy mode with 3-way AND intersection
+101	Alick a01
+116	Alick b06
+116	Alick b06
+Test lazy mode with OR of hasToken
+101	Alick a01
+102	Blick a02
+106	Alick a06
+107	Blick a07
+111	Alick b01
+112	Blick b02
+116	Alick b06
+117	Blick b07
+101	Alick a01
+102	Blick a02
+106	Alick a06
+107	Blick a07
+111	Alick b01
+112	Blick b02
+116	Alick b06
+117	Blick b07
+Test lazy mode consistency with direct read
+1	hello world
+3	hello foo
+1	hello world
+3	hello foo
+1	hello world
+1	hello world
+1	hello world
+2	foo bar
+3	hello foo
+4	bar baz
+1	hello world
+2	foo bar
+3	hello foo
+4	bar baz
+Test lazy mode with large posting list and block-level index
+50
+50
+50
+50
+1
+1
+3
+3
+Test lazy mode with large posting list block-level index after merge
+50
+50
+50
+50
