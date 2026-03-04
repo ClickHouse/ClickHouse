@@ -376,22 +376,26 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
         }
     }
 
-    for (const auto & atom : predicate_atoms)
+    PredicateStatisticsLogElement elem;
+    elem.event_date = today;
+    elem.event_time = now;
+    elem.database = database;
+    elem.table = table;
+
+    /// If predicate atoms were extracted, use the first one to populate descriptive fields.
+    if (!predicate_atoms.empty())
     {
-        PredicateStatisticsLogElement elem;
-        elem.event_date = today;
-        elem.event_time = now;
-        elem.database = database;
-        elem.table = table;
+        const auto & atom = predicate_atoms.front();
         elem.column_name = atom.column_name;
         elem.predicate_class = atom.predicate_class;
         elem.function_name = atom.function_name;
-        elem.input_rows = num_rows_before_filtration;
-        elem.passed_rows = num_filtered_rows;
-        elem.selectivity = selectivity;
-        elem.query_id = query_id;
-        predicate_stats_log->add(std::move(elem));
     }
+
+    elem.input_rows = num_rows_before_filtration;
+    elem.passed_rows = num_filtered_rows;
+    elem.selectivity = selectivity;
+    elem.query_id = query_id;
+    predicate_stats_log->add(std::move(elem));
 }
 
 }
