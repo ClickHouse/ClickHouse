@@ -402,8 +402,6 @@ public:
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
 
-        store.context().set_epoch_deadline(std::numeric_limits<uint64_t>::max());
-
         wasmtime::Linker linker(engine);
         for (const auto & host_function : host_functions)
         {
