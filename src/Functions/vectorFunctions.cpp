@@ -2200,7 +2200,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float32", "Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance. For `Array` inputs, the return type is `Float32` for `Float32` or `BFloat16` elements, and `Float64` for integer or `Float64` elements. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples_l1_distance = {
         {
             "Basic usage",
@@ -2256,7 +2256,7 @@ Calculates the sum of the squares of the difference between the corresponding el
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float32", "Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors. For `Array` inputs, the return type is `Float32` for `Float32` or `BFloat16` elements, and `Float64` for integer or `Float64` elements. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples_l2_squared_distance = {
         {
             "Basic usage",
@@ -2284,7 +2284,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float32", "Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance. For `Array` inputs, the return type is `Float32` for `Float32` or `BFloat16` elements, and `Float64` for integer or `Float64` elements. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples_linf_distance = {
         {
             "Basic usage",
