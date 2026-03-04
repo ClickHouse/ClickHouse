@@ -4,13 +4,11 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/TopKThresholdTracker.h>
 
 namespace DB
 {
 
-/// Fused step for GROUP BY ... ORDER BY aggregate LIMIT K.
-/// Replaces the AggregatingStep + SortingStep + LimitStep chain.
-/// Produces sorted output limited to K rows.
 class TopNAggregatingStep : public ITransformingStep
 {
 public:
@@ -20,7 +18,9 @@ public:
         AggregateDescriptions aggregates_,
         SortDescription sort_description_,
         size_t limit_,
-        bool sorted_input_);
+        bool sorted_input_,
+        bool enable_threshold_pruning_ = false,
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
 
     String getName() const override { return "TopNAggregating"; }
 
@@ -46,6 +46,8 @@ private:
     SortDescription sort_description;
     size_t limit;
     bool sorted_input;
+    bool enable_threshold_pruning;
+    TopKThresholdTrackerPtr threshold_tracker;
 };
 
 }

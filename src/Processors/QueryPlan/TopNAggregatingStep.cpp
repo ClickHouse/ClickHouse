@@ -43,7 +43,9 @@ TopNAggregatingStep::TopNAggregatingStep(
     AggregateDescriptions aggregates_,
     SortDescription sort_description_,
     size_t limit_,
-    bool sorted_input_)
+    bool sorted_input_,
+    bool enable_threshold_pruning_,
+    TopKThresholdTrackerPtr threshold_tracker_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(buildOutputHeader(*input_header_, key_names_, aggregates_)),
@@ -53,6 +55,8 @@ TopNAggregatingStep::TopNAggregatingStep(
     , sort_description(std::move(sort_description_))
     , limit(limit_)
     , sorted_input(sorted_input_)
+    , enable_threshold_pruning(enable_threshold_pruning_)
+    , threshold_tracker(std::move(threshold_tracker_))
 {
 }
 
@@ -63,19 +67,31 @@ void TopNAggregatingStep::updateOutputHeader()
 
 void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.resize(1);
-
     const auto & in_header = *input_headers.front();
     const auto out_header = buildOutputHeader(in_header, key_names, aggregates);
 
-    pipeline.addTransform(std::make_shared<TopNAggregatingTransform>(
-        in_header,
-        out_header,
-        key_names,
-        aggregates,
-        sort_description,
-        limit,
-        sorted_input));
+    if (sorted_input)
+    {
+        pipeline.resize(1);
+        pipeline.addTransform(std::make_shared<TopNAggregatingTransform>(
+            in_header, out_header, key_names, aggregates, sort_description, limit, sorted_input));
+    }
+    else
+    {
+        const auto intermediate_header = buildIntermediateHeader(in_header, key_names, aggregates);
+
+        pipeline.addSimpleTransform([&](const SharedHeader &)
+        {
+            return std::make_shared<TopNAggregatingTransform>(
+                in_header, intermediate_header, key_names, aggregates,
+                sort_description, limit, /*sorted_input=*/false, /*partial=*/true,
+                enable_threshold_pruning, threshold_tracker);
+        });
+
+        pipeline.resize(1);
+        pipeline.addTransform(std::make_shared<TopNAggregatingMergeTransform>(
+            intermediate_header, out_header, key_names, aggregates, sort_description, limit));
+    }
 }
 
 void TopNAggregatingStep::describeActions(FormatSettings & settings) const
@@ -95,6 +111,12 @@ void TopNAggregatingStep::describeActions(FormatSettings & settings) const
 
     settings.out << String(settings.offset, settings.indent_char);
     settings.out << "Sorted input: " << (sorted_input ? "true" : "false") << '\n';
+
+    if (enable_threshold_pruning)
+    {
+        settings.out << String(settings.offset, settings.indent_char);
+        settings.out << "Threshold pruning: true\n";
+    }
 
     settings.out << String(settings.offset, settings.indent_char);
     settings.out << "Sort description: ";
@@ -116,6 +138,7 @@ void TopNAggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Keys", std::move(keys_array));
     map.add("Limit", limit);
     map.add("Sorted Input", sorted_input);
+    map.add("Threshold Pruning", enable_threshold_pruning);
 }
 
 }

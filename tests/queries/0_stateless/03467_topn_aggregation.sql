@@ -342,13 +342,61 @@ ORDER BY latest_ts DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- EXPLAIN: verify argMin uses TopNAggregating
-SELECT '-- EXPLAIN argMin (should optimize)';
+-- EXPLAIN: argMin falls through to standard pipeline because its output (payload)
+-- has different sort order than the sort key (ts), so neither Mode 1 (early termination)
+-- nor Mode 2 (threshold pruning) can safely apply.
+SELECT '-- EXPLAIN argMin (standard pipeline)';
 EXPLAIN PLAN
 SELECT grp, argMin(payload, ts) AS earliest
 FROM t_topn_argminmax
 GROUP BY grp
 ORDER BY earliest ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+-- ====== Threshold pruning (Mode 2) ======
+
+-- Test threshold pruning with max DESC on unsorted table
+SELECT '-- Mode 2 threshold pruning: max DESC';
+SELECT group_id, max(val) AS m
+FROM (SELECT number % 50 AS group_id, number AS val FROM numbers(5000))
+GROUP BY group_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- Mode 2 threshold pruning reference';
+SELECT group_id, max(val) AS m
+FROM (SELECT number % 50 AS group_id, number AS val FROM numbers(5000))
+GROUP BY group_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- Test threshold pruning with min ASC
+SELECT '-- Mode 2 threshold pruning: min ASC';
+SELECT group_id, min(val) AS m
+FROM (SELECT number % 50 AS group_id, number * 7 % 1000 AS val FROM numbers(5000))
+GROUP BY group_id
+ORDER BY m ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- Mode 2 threshold pruning min ASC reference';
+SELECT group_id, min(val) AS m
+FROM (SELECT number % 50 AS group_id, number * 7 % 1000 AS val FROM numbers(5000))
+GROUP BY group_id
+ORDER BY m ASC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- EXPLAIN: verify threshold pruning and __topKFilter prewhere on MergeTree table
+SELECT '-- EXPLAIN threshold pruning with prewhere';
+EXPLAIN actions=1
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 1;
 

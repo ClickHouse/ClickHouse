@@ -174,9 +174,73 @@ g48	2024-01-01 00:08:18	payload_498
 g47	2024-01-01 00:08:17	payload_497
 g46	2024-01-01 00:08:16	payload_496
 g45	2024-01-01 00:08:15	payload_495
--- EXPLAIN argMin (should optimize)
+-- EXPLAIN argMin (standard pipeline)
 Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_topn_argminmax)
+-- Mode 2 threshold pruning: max DESC
+49	4999
+48	4998
+47	4997
+46	4996
+45	4995
+-- Mode 2 threshold pruning reference
+49	4999
+48	4998
+47	4997
+46	4996
+45	4995
+-- Mode 2 threshold pruning: min ASC
+0	0
+43	1
+36	2
+29	3
+22	4
+-- Mode 2 threshold pruning min ASC reference
+0	0
+43	1
+36	2
+29	3
+22	4
+-- EXPLAIN threshold pruning with prewhere
+Expression (Project names)
+Actions: INPUT : 0 -> max(__table1.start_time) DateTime : 0
+         INPUT : 1 -> __table1.trace_id String : 1
+         ALIAS max(__table1.start_time) :: 0 -> m DateTime : 2
+         ALIAS __table1.trace_id :: 1 -> trace_id String : 0
+Positions: 0 2
   Expression ((Before ORDER BY + Projection))
+  Actions: INPUT :: 0 -> max(__table1.start_time) DateTime : 0
+           INPUT :: 1 -> __table1.trace_id String : 1
+  Positions: 0 1
     TopNAggregating
+    Keys: __table1.trace_id
+    Limit: 5
+    Sorted input: false
+    Threshold pruning: true
+    Sort description: max(__table1.start_time) DESC
       Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn_argminmax)
+      Actions: INPUT : 0 -> trace_id String : 0
+               INPUT : 1 -> start_time DateTime : 1
+               ALIAS trace_id :: 0 -> __table1.trace_id String : 2
+               ALIAS start_time :: 1 -> __table1.start_time DateTime : 0
+      Positions: 2 0
+        Expression
+        Actions: INPUT :: 0 -> start_time DateTime : 0
+                 INPUT :: 1 -> trace_id String : 1
+        Positions: 1 0
+          ReadFromMergeTree (default.t_topn_unsorted)
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+          Prewhere info
+          Need filter: 1
+            Prewhere filter
+            Prewhere filter column: __topKFilter(start_time) (removed)
+            Actions: INPUT : 0 -> start_time DateTime : 0
+                     FUNCTION __topKFilter(start_time : 0) -> __topKFilter(start_time) UInt8 : 1
+            Positions: 0 1
