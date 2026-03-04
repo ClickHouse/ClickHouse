@@ -18,10 +18,10 @@ cat > "$config_override" <<'EOF'
 </clickhouse>
 EOF
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT --send_logs_level=fatal --query "SYSTEM RELOAD CONFIG"
 
 # on exit: disable the override and reload config
-trap 'rm -f "$config_override"; $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" 2>/dev/null' EXIT
+trap 'rm -f "$config_override"; $CLICKHOUSE_CLIENT --send_logs_level=fatal --query "SYSTEM RELOAD CONFIG" 2>/dev/null' EXIT
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test_pred_stats;
@@ -43,7 +43,7 @@ SELECT
     predicate_class,
     function_name,
     sum(input_rows) > 0 AS has_input,
-    sum(passed_rows) >= 0 AS has_output
+    sum(passed_rows) > 0 AS has_output
 FROM system.predicate_statistics_log
 WHERE table = 'test_pred_stats' AND currentDatabase() = database
 GROUP BY column_name, predicate_class, function_name
