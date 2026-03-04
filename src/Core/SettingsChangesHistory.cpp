@@ -154,6 +154,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"use_object_storage_list_objects_cache", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -422,6 +423,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
+            {"use_object_storage_list_objects_cache", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
