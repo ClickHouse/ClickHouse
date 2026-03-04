@@ -2327,7 +2327,7 @@ message Expr {
         LiteralValue lit_val = 1;
         ComplicatedExpr comp_expr = 2;
     }
-    optional FieldAccess field = 3;
+    repeated FieldAccess fields = 3;
 }
 
 message ExprColAlias {
@@ -3259,6 +3259,7 @@ enum CompressionCodec {
     /// COMP_ZSTD_QAT = 14;
     /// COMP_DEFLATE_QPL = 15;
     /// COMP_SZ3 = 16;
+    COMP_ALP = 17;
 }
 
 message IndexKeyVal {

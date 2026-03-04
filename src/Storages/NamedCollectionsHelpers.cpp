@@ -187,6 +187,10 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
     for (const auto & key : keys)
     {
+        /// The 'name' key identifies the named collection itself and is not a data key to override.
+        if (key == "name")
+            continue;
+
         if (collection_copy->isOverridable(key, allow_override_by_default))
             collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
         else
