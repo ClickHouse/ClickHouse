@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- Disable randomized settings because this test asserts exact EXPLAIN PLAN outputs 
 -- for join runtime filters. Randomizing parallel replicas, join swapping, or memory 
 -- limits alters the fundamental query plan and causes the fallback heuristics to flake.
