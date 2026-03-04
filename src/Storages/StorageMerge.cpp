@@ -1034,21 +1034,15 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
-                const auto column_default = storage_columns.getDefault(column);
-                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
-
-                /// Try to resolve column type. For regular columns use ColumnsDescription,
-                /// for subcolumns (e.g. JSON sub-paths like json.x) use the storage snapshot
-                /// which can resolve dynamic subcolumns.
-                std::optional<NameAndTypePair> resolved_pair;
-                if (storage_columns.has(column))
-                    resolved_pair = NameAndTypePair{column, storage_columns.getColumn(get_column_options, column).type};
-                else
-                    resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
+                /// Try to resolve column, including subcolumns (e.g. JSON sub-paths like json.x).
+                auto resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
 
                 /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
                 if (!resolved_pair)
                     continue;
+
+                const auto column_default = storage_columns.getDefault(column);
+                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
                 QueryTreeNodePtr column_node;
 
