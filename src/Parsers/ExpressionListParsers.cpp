@@ -1264,7 +1264,7 @@ private:
 };
 
 /// Check if all elements are ASTLiteral nodes without aliases, and their field types
-/// are either scalar or match `allowed_compound_type`.  This mirrors the cases that
+/// are either scalar or match `allowed_compound_type`. This mirrors the cases that
 /// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
 /// tuples inside tuples) with scalar leaf literals and no aliases.
 static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types::Which allowed_compound_type)
