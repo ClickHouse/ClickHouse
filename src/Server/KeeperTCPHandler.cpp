@@ -516,7 +516,6 @@ void KeeperTCPHandler::runImpl()
             if (keeper_dispatcher->isShuttingDown())
             {
                 LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
-                keeper_dispatcher->finishSession(session_id);
                 break;
             }
 
