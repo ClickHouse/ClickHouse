@@ -53,65 +53,11 @@ public:
 
         const std::vector<ProcessedManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
 
-        bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
-        {
-            for (const auto & file : *data_files)
-            {
-                // Treat missing sort_order_id as "not sorted by the expected order".
-                // This can happen if:
-                // 1. The field is not present in older Iceberg format versions.
-                // 2. The data file was written without sort order information.
-                if (!file->parsed_entry->sort_order_id.has_value() || (*file->parsed_entry->sort_order_id != sort_order_id))
-                    return false;
-            }
-            /// Empty manifest (no data files) is considered sorted by definition
-            return true;
-        }
+        bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
-        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
-        {
-            Int64 result = 0;
-            for (const auto & file : getFilesWithoutDeleted(content))
-            {
-                /// Have at least one column with rows count
-                bool found = false;
-                for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-                {
-                    if (column_info.rows_count.has_value())
-                    {
-                        result += *column_info.rows_count;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    return std::nullopt;
-            }
-            return result;
-        }
+        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const
-        {
-            size_t result = 0;
-            for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
-            {
-                /// Have at least one column with bytes count
-                bool found = false;
-                for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-                {
-                    if (column_info.bytes_size.has_value())
-                    {
-                        result += *column_info.bytes_size;
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found)
-                    return std::nullopt;
-            }
-            return result;
-        }
+        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     private:
         friend class ManifestFileIterator;
