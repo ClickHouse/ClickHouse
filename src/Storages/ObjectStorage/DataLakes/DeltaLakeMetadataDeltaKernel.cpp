@@ -683,7 +683,7 @@ std::string DeltaLakeMetadataDeltaKernel::latestSnapshotVersionToStr() const
 
 DeltaLakeHistory DeltaLakeMetadataDeltaKernel::getHistory(ContextPtr local_context) const
 {
-    return parseDeltaLakeHistory(object_storage_common, kernel_helper->getDataPath(), local_context, log);
+    return parseDeltaLakeHistory(object_storage, kernel_helper->getDataPath(), local_context, log);
 }
 
 }
