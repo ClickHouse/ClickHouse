@@ -684,8 +684,6 @@ ReturnType parseDateTimeBestEffortImpl(
                     /// If there are still more alphabetical characters, the word is longer than any known name.
                     if (!in.eof() && isAlphaASCII(*in.position()))
                     {
-                        while (!in.eof() && isAlphaASCII(*in.position()))
-                            ++in.position();
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                     }
 
