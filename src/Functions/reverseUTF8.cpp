@@ -46,26 +46,23 @@ struct ReverseUTF8Impl
             ColumnString::Offset j = prev_offset;
             while (j < offsets[i])
             {
+                size_t remaining = offsets[i] - j;
+                size_t char_len;
+
                 if (data[j] < 0xC0)
-                {
-                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
-                    j += 1;
-                }
+                    char_len = 1;
                 else if (data[j] < 0xE0)
-                {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 1], &data[j], 2);
-                    j += 2;
-                }
+                    char_len = 2;
                 else if (data[j] < 0xF0)
-                {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 2], &data[j], 3);
-                    j += 3;
-                }
+                    char_len = 3;
                 else
-                {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 3], &data[j], 4);
-                    j += 4;
-                }
+                    char_len = 4;
+
+                /// Clamp to remaining bytes to handle invalid UTF-8 without out-of-bounds access.
+                char_len = std::min(char_len, remaining);
+
+                memcpy(&res_data[offsets[i] + prev_offset - j - char_len], &data[j], char_len);
+                j += char_len;
             }
 
             prev_offset = offsets[i];
