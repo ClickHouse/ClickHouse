@@ -230,6 +230,16 @@ The namespace is a user-level property — users cannot change their own namespa
 
 System databases (`system`, `INFORMATION_SCHEMA`, `information_schema`) and the `default` database are never prefixed.
 
+### Shared Databases {#shared-databases}
+
+Databases listed in the `shared_databases_across_namespaces` server setting are visible to all tenants without namespace prefixing, similar to system databases. This is useful for common reference databases (e.g., dictionaries, geographic data) that all tenants should share.
+
+```xml
+<shared_databases_across_namespaces>dictionaries,geo</shared_databases_across_namespaces>
+```
+
+This setting supports dynamic reload via `SYSTEM RELOAD CONFIG`. Shared databases cannot be shadowed by tenants — if `dictionaries` is shared, a tenant's `CREATE DATABASE dictionaries` will fail because the name resolves to the shared database which already exists.
+
 Examples:
 
 Create a user with a database namespace:
