@@ -608,7 +608,7 @@ private:
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
-    String getNextTestingAddress(RandomGenerator & rg, bool secure);
+    String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(

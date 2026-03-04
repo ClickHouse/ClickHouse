@@ -606,7 +606,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
     }
 }
 
-String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const bool secure)
+String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const bool secure) const
 {
     String res;
 
