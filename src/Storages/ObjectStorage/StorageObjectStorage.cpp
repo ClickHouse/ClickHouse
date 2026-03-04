@@ -175,8 +175,16 @@ StorageObjectStorage::StorageObjectStorage(
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
 
-    if (!columns.empty() && configuration->getRawPath().hasSchemaHashWildcard())
+    if (configuration->getRawPath().hasSchemaHashWildcard())
+    {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
+
+        if (columns.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without a known schema");
+
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+    }
 
     configuration->check(context);
 
