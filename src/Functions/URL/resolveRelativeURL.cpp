@@ -217,8 +217,9 @@ public:
                     } else {
                         // Merge paths (5.2.3)
                         std::string merged;
-                        if (!base_url_auth.empty() && base_url_path.empty()) merged = "/";
-                        else {
+                        if (!base_url_auth.empty() && base_url_path.empty()) {
+                            merged = "/";
+                        } else {
                             size_t last = base_url_path.find_last_of('/');
                             if (last != std::string::npos) merged = std::string(base_url_path.substr(0, last + 1));
                         }
