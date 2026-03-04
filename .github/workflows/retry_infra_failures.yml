@@ -7,6 +7,7 @@ on:
 
 permissions:
   actions: write
+  pull-requests: write
 
 jobs:
   retry-failed:
@@ -138,3 +139,73 @@ jobs:
           done
 
           echo "Done. Triggered $rerun_count rerun(s)."
+
+  fix-stuck-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fix PRs stuck with auto-merge enabled but not queued
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "Looking for PRs with auto-merge enabled but not queued..."
+          echo ""
+
+          now=$(date +%s)
+          cutoff_seconds=3600  # 60 minutes
+
+          # Get open PRs with auto-merge enabled that have mergeStateStatus=CLEAN
+          # (checks passed but not queued into merge queue).
+          # Use --search to filter server-side, so we don't miss older PRs
+          # that fall outside a --limit window.
+          stuck_prs=$(gh pr list \
+            --repo "$GH_REPO" \
+            --search "is:open auto-merge:enabled -is:draft" \
+            --json number,autoMergeRequest,mergeStateStatus \
+            --jq '[.[] | select(
+              .autoMergeRequest != null and
+              .mergeStateStatus == "CLEAN"
+            )]')
+
+          count=$(echo "$stuck_prs" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "No stuck PRs found."
+            exit 0
+          fi
+
+          echo "Found $count candidate PR(s), checking age..."
+          echo ""
+
+          fixed=0
+          pr_numbers=$(echo "$stuck_prs" | jq -r '.[].number')
+
+          for pr_number in $pr_numbers; do
+            enabled_at=$(echo "$stuck_prs" | jq -r ".[] | select(.number == $pr_number) | .autoMergeRequest.enabledAt")
+            enabled_ts=$(date -d "$enabled_at" +%s 2>/dev/null || echo 0)
+            age_seconds=$((now - enabled_ts))
+
+            if [ "$age_seconds" -lt "$cutoff_seconds" ]; then
+              echo "PR #$pr_number: auto-merge enabled ${age_seconds}s ago (< ${cutoff_seconds}s), skipping."
+              continue
+            fi
+
+            age_minutes=$((age_seconds / 60))
+            echo "PR #$pr_number: stuck for ${age_minutes} minutes, retoggling auto-merge..."
+
+            if gh pr merge "$pr_number" --disable-auto --repo "$GH_REPO"; then
+              sleep 2
+              if gh pr merge "$pr_number" --auto --repo "$GH_REPO"; then
+                echo "  OK: Auto-merge retoggled for PR #$pr_number"
+                fixed=$((fixed + 1))
+              else
+                echo "  ERROR: Failed to re-enable auto-merge for PR #$pr_number"
+              fi
+            else
+              echo "  ERROR: Failed to disable auto-merge for PR #$pr_number"
+            fi
+            echo ""
+          done
+
+          echo "Done. Fixed $fixed stuck PR(s)."

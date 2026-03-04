@@ -1,7 +1,8 @@
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/StreamingStorageRegistry.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
@@ -30,13 +31,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ObjectStorageQueueFactory & ObjectStorageQueueFactory::instance()
+StreamingStorageRegistry & StreamingStorageRegistry::instance()
 {
-    static ObjectStorageQueueFactory ret;
+    static StreamingStorageRegistry ret;
     return ret;
 }
 
-void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
+void StreamingStorageRegistry::registerTable(const StorageID & storage)
 {
     std::lock_guard lock(mutex);
 
@@ -50,7 +51,7 @@ void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
     LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
 }
 
-void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool if_exists)
+void StreamingStorageRegistry::unregisterTable(const StorageID & storage, bool if_exists)
 {
     std::lock_guard lock(mutex);
 
@@ -77,7 +78,7 @@ void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool 
     LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
 }
 
-void ObjectStorageQueueFactory::renameTable(const StorageID & from, const StorageID & to)
+void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to)
 {
     std::lock_guard lock(mutex);
     if (shutdown_called)
@@ -102,7 +103,7 @@ void ObjectStorageQueueFactory::renameTable(const StorageID & from, const Storag
     }
 }
 
-void ObjectStorageQueueFactory::shutdown()
+void StreamingStorageRegistry::shutdown()
 {
     std::vector<StorageID> shutdown_storages;
     {
@@ -137,6 +138,8 @@ void ObjectStorageQueueFactory::shutdown()
     }
 
     runner.waitForAllToFinish();
+
+    LOG_DEBUG(log, "Already shutdown {} queue storages", shutdown_storages.size());
 }
 
 ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance()
