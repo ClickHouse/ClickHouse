@@ -8156,6 +8156,7 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
+)", EXPERIMENTAL) \
     DECLARE(ParameterizedViewSchemaDefinitionMode, use_declared_schema_for_parameterized_views, ParameterizedViewSchemaDefinitionMode::OFF, R"(
 Allow to show schemas declared in parameterized views.
 
