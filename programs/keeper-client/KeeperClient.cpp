@@ -1,4 +1,5 @@
 #include <KeeperClient.h>
+#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -7,93 +8,11 @@
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ErrnoException.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
 
-#if USE_SSL
-#include <Poco/Net/Context.h>
-#include <Poco/Net/SSLManager.h>
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
-#endif
-
-#include <replxx.hxx>
-#include <algorithm>
-#include <cctype>
-#include <string_view>
-
-
-namespace
-{
-
-char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
-
-/// Automatically prepend double quote for non first word under cursor, i.e.:
-///
-///     ls     => ls
-///     ls /   => ls "/
-///     ls "/  => ls "/
-///     ls '/  => ls '/   (already quoted, no change)
-///
-/// Also handles the case where cursor is right before a closing quote
-/// (e.g. user typed `ls "/foo"` then moved cursor left before `"`).
-/// We strip that trailing quote so completion can re-add it with the
-/// correct suffix (closing quote for leaf, `/` for directory).
-///
-void prependDoubleQuoteForPath(replxx::Replxx & rx)
-{
-    replxx::Replxx::State state(rx.get_state());
-    std::string_view word_breaks(WORD_BREAK_CHARACTERS);
-
-    size_t cursor = state.cursor_position();
-    std::string text(state.text());
-
-    if (text.empty() || cursor == 0)
-        return;
-
-    auto word_begin = std::find_first_of(text.rbegin() + (text.size() - cursor), text.rend(), word_breaks.begin(), word_breaks.end()).base();
-    /// Do not quote the first word (command name).
-    /// Walk backwards from word_begin, skipping spaces, to check whether there is
-    /// any non-space content before this word. If there isn't — this IS the first word.
-    {
-        auto it = word_begin;
-        while (it != text.begin() && std::isspace(*(it - 1)))
-            --it;
-        if (it == text.begin())
-            return;
-    }
-
-    auto word_end = std::find_first_of(text.begin() + cursor, text.end(), word_breaks.begin(), word_breaks.end());
-
-    if (std::distance(word_begin, word_end) < 1)
-    {
-        /// Empty word (cursor right after a space, e.g. "ls "), insert opening quote at cursor position
-        text.insert(text.begin() + cursor, '"');
-        ++cursor;
-    }
-    else if (*word_begin != '\'' && *word_begin != '"')
-    {
-        text.insert(word_begin, '"');
-        ++cursor;
-    }
-    else
-    {
-        /// Word already starts with a quote. If cursor is right before a matching
-        /// closing quote, remove it — completion will re-add it with the correct
-        /// suffix (closing quote for leaves, '/' for directories).
-        char open_quote = *word_begin;
-        if (cursor < text.size() && text[cursor] == open_quote)
-            text.erase(cursor, 1);
-    }
-
-    rx.set_state(replxx::Replxx::State(text.c_str(), static_cast<int>(cursor)));
-}
-
-}
 
 namespace DB
 {
@@ -126,117 +45,89 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     return result;
 }
 
-
-std::vector<String> KeeperClient::getCompletions(String prefix) const
+std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 {
-    /// First, tokenize the original prefix (without any appended quote) to determine
-    /// whether we are completing a command name or a path argument.
-    ///
-    /// Cases:
-    ///   ""           → complete commands (empty input)
-    ///   "ls"         → complete commands (single bare word, no space after)
-    ///   "ls "        → complete paths (command + whitespace, path argument expected)
-    ///   "ls \"/foo"  → complete paths (command + quoted path prefix)
-
-    Tokens probe_tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos probe_pos(probe_tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    /// If the first token is not a bare word (command name), return command completions.
-    if (probe_pos->type != TokenType::BareWord)
-        return registered_commands_and_four_letter_words;
-
-    ++probe_pos;
-
-    /// If there is nothing after the command word (e.g. "ls" or "get_d"), return command completions.
-    if (probe_pos->isEnd())
-        return registered_commands_and_four_letter_words;
-
-    /// There is something after the command word — we are completing a path argument.
-    /// Now determine the quote character and build the quoted prefix for path parsing.
-    char quote_char = '"';
-    {
-        std::string_view word_breaks(WORD_BREAK_CHARACTERS);
-        auto last_word_pos = prefix.find_last_of(word_breaks);
-        std::string_view last_word = (last_word_pos == String::npos)
-            ? std::string_view{prefix}
-            : std::string_view{prefix}.substr(last_word_pos + 1);
-        if (!last_word.empty() && (last_word[0] == '\'' || last_word[0] == '"'))
-            quote_char = last_word[0];
-    }
-
-    /// Append a closing quote so the tokenizer produces a valid
-    /// StringLiteral ('...') or QuotedIdentifier ("...") that parseKeeperPath can parse.
-    prefix.push_back(quote_char);
-
     Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    /// Skip the command word (already verified above).
+    if (pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
     ++pos;
+    if (pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
     ParserToken{TokenType::Whitespace}.ignore(pos);
 
     std::vector<String> result;
     String string_path;
     Expected expected;
-    bool parsed = parseKeeperPath(pos, expected, string_path);
-    if (!parsed)
+    if (!parseKeeperPath(pos, expected, string_path))
         string_path = cwd;
 
-    /// If the path parsed successfully but there are leftover tokens, something is wrong.
-    if (parsed && !pos->isEnd())
+    if (!pos->isEnd())
         return result;
 
     fs::path path = string_path;
     String parent_path;
-    /// parent_path has "/" at the end only if it is root
-    if (string_path.ends_with('/'))
+    if (string_path.ends_with("/"))
         parent_path = getAbsolutePath(string_path);
     else
         parent_path = getAbsolutePath(path.parent_path());
 
-    /// parent_prefix always has "/" at the end
-    auto parent_prefix = parent_path;
-    if (!parent_prefix.ends_with('/'))
-        parent_prefix.append("/");
-
-    Strings children;
     try
     {
-        children = zookeeper->getChildren(parent_path);
+        for (const auto & child : zookeeper->getChildren(parent_path))
+            result.push_back(child);
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
-
-    String quote_str(1, quote_char);
-
-    for (const auto & child : children)
-    {
-        String completion = quote_str + parent_prefix + child;
-        String full_path = parent_prefix + child;
-
-        /// Check if this node has children to decide the suffix:
-        ///   - has children  → append '/' so the user can Tab-complete the next segment
-        ///   - leaf node     → append closing quote so the path is ready to execute
-        bool has_children = false;
-        try
-        {
-            Strings sub = zookeeper->getChildren(full_path);
-            has_children = !sub.empty();
-        }
-        catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
-
-        if (has_children)
-            completion += '/';
-        else
-            completion += quote_char;
-
-        result.push_back(std::move(completion));
-    }
 
     std::sort(result.begin(), result.end());
 
     return result;
 }
 
+void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
+{
+    if (!ask_confirmation)
+    {
+        callback();
+        return;
+    }
+
+    std::cout << prompt << " Continue?\n";
+    waiting_confirmation = true;
+    confirmation_callback = callback;
+}
+
+fs::path KeeperClient::getAbsolutePath(const String & relative) const
+{
+    String result;
+    if (relative.starts_with('/'))
+        result = fs::weakly_canonical(relative);
+    else
+        result = fs::weakly_canonical(cwd / relative);
+
+    if (result.ends_with('/') && result.size() > 1)
+        result.pop_back();
+
+    return result;
+}
+
+void KeeperClient::loadCommands(std::vector<Command> && new_commands)
+{
+    for (const auto & command : new_commands)
+    {
+        String name = command->getName();
+        commands.insert({name, command});
+        registered_commands_and_four_letter_words.push_back(std::move(name));
+    }
+
+    for (const auto & command : four_letter_word_commands)
+        registered_commands_and_four_letter_words.push_back(command);
+
+    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
+}
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 {
@@ -312,35 +203,37 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
             .argument("<identity>")
             .binding("identity"));
-
-    options.addOption(
-        Poco::Util::Option("secure", "s", "use secure connection (adds secure:// prefix to host). default false")
-            .binding("secure"));
-
-    options.addOption(
-        Poco::Util::Option("tls-cert-file", "", "path to TLS certificate file for secure connection")
-            .argument("<file>")
-            .binding("tls-cert-file"));
-
-    options.addOption(
-        Poco::Util::Option("tls-key-file", "", "path to TLS private key file for secure connection")
-            .argument("<file>")
-            .binding("tls-key-file"));
-
-    options.addOption(
-        Poco::Util::Option("tls-ca-file", "", "path to TLS CA certificate file for secure connection")
-            .argument("<file>")
-            .binding("tls-ca-file"));
-
-    options.addOption(
-        Poco::Util::Option("accept-invalid-certificate", "", "accept invalid TLS certificates (bypasses verification). default false")
-            .binding("accept-invalid-certificate"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
+
+    loadCommands({
+        std::make_shared<LSCommand>(),
+        std::make_shared<CDCommand>(),
+        std::make_shared<SetCommand>(),
+        std::make_shared<CreateCommand>(),
+        std::make_shared<TouchCommand>(),
+        std::make_shared<GetCommand>(),
+        std::make_shared<ExistsCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStaleBackups>(),
+        std::make_shared<FindBigFamily>(),
+        std::make_shared<RMCommand>(),
+        std::make_shared<RMRCommand>(),
+        std::make_shared<ReconfigCommand>(),
+        std::make_shared<SyncCommand>(),
+        std::make_shared<HelpCommand>(),
+        std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
+        std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<MVCommand>(),
+        std::make_shared<GetAclCommand>(),
+    });
 
     String home_path;
     const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
@@ -388,7 +281,6 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
     std::chrono::milliseconds current_sleep{100};
     size_t i = 0;
 
-    auto component_guard = Coordination::setCurrentComponent("KeeperClient::processQueryText");
     while (true)
     {
         try
@@ -465,6 +357,7 @@ void KeeperClient::runInteractiveReplxx()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
+    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
     auto reader_options = ReplxxLineReader::Options
     {
@@ -475,9 +368,8 @@ void KeeperClient::runInteractiveReplxx()
         .ignore_shell_suspend = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
-        .word_break_characters = WORD_BREAK_CHARACTERS,
+        .word_break_characters = word_break_characters,
         .highlighter = {},
-        .on_complete_modify_callback = prependDoubleQuoteForPath,
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
@@ -498,15 +390,9 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    cout << std::endl;
+    std::cout << std::endl;
 }
 
-/// In tests-mode, commands are read line by line from stdin.
-/// After each command, a separator (four BEL characters + newline) is written
-/// to stdout so the test harness can detect where one command's output ends.
-/// Errors from failed commands go to stderr.
-/// We must flush stderr before writing the separator to stdout, otherwise
-/// the test harness may see the separator first and miss the error.
 void KeeperClient::runInteractiveInputStream()
 {
     for (String input; std::getline(std::cin, input);)
@@ -514,8 +400,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
-        cerr << std::flush;
-        cout << "\a\a\a\a" << std::endl;
+        std::cout << "\a\a\a\a" << std::endl;
+        std::cerr << std::flush;
     }
 }
 
@@ -529,42 +415,6 @@ void KeeperClient::runInteractive()
 
 void KeeperClient::connectToKeeper()
 {
-#if USE_SSL
-    /// Configure SSL context if TLS options are provided
-    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
-    {
-        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
-
-        if (config().has("accept-invalid-certificate"))
-        {
-            verification_mode = Poco::Net::Context::VERIFY_NONE;
-        }
-
-        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
-            Poco::Net::Context::TLSV1_2_CLIENT_USE,
-            config().getString("tls-key-file", ""),
-            config().getString("tls-cert-file", ""),
-            config().getString("tls-ca-file", ""),
-            verification_mode,
-            9,
-            true,
-            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
-        ));
-
-        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-        if (config().has("accept-invalid-certificate"))
-        {
-            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
-        }
-        else
-        {
-            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
-        }
-
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
-    }
-#endif
-
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
@@ -589,7 +439,7 @@ void KeeperClient::connectToKeeper()
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
+            if (clickhouse_config.configuration->has(prefix + ".secure"))
                 host = "secure://" + host;
 
             new_zk_args.hosts.push_back(host + ":" + port);
@@ -599,9 +449,6 @@ void KeeperClient::connectToKeeper()
     {
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
-
-        if (config().has("secure"))
-            host = "secure://" + host;
 
         new_zk_args.hosts.push_back(host + ":" + port);
     }
@@ -616,8 +463,7 @@ void KeeperClient::connectToKeeper()
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
     zk_args = new_zk_args;
-    auto component_guard = Coordination::setCurrentComponent("KeeperClient::connectToKeeper");
-    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 }
 
 int KeeperClient::main(const std::vector<String> & /* args */)

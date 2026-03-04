@@ -35,8 +35,6 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
-#include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -111,7 +109,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 }
 
 
-void BaseDaemon::loadConfiguration()
+void BaseDaemon::reloadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
       *  then we use config from 'config.xml' file in current directory,
@@ -123,7 +121,11 @@ void BaseDaemon::loadConfiguration()
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
-    config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
+
+    if (last_configuration != nullptr)
+        config().removeConfiguration(last_configuration);
+    last_configuration = loaded_config.configuration.duplicate();
+    config().add(last_configuration, PRIO_DEFAULT, false);
 }
 
 
@@ -246,16 +248,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + path);
     }
 
-    loadConfiguration();
-
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-#endif
+    reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
@@ -274,22 +267,20 @@ void BaseDaemon::initialize(Application & self)
 #endif
     );
 
-
-#if defined(OS_LINUX)
-    /// Configure RLIMIT_SIGPENDING
-    /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
-    if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
+    /// Write core dump on crash.
     {
         struct rlimit rlim;
-        if (getrlimit(RLIMIT_SIGPENDING, &rlim))
+        if (getrlimit(RLIMIT_CORE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
-        rlim.rlim_cur = pending_signals;
-        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+        /// 1 GiB by default. If more - it writes to disk too long.
+        rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+
+        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
-            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+            /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
-#endif
 
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
@@ -428,7 +419,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
@@ -577,20 +568,6 @@ void BaseDaemon::setupWatchdog()
             async_channel->close();
         pid = fork();
 
-#if USE_JEMALLOC
-        if (0 == pid)
-        {
-            /// Re-apply jemalloc settings after fork because background threads
-            /// and other jemalloc state do not survive across fork.
-            Jemalloc::setup(
-                config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-                config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-                config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-                config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-                config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-        }
-#endif
-
         if (async_channel)
             async_channel->open();
 
@@ -632,7 +609,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
+        setThreadName("clckhouse-watch");   /// 15 characters
 
         if (argv0)
         {

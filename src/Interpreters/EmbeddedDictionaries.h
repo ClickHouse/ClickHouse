@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/Logger_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 
@@ -11,7 +10,7 @@
 #include <functional>
 
 
-namespace Poco { namespace Util { class AbstractConfiguration; } }
+namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
 namespace DB
 {

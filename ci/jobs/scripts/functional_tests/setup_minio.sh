@@ -84,6 +84,7 @@ start_minio() {
   nohup minio server --address ":11111" ./minio_data &
   wait_for_it
   lsof -i :11111
+  sleep 5
 }
 
 setup_minio() {

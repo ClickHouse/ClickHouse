@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVariant.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <Common/WeakHash.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 
 namespace DB
@@ -63,6 +62,9 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
+private:
+    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
+
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -74,9 +76,6 @@ public:
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
-
-private:
-    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});
@@ -144,7 +143,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -156,7 +155,7 @@ public:
         return variant_column_ptr->isNullAt(n);
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
     }
@@ -194,7 +193,7 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
@@ -214,12 +213,6 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
-    }
-
-    void filter(const Filter & filt) override
-    {
-        variant_column_ptr->filter(filt);
-        statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -242,7 +235,7 @@ public:
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         MutableColumns scattered_columns;
@@ -264,9 +257,9 @@ public:
         return variant_column_ptr->hasEqualValues();
     }
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
+    void getExtremes(Field & min, Field & max) const override
     {
-        variant_column_ptr->getExtremes(min, max, start, end);
+        variant_column_ptr->getExtremes(min, max);
     }
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -332,12 +325,6 @@ public:
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
-
-    /// Dynamic columns manage their own variant_info type metadata.
-    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
-    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
-    /// Override to skip recursion — Dynamic is a self-contained typed container.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
@@ -471,7 +458,7 @@ public:
 
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
-    void getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const;
+    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

@@ -1,6 +1,5 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -32,11 +31,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's MergeTreeProjection but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "MergeTreeProjection"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     String projection_name;
@@ -100,13 +95,15 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(
+    {
+        .documentation =
         {
             .description = "Reading directly from MergeTree projection",
             .examples = {{"mergeTreeProjection", "SELECT * FROM mergeTreeProjection(currentDatabase(), mt_table, proj_name)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = true}
-    );
+        .allow_readonly = true,
+    });
 }
 
 }

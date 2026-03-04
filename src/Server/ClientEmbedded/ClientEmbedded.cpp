@@ -134,7 +134,7 @@ bool ClientEmbedded::isEmbeeddedClient() const
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
+    setThreadName("LocalServerPty");
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
@@ -164,14 +164,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.contains("version") || options.contains("V"))
+    if (options.count("version") || options.count("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.contains("help"))
+    if (options.count("help"))
     {
         printHelpMessage(options_description);
         cleanup();
@@ -182,6 +182,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
+    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;

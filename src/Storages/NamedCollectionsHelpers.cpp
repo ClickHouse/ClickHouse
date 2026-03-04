@@ -23,7 +23,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -101,11 +100,7 @@ std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts,
-    ContextPtr context,
-    bool throw_unknown_collection,
-    std::vector<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
 {
     if (asts.empty())
         return nullptr;
@@ -130,15 +125,11 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     auto collection_copy = collection->duplicate();
 
     if (asts.size() == 1)
-    {
-        if (dependent_table_id)
-            NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
         return collection_copy;
-    }
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
-    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
@@ -161,11 +152,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
     }
-
-    if (dependent_table_id)
-        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
 
     return collection_copy;
 }
@@ -192,16 +180,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
     }
-
-    /// Register the dictionary that uses this named collection as a dependency,
-    /// so that DROP NAMED COLLECTION is blocked while the dictionary exists.
-    /// config_prefix is "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"),
-    /// where the dictionary root is always the first component.
-    auto dot = config_prefix.find('.');
-    if (dot == std::string::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected config_prefix to have dotted components, got: {}", config_prefix);
-    auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix.substr(0, dot));
-    NamedCollectionFactory::instance().addDependency(collection_name, dict_id);
 
     return collection_copy;
 }

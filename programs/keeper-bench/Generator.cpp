@@ -173,7 +173,7 @@ void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
             else
                 list_promise->set_value(response);
         };
-        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {}, false, false);
+        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {});
         auto list_response = list_future.get();
 
         for (const auto & child : list_response.names)
@@ -338,7 +338,7 @@ std::string RequestGenerator::description()
     return fmt::format("{}{}", descriptionImpl(), weight_string);
 }
 
-ZooKeeperRequestWithCallbacks RequestGenerator::generate(const Coordination::ACLs & acls)
+Coordination::ZooKeeperRequestPtr RequestGenerator::generate(const Coordination::ACLs & acls)
 {
     return generateImpl(acls);
 }
@@ -394,47 +394,33 @@ void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
     parent_path.initialize(zookeeper);
 }
 
-ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
+Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
 {
-    if (remove_factor.has_value() && remove_picker(rng) < *remove_factor)
+    if (remove_factor.has_value() && !paths_created.empty() && remove_picker(rng) < *remove_factor)
     {
-        std::lock_guard lock(paths_mutex);
-        if (!paths_created.empty())
-        {
-            auto request = std::make_shared<ZooKeeperRemoveRequest>();
-            auto it = paths_created.begin();
-            request->path = *it;
-            paths_created.erase(it);
-            return {.request = request, .on_success_callbacks = {}};
-        }
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        auto it = paths_created.begin();
+        request->path = *it;
+        paths_created.erase(it);
+        return request;
     }
 
     auto request = std::make_shared<ZooKeeperCreateRequest>();
     request->acls = acls;
 
-    std::string node_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
+    std::string path_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 
-    {
-        std::lock_guard lock(paths_mutex);
-        while (paths_created.contains(node_candidate) || paths_pending.contains(node_candidate))
-            node_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
+    while (paths_created.contains(path_candidate))
+        path_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 
-        paths_pending.insert(node_candidate);
-    }
+    paths_created.insert(path_candidate);
 
-    request->path = node_candidate;
+    request->path = std::move(path_candidate);
 
     if (data)
         request->data = data->getString();
 
-    const auto on_success = [&, candidate = std::move(node_candidate)] mutable
-    {
-        std::lock_guard lock(paths_mutex);
-        paths_pending.erase(candidate);
-        paths_created.insert(std::move(candidate));
-    };
-
-    return {.request = request, .on_success_callbacks = {std::move(on_success)}};
+    return request;
 }
 
 void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -454,12 +440,12 @@ std::string SetRequestGenerator::descriptionImpl()
         data.description());
 }
 
-ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+Coordination::ZooKeeperRequestPtr SetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
     auto request = std::make_shared<ZooKeeperSetRequest>();
     request->path = path.getPath();
     request->data = data.getString();
-    return {.request = request, .on_success_callbacks = {}};
+    return request;
 }
 
 void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
@@ -480,11 +466,11 @@ std::string GetRequestGenerator::descriptionImpl()
         path.description());
 }
 
-ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+Coordination::ZooKeeperRequestPtr GetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path.getPath();
-    return {.request = request, .on_success_callbacks = {}};
+    return request;
 }
 
 void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
@@ -505,11 +491,11 @@ std::string ListRequestGenerator::descriptionImpl()
         path.description());
 }
 
-ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+Coordination::ZooKeeperRequestPtr ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
     auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path.getPath();
-    return {.request = request, .on_success_callbacks = {}};
+    return request;
 }
 
 void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
@@ -536,41 +522,24 @@ std::string MultiRequestGenerator::descriptionImpl()
         request_getter.description());
 }
 
-ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordination::ACLs & acls)
+Coordination::ZooKeeperRequestPtr MultiRequestGenerator::generateImpl(const Coordination::ACLs & acls)
 {
     Coordination::Requests ops;
-    std::vector<std::function<void()>> on_success_callbacks;
 
     if (size)
     {
         auto request_count = size->getNumber();
 
         for (size_t i = 0; i < request_count; ++i)
-        {
-            auto request_with_callbacks = request_getter.getRequestGenerator()->generate(acls);
-            ops.push_back(std::move(request_with_callbacks.request));
-            on_success_callbacks.insert(
-                on_success_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
-            );
-        }
+            ops.push_back(request_getter.getRequestGenerator()->generate(acls));
     }
     else
     {
         for (const auto & request_generator : request_getter.requestGenerators())
-        {
-            auto request_with_callbacks = request_generator->generate(acls);
-            ops.push_back(std::move(request_with_callbacks.request));
-            on_success_callbacks.insert(
-                on_success_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
-            );
-        }
+            ops.push_back(request_generator->generate(acls));
     }
 
-    return {.request = std::make_shared<ZooKeeperMultiRequest>(ops, acls), .on_success_callbacks = std::move(on_success_callbacks)};
+    return std::make_shared<ZooKeeperMultiRequest>(ops, acls);
 }
 
 void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
@@ -599,7 +568,7 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
     request_getter.startup(zookeeper);
 }
 
-ZooKeeperRequestWithCallbacks Generator::generate()
+Coordination::ZooKeeperRequestPtr Generator::generate()
 {
     return request_getter.getRequestGenerator()->generate(default_acls);
 }

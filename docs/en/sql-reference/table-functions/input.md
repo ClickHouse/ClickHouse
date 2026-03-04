@@ -5,7 +5,6 @@ sidebar_label: 'input'
 sidebar_position: 95
 slug: /sql-reference/table-functions/input
 title: 'input'
-doc_type: 'reference'
 ---
 
 # input Table Function

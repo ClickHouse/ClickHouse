@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-s3-storage, no-azure-blob-storage
-# Tag: no-s3-storage - too long
-# Tag: no-azure-blob-storage - too long
+# Tags: no-fasttest, long, no-s3-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

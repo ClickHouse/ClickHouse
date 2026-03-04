@@ -5,7 +5,6 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -45,7 +44,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -74,7 +72,6 @@ extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
-extern const Event KafkaMVNotReady;
 }
 
 
@@ -96,7 +93,6 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
-    extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
@@ -108,7 +104,6 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
-    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
@@ -162,8 +157,6 @@ StorageKafka2::StorageKafka2(
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
-    kafka_settings->sanityCheck(getContext());
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -182,7 +175,7 @@ StorageKafka2::StorageKafka2(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -192,15 +185,11 @@ StorageKafka2::StorageKafka2(
     if (!first_replica)
         createReplica();
 
-    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
-StorageKafka2::~StorageKafka2()
-{
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::~StorageKafka2");
-    replica_is_active_node.reset();
-}
+StorageKafka2::~StorageKafka2() = default;
 
 void StorageKafka2::partialShutdown()
 {
@@ -334,7 +323,6 @@ void StorageKafka2::activateAndReschedule()
     if (shutdown_called)
         return;
 
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::activateAndReschedule");
     /// It would be ideal to introduce a setting for this
     constexpr static size_t check_period_ms = 60000;
     /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep
@@ -450,7 +438,6 @@ void StorageKafka2::startup()
 
 void StorageKafka2::shutdown(bool)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::shutdown");
     shutdown_called = true;
     activating_task->deactivate();
     partialShutdown();
@@ -469,7 +456,7 @@ KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
     auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics, getSchemaRegistrySkipBytes());
+    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
 }
 
 cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink)
@@ -517,11 +504,6 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
-}
-
-size_t StorageKafka2::getSchemaRegistrySkipBytes() const
-{
-    return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
 }
 
 bool StorageKafka2::createTableIfNotExists()
@@ -691,7 +673,6 @@ void StorageKafka2::createReplica()
 
 void StorageKafka2::dropReplica()
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::dropReplica");
     LOG_INFO(log, "Trying to drop replica {}", replica_path);
     auto my_keeper = getZooKeeperIfTableShutDown();
 
@@ -934,23 +915,20 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 auto storage_id = getStorageID();
 
                 auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(
-                        DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = msg_info.currentPayload(),
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::KafkaDetails{
-                                .topic_name = msg_info.currentTopic(),
-                                .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
-                                .key = msg_info.currentKey()}});
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
+                        .raw_message = msg_info.currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = msg_info.currentTopic(),
+                            .partition = msg_info.currentPartition(),
+                            .offset = msg_info.currentPartition(),
+                            .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -1029,20 +1007,14 @@ void StorageKafka2::threadFunc(size_t idx)
             {
                 maybe_stall_reason.reset();
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
-                {
-                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
-                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
                 if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
                 {
-                    LOG_TRACE(
-                        log,
-                        "Stream stalled. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                    LOG_TRACE(log, "Stream stalled.");
                     break;
                 }
 
@@ -1050,10 +1022,7 @@ void StorageKafka2::threadFunc(size_t idx)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
                 if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
-                    LOG_TRACE(
-                        log,
-                        "Thread work duration limit exceeded. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
             }
@@ -1066,17 +1035,15 @@ void StorageKafka2::threadFunc(size_t idx)
 
     if (!task->stream_cancelled)
     {
-        UInt64 kafka_consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
         if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
-            task->holder->scheduleAfter(kafka_consumer_reschedule_ms / 10);
+            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
         else
-            task->holder->scheduleAfter(kafka_consumer_reschedule_ms);
+            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
     }
 }
 
 std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.
@@ -1195,7 +1162,7 @@ void StorageKafka2::cleanConsumers()
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
 {
     // Create an INSERT query for streaming data
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = getStorageID();
 
     auto modified_context = Context::createCopy(getContext());
@@ -1235,8 +1202,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto converting_dag = ActionsDAG::makeConvertingActions(
         blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
         block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        modified_context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
 

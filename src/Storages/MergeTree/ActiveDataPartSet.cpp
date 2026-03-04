@@ -86,12 +86,6 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     return outcome == AddPartOutcome::Added;
 }
 
-ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::tryAdd(const String & name, String * out_reason)
-{
-    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
-    return addImpl(part_info, name, nullptr, out_reason);
-}
-
 
 ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts, String * out_reason)
 {
@@ -318,16 +312,6 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPatchPartInfos() const
     return res;
 }
 
-bool ActiveDataPartSet::isEmpty() const
-{
-    return part_info_to_name.empty();
-}
-
-bool ActiveDataPartSet::hasSome() const
-{
-    return !isEmpty();
-}
-
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
@@ -337,13 +321,7 @@ bool ActiveDataPartSet::hasPartitionId(const String & partition_id) const
 {
     MergeTreePartInfo info;
     info.setPartitionId(partition_id);
-
-    if (auto it = part_info_to_name.lower_bound(info); it == part_info_to_name.end())
-        return false;
-    else if (it->first.getPartitionId() != partition_id)
-        return false;
-    else
-        return true;
+    return part_info_to_name.lower_bound(info) != part_info_to_name.end();
 }
 
 }

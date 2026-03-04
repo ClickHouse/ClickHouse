@@ -314,7 +314,6 @@ ASTPtr tryParseKQLQuery(
     const char * & _out_query_end, /* also query begin as input parameter */
     const char * all_queries_end,
     std::string & out_error_message,
-    int * out_error_code,
     bool hilite,
     const std::string & query_description,
     bool allow_multi_statements,
@@ -323,11 +322,7 @@ ASTPtr tryParseKQLQuery(
     size_t max_parser_backtracks,
     bool skip_insignificant)
 {
-    if (out_error_code)
-        *out_error_code = ErrorCodes::SYNTAX_ERROR;
-
     const char * query_begin = _out_query_end;
-
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
@@ -350,25 +345,7 @@ ASTPtr tryParseKQLQuery(
 
     Expected expected;
     ASTPtr res;
-    bool parse_res = false;
-    try
-    {
-        parse_res = parser.parse(token_iterator, res, expected);
-    }
-    catch (const Exception & e)
-    {
-        out_error_message = e.message();
-        if (out_error_code)
-            *out_error_code = e.code();
-        _out_query_end = token_iterator->begin;
-        return nullptr;
-    }
-    catch (const std::exception & e)
-    {
-        out_error_message = e.what();
-        _out_query_end = token_iterator->begin;
-        return nullptr;
-    }
+    const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
 
@@ -466,25 +443,12 @@ ASTPtr parseKQLQueryAndMovePosition(
     size_t max_parser_backtracks)
 {
     std::string error_message;
-    int error_code = ErrorCodes::SYNTAX_ERROR;
-    ASTPtr res = tryParseKQLQuery(
-        parser,
-        pos,
-        end,
-        error_message,
-        &error_code,
-        false,
-        query_description,
-        allow_multi_statements,
-        max_query_size,
-        max_parser_depth,
-        max_parser_backtracks,
-        true);
+    ASTPtr res = tryParseKQLQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth, max_parser_backtracks);
 
     if (res)
         return res;
 
-    throw Exception::createDeprecated(error_message, error_code);
+    throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
 }
 
 ASTPtr parseKQLQuery(

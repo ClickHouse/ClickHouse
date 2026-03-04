@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
 #include <base/sort.h>
 
 
@@ -118,9 +119,9 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 }
 
 
-boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 {
-    auto ast = make_intrusive<ASTRolesOrUsersSet>();
+    auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->id_mode = true;
     ast->all = all;
 
@@ -144,9 +145,9 @@ boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 }
 
 
-boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = make_intrusive<ASTRolesOrUsersSet>();
+    auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
 
     if (!ids.empty() && !all)
