@@ -74,6 +74,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_no_free_threads[];
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
+    extern const char storage_merge_tree_delay_truncate[];
 }
 
 namespace Setting
@@ -2329,6 +2330,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
             auto operation_data_parts_lock = lockOperationsWithParts();
 
             auto parts = getVisibleDataPartsVector(query_context);
+
+            fiu_do_on(FailPoints::storage_merge_tree_delay_truncate, { sleepForSeconds(10); });
 
             auto future_parts = initCoverageWithNewEmptyParts(parts);
 
