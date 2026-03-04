@@ -1,0 +1,3 @@
+<clickhouse>
+    <database_namespace_separator>__</database_namespace_separator>
+</clickhouse>
