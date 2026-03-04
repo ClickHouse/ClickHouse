@@ -497,7 +497,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         else
         {
-            rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
+            rfunc->set_address(getNextTestingAddress(rg, fname == RemoteFunc::remoteSecure));
             rfunc->set_user("default");
             rfunc->set_password("");
             if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
@@ -606,6 +606,33 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
     }
 }
 
+String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const bool secure)
+{
+    String res;
+
+    if (this->allow_not_deterministic && rg.nextSmallNumber() < 5)
+    {
+        /// Use 127.0.0.{1,2,..N} to test sharding logic in remote table functions
+        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(1, 4);
+
+        res += "127.0.0.{";
+        for (uint32_t i = 0; i < nshards; i++)
+        {
+            if (i != 0)
+            {
+                res += ",";
+            }
+            res += std::to_string(i);
+        }
+        res += "}";
+    }
+    else
+    {
+        res = fc.getConnectionHostAndPort(secure);
+    }
+    return res;
+}
+
 String StatementGenerator::getNextRandomServerAddresses(RandomGenerator & rg, const bool secure)
 {
     /// Query any possible server
@@ -614,7 +641,7 @@ String StatementGenerator::getNextRandomServerAddresses(RandomGenerator & rg, co
 
     if (servers.empty() || rg.nextBool())
     {
-        return fc.getConnectionHostAndPort(secure);
+        return getNextTestingAddress(rg, secure);
     }
     const uint32_t nservers = (rg.nextLargeNumber() % static_cast<uint32_t>(servers.size())) + 1;
 
