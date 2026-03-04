@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -10,6 +11,8 @@
 
 namespace DB
 {
+using std::string_view;
+
 
 namespace ErrorCodes
 {
@@ -32,15 +35,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"relative_url", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"base_url", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
 
-        if (!isString(arguments[1]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
+        validateFunctionArguments(getName(), arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -138,7 +140,7 @@ public:
             } else if (path.substr(i, 2) == "/." && i + 2 == path.size()) {
                 path = "/"; i = 0;
             } else if (path.substr(i, 4) == "/../" || (path.substr(i, 3) == "/.." && i + 3 == path.size())) {
-                if (path.substr(i, 3) == "/..") { path = "/"; i = 0; } else { i += 3; }
+                if (path.substr(i, 3) == "/.." && i + 3 == path.size()) { path = "/"; i = 0; } else { i += 3; }
                 size_t last_slash = result.find_last_of('/');
                 if (last_slash != std::string::npos) result.erase(last_slash);
             } else if (path == "." || path == "..") {
@@ -159,66 +161,79 @@ public:
         const char* base_beg, const char* base_end,
         ColumnString::Chars& result_data, size_t result_offset, size_t& result_length
     ) {
-        std::string_view rel(rel_beg, rel_end - rel_beg);
-        std::string_view base(base_beg, base_end - base_beg);
+        using sv = std::string_view;
+        sv rel(rel_beg, rel_end - rel_beg);
+        sv base(base_beg, base_end - base_beg);
 
         // 1. URL components parser
-        auto get_parts = [](std::string_view u, std::string_view& scheme, std::string_view& auth, std::string_view& path, std::string_view& query, std::string_view& frag) {
-            size_t f = u.find('#'); if (f != u.npos) { frag = u.substr(f); u = u.substr(0, f); }
-            size_t q = u.find('?'); if (q != u.npos) { query = u.substr(q); u = u.substr(0, q); }
+        auto get_parts = [](sv u, sv& scheme, sv& auth, sv& path, sv& query, sv& frag) {
+            size_t f = u.find('#'); if (f != sv::npos) { frag = u.substr(f); u = u.substr(0, f); }
+            size_t q = u.find('?'); if (q != sv::npos) { query = u.substr(q); u = u.substr(0, q); }
             size_t s = u.find(':');
             size_t sl = u.find('/');
-            if (s != u.npos && (sl == u.npos || s < sl)) { scheme = u.substr(0, s + 1); u = u.substr(s + 1); }
+            if (s != sv::npos && (sl == sv::npos || s < sl)) { scheme = u.substr(0, s + 1); u = u.substr(s + 1); }
             if (u.starts_with("//")) {
                 size_t a_end = u.find('/', 2);
                 auth = u.substr(0, a_end);
-                path = (a_end == u.npos) ? "" : u.substr(a_end);
+                path = (a_end == sv::npos) ? "" : u.substr(a_end);
             } else { path = u; }
         };
 
-        std::string_view b_scheme, b_auth, b_path, b_query, b_frag;
-        get_parts(base, b_scheme, b_auth, b_path, b_query, b_frag);
+        sv base_url_scheme;
+        sv base_url_auth;
+        sv base_url_path;
+        sv base_url_query;
+        sv base_url_frag;
+        get_parts(base, base_url_scheme, base_url_auth, base_url_path, base_url_query, base_url_frag);
 
-        std::string_view r_scheme, r_auth, r_path, r_query, r_frag;
-        get_parts(rel, r_scheme, r_auth, r_path, r_query, r_frag);
+        sv relative_url_scheme;
+        sv relative_url_auth;
+        sv relative_url_path;
+        sv relative_url_query;
+        sv relative_url_frag;
+        get_parts(rel, relative_url_scheme, relative_url_auth, relative_url_path, relative_url_query, relative_url_frag);
 
         // 2. Resolution Logic, per RFC 3986 Section 5.2.2 (strict)
-        std::string t_scheme, t_auth, t_path, t_query, t_frag;
+        std::string target_url_scheme;
+        std::string target_url_auth;
+        std::string target_url_path;
+        std::string target_url_query;
+        std::string target_url_frag;
 
-        if (!r_scheme.empty()) {
-            t_scheme = r_scheme; t_auth = r_auth;
-            t_path = removeDotSegements(r_path); t_query = r_query;
+        if (!relative_url_scheme.empty()) {
+            target_url_scheme = relative_url_scheme; target_url_auth = relative_url_auth;
+            target_url_path = removeDotSegements(relative_url_path); target_url_query = relative_url_query;
         } else {
-            t_scheme = b_scheme;
-            if (!r_auth.empty()) {
-                t_auth = r_auth; t_path = removeDotSegements(r_path); t_query = r_query;
+            target_url_scheme = base_url_scheme;
+            if (!relative_url_auth.empty()) {
+                target_url_auth = relative_url_auth; target_url_path = removeDotSegements(relative_url_path); target_url_query = relative_url_query;
             } else {
-                t_auth = b_auth;
-                if (r_path.empty()) {
-                    t_path = b_path;
-                    t_query = (!r_query.empty()) ? r_query : b_query;
+                target_url_auth = base_url_auth;
+                if (relative_url_path.empty()) {
+                    target_url_path = base_url_path;
+                    target_url_query = (!relative_url_query.empty()) ? relative_url_query : base_url_query;
                 } else {
-                    if (r_path.starts_with('/')) {
-                        t_path = removeDotSegements(r_path);
+                    if (relative_url_path.starts_with('/')) {
+                        target_url_path = removeDotSegements(relative_url_path);
                     } else {
                         // Merge paths (5.2.3)
                         std::string merged;
-                        if (!b_auth.empty() && b_path.empty()) merged = "/";
+                        if (!base_url_auth.empty() && base_url_path.empty()) merged = "/";
                         else {
-                            size_t last = b_path.find_last_of('/');
-                            if (last != std::string::npos) merged = std::string(b_path.substr(0, last + 1));
+                            size_t last = base_url_path.find_last_of('/');
+                            if (last != std::string::npos) merged = std::string(base_url_path.substr(0, last + 1));
                         }
-                        merged.append(r_path);
-                        t_path = removeDotSegements(merged);
+                        merged.append(relative_url_path);
+                        target_url_path = removeDotSegements(merged);
                     }
-                    t_query = r_query;
+                    target_url_query = relative_url_query;
                 }
             }
         }
-        t_frag = r_frag;
+        target_url_frag = relative_url_frag;
 
         // 3. Recombine and Output to result
-        std::string res = t_scheme + t_auth + t_path + t_query + t_frag;
+        std::string res = target_url_scheme + target_url_auth + target_url_path + target_url_query + target_url_frag;
         result_data.resize(result_offset + res.size());
         std::memcpy(&result_data[result_offset], res.data(), res.size());
         result_length = res.size();
@@ -252,7 +267,7 @@ SELECT
 └─────────────────────────────────┴────────────────────────────┘
 )"}},
             .introduced_in={1,1},
-            .category=FunctionDocumentation::Category::URL, 
+            .category=FunctionDocumentation::Category::URL,
         }
     );
 };
