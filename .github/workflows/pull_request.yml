@@ -6223,17 +6223,23 @@ jobs:
 
   sqllogic_test:
     runs-on: [self-hosted, arm-medium]
-    needs: [build_amd_asan, build_amd_debug, build_amd_tsan, build_arm_binary, build_arm_release, build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
+    needs: [build_amd_asan, build_amd_binary, build_amd_debug, build_amd_tsan, build_arm_binary, build_arm_release, build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, keeper_stress_tests_pr, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U1FMTG9naWMgdGVzdA==') }}
     name: "SQLLogic test"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
