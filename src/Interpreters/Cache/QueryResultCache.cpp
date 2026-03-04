@@ -907,6 +907,49 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
+QueryResultCacheReader::QueryResultCacheReader(
+    const QueryResultCache::Key & stored_key,
+    std::shared_ptr<QueryResultCache::Entry> entry)
+{
+    if (!entry)
+    {
+        /// Cache miss path: leave source_from_chunks as nullptr (hasCacheEntryForKey == false).
+        return;
+    }
+
+    /// Access and staleness checks are performed by RemoteQueryResultCache::createReader before
+    /// constructing this reader. Here we only need to decompress and build sources.
+
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - stored_key.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+
+    if (!stored_key.is_compressed)
+    {
+        Chunks cloned_chunks;
+        for (const auto & chunk : entry->chunks)
+            cloned_chunks.push_back(chunk.clone());
+        buildSourceFromChunks(stored_key.header, std::move(cloned_chunks), entry->totals, entry->extremes);
+    }
+    else
+    {
+        Chunks decompressed_chunks;
+        for (const auto & chunk : entry->chunks)
+        {
+            const Columns & columns = chunk.getColumns();
+            Columns decompressed_columns;
+            for (const auto & column : columns)
+                decompressed_columns.push_back(column->decompress());
+            decompressed_chunks.emplace_back(std::move(decompressed_columns), chunk.getNumRows());
+        }
+        buildSourceFromChunks(stored_key.header, std::move(decompressed_chunks), entry->totals, entry->extremes);
+    }
+
+    created_at = stored_key.created_at;
+    expires_at = stored_key.expires_at;
+
+    LOG_TRACE(logger, "Query result found for query {} (remote cache)", doubleQuoteString(stored_key.query_string));
+}
+
 bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
 {
     bool has_entry = (source_from_chunks != nullptr);

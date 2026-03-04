@@ -342,6 +342,7 @@ private:
         size_t max_block_size_);
 
     friend class LocalQueryResultCache; /// for createWriter()
+    friend class RemoteQueryResultCache; /// for createWriter()
 };
 
 /// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
@@ -364,6 +365,13 @@ public:
 
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
+
+    /// Constructor for RemoteQueryResultCache: the caller already fetched the entry from the backend
+    /// and performed access / staleness checks. The reader simply takes ownership of the entry.
+    QueryResultCacheReader(
+        const QueryResultCache::Key & stored_key,
+        std::shared_ptr<QueryResultCache::Entry> entry);
+
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;
@@ -375,7 +383,8 @@ private:
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
-    friend class LocalQueryResultCache; /// for createReader()
+    friend class LocalQueryResultCache;    /// for createReader()
+    friend class RemoteQueryResultCache;   /// for createReader()
 };
 
 }
