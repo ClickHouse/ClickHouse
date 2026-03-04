@@ -628,7 +628,6 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
     if (!search_query->patterns.empty())
     {
-        /// For LIKE patterns, union all postings from pattern-matched tokens
         const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
         const auto & pattern_tokens = granule_text.getPatternTokens();
 
@@ -641,6 +640,13 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
         if (!matched_tokens.empty())
             applyPostingsAny(column, postings, indices_buffer, matched_tokens, old_size, row_offset, num_rows);
+
+        if (search_query->function_name == "notLike")
+        {
+            /// NOT LIKE: flip the result
+            for (size_t i = 0; i < num_rows; ++i)
+                column_data[old_size + i] ^= 1;
+        }
     }
     else if (search_query->tokens.empty())
     {
