@@ -128,6 +128,13 @@ void BaseDaemon::loadConfiguration()
 }
 
 
+std::string disambiguateClickHouseCommandName(
+    const std::string & executable_file_name, const std::string & command_name, const std::string & subcommand_name)
+{
+    return executable_file_name == "clickhouse" ? subcommand_name : command_name;
+}
+
+
 BaseDaemon::BaseDaemon()
     : original_working_directory(fs::current_path())
 {
@@ -401,7 +408,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// sensitive data masking rules are not used here
-    buildLoggers(config(), logger(), self.commandName());
+    buildLoggers(config(), logger(), getCommandName());
 
     /// After initialized loggers but before initialized signal handling.
     if (should_setup_watchdog)

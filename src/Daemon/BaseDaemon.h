@@ -25,6 +25,25 @@
 class SignalListener;
 
 
+/// Chooses the name a ClickHouse daemon reports as its syslog program name.
+///
+/// `programs/main.cpp` erases the subcommand argument, so `clickhouse server` and `clickhouse keeper` both report
+/// the same command name and would otherwise share one syslog identifier. `subcommand_name` is substituted only
+/// in that genuinely ambiguous case; anything else keeps `command_name`, which is exactly what it reported before
+/// this behavior existed.
+///
+/// The ambiguity is decided from `executable_file_name` (Poco's `application.name`, the full file name of the
+/// executable) rather than from `command_name` (`commandName()`, i.e. `application.baseName`). Those differ:
+/// `Poco::Path::getBaseName` strips everything after the last dot, so a binary named `clickhouse.prod` reports
+/// `command_name == "clickhouse"` while not being the multi-purpose binary at all. Deciding on the base name
+/// would silently rewrite such a deployment's identifier.
+///
+/// This is a free function so that the mapping can be unit-tested without constructing a daemon, which would
+/// create the `Poco::Util::Application` singleton and install process-wide signal handlers.
+std::string disambiguateClickHouseCommandName(
+    const std::string & executable_file_name, const std::string & command_name, const std::string & subcommand_name);
+
+
 /// \brief Base class for applications that can run as daemons.
 ///
 /// \code
@@ -146,6 +165,17 @@ protected:
     virtual std::string getDefaultCorePath() const;
 
     virtual std::string getDefaultConfigFileName() const;
+
+    /// Name of the ClickHouse command implemented by this daemon. Used as the default syslog program name.
+    virtual std::string getCommandName() const { return commandName(); }
+
+    /// See `disambiguateClickHouseCommandName` above for why the subcommand name is not used unconditionally,
+    /// and why the decision is made on `application.name` rather than on `commandName()`.
+    std::string disambiguateCommandName(const std::string & subcommand_name) const
+    {
+        return disambiguateClickHouseCommandName(
+            config().getString("application.name", commandName()), commandName(), subcommand_name);
+    }
 
     std::optional<DB::StatusFile> pid_file;
 
