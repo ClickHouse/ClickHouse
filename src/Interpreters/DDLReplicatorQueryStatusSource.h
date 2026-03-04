@@ -7,10 +7,14 @@
 
 namespace DB
 {
-class ReplicatedDatabaseQueryStatusSource final : public DistributedQueryStatusSource
+
+class DDLGuard;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+
+class DDLReplicatorQueryStatusSource final : public DistributedQueryStatusSource
 {
 public:
-    ReplicatedDatabaseQueryStatusSource(
+    DDLReplicatorQueryStatusSource(
         const String & zookeeper_name_,
         const String & zk_node_path,
         const String & zk_replicas_path,
