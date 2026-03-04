@@ -78,7 +78,7 @@ def set_default_env():
     for k, v in {
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "true",
-        "KEEPER_MATRIX_BACKENDS": "default,rocks",
+        "KEEPER_MATRIX_BACKENDS": "default,rocks,zookeeper",
         "KEEPER_METRICS_INTERVAL_S": "5",
     }.items():
         os.environ.setdefault(k, v)

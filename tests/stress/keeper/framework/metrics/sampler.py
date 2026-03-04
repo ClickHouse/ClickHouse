@@ -24,6 +24,15 @@ from keeper.framework.io.prom_parse import parse_prometheus_text
 from keeper.framework.io.sink import sink_clickhouse
 
 
+def _is_zookeeper_node(n):
+    return getattr(n, "is_zookeeper", False)
+
+
+def _node_has_ch_metrics(n):
+    """True if node can serve prom/ch_metrics (has ClickHouse). ZKBackedNode and Keeper nodes do."""
+    return callable(getattr(n, "query", None))
+
+
 def compute_prom_config(default_interval: int = 10) -> Dict:
     """Compute Prometheus sampling configuration.
     
@@ -120,8 +129,9 @@ class MetricsSampler:
         rows = []
         ts = ts_ms()
         for n in nodes:
-            # Store baseline lgif for pre stage (used by gates for monotonic checks)
-            if stage == "pre" and self._ctx:
+            # Store baseline lgif for pre stage (used by gates for monotonic checks).
+            # Skip for ZooKeeper: lgif is Keeper Raft 4LW; ZK has no equivalent.
+            if stage == "pre" and self._ctx and not _is_zookeeper_node(n):
                 base = self._ctx.setdefault("_metrics_cache_baseline", {})
                 if n.name not in base:
                     try:
@@ -175,22 +185,22 @@ class MetricsSampler:
             except Exception as e:
                 print(f"[keeper][snapshot_stage] error getting container_stats for node {n.name}: {e}")
             
-            try:
-                parsed = self._parse_prom(prom_metrics(n))
-                _append_rows("prom", parsed, "name", "value", "labels_json")
-            except Exception as e:
-                print(f"[keeper][snapshot_stage] error getting prom metrics for node {n.name}: {e}")
-            
-            try:
-                _append_rows("ch_metrics", ch_metrics(n), "name", "value")
-            except Exception as e:
-                print(f"[keeper][snapshot_stage] error getting ch_metrics for node {n.name}: {e}")
-            
-            try:
-                _append_rows("ch_async_metrics", ch_async_metrics(n), "name", "value")
-            except Exception as e:
-                print(f"[keeper][snapshot_stage] error getting ch_async_metrics for node {n.name}: {e}")
-        
+            # prom/ch_metrics only from nodes that have ClickHouse (.query)
+            if _node_has_ch_metrics(n):
+                try:
+                    parsed = self._parse_prom(prom_metrics(n))
+                    _append_rows("prom", parsed, "name", "value", "labels_json")
+                except Exception as e:
+                    print(f"[keeper][snapshot_stage] error getting prom metrics for node {n.name}: {e}")
+                try:
+                    _append_rows("ch_metrics", ch_metrics(n), "name", "value")
+                except Exception as e:
+                    print(f"[keeper][snapshot_stage] error getting ch_metrics for node {n.name}: {e}")
+                try:
+                    _append_rows("ch_async_metrics", ch_async_metrics(n), "name", "value")
+                except Exception as e:
+                    print(f"[keeper][snapshot_stage] error getting ch_async_metrics for node {n.name}: {e}")
+
         sink_clickhouse(rows)
         return rows
 
@@ -229,11 +239,10 @@ class MetricsSampler:
                 print(f"[keeper][_snapshot_node] error getting dirs for node {n.name}: {e}")
 
         def _sample_prom():
-            # Prometheus sampling frequency control:
-            # - This function is called every interval_s (10s) along with lightweight metrics
-            # - But Prometheus HTTP scrape is expensive (100+ metrics), so we only sample every prom_every_n intervals
-            # - With default prom_every_n=3 and interval_s=10s: samples at 0s, 30s, 60s, 90s... (every 30s)
-            # - The early return avoids the HTTP request when it's not time to sample
+            # Prometheus only from nodes that have ClickHouse (.query); same as snapshot_stage.
+            if not _node_has_ch_metrics(n):
+                return
+            # Sampling frequency: only every prom_every_n intervals (e.g. every 30s) to limit volume.
             if (self._snap_count % self._prom_every_n) != 0:
                 return
             try:
@@ -247,7 +256,9 @@ class MetricsSampler:
         _sample_kv("mntr", lambda: mntr(n))
         _sample_dirs()
         _sample_kv("srvr", lambda: srvr_kv(n))
-        _sample_kv("lgif", lambda: lgif(n))
+        # lgif: Keeper Raft 4LW only; ZK has no equivalent.
+        if not _is_zookeeper_node(n):
+            _sample_kv("lgif", lambda: lgif(n))
         _sample_kv("container", lambda: container_stats(n))
         _sample_prom()
         # Note: ch_metrics and ch_async_metrics are NOT collected during continuous sampling

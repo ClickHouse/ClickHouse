@@ -347,7 +347,7 @@ class PullRequestPushYamlGen:
             if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
-            # Keeper Stress Tests (PR) needs >6h; GitHub defaults to 360min. Emit timeout-minutes so job can run 8h.
+            # Keeper Stress Tests (PR) needs >6h; GitHub defaults to 360min. Emit timeout-minutes so job can run 12h.
             # JobYaml has no timeout; get it from the original Job.Config in workflow config.
             timeout_minutes = ""
             orig_job = next((j for j in self.workflow_config.config.jobs if j.name == job.name), None)

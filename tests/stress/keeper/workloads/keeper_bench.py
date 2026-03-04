@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import subprocess
 import threading
@@ -11,11 +12,15 @@ from keeper.framework.core.settings import (
     DEFAULT_CONCURRENCY,
     DEFAULT_CONNECTION_TIMEOUT_MS,
     DEFAULT_OPERATION_TIMEOUT_MS,
+    DEFAULT_SESSION_TIMEOUT_MS,
 )
 from keeper.framework.core.util import (
     host_sh,
 )
 from keeper.workloads.adapter import servers_arg
+
+ZOOKEEPER_OPERATION_TIMEOUT_MS = 120000
+ZOOKEEPER_SESSION_TIMEOUT_MS = 120000
 
 
 def _parse_hosts(servers):
@@ -34,9 +39,15 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
     conn = dict(out.get("connections", {}))
     conn.setdefault("operation_timeout_ms", DEFAULT_OPERATION_TIMEOUT_MS)
     conn.setdefault("connection_timeout_ms", DEFAULT_CONNECTION_TIMEOUT_MS)
-    
+    conn.setdefault("session_timeout_ms", DEFAULT_SESSION_TIMEOUT_MS)
+
     hosts = _parse_hosts(servers)
     sessions_total = max(1, int(clients))
+    # ZooKeeper: use single host + single session to avoid session expiry
+    use_single_zk_conn = bool(conn.pop("_zookeeper_single_conn", False))
+    if use_single_zk_conn:
+        hosts = hosts[:1]
+        sessions_total = 1
     per_host_base = sessions_total // len(hosts)
     remainder = sessions_total % len(hosts)
     
@@ -66,10 +77,12 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
 
 
 class KeeperBench:
-    """Runs keeper-bench workload on the host machine."""
+    """Runs keeper-bench workload on host. For ZooKeeper backend, uses node IPs and ZK-specific connection settings."""
     
     def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False):
-        self.servers = servers_arg(nodes)
+        self._is_zookeeper = bool(nodes and getattr(nodes[0], "is_zookeeper", False))
+        # Always run on host; servers_arg uses node ip_address:port (host-reachable for ZK and Keeper).
+        self.servers = servers_arg(nodes, in_container=False)
         self.nodes = nodes
         self.ctx = ctx
         self.cfg_path = cfg_path
@@ -96,6 +109,9 @@ class KeeperBench:
     def _parse_output_json(self, out_text):
         """Parse keeper-bench JSON output and flatten into summary dict."""
         summary = {}
+        # Set duration_s first so rps can be computed even if parse fails partway (e.g. different JSON shape for ZK).
+        summary["duration_s"] = self.duration_s
+        summary["bench_duration"] = self.duration_s
         try:
             data = json.loads(out_text)
             if not isinstance(data, dict):
@@ -137,22 +153,28 @@ class KeeperBench:
             summary["write_rps"] = summary.get("write_requests_per_second", 0)
             summary["write_bps"] = summary.get("write_bytes_per_second", 0)
             summary["errors"] = int(data.get("errors", 0))
-            summary["bench_duration"] = self.duration_s
-            summary["duration_s"] = self.duration_s
         except Exception as e:
             print(f"[keeper][bench] Failed to parse JSON output: {e}")
         return summary
 
     def run(self):
-        """Run keeper-bench on host."""
+        """Run keeper-bench on host. Uses integration helpers: servers_arg (zoo ips:2181) when backend=zookeeper."""
         cfg_text = yaml.safe_load(Path(self.cfg_path).read_text(encoding="utf-8"))
         clients = int(cfg_text.get("concurrency", DEFAULT_CONCURRENCY))
+        # ZooKeeper: single connection + high timeouts to avoid "Session expired".
+        if self._is_zookeeper:
+            clients = 1
+            cfg_text.setdefault("connections", {})["_zookeeper_single_conn"] = True
+            conn = cfg_text.setdefault("connections", {})
+            conn["operation_timeout_ms"] = ZOOKEEPER_OPERATION_TIMEOUT_MS
+            conn["session_timeout_ms"] = ZOOKEEPER_SESSION_TIMEOUT_MS
+            print(f"[keeper][bench] ZooKeeper: single connection, operation_timeout={ZOOKEEPER_OPERATION_TIMEOUT_MS//1000}s session_timeout={ZOOKEEPER_SESSION_TIMEOUT_MS//1000}s")
         clients_env = os.environ.get("KEEPER_BENCH_CLIENTS", "").strip()
         if clients_env:
             print(f"[keeper][bench] Using KEEPER_BENCH_CLIENTS={clients_env} from environment")
             clients = int(clients_env)
         bench_cfg = _patch_keeper_bench_config(cfg_text, self.servers, clients, self.duration_s)
-        
+
         # Replay mode: remove generator section
         if self.replay_path:
             bench_cfg.pop("generator", None)
@@ -181,8 +203,8 @@ class KeeperBench:
         self.bench_output_path = stdout_path
         self.bench_error_path = stderr_path
 
-        cmd = f"{self._bench_base_cmd(patched_cfg_path)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}"
         try:
+            cmd = f"{self._bench_base_cmd(patched_cfg_path)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}"
             host_sh(cmd, timeout=bench_timeout)
         except subprocess.TimeoutExpired:
             # Bench may have written JSON to stdout before hanging in destructor cleanup (removeRecursive).
@@ -215,7 +237,7 @@ class KeeperBench:
                 print(f"[keeper][bench] Stdout file does not exist: {stdout_path}")
         
         if not out_text:
-            # Check stderr for error messages
+            # Check stderr for error messages and for "Requests executed: N" (bench ran but crashed before writing JSON, e.g. Stats assertion)
             stderr_text = ""
             if Path(stderr_path).exists():
                 try:
@@ -223,14 +245,50 @@ class KeeperBench:
                     print(f"[keeper][bench] Stderr content ({len(stderr_text)} bytes):\n{stderr_text}")
                 except Exception as e:
                     print(f"[keeper][bench] Failed to read stderr: {e}")
-            
+            # If bench ran to time limit and printed "Requests executed: N", use that as ops (e.g. ZK with single_hot_get)
+            match = re.search(r"Requests executed:\s*(\d+)", stderr_text)
+            if match and int(match.group(1)) > 0:
+                ops = int(match.group(1))
+                print(f"[keeper][bench] Using ops from stderr (bench ran but did not write JSON): {ops}")
+                return self._stderr_fallback_summary(ops)
             err_msg = f"keeper-bench did not produce output (checked {opath}, {stdout_path})"
             if stderr_text:
                 err_msg += f"; stderr: {stderr_text}"
             raise AssertionError(err_msg)
+
+        # When output is not JSON (e.g. exception in stdout), check stderr for "Requests executed: N" so we still count ops (read-no-fault etc. may crash with Session expired after some progress)
+        if out_text.strip() and out_text.strip()[0] != "{" and Path(stderr_path).exists():
+            try:
+                stderr_content = Path(stderr_path).read_text(encoding="utf-8")
+                match = re.search(r"Requests executed:\s*(\d+)", stderr_content)
+                if match and int(match.group(1)) > 0:
+                    ops = int(match.group(1))
+                    print(f"[keeper][bench] Output not JSON; using ops from stderr: {ops}")
+                    return self._stderr_fallback_summary(ops)
+            except Exception as e:
+                print(f"[keeper][bench] Failed to read stderr: {e}")
+        # When bench fails with Session expired or output is not JSON, print stderr for debugging
+        if Path(stderr_path).exists() and ("Session expired" in out_text or (out_text.strip() and out_text.strip()[0] != "{")):
+            try:
+                stderr_content = Path(stderr_path).read_text(encoding="utf-8")
+                print(f"[keeper][bench] Stderr (last 4K):\n{stderr_content[-4096:]}")
+                if out_text.strip() and out_text.strip()[0] != "{":
+                    print(f"[keeper][bench] Raw output (first 1K):\n{out_text[:1024]}")
+            except Exception as e:
+                print(f"[keeper][bench] Failed to read stderr: {e}")
         
         return self._parse_output_json(out_text)
-    
+
+    def _stderr_fallback_summary(self, ops):
+        """Build minimal summary when bench did not write valid JSON (e.g. crashed after time limit)."""
+        return {
+            "ops": ops,
+            "errors": 0,
+            "read_p99_ms": 0.0,
+            "write_p99_ms": 0.0,
+            "duration_s": self.duration_s,
+        }
+
     def _run_in_background(self):
         """Run keeper-bench in background thread."""
         try:

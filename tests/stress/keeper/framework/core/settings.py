@@ -5,6 +5,8 @@ CONTROL_PORT = 9182
 PROM_PORT = 9363
 ID_BASE = 1
 
+ZK_CLIENT_PORT = 2181
+
 DEFAULT_FAULT_DURATION_S = 30
 MIN_FAULT_DURATION = 10
 SAMPLER_FLUSH_EVERY = 3
@@ -20,17 +22,11 @@ DEFAULT_READY_TIMEOUT = 300
 
 DEFAULT_OPERATION_TIMEOUT_MS = 30000
 DEFAULT_CONNECTION_TIMEOUT_MS = 400000
+DEFAULT_SESSION_TIMEOUT_MS = 60000
 
 DEFAULT_WORKLOAD_CONFIG = "workloads/prod_mix.yaml"
 DEFAULT_CONCURRENCY = 64
 
 def keeper_node_names(topology):
-    """Generate list of keeper node names for a given topology.
-    
-    Args:
-        topology: Number of nodes in the cluster
-        
-    Returns:
-        List of node names, e.g., ['keeper1', 'keeper2', 'keeper3'] for topology=3
-    """
+    """Generate keeper node names for a given topology. ZooKeeper uses ZOOKEEPER_CONTAINERS in cluster."""
     return [f"keeper{i}" for i in range(1, topology + 1)]

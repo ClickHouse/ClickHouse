@@ -2,6 +2,7 @@ import copy
 import os
 import random
 import shlex
+import subprocess
 import time
 
 import yaml
@@ -20,6 +21,37 @@ from keeper.framework.core.util import (
 )
 from keeper.framework.io.probes import count_leaders, four, mntr, ready, wchs_total
 from keeper.gates.base import apply_gate
+
+ENSURE_PATHS_TOUCH_RETRIES = 2
+ENSURE_PATHS_ZK_HOST_TIMEOUT = 10
+
+
+def _touch_path_zookeeper_from_host(cluster, node, path, retries=ENSURE_PATHS_TOUCH_RETRIES):
+    """Create znode at path using keeper-client run from host (for ZooNodeWrapper / ZKBackedNode)."""
+    # Use zk_name when set (ZKBackedNode: connect to ZK container, not CH)
+    zk_host = getattr(node, "zk_name", node.name)
+    for _ in range(retries):
+        try:
+            proc = subprocess.run(
+                [
+                    cluster.server_bin_path,
+                    "keeper-client",
+                    "--host",
+                    str(cluster.get_instance_ip(zk_host)),
+                    "--port",
+                    str(cluster.zookeeper_port),
+                    "-q",
+                    f"touch {shlex.quote(path)}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=ENSURE_PATHS_ZK_HOST_TIMEOUT,
+            )
+            if proc.returncode == 0:
+                return True
+        except Exception as e:
+            print(f"[keeper][ensure_paths] keeper-client touch {path} for {node.name}: {e}")
+    return False
 
 
 def _get_duration(step, default=None):
@@ -98,11 +130,12 @@ def _step_background_schedule(step, nodes, leader, ctx):
 
 
 def _step_ensure_paths(step, nodes, leader, ctx):
-    """Ensure znode paths exist via keeper-client."""
+    """Ensure znode paths exist via keeper-client (in-container for Keeper; from host for ZooKeeper)."""
     paths = [str(p).strip() for p in (step.get("paths") or []) if str(p).strip()]
     if not paths:
         return
     targets = resolve_targets(step.get("on", "leader"), nodes, leader)
+    cluster = (ctx or {}).get("cluster")
 
     def _mk_path(node, path):
         full = "/"
@@ -110,21 +143,24 @@ def _step_ensure_paths(step, nodes, leader, ctx):
             if not seg:
                 continue
             full = full.rstrip("/") + "/" + seg
-            # Retry touch twice for reliability
-            ok = False
-            last_out = ""
-            for _ in range(2):
-                r = sh_strict(
-                    node,
-                    f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch {shlex.quote(full)}\" >/dev/null 2>&1; echo $?",
-                    timeout=5,
-                )
-                last_out = str((r or {}).get("out", "") or "").strip()
-                if last_out.endswith("0"):
-                    ok = True
-                    break
-            if not ok:
-                raise AssertionError(f"ensure_paths: touch failed for {full} (rc={last_out})")
+            if getattr(node, "is_zookeeper", False) and cluster:
+                if not _touch_path_zookeeper_from_host(cluster, node, full):
+                    raise AssertionError(f"ensure_paths: touch failed for {full} on ZooKeeper node {node.name}")
+            else:
+                ok = False
+                last_out = ""
+                for _ in range(ENSURE_PATHS_TOUCH_RETRIES):
+                    r = sh_strict(
+                        node,
+                        f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch {shlex.quote(full)}\" >/dev/null 2>&1; echo $?",
+                        timeout=5,
+                    )
+                    last_out = str((r or {}).get("out", "") or "").strip()
+                    if last_out.endswith("0"):
+                        ok = True
+                        break
+                if not ok:
+                    raise AssertionError(f"ensure_paths: touch failed for {full} (rc={last_out})")
 
     for t in targets:
         for p in paths:

@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import subprocess
 
 from keeper.framework.core.settings import (
     CLIENT_PORT,
@@ -11,7 +12,33 @@ from keeper.framework.core.util import _exec, sh
 
 
 def four(node, cmd):
-    """Execute 4LW command on keeper node using clickhouse keeper-client, bash /dev/tcp, or raw nc."""
+    """Execute 4LW command on keeper node. For ZooKeeper, runs keeper-client from host."""
+    if getattr(node, "is_zookeeper", False):
+        cluster = getattr(node, "_cluster", None)
+        if cluster:
+            # Use zk_name when set (ZKBackedNode: 4LW goes to ZK container, not CH)
+            zk_target = getattr(node, "zk_name", node.name)
+            try:
+                proc = subprocess.run(
+                    [
+                        cluster.server_bin_path,
+                        "keeper-client",
+                        "--host",
+                        str(cluster.get_instance_ip(zk_target)),
+                        "--port",
+                        str(cluster.zookeeper_port),
+                        "-q",
+                        cmd,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                return (proc.stdout or proc.stderr or "").strip()
+            except Exception as e:
+                print(f"[keeper][four] keeper-client failed for {node.name}: {e}. Skipping.")
+        return ""
+
     methods = [
         f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q {shlex.quote(cmd)} 2>&1",
         f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q {shlex.quote(cmd)} 2>&1",
@@ -218,8 +245,18 @@ def dirs(node):
     return four(node, "dirs")
 
 
+def _exec_for_container_stats(node, cmd, nothrow=True, timeout=2):
+    """Run cmd in the container we want to measure: ZK container for ZKBackedNode (workload hits ZK), else node's container."""
+    exec_zk = getattr(node, "exec_in_container_zk", None)
+    if callable(exec_zk):
+        args = ["bash", "-lc", cmd] if isinstance(cmd, str) else list(cmd)
+        return exec_zk(args, nothrow=nothrow, timeout=timeout)
+    return _exec(node, cmd, nothrow=nothrow, timeout=timeout)
+
+
 def container_stats(node):
     """Return CPU and memory usage for the container (from cgroup, inside container).
+    For ZKBackedNode uses the Zookeeper container (zoo1/2/3) since workload is directed there.
     Returns dict with container_memory_bytes, container_cpu_usage_usec (may be missing if unreadable),
     and container_cpu_limit_cores when a CPU limit is set (cgroup quota); use with usage rate for CPU % of limit.
     """
@@ -230,7 +267,7 @@ def container_stats(node):
             "cat /sys/fs/cgroup/memory.current 2>/dev/null || "
             "cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null"
         )
-        r = _exec(node, mem_cmd, nothrow=True, timeout=2)
+        r = _exec_for_container_stats(node, mem_cmd, nothrow=True, timeout=2)
         if r and str(r).strip().isdigit():
             out["container_memory_bytes"] = int(str(r).strip())
     except Exception as e:
@@ -245,7 +282,7 @@ def container_stats(node):
         ]
         val = None
         for cmd, unit in cpu_sources:
-            r = _exec(node, cmd, nothrow=True, timeout=2)
+            r = _exec_for_container_stats(node, cmd, nothrow=True, timeout=2)
             s = (r and str(r).strip()).strip() if r else ""
             s = s.splitlines()[0].strip() if s else ""
             if s and s.isdigit():
@@ -262,7 +299,7 @@ def container_stats(node):
         # cgroup v2: cpu.max is "quota period" (usec) or "max"; effective_cores = quota/period.
         # cgroup v1: cpu.cfs_quota_us, cpu.cfs_period_us; quota -1 = no limit; else effective_cores = quota/period.
         limit_cores = None
-        r = _exec(node, "cat /sys/fs/cgroup/cpu.max 2>/dev/null", nothrow=True, timeout=2)
+        r = _exec_for_container_stats(node, "cat /sys/fs/cgroup/cpu.max 2>/dev/null", nothrow=True, timeout=2)
         if r:
             parts = str(r).strip().split()
             if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -270,14 +307,14 @@ def container_stats(node):
                 if period > 0:
                     limit_cores = quota / period
         if limit_cores is None:
-            r2 = _exec(
+            r2 = _exec_for_container_stats(
                 node,
                 "quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null); period=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null); echo $quota $period",
                 nothrow=True,
                 timeout=2,
             )
             if not r2:
-                r2 = _exec(
+                r2 = _exec_for_container_stats(
                     node,
                     "quota=$(cat /sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us 2>/dev/null); period=$(cat /sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us 2>/dev/null); echo $quota $period",
                     nothrow=True,
