@@ -731,11 +731,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if ((function_name == "like" || function_name == "notLike") && tokenizer->supportsStringLike())
     {
+        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
         /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
         /// Requires explicit opt-in via use_text_index_like_optimization because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
         if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
-            && getContext()->getSettingsRef()[Setting::use_text_index_like_optimization])
+            && getContext()->getSettingsRef()[Setting::use_text_index_like_optimization] && !has_preprocessor)
         {
             /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
             /// Add support for multiple patterns later with hint mode:

@@ -57,6 +57,50 @@ SELECT groupArray(id) FROM tab WHERE message LIKE '%abc%' AND message NOT LIKE '
 
 DROP TABLE tab;
 
+SELECT 'Test results are same with/without the optimization with preprocessor';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(message))
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, message) VALUES
+    (1, 'ABC DEF FOO'),
+    (2, 'ABC DEF BAR'),
+    (3, 'abc BAZ foo'),
+    (4, 'abc baz bar'),
+    (5, 'xyz');
+
+SELECT '-- without optimization';
+
+SET use_text_index_like_optimization = 0;
+
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%bar%';
+SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%abc%' AND message NOT LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%' AND message NOT LIKE '%bar%';
+
+SELECT '-- with optimization';
+
+SET use_text_index_like_optimization = 1;
+
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%foo%' AND message LIKE '%bar%';
+SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message LIKE '%abc%' AND message NOT LIKE '%foo%';
+SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%' AND message NOT LIKE '%bar%';
+
+DROP TABLE tab;
+
 SELECT 'Text index analysis';
 
 SET use_text_index_like_optimization = 1;
