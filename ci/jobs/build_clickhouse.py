@@ -286,7 +286,7 @@ def main():
         else:
             deb_arch = "arm64"
 
-        assert Shell.check(f"rm -f {temp_dir}/*.deb")
+        assert Shell.check(f"rm -f {temp_dir}/*.deb {temp_dir}/*.rpm {temp_dir}/*.tgz {temp_dir}/*.tgz.sha512")
 
         results.append(
             Result.from_commands_run(
