@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- https://github.com/ClickHouse/ClickHouse/issues/93465
 CREATE TABLE t0 (c0 Int, c1 Int128) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t0 SELECT 1, number FROM numbers(40000);
