@@ -337,7 +337,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-Renaming a column to or from a name containing a dot is not supported because dots are reserved for [`Nested`](/sql-reference/data-types/nested-data-structures/nested) sub-column access.
+Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
