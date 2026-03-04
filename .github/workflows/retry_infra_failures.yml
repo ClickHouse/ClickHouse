@@ -157,16 +157,16 @@ jobs:
           cutoff_seconds=3600  # 60 minutes
 
           # Get open PRs with auto-merge enabled that have mergeStateStatus=CLEAN
-          # (checks passed but not queued into merge queue)
+          # (checks passed but not queued into merge queue).
+          # Use --search to filter server-side, so we don't miss older PRs
+          # that fall outside a --limit window.
           stuck_prs=$(gh pr list \
             --repo "$GH_REPO" \
-            --state open \
-            --limit 50 \
-            --json number,autoMergeRequest,mergeStateStatus,isDraft \
+            --search "is:open auto-merge:enabled -is:draft" \
+            --json number,autoMergeRequest,mergeStateStatus \
             --jq '[.[] | select(
               .autoMergeRequest != null and
-              .mergeStateStatus == "CLEAN" and
-              .isDraft == false
+              .mergeStateStatus == "CLEAN"
             )]')
 
           count=$(echo "$stuck_prs" | jq 'length')
