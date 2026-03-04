@@ -3909,6 +3909,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
 
+        /** If the argument is already a TableFunctionNode (e.g. from a previous resolution of this
+          * table function node, which can happen when the same node is reused in a synthetic subquery
+          * such as during USING resolution with analyzer_compatibility_join_using_top_level_identifier),
+          * just pass it through without trying to resolve it as an expression.
+          */
+        if (table_function_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         /** Table functions arguments can contain expressions with invalid identifiers.
           * We cannot skip analysis for such arguments, because some table functions cannot provide
           * information if analysis for argument should be skipped until other arguments will be resolved.
@@ -4278,9 +4289,8 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression)
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
 {
-    NameSet existing_columns;
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
 
@@ -4351,15 +4361,11 @@ static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table
             }
             default:
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                    table_expression->getNodeTypeName(),
-                    table_expression->formatASTForErrorMessage());
+                return false;
             }
         }
     }
-    return existing_columns;
+    return true;
 }
 
 /// Resolve join node in scope
@@ -4451,7 +4457,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         if (resolved_nodes.size() == 1)
                         {
                             /// Added column should not conflict with existing column names
-                            NameSet existing_columns = getColumnsFromTableExpression(left_table_expression);
+                            NameSet existing_columns;
+                            if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                                return nullptr;
 
                             NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
                             while (existing_columns.contains(column_name_type.name))
@@ -4463,10 +4471,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                                 return nullptr;
 
                             /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
-                            /// and left_table_expression is a JOIN node, we must not assign the JOIN as the column source.
-                            /// That would create a ColumnNode with a JOIN source and non-ListNode expression,
-                            /// which CollectSourceColumnsVisitor doesn't expect (it assumes ListNode for JOIN USING).
-                            if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
+                            /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
+                            /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
+                            /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
+                            if (!expression_source
+                                && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
+                                    || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
                                 return nullptr;
 
                             /// Create ColumnNode with expression from parent projection
