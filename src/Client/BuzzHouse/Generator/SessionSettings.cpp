@@ -19,7 +19,7 @@ static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &)
 
     for (const char c : rg.pickRandomly(rg.nasty_strings))
     {
-        ret += (c == '\'') ? "''" : c;
+        ret += (c == '\'') ? "''" : String(1, c);
     }
     ret += "'";
     return ret;

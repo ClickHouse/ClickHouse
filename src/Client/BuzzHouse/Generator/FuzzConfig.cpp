@@ -476,6 +476,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
 bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
 {
     bool res = true;
+    bool caught_exception = false;
 
     try
     {
@@ -487,15 +488,16 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     }
     catch (...)
     {
+        LOG_ERROR(log, "Error on processing query '{}': {}\n", query, DB::getCurrentExceptionMessage(false));
         res = false;
+        caught_exception = true;
     }
     if (!res)
     {
-        fmt::print(stderr, "Error on processing query '{}'\n", query);
+        if (!caught_exception)
+            LOG_ERROR(log, "Unknown error on processing query '{}'\n", query);
         if (!this->cb->tryToReconnect(max_reconnection_attempts, time_to_sleep_between_reconnects))
-        {
             throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Couldn't not reconnect to the server");
-        }
     }
     return res;
 }
