@@ -14,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/WKB.h>
 #include <Functions/geometryConverters.h>
 
 #include <boost/geometry.hpp>
@@ -31,12 +32,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-enum class InputGeometryType : uint8_t
-{
-    Ring,
-    Polygon,
-    MultiPolygon,
-};
+static constexpr WKBGeometry WKB_RING = static_cast<WKBGeometry>(100);
 
 template <typename Point>
 struct AggregateFunctionGroupPolygonData
@@ -51,30 +47,30 @@ class AggregateFunctionGroupPolygonOp final
 {
 private:
     using Data = AggregateFunctionGroupPolygonData<Point>;
-    InputGeometryType input_type;
+    WKBGeometry input_type;
     bool correct_geometry = true;
 
-    static InputGeometryType resolveInputType(const DataTypePtr & type)
+    static WKBGeometry resolveInputType(const DataTypePtr & type)
     {
         const auto & factory = DataTypeFactory::instance();
         if (factory.get("Ring")->equals(*type))
-            return InputGeometryType::Ring;
+            return WKB_RING;
         if (factory.get("Polygon")->equals(*type))
-            return InputGeometryType::Polygon;
+            return WKBGeometry::Polygon;
         if (factory.get("MultiPolygon")->equals(*type))
-            return InputGeometryType::MultiPolygon;
+            return WKBGeometry::MultiPolygon;
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unsupported geometry type for {}: {}. Expected Ring, Polygon, or MultiPolygon",
             Policy::name, type->getName());
     }
 
     static std::optional<MultiPolygon<Point>> extractMultiPolygon(
-        const ColumnPtr & single_row_col, InputGeometryType type, bool should_correct)
+        const ColumnPtr & single_row_col, WKBGeometry type, bool should_correct)
     {
         MultiPolygon<Point> result;
         switch (type)
         {
-            case InputGeometryType::Ring:
+            case WKB_RING:
             {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
                 if (rings.empty())
@@ -86,7 +82,7 @@ private:
                 result.emplace_back(std::move(polygon));
                 break;
             }
-            case InputGeometryType::Polygon:
+            case WKBGeometry::Polygon:
             {
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (polygons.empty())
@@ -96,7 +92,7 @@ private:
                 result.emplace_back(std::move(polygons[0]));
                 break;
             }
-            case InputGeometryType::MultiPolygon:
+            case WKBGeometry::MultiPolygon:
             {
                 auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
                 if (multi_polygons.empty())
@@ -106,6 +102,8 @@ private:
                     boost::geometry::correct(result);
                 break;
             }
+            default:
+                UNREACHABLE();
         }
         return result;
     }
