@@ -16,7 +16,6 @@ using std::string_view;
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -247,8 +246,8 @@ REGISTER_FUNCTION(ResolveRelativeURL)
         FunctionDocumentation{
             .description=R"(
 Resolves a relative URL to its absolute form based on a given base URL.
-This is particularly useful to resolve relative URLs from HTML pages. 
-For details, see Internet Standard RFC 3986 section 5.2-5.4. This 
+This is particularly useful to resolve relative URLs from HTML pages.
+For details, see Internet Standard RFC 3986 section 5.2-5.4. This
 is a strict implementation of the RFC - some results may differ from
 implementations that favor backward compatibility.
 )",
