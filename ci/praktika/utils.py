@@ -786,30 +786,13 @@ class Utils:
 
     AES_KEY = "aes.key"
     AES_KEY_RSA = f"{AES_KEY}.rsa"
-
+ 
     @classmethod
-    def encrypt(cls, path: str) -> str:
+    def encrypt(cls, path: str, key_path: str) -> str:
         if not Path(Utils.AES_KEY_RSA).exists():
             Shell.run(f"""
-cat <<EOF >public.pem
------BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA0XxREB0KhpRYBt7LbvuX
-VFtVSc3pG8K856M3qkmgDOgyMPLLo4gD+1kuzjk78EhKubV0hIehZYoMMffE569O
-CK4QbbL3z+ADQ+7aETjhBG9m1kpZB3MvFgMWQbHgJAte67yAlT5RJwNP4qqjchRa
-H5lLfYsnA1oL6AIFeoQw5KHcw3Ki48eBmakcguwqg02HqMTW1kV6w88mroNicN/o
-9fG3vnAeBZXe1Wfa27FAljbrpElUm5LfZw5oNccvKQRHXvgKsu3WOHVxZP0I5Bga
-iVGhIZA80iqcRZySXbLTNt/6FIxGuoP1My1Ew8i7HgDDBeW4ffh01GhEC+kA2mCZ
-nlKrREvZnMLmus6yXEOAiTXknXQ+KFOAojDoqNU7AV98KAHUUug85EVW/c5+1FQi
-/7+x1XJSfVOkIxUgL9DdbJaicts8leoz4aQEy5UfcerC9BdJLk+6ke2NW3qzdXXm
-PkTPxPY1B6PeK+5scV67KxZ24PBc5aJYNBxXXwBiHpTT2gN4Y1ABW0k/EzxcM6XC
-ONbT0rPWirpglqI4bH/QUQYa1k8ZPgOB867TU50raXnYjIKbEXSECiE60Xc0g/tY
-jGvAUkdLypqnmGuQTvaixlzADQ0TG7EWNjQtVeS5N344ROtDFziHsvPhZjsJumm0
-JWO5SkCtnJ5vVIHG3nxQCHkCAwEAAQ==
------END PUBLIC KEY-----
-EOF
-
 openssl rand 32 >{Utils.AES_KEY}
-openssl pkeyutl -encrypt -pubin -inkey public.pem -in {Utils.AES_KEY} -out {Utils.AES_KEY_RSA} \
+openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {Utils.AES_KEY} -out {Utils.AES_KEY_RSA} \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)
 

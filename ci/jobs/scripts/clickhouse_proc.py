@@ -805,6 +805,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
+        Shell.run(f"cat test >{temp_dir}/run_r0/core.test") #REMOVEME
         return [
             Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/defs/public.pem")
             for f in Path(temp_dir).glob("run_r*/core.*")
