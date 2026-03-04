@@ -635,9 +635,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         if (!matched_tokens.empty())
             applyPostingsAny(column, postings, indices_buffer, matched_tokens, old_size, row_offset, num_rows);
 
-        if (search_query->function_name == "notLike")
+        if (search_query->function_name == "notLike" || search_query->function_name == "notILike")
         {
-            /// NOT LIKE: flip the result here even if the column is still all-zero.
+            /// NOT LIKE / NOT ILIKE: flip the result here even if the column is still all-zero.
             for (size_t i = 0; i < num_rows; ++i)
                 column_data[old_size + i] ^= 1;
         }

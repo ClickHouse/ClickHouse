@@ -193,6 +193,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
+        || function_name == "ilike"
+        || function_name == "notILike"
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
@@ -537,7 +539,7 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     return tokenizer->compactTokens(tokens);
 }
 
-std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field) const
+std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
 {
     /// Only handles the pure '%value%' form: one leading '%', a non-empty alphanumeric token immediately following,
     /// then one trailing '%' immediately after the token, and nothing else.
@@ -589,7 +591,10 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     pattern += '%';
 
     std::vector<OptimizedRegularExpression> patterns;
-    patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+    if (case_insensitive)
+        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+    else
+        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
     return patterns;
 }
 
@@ -746,7 +751,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// 4. Fall-back to the brute-force search for other cases for now.
             /// Follow-up:
             /// 1. Handle more complex patterns e.g. %foo%bar% -> (postings_pattern(%foo%) && postings_pattern(%bar%)) || postings_pattern(%foo%bar%)
-            auto patterns = stringLikeToPatterns(value_field);
+            auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
                 out.function = function_name == "like" ? RPNElement::FUNCTION_LIKE : RPNElement::FUNCTION_NOT_LIKE;
@@ -762,6 +767,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.function = function_name == "like" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
+    }
+    /// Currently, only SplitByNonAlpha tokenizer is supported with ilike/notilike functions for the like optimization.
+    if ((function_name == "ilike" || function_name == "notILike") && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+        && getContext()->getSettingsRef()[Setting::use_text_index_like_optimization])
+    {
+        auto patterns = stringLikeToPatterns(value_field, true);
+        if (patterns.size() == 1)
+        {
+            out.function = function_name == "ilike" ? RPNElement::FUNCTION_LIKE : RPNElement::FUNCTION_NOT_LIKE;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+            return true;
+        }
+        return false;
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {

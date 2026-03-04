@@ -143,7 +143,7 @@ private:
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field) const;
+    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
