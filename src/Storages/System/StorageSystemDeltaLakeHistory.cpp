@@ -176,12 +176,13 @@ private:
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(
+                    /// Broken external Delta tables are expected during broad system-table scans.
+                    /// Keep this at debug level to avoid polluting stderr in stateless tests.
+                    LOG_DEBUG(
                         getLogger("SystemDeltaLakeHistory"),
-                        fmt::format(
-                            "Ignoring broken table {}: {}",
-                            object_storage_table->getStorageID().getFullTableName(),
-                            getCurrentExceptionMessage(false)));
+                        "Ignoring broken table {}: {}",
+                        object_storage_table->getStorageID().getFullTableName(),
+                        getCurrentExceptionMessage(false));
                 }
             }
 
