@@ -23,7 +23,7 @@ const auto zeroToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to
 const auto probRange = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); };
 
 const auto probRangeNoZero
-    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.01, 0.99)); };
+    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.001, 0.999)); };
 
 const auto highRange = [](RandomGenerator & rg, FuzzConfig &)
 {
@@ -45,13 +45,13 @@ const auto threadSetting = CHSetting(
     {"0", "1", "2", std::to_string(std::thread::hardware_concurrency())},
     false);
 
-const auto probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
+const auto inline probRangeSetting = CHSetting(probRange, {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1.0"}, false);
 
-const auto probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
+const auto inline probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999"}, false);
 
-const auto trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
+const auto inline trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 
-const auto trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
+const auto inline trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
 
 extern std::unordered_map<String, CHSetting> hotSettings;
 

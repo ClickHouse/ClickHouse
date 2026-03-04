@@ -858,19 +858,45 @@ class FunctionBinaryArithmetic : public IFunction
 
     static bool castType(const IDataType * type, auto && f)
     {
-        using Types = TypeList<
+        using IntegerTypes = TypeList<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
-            DataTypeDate, DataTypeDateTime, DataTypeTime,
-            DataTypeFixedString, DataTypeString,
-            DataTypeInterval>;
+            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
+
+        using DecimalTypes = TypeList<DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
 
+        /// Only include extra types that this specific operation actually uses.
+        /// Decimal: needed only when allow_decimal is true (plus, minus, multiply,
+        ///   divide, intDiv, intDivOrZero, modulo, positiveModulo, least, greatest,
+        ///   midpoint). All other operations (bitwise, GCD/LCM, *OrNull division
+        ///   variants, etc.) produce InvalidType for Decimal pairs, so skip them.
+        /// Date/DateTime/Time: needed for plus, minus, least, greatest, modulo,
+        ///   positive_modulo (see BinaryOperationTraits::ResultDataType).
+        ///   All other operations produce InvalidType for these, so skip them.
+        /// String/FixedString: needed for bitwise ops (allow_fixed_string/allow_string_integer)
+        ///   and bitHammingDistance.
+        /// Interval: needed for plus/minus (date/time +/- interval arithmetic).
+        /// All other operations reject these types in the dispatch lambda anyway,
+        /// so we skip them to reduce the template instantiation matrix.
+        static constexpr bool needs_decimal = IsOperation<Op>::allow_decimal;
+        static constexpr bool needs_date_time = is_plus || is_minus
+            || IsOperation<Op>::least || IsOperation<Op>::greatest
+            || is_modulo || IsOperation<Op>::positive_modulo;
+        static constexpr bool needs_string_types =
+            Op<UInt8, UInt8>::allow_fixed_string || Op<UInt8, UInt8>::allow_string_integer || is_bit_hamming_distance;
+        static constexpr bool needs_interval = is_plus || is_minus;
+
+        using NumericTypes = std::conditional_t<needs_decimal,
+            TypeListConcat<IntegerTypes, DecimalTypes>, IntegerTypes>;
+        using NumericAndDateTypes = std::conditional_t<needs_date_time,
+            TypeListConcat<NumericTypes, TypeList<DataTypeDate, DataTypeDateTime, DataTypeTime>>, NumericTypes>;
+        using WithStrings = std::conditional_t<needs_string_types,
+            TypeListConcat<NumericAndDateTypes, TypeList<DataTypeFixedString, DataTypeString>>, NumericAndDateTypes>;
+        using WithInterval = std::conditional_t<needs_interval,
+            TypeListConcat<WithStrings, TypeList<DataTypeInterval>>, WithStrings>;
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
-            TypeListConcat<Types, Floats>,
-            Types>;
+            TypeListConcat<WithInterval, Floats>, WithInterval>;
 
         return castTypeToEither(ValidTypes{}, type, std::forward<decltype(f)>(f));
     }
@@ -2680,6 +2706,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
         }
 
+        /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
+        /// Float64 regardless of the specific Decimal/Float widths. Handle at runtime to avoid
+        /// instantiating 4 Decimal × 3 Float × 2 directions = 24 redundant template specializations
+        /// that all collapse to the same Float64 × Float64 code path.
+        /// Exclude intDiv/intDivOrZero/intDivOrNull: their result type is an integer whose width
+        /// depends on the original operand types (e.g. Decimal32 → Int32), not Float64.
+        if constexpr (IsOperation<Op>::allow_decimal && valid_on_float_arguments
+            && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null)
+        {
+            const WhichDataType left_which(left_argument.type);
+            const WhichDataType right_which(right_argument.type);
+
+            if ((left_which.isDecimal() && right_which.isFloat()) || (left_which.isFloat() && right_which.isDecimal()))
+            {
+                const auto float64_type = std::make_shared<DataTypeFloat64>();
+                ColumnsWithTypeAndName new_arguments
+                {
+                    {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
+                    {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
+                };
+                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            }
+        }
+
         const auto * const left_generic = left_argument.type.get();
         const auto * const right_generic = right_argument.type.get();
         ColumnPtr res;
@@ -2715,6 +2765,16 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else if constexpr (std::is_same_v<DataTypeString, LeftDataType>)
                     return (res = executeStringInteger<ColumnString>(arguments, left, right)) != nullptr;
+            }
+            else if constexpr (
+                IsOperation<Op>::allow_decimal && valid_on_float_arguments
+                && !IsOperation<Op>::int_div && !IsOperation<Op>::int_div_or_zero && !IsOperation<Op>::int_div_or_null
+                && ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
+                    || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>)))
+            {
+                /// Decimal × Float pairs are handled at runtime above (converted to Float64 × Float64).
+                /// Skip them here to avoid redundant template instantiations.
+                return false;
             }
             else
                 return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;

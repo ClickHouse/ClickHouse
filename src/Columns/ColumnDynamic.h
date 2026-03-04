@@ -144,7 +144,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -332,6 +332,12 @@ public:
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
+    /// Dynamic columns manage their own variant_info type metadata.
+    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
+    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
+    /// Override to skip recursion — Dynamic is a self-contained typed container.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
