@@ -54,7 +54,6 @@ public:
         , token_key_condition(std::move(token_key_condition_))
     {
         const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
-        posting_list_codec = text_index.getPostingListCodec();
 
         for (const auto & substream : text_index.getSubstreams())
             index_streams[substream.type] = {text_index.getFileName() + substream.suffix, substream.extension};
@@ -112,7 +111,13 @@ protected:
                 {
                     auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
                     for (size_t i = 0; i < block_size; ++i)
-                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    {
+                        /// If postings are embedded, offsets are not filled.
+                        if (dict_block->token_infos[i].header & EmbeddedPostings)
+                            data.push_back(static_cast<UInt64>(1));
+                        else
+                            data.push_back(static_cast<UInt64>(dict_block->token_infos[i].offsets.size()));
+                    }
                 }
                 else if (column_name == "has_embedded_postings")
                 {
@@ -167,7 +172,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, posting_list_codec);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -177,7 +182,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, posting_list_codec);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -269,7 +274,6 @@ private:
     SharedHeader header;
     std::shared_ptr<MergeTreeData::DataPartsVector> data_parts;
     std::shared_ptr<std::atomic<size_t>> part_index;
-    PostingListCodecPtr posting_list_codec;
     ReadSettings read_settings;
     size_t max_block_size;
     std::shared_ptr<const KeyCondition> token_key_condition;
