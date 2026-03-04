@@ -43,7 +43,7 @@ SELECT
     predicate_class,
     function_name,
     sum(input_rows) > 0 AS has_input,
-    sum(passed_rows) >= 0 AS has_output
+    sum(passed_rows) > 0 AS has_output
 FROM system.predicate_statistics_log
 WHERE table = 'test_pred_stats' AND currentDatabase() = database
 GROUP BY column_name, predicate_class, function_name
