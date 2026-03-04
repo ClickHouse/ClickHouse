@@ -31,15 +31,36 @@ if __name__ == "__main__":
         )
         commits = raw.splitlines()
 
-        for sha in commits:
-            if sha == info.sha:
-                break
+        while commits and commits[0] != info.sha:
             commits.pop(0)
 
-        info.store_kv_data("previous_commits_sha", commits)
+        info.store_kv_data("master_track_commits_sha", commits)
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
+        # store master side commits for perf tests comparison
+        # In PR CI, HEAD is a merge commit; HEAD^2 is the master parent of that merge commit
+        master_parent = Shell.get_output(
+            "git rev-parse HEAD^2", verbose=True
+        ).strip()
+        if master_parent and len(master_parent) == 40:
+            master_parent_commits = [
+                s.strip()
+                for s in Shell.get_output(
+                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
+                ).splitlines()
+                if len(s.strip()) == 40
+            ]
+            if master_parent_commits:
+                info.store_kv_data("master_track_commits_sha", master_parent_commits)
+                print(
+                    f"Stored {len(master_parent_commits)} master parent commits for perf test comparison, starting from {master_parent}"
+                )
+        else:
+            print(
+                "WARNING: Could not find master parent commit (HEAD^2), skipping perf test commit storage"
+            )
+
         file_diff = {}
         for file in changed_files:
             if file.startswith("tests/integration/test") and file.endswith(".py"):
