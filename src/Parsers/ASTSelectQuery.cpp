@@ -515,7 +515,8 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 void ASTSelectQuery::normalizeChildrenOrder()
 {
     /// Canonical order must match the order in which ParserSelectQuery calls setExpression.
-    static constexpr Expression canonical_order[] = {
+    static constexpr Expression canonical_order[] =
+    {
         Expression::WITH,
         Expression::SELECT,
         Expression::TABLES,
