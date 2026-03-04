@@ -3,6 +3,8 @@
 #include <base/sleep.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -86,7 +88,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
 }
 
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -112,7 +114,19 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto new_context = Context::createCopy(context);
     new_context->setSetting("enable_positional_arguments", Field(false));
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+
+    /// Clone the query tree and update its context to use new_context.
+    /// This is necessary because the Planner extracts the context from the QueryNode,
+    /// and the original query_tree has a context with parallel replicas enabled.
+    /// Without this, findQueryForParallelReplicas would trigger expensive analysis
+    /// and cause stack overflow due to deep recursion.
+    auto local_query_tree = query_tree->clone();
+    if (auto * query_node = local_query_tree->as<QueryNode>())
+        query_node->getMutableContext() = new_context;
+    else if (auto * union_node = local_query_tree->as<UnionNode>())
+        union_node->getMutableContext() = new_context;
+
+    auto interpreter = InterpreterSelectQueryAnalyzer(local_query_tree, new_context, select_query_options);
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     auto * node = findReadingStep<ReadFromMergeTree>(query_plan->getRootNode());
