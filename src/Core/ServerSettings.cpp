@@ -990,7 +990,19 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
-    DECLARE(String, database_namespace_separator, "", R"(Separator string for the database namespace feature. When non-empty, enables multi-tenant database isolation: users with a database_namespace setting will have their databases transparently prefixed with '{namespace}{separator}'. Database names containing this separator cannot be created manually. Common values: '__' (double underscore), '.' (dot).)", 0) \
+    DECLARE(String, database_namespace_separator, "", R"(
+Separator string for the database namespace feature (startup-only, not reloadable).
+When non-empty, enables multi-tenant database isolation: users with a DATABASE NAMESPACE
+will have their database names transparently prefixed with '{namespace}{separator}'.
+
+Once enabled, no user (including admins) can CREATE DATABASE with a name containing
+the separator — this reserves the separator for the namespace mechanism and eliminates
+ambiguity.  Pre-existing databases whose names contain the separator (created before the
+feature was enabled) remain fully accessible: they load at startup and can be read,
+written, and DROPped normally.
+
+Common values: '__' (double underscore), '.' (dot).
+)", 0) \
     DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
     DECLARE(Bool, distributed_ddl_use_initial_user_and_roles, false, R"(If enabled, ON CLUSTER queries will preserve and use the initiator's user and roles for execution on remote shards. This ensures consistent access control across the cluster but requires that the user and roles exist on all nodes.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(

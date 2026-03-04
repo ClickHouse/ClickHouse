@@ -3232,6 +3232,25 @@ void Context::setDatabaseNamespace(const String & ns)
     need_recalculate_access = true;
 }
 
+/// Maps a user-visible (logical) database name to its physical name by prepending
+/// the user's namespace and the configured separator.  For example, if the user's
+/// namespace is "tenant1" and the separator is "__", logical "mydb" becomes
+/// physical "tenant1__mydb".
+///
+/// Exempt from prefixing:
+///   - predefined databases (system, INFORMATION_SCHEMA, information_schema,
+///     _temporary_and_external_tables)
+///   - the "default" database (shared across all namespaces)
+///   - names that already carry the user's prefix (prevents double-prefixing)
+///
+/// Note on pre-existing databases: databases whose names contain the separator that
+/// were created before the feature was enabled are loaded normally at startup (loadMetadata
+/// does not validate the separator).  Admin users (no namespace) can still read, write,
+/// and DROP these databases.  However, no new databases with names containing the separator
+/// can be created — validateDatabaseNameNoSeparator() in InterpreterCreateQuery rejects them.
+/// If a pre-existing database name happens to match "{namespace}{separator}{name}", a tenant
+/// user with that namespace will see it as a valid database — this is expected and should be
+/// considered during migration.
 String Context::applyDatabaseNamespace(const String & database_name) const
 {
     if (database_namespace.empty())
@@ -3269,6 +3288,19 @@ String Context::getDatabaseNamespaceSeparator() const
     return getServerSettings()[ServerSetting::database_namespace_separator].toString();
 }
 
+/// Rejects CREATE DATABASE when the name contains the configured separator.
+/// This is called from InterpreterCreateQuery (except for ATTACH queries, which use
+/// physical names from metadata/UNDROP).
+///
+/// The restriction applies to ALL users — including admins without a namespace.
+/// Rationale: the separator is reserved by the namespace mechanism so that any database
+/// whose name matches "{X}{separator}{Y}" is unambiguously a namespace-created database.
+/// Allowing admins to bypass this would introduce ambiguity (was this created by the
+/// namespace mechanism or manually?) and risk accidental exposure to tenants.
+///
+/// Pre-existing databases (created before the feature was enabled) are unaffected:
+/// they load normally at startup and remain fully accessible (read, write, DROP).
+/// Only new CREATE DATABASE statements are subject to this validation.
 void Context::validateDatabaseNameNoSeparator(const String & database_name) const
 {
     String separator = getDatabaseNamespaceSeparator();

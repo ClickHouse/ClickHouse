@@ -222,7 +222,9 @@ Assigns a database namespace to the user for multi-tenant database isolation. Wh
 <database_namespace_separator>__</database_namespace_separator>
 ```
 
-When the separator is configured, database names containing the separator string cannot be created manually, eliminating any ambiguity between namespaced and non-namespaced databases.
+When the separator is configured, database names containing the separator string cannot be created manually by any user (including admins without a namespace), eliminating any ambiguity between namespaced and non-namespaced databases.
+
+**Pre-existing databases:** Databases whose names contain the separator that were created *before* the feature was enabled will continue to work normally after enabling it — they load at startup and can be read, written, and DROPped. Only new `CREATE DATABASE` statements are subject to the restriction. If a pre-existing database name matches the pattern `{namespace}{separator}{name}`, it will become visible to a tenant user with that namespace — plan accordingly when migrating.
 
 The namespace is a user-level property — users cannot change their own namespace at runtime.
 
