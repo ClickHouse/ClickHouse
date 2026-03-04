@@ -142,6 +142,8 @@ namespace
     )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
+    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 64, R"(The number of threads commit snapshot.)", 0) \
+    DECLARE(UInt64, max_snapshot_commit_thread_pool_free_size, 0, R"(If the number of idle threads in the snapshot commit thread pool exceeds `max_snapshot_commit_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
     DECLARE(UInt64, max_parts_cleaning_thread_pool_size, 128, R"(The number of threads for concurrent removal of inactive data parts.)", 0) \
@@ -1729,6 +1731,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
@@ -1767,6 +1770,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {getFetchPartitionThreadPool().isInitialized() ? std::to_string(getFetchPartitionThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_active_parts_loading_thread_pool_size",
              {getActivePartsLoadingThreadPool().isInitialized() ? std::to_string(getActivePartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_snapshot_commit_thread_pool_size",
+             {getSnapshotCommitThreadPool().isInitialized() ? std::to_string(getSnapshotCommitThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_snapshot_commit_thread_pool_free_size",
+             {getSnapshotCommitThreadPool().isInitialized() ? std::to_string(getSnapshotCommitThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_outdated_parts_loading_thread_pool_size",
              {getOutdatedPartsLoadingThreadPool().isInitialized() ? std::to_string(getOutdatedPartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_parts_cleaning_thread_pool_size",
