@@ -14,7 +14,7 @@ CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tu
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
 SET enable_analyzer = 1;
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1;
+SET query_plan_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
 
@@ -72,18 +72,21 @@ FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
+
 SELECT toStartOfHour(events.Time) AS t, count()
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 GROUP BY t ORDER BY t LIMIT 3
 FORMAT Null;
 
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
+
 SELECT DISTINCT events.Time
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
-
-SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM DISABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 DROP TABLE events;
 DROP TABLE payloads;
