@@ -144,7 +144,8 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
     SharedLockGuard lock{files_mutex};
-    return ManifestFileEntriesHandle{data_files_without_deleted, position_deletes_files_without_deleted, equality_deletes_files};
+    return ManifestFileEntriesHandle{
+        data_files_without_deleted, position_deletes_files_without_deleted, equality_deletes_files_without_deleted};
 }
 
 using namespace DB;
@@ -296,6 +297,9 @@ ManifestFileIterator::ManifestFileIterator(
     , partition_key_description(std::move(partition_key_description_))
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
+    , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
+    , position_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
+    , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
@@ -444,7 +448,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             switch (entry->parsed_entry->content_type)
             {
                 case FileContentType::EQUALITY_DELETE: {
-                    equality_deletes_files->emplace_back(entry);
+                    equality_deletes_files_without_deleted->emplace_back(entry);
                     return entry;
                 }
                 case FileContentType::POSITION_DELETE: {

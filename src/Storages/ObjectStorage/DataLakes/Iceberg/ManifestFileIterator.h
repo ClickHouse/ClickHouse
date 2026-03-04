@@ -213,7 +213,7 @@ private:
     mutable SharedMutex files_mutex;
     std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> data_files_without_deleted TSA_GUARDED_BY(files_mutex);
     std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> position_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
-    std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> equality_deletes_files TSA_GUARDED_BY(files_mutex);
+    std::shared_ptr<std::vector<ProcessedManifestFileEntryPtr>> equality_deletes_files_without_deleted TSA_GUARDED_BY(files_mutex);
 
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
