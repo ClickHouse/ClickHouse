@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS test_local_blob_log;
 
 CREATE TABLE test_local_blob_log (a Int32, b String)
 ENGINE = MergeTree() ORDER BY a
-SETTINGS disk = disk(type = 'local_blob_storage', path = '03776_test_local_blob_log/');
+SETTINGS disk = disk(name = 'test_03776_local_blob_log', type = 'local_blob_storage', path = '03776_test_local_blob_log/');
 
 INSERT INTO test_local_blob_log VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
 
@@ -25,6 +25,12 @@ WHERE event_type = 'Upload'
 
 -- Drop table to trigger delete events
 DROP TABLE test_local_blob_log SYNC;
+
+-- Wait for the blob killer to process pending deletions.
+-- Call twice: the first call may land into an already running cycle
+-- that does not see the newly queued blobs.
+SYSTEM WAIT BLOBS CLEANUP 'test_03776_local_blob_log';
+SYSTEM WAIT BLOBS CLEANUP 'test_03776_local_blob_log';
 
 SYSTEM FLUSH LOGS blob_storage_log;
 
