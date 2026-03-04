@@ -19,6 +19,9 @@ PAIMON_WAREHOUSE_URI = "file:///tmp/warehouse/"
 PAIMON_TABLE_PATH = "/tmp/warehouse/test.db/test_table"
 CH_TABLE_NAME = "paimon_inc_read"
 CH_TABLE_NAME_WITH_LIMIT = "paimon_inc_read_with_limit"
+CH_MV_PAIMON_TABLE = "paimon_mv_source"
+CH_MV_MERGETREE_TABLE = "paimon_mv_dest"
+CH_MV_NAME = "paimon_refresh_mv"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -252,3 +255,105 @@ def test_paimon_incremental_read_via_paimon_table_engine(started_cluster):
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME} SYNC;")
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_WITH_LIMIT} SYNC;")
+
+
+def test_paimon_to_mergetree_via_refresh_mv(started_cluster):
+    """
+    Validate the end-to-end pipeline:
+      Paimon (incremental read) → Refreshable MV (APPEND) → MergeTree
+
+    The refreshable MV periodically selects from the Paimon source table
+    (which returns only new data each time) and appends to a MergeTree
+    destination table.
+
+    Prerequisites:
+      - The Paimon source table must have paimon_metadata_refresh_interval_ms
+        enabled so that new snapshots are picked up automatically between
+        MV refresh cycles.
+    """
+    MV_REFRESH_INTERVAL_SEC = 10
+    SLEEP_AFTER_WRITE_SEC = MV_REFRESH_INTERVAL_SEC + 5
+
+    instance_id = cluster.get_instance_docker_id("node")
+    _prepare_incremental_writer(instance_id)
+
+    # Clean warehouse for idempotent re-runs.
+    run_and_check(
+        [
+            "docker exec {cont_id} bash -lc \"rm -rf /tmp/warehouse\"".format(
+                cont_id=instance_id
+            )
+        ],
+        shell=True,
+    )
+
+    # Warm-up commit: create initial Paimon snapshot so schema can be inferred.
+    _run_writer(instance_id, start_id=0, rows_per_commit=1, commit_times=1)
+
+    # Create Paimon source table with incremental read enabled.
+    # Note: _create_clickhouse_table_for_paimon_incremental_read sets
+    # paimon_metadata_refresh_interval_ms = 100, which ensures the Paimon
+    # engine detects new snapshots within 100 ms — well before the 30 s
+    # MV refresh cycle fires.
+    _create_clickhouse_table_for_paimon_incremental_read(CH_MV_PAIMON_TABLE)
+
+    # Consume warm-up snapshot to establish incremental read baseline.
+    _wait_until_query_result(
+        f"SELECT count() FROM {CH_MV_PAIMON_TABLE}",
+        "1\n",
+        database="default",
+    )
+    _wait_until_query_result(
+        f"SELECT count() FROM {CH_MV_PAIMON_TABLE}",
+        "0\n",
+        database="default",
+    )
+
+    # Create MergeTree destination table with same schema as Paimon table.
+    node.query(f"DROP TABLE IF EXISTS {CH_MV_MERGETREE_TABLE} SYNC;")
+    node.query(
+        "CREATE TABLE {dest} AS {src} ENGINE = MergeTree() ORDER BY tuple()".format(
+            dest=CH_MV_MERGETREE_TABLE, src=CH_MV_PAIMON_TABLE
+        )
+    )
+
+    # Create refreshable MV in APPEND mode with a 30 s refresh cycle.
+    node.query(f"DROP VIEW IF EXISTS {CH_MV_NAME} SYNC;")
+    node.query(
+        "CREATE MATERIALIZED VIEW {mv} "
+        "REFRESH EVERY {interval} SECOND "
+        "APPEND "
+        "TO {dest} "
+        "AS SELECT * FROM {src}".format(
+            mv=CH_MV_NAME,
+            interval=MV_REFRESH_INTERVAL_SEC,
+            dest=CH_MV_MERGETREE_TABLE,
+            src=CH_MV_PAIMON_TABLE,
+        )
+    )
+
+    # --- First batch: write 10 rows to Paimon ---
+    _run_writer(instance_id, start_id=1, rows_per_commit=10, commit_times=1)
+
+    # Sleep to wait for the next MV refresh cycle to pick up the new data.
+    # Timeline: writer commits → Paimon metadata refreshes within 100 ms →
+    # MV fires within ≤30 s → data lands in MergeTree.
+    time.sleep(SLEEP_AFTER_WRITE_SEC)
+
+    result = node.query(f"SELECT count() FROM {CH_MV_MERGETREE_TABLE}")
+    assert result == "10\n", f"Expected 10 rows after first refresh, got {result}"
+
+    # --- Second batch: write another 10 rows to Paimon ---
+    _run_writer(instance_id, start_id=11, rows_per_commit=10, commit_times=1)
+
+    time.sleep(SLEEP_AFTER_WRITE_SEC)
+
+    # MergeTree should accumulate to 20 rows total (APPEND mode).
+    result = node.query(f"SELECT count() FROM {CH_MV_MERGETREE_TABLE}")
+    assert result == "20\n", f"Expected 20 rows after second refresh, got {result}"
+
+    # Cleanup: stop MV first to prevent background refresh from blocking DDL.
+    node.query(f"SYSTEM STOP VIEW {CH_MV_NAME};")
+    node.query(f"DROP VIEW IF EXISTS {CH_MV_NAME} SYNC;")
+    node.query(f"DROP TABLE IF EXISTS {CH_MV_MERGETREE_TABLE} SYNC;")
+    node.query(f"DROP TABLE IF EXISTS {CH_MV_PAIMON_TABLE} SYNC;")
