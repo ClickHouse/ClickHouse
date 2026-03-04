@@ -47,7 +47,6 @@ class ClickHouseProc:
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
-    GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -773,8 +772,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if Path(Utils.AES_KEY_RSA).exists():
                 res.append(Utils.AES_KEY_RSA)
             if all:
@@ -805,7 +802,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        Shell.run(f"cat test >{temp_dir}/run_r0/core.test") #REMOVEME
+        Shell.check(f"echo test >{temp_dir}/run_r0/core.test", verbose=True) #REMOVEME
         return [
             Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/defs/public.pem")
             for f in Path(temp_dir).glob("run_r*/core.*")
@@ -990,13 +987,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: dmesg not enabled")
         else:
             results.append(oom_check)
-        if Path(self.GDB_LOG).is_file():
-            results.append(
-                Result.from_commands_run(
-                    name="Found signal in gdb.log",
-                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
-                )
-            )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
