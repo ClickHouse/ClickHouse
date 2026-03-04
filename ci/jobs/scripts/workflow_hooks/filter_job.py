@@ -54,6 +54,15 @@ def should_skip_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
 
+    # There is no way to prevent GitHub Actions from running the PR workflow on
+    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
+    # for testing on release branches instead.
+    if (
+        Labels.RELEASE in _info_cache.pr_labels
+        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    ):
+        return True, "Skipped for release PR"
+
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
