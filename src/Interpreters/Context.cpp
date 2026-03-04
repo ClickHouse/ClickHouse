@@ -3263,6 +3263,10 @@ String Context::applyDatabaseNamespace(const String & database_name) const
     /// The "default" database is shared across all namespaces.
     if (database_name == "default")
         return database_name;
+    /// Databases listed in shared_databases_across_namespaces are visible to all tenants.
+    auto shared = getSharedDatabasesAcrossNamespaces();
+    if (shared.contains(database_name))
+        return database_name;
     /// Already prefixed — don't double-prefix.
     String prefix = database_namespace + separator;
     if (database_name.starts_with(prefix))
@@ -3286,6 +3290,43 @@ String Context::stripDatabaseNamespace(const String & physical_database_name) co
 String Context::getDatabaseNamespaceSeparator() const
 {
     return getServerSettings()[ServerSetting::database_namespace_separator].toString();
+}
+
+std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
+{
+    std::unordered_set<String> result;
+    String value;
+    try
+    {
+        value = getConfigRef().getString("shared_databases_across_namespaces", "");
+    }
+    catch (...)
+    {
+        return result;
+    }
+    if (value.empty())
+        return result;
+
+    /// Parse comma-separated list, trimming whitespace around each name.
+    size_t start = 0;
+    while (start < value.size())
+    {
+        size_t end = value.find(',', start);
+        if (end == String::npos)
+            end = value.size();
+        /// Trim leading whitespace.
+        size_t name_start = start;
+        while (name_start < end && value[name_start] == ' ')
+            ++name_start;
+        /// Trim trailing whitespace.
+        size_t name_end = end;
+        while (name_end > name_start && value[name_end - 1] == ' ')
+            --name_end;
+        if (name_end > name_start)
+            result.emplace(value.substr(name_start, name_end - name_start));
+        start = end + 1;
+    }
+    return result;
 }
 
 /// Rejects CREATE DATABASE when the name contains the configured separator.

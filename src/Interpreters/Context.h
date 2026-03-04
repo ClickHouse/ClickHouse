@@ -1064,6 +1064,10 @@ public:
     String stripDatabaseNamespace(const String & physical_database_name) const;
     /// Returns the database_namespace_separator server setting value.
     String getDatabaseNamespaceSeparator() const;
+    /// Returns the set of shared databases from the shared_databases_across_namespaces setting.
+    /// These databases are visible to all tenants and excluded from namespace prefixing.
+    /// Reads from live config — supports SYSTEM RELOAD CONFIG.
+    std::unordered_set<String> getSharedDatabasesAcrossNamespaces() const;
     /// Validate that a database name does not contain the namespace separator.
     /// Only checked when database_namespace_separator is configured.
     void validateDatabaseNameNoSeparator(const String & database_name) const;

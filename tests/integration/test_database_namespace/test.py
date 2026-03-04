@@ -46,6 +46,8 @@ def setup_cluster():
             "tenant1__sneakydb",
             "tenant1__renamedb",
             "tenant1__renamedb2",
+            "shared_db",
+            "shared_db2",
         ]:
             node.query(f"DROP DATABASE IF EXISTS {db}")
         for user in [
@@ -527,3 +529,100 @@ def test_rename_database_separator_rejected():
     assert q("SELECT count() FROM system.databases WHERE name = 'tenant1__renamedb'").strip() == "0"
     # Cleanup
     q1("DROP DATABASE renamedb2")
+
+
+# ============================================================
+# Test 35: Shared databases are visible to all tenants
+# ============================================================
+def test_shared_database_visible():
+    # Admin creates a shared database (listed in shared_databases_across_namespaces)
+    q("CREATE DATABASE shared_db")
+    q("CREATE TABLE shared_db.shared_table (id UInt32) ENGINE = Memory")
+    q("INSERT INTO shared_db.shared_table VALUES (42)")
+
+    # Tenant1 can see it in SHOW DATABASES
+    result = q1("SHOW DATABASES")
+    assert "shared_db" in result
+
+    # Tenant1 can query tables in it (not namespaced — accesses real shared_db)
+    result = q1("SELECT id FROM shared_db.shared_table")
+    assert result.strip() == "42"
+
+    # Tenant2 can also see and query it
+    result = q2("SHOW DATABASES")
+    assert "shared_db" in result
+    result = q2("SELECT id FROM shared_db.shared_table")
+    assert result.strip() == "42"
+
+    # Shared database is NOT namespaced — physical name is 'shared_db', not 'tenant1__shared_db'
+    assert q("SELECT count() FROM system.databases WHERE name = 'shared_db'").strip() == "1"
+    assert q("SELECT count() FROM system.databases WHERE name = 'tenant1__shared_db'").strip() == "0"
+
+    # Cleanup
+    q("DROP TABLE shared_db.shared_table")
+    q("DROP DATABASE shared_db")
+
+
+# ============================================================
+# Test 36: Shared databases support dynamic reload
+# ============================================================
+def test_shared_database_reload():
+    # Create two databases: shared_db (in initial config) and shared_db2 (not yet shared)
+    q("CREATE DATABASE shared_db")
+    q("CREATE DATABASE shared_db2")
+    q("CREATE TABLE shared_db2.t (x UInt32) ENGINE = Memory")
+    q("INSERT INTO shared_db2.t VALUES (99)")
+
+    # Initially tenant can see shared_db but NOT shared_db2
+    result = q1("SHOW DATABASES")
+    assert "shared_db" in result
+    assert "shared_db2" not in result
+
+    # Add shared_db2 to the shared list via config reload
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/database_namespace.xml",
+        "<clickhouse>"
+        "<database_namespace_separator>__</database_namespace_separator>"
+        "<shared_databases_across_namespaces>shared_db,shared_db2</shared_databases_across_namespaces>"
+        "</clickhouse>",
+    ):
+        node.query("SYSTEM RELOAD CONFIG")
+
+        # Now tenant can see both
+        result = q1("SHOW DATABASES")
+        assert "shared_db" in result
+        assert "shared_db2" in result
+
+        # Tenant can query shared_db2
+        result = q1("SELECT x FROM shared_db2.t")
+        assert result.strip() == "99"
+
+    # After reverting config, reload again — shared_db2 disappears
+    node.query("SYSTEM RELOAD CONFIG")
+    result = q1("SHOW DATABASES")
+    assert "shared_db" in result
+    assert "shared_db2" not in result
+
+    # Cleanup
+    q("DROP DATABASE shared_db")
+    q("DROP TABLE shared_db2.t")
+    q("DROP DATABASE shared_db2")
+
+
+# ============================================================
+# Test 37: Tenant cannot shadow a shared database
+# ============================================================
+def test_shared_database_no_shadow():
+    # Admin creates the shared database
+    q("CREATE DATABASE shared_db")
+
+    # Tenant tries CREATE DATABASE shared_db — should fail because
+    # applyDatabaseNamespace('shared_db') returns 'shared_db' (not namespaced),
+    # and shared_db already exists.
+    error = node.query_and_get_error(
+        "CREATE DATABASE shared_db", user="tenant1_user"
+    )
+    assert "ALREADY_EXISTS" in error or "DATABASE_ALREADY_EXISTS" in error
+
+    # Cleanup
+    q("DROP DATABASE shared_db")

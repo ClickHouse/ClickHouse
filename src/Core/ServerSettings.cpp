@@ -1003,6 +1003,15 @@ written, and DROPped normally.
 
 Common values: '__' (double underscore), '.' (dot).
 )", 0) \
+    DECLARE(String, shared_databases_across_namespaces, "", R"(
+Comma-separated list of database names that are visible to all tenants regardless of their
+DATABASE NAMESPACE.  These databases are excluded from namespace prefixing — they behave
+like system databases (system, INFORMATION_SCHEMA, default, etc.).
+
+This setting is reloadable via SYSTEM RELOAD CONFIG.
+
+Example: 'dictionaries,geo,shared_analytics'
+)", 0) \
     DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
     DECLARE(Bool, distributed_ddl_use_initial_user_and_roles, false, R"(If enabled, ON CLUSTER queries will preserve and use the initiator's user and roles for execution on remote shards. This ensures consistent access control across the cluster but requires that the user and roles exist on all nodes.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
