@@ -35,8 +35,8 @@ public:
 
     static FunctionPtr create(ContextPtr context_)
     {
-        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
-            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+        if (context_ && context_->getApplicationType() != Context::ApplicationType::LOCAL)
+            context_->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
 
         return std::make_shared<FunctionFile>(context_);
     }
