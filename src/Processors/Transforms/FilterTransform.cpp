@@ -118,7 +118,7 @@ FilterTransform::FilterTransform(
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
     /// predicate statistics collection
-    if (auto global_context = Context::getGlobalContextInstance()) 
+    if (auto global_context = Context::getGlobalContextInstance())
     {
         predicate_stats_sample_rate = global_context->getServerSettings()[ServerSetting::predicate_statistics_sample_rate];
         if (predicate_stats_sample_rate > 0)

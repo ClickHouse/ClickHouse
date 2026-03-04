@@ -11,7 +11,7 @@ SELECT count() FROM test_pred_stats WHERE status = 'active' FORMAT Null;
 SELECT count() FROM test_pred_stats WHERE id > 50000 FORMAT Null;
 SELECT count() FROM test_pred_stats WHERE id IN (1, 2, 3) FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS predicate_statistics_log;
 
 SELECT
     column_name,
