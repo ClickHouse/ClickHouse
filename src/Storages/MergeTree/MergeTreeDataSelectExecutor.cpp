@@ -947,55 +947,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-
-                for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
-                {
-                    if (ranges.ranges.empty())
-                        break;
-
-                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-                    const auto & indices_and_condition = skip_indexes.merged_indices[idx];
-                    auto & stat = merged_indices_stat[idx];
-                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-
-                    if (auto index_result = can_use_merged_index(indices_and_condition.indices); !index_result)
-                    {
-                        LOG_TRACE(log, "{}", index_result.error().text);
-                        continue;
-                    }
-
-                    size_t total_granules = ranges.ranges.getNumberOfMarks();
-
-                    if (!use_skip_indexes_on_data_read_)
-                    {
-                        ranges.ranges = filterMarksUsingMergedIndex(
-                            indices_and_condition.indices,
-                            indices_and_condition.condition,
-                            ranges.data_part,
-                            ranges.ranges,
-                            reader_settings,
-                            mark_cache.get(),
-                            uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
-                            log);
-                    }
-
-                    for (const auto & index : indices_and_condition.indices)
-                    {
-                        context->getQueryContext()->addSkipIndexAccessInfo(
-                        ranges.data_part->storage.getStorageID().getFullTableName(),
-                        index->index.name
-                        );
-                    }
-
-                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-
-                    if (ranges.ranges.empty())
-                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                }
-            }
+           }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
