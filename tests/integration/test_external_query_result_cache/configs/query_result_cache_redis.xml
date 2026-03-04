@@ -1,0 +1,16 @@
+<clickhouse>
+    <query_cache>
+        <type>redis</type>
+        <redis>
+            <host>redis1</host>
+            <port>6379</port>
+            <password>clickhouse</password>
+            <db_index>0</db_index>
+            <pool_size>4</pool_size>
+        </redis>
+        <!-- small limits to exercise size guards -->
+        <max_entry_size_in_bytes>10485760</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>1000000</max_entry_size_in_rows>
+        <max_entries>1000</max_entries>
+    </query_cache>
+</clickhouse>

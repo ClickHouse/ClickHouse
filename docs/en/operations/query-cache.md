@@ -214,6 +214,74 @@ row policy on a table by running the same query as another user B for whom no su
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](/operations/settings/settings#query_cache_share_between_users).
 
+## Distributed (Redis-backed) query cache {#distributed-query-cache}
+
+By default, the query cache is in-process and local to each ClickHouse server node.
+Multiple nodes do **not** share cached results with each other.
+For deployments where cache sharing across nodes is desirable (e.g. ClickHouse clusters behind a load balancer), the query cache can be backed by an external Redis instance.
+
+### Configuration
+
+Set `query_cache.type` to `redis` and provide the Redis connection parameters:
+
+```xml
+<query_cache>
+    <type>redis</type>
+    <redis>
+        <host>redis.example.com</host>
+        <port>6379</port>
+        <password>secret</password>   <!-- optional -->
+        <db_index>0</db_index>        <!-- Redis database index, default 0 -->
+        <pool_size>16</pool_size>     <!-- connection pool size, default 16 -->
+    </redis>
+    <!-- same size limits as for the local cache -->
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    <max_entries>1024</max_entries>
+</query_cache>
+```
+
+All other query-cache settings (`use_query_cache`, `query_cache_ttl`, `query_cache_tag`, `query_cache_share_between_users`, etc.) work identically to the local cache.
+
+:::note
+The `type` key defaults to `local`, so existing deployments that do not set it continue to use the in-process cache without any change.
+:::
+
+### Cross-node cache sharing
+
+When `query_cache_share_between_users = 1` is set, a result written by one node is visible to all other nodes that connect to the same Redis instance.
+Without this setting, non-shared entries are keyed by the user UUID and are invisible to queries executed by other users.
+
+### Behavior differences from the local cache
+
+| Feature | Local cache | Redis cache |
+|---|---|---|
+| `system.query_cache` `result_size` | actual bytes in memory | 0 (not tracked) |
+| TTL enforcement | lazy eviction at insert time | Redis native key expiry |
+| `sizeInBytes()` metric | actual bytes | 0 |
+| Multi-node sharing | no | yes (with `query_cache_share_between_users = 1`) |
+| Per-user quotas (`query_cache_max_size_in_bytes`, `query_cache_max_entries`) | enforced | not enforced (Redis manages eviction) |
+
+:::note
+`system.query_cache` uses a Redis `SCAN` to enumerate entries when the Redis backend is active.
+On clusters with a large number of cached entries, this scan may be slow.
+Use `max_entries` to limit how many entries are returned.
+:::
+
+### Redis failure handling
+
+If the Redis server is unavailable, the query executes normally and returns the correct result.
+Cache reads and writes are silently skipped and errors are logged at the `Error` level.
+This means the cluster degrades gracefully to uncached operation rather than returning errors to clients.
+
+### Known limitations
+
+- `sizeInBytes()` always returns 0 for the Redis backend; the `QueryCacheBytes` metric in `system.metrics` will therefore always show 0.
+- `query_cache_min_query_runs` counting is node-local: each node maintains its own execution counter independently.
+  A node will not write to the cache until it has seen the query at least `query_cache_min_query_runs` times, even if another node already wrote an entry.
+- `FLUSHDB` (not `FLUSHALL`) is used by `SYSTEM CLEAR QUERY CACHE`, so only the configured `db_index` is cleared.
+  If multiple ClickHouse clusters share the same Redis instance, isolate them using different `db_index` values.
+
 ## Related content {#related-content}
 
 - Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
