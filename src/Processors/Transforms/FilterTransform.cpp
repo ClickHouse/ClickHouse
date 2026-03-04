@@ -182,11 +182,12 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
+    bool actually_filtered = !on_totals && !isVirtualRow(chunk);
     doTransform(chunk);
     auto chunk_rows_after = chunk.getNumRows();
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk_rows_after;
-    if (collect_predicate_stats && chunk_rows_before > 0)
+    if (collect_predicate_stats && actually_filtered && chunk_rows_before > 0)
         collectPredicateStatistics(chunk_rows_before, chunk_rows_after, chunk);
 }
 
@@ -372,17 +373,21 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
     Float64 selectivity = static_cast<Float64>(num_rows_after_filtration) / static_cast<Float64>(num_rows_before_filtration);
     String query_id(CurrentThread::getQueryId());
 
-    /// try to resolve database/table from MarkRangesInfo (MergeTree tables attach this to chunks)
-    String database;
-    String table;
+    /// resolve database/table from MarkRangesInfo, caching to avoid repeated DatabaseCatalog lookups
     if (auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>())
     {
-        auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(mark_ranges_info->table_uuid);
-        if (db_and_table.first && db_and_table.second)
+        if (mark_ranges_info->table_uuid != cached_table_uuid)
         {
-            auto storage_id = db_and_table.second->getStorageID();
-            database = storage_id.database_name;
-            table = storage_id.table_name;
+            cached_table_uuid = mark_ranges_info->table_uuid;
+            cached_database.clear();
+            cached_table.clear();
+            auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(cached_table_uuid);
+            if (db_and_table.first && db_and_table.second)
+            {
+                auto storage_id = db_and_table.second->getStorageID();
+                cached_database = storage_id.database_name;
+                cached_table = storage_id.table_name;
+            }
         }
     }
 
@@ -394,8 +399,8 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
         PredicateStatisticsLogElement elem;
         elem.event_date = today;
         elem.event_time = now;
-        elem.database = database;
-        elem.table = table;
+        elem.database = cached_database;
+        elem.table = cached_table;
         elem.column_name = atom.column_name;
         elem.predicate_class = atom.predicate_class;
         elem.function_name = atom.function_name;

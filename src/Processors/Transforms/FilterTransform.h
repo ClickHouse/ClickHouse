@@ -72,6 +72,11 @@ private:
     UInt64 predicate_stats_sample_rate = 0;
     UInt64 chunk_counter = 0;
 
+    /// cached table identity to avoid DatabaseCatalog lookup on every sampled chunk                                                                                                                   
+    UUID cached_table_uuid{};                                                                                                                                                                          
+    String cached_database;                                                                                                                                                                            
+    String cached_table;   
+
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
 
