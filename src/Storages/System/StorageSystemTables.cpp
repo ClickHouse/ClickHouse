@@ -127,6 +127,9 @@ ColumnPtr getFilteredTables(
                                                                        /* skip_not_loaded */ false);
                 for (; table_it->isValid(); table_it->next())
                 {
+                    const auto & table = table_it->table();
+                    if (!table)
+                        continue; // Table was concurrently dropped and should be skipped
                     table_column->insert(table_it->name());
                     if (engine_column)
                         engine_column->insert(table_it->table()->getName());
@@ -526,7 +529,7 @@ protected:
 
                 StoragePtr table = tables_it->table();
                 if (!table)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
+                    continue; // Table was concurrently dropped between interator snapshot and table() call so we should skip it
 
                 TableLockHolder lock;
 
