@@ -678,6 +678,7 @@ def test_short_disconnection_doesnt_stop_backup():
         "test_short_disconnection_doesnt_stop_backup: "
         + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
     )
+
     create_and_fill_table(random_node())
 
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
@@ -742,6 +743,19 @@ def test_short_disconnection_doesnt_stop_restore():
         ):
             break
         time.sleep(1)
+
+    backup_process_counts = {
+        get_node_name(node): int(
+            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
+        )
+        for node in nodes
+    }
+    total_backup_processes = sum(backup_process_counts.values())
+    assert total_backup_processes == 0, (
+        "Backup queries still running after pre-test wait in "
+        "test_short_disconnection_doesnt_stop_backup: "
+        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
+    )
 
     # Make a backup.
     backup_id = get_backup_id_of_successful_backup()
