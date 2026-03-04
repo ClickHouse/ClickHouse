@@ -2553,7 +2553,9 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-    if (refresh_statistics_seconds && !refresh_stats_task)
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+    if (refresh_statistics_seconds)
     {
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
@@ -4520,7 +4522,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(getInMemoryMetadata()))
+        else if (command.isRequireMutationStage(getInMemoryMetadata(), local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -4843,6 +4845,9 @@ void MergeTreeData::changeSettings(
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
+        UInt64 has_refresh_statistics_interval_changed
+            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
@@ -4860,6 +4865,11 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
+
+        if (has_refresh_statistics_interval_changed)
+        {
+            startStatisticsCache();
+        }
     }
 }
 
@@ -6081,12 +6091,15 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
     return nullptr;
 }
 
-void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const
+void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr /* local_context */) const
 {
-    /// Remove metadata version file and take it from table.
-    /// Currently we cannot attach parts with different schema, so
-    /// we can assume that it's equal to table's current schema.
-    part->writeMetadataVersion(local_context, getInMemoryMetadataPtr()->getMetadataVersion(), (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+    /// Do not overwrite metadata version from the table:
+    /// the part may have been detached before schema changes (e.g. RENAME COLUMN),
+    /// and its metadata_version should reflect which schema changes have actually been applied
+    /// to the part's data. Overwriting it would make the mutation/rename system think
+    /// the part is already up-to-date when it's not.
+    /// If the part has no metadata_version.txt (very old parts), the fallback in
+    /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
