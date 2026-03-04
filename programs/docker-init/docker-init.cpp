@@ -697,6 +697,52 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         return 0;
     }
 
+    /// --- Passthrough mode ---
+    /// If the first argument is a recognized client-side subcommand, exec it directly
+    /// without performing any server startup. This allows using the distroless image
+    /// as a client:
+    ///   docker run clickhouse/clickhouse-server:distroless clickhouse-client --host ... --query ...
+    if (!extra_args.empty())
+    {
+        static const std::array<std::string_view, 18> passthrough_commands = {
+            "clickhouse-client",
+            "clickhouse-local",
+            "clickhouse-keeper-client",
+            "clickhouse-benchmark",
+            "clickhouse-format",
+            "clickhouse-compressor",
+            "clickhouse-obfuscator",
+            "clickhouse-extract-from-config",
+            "clickhouse-disks",
+            "client",
+            "local",
+            "keeper-client",
+            "benchmark",
+            "format",
+            "compressor",
+            "obfuscator",
+            "extract-from-config",
+            "disks",
+        };
+        if (std::find(passthrough_commands.begin(), passthrough_commands.end(), extra_args[0])
+            != passthrough_commands.end())
+        {
+            /// Build the full path to the symlink (e.g. /usr/bin/clickhouse-client).
+            /// The symlink points to the clickhouse binary; dispatching is done by argv[0].
+            fs::path bin_dir = fs::path(g_clickhouse_binary).parent_path();
+            std::string cmd_path = (bin_dir / extra_args[0]).string();
+
+            std::vector<std::string> exec_cmd = {cmd_path};
+            for (std::size_t i = 1; i < extra_args.size(); ++i)
+                exec_cmd.push_back(extra_args[i]);
+
+            auto exec_argv = buildArgv(exec_cmd);
+            execvp(exec_argv[0], exec_argv.data());
+            std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return 1;
+        }
+    }
+
     /// --- Resolve identity ---
     uid_t current_uid = getuid();
     uid_t run_uid;

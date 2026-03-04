@@ -128,7 +128,7 @@ RUN mkdir -p \
     && cp -r /etc/clickhouse-server/. /output/etc/clickhouse-server/ \
     && cp -r /etc/clickhouse-client/. /output/etc/clickhouse-client/ \
     && chown -R clickhouse:clickhouse \
-        /output/etc/clickhouse-server/users.d \
+        /output/etc/clickhouse-server \
         /output/var/lib/clickhouse \
         /output/var/log/clickhouse-server \
         /output/docker-entrypoint-initdb.d \
