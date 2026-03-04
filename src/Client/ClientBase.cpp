@@ -1887,8 +1887,15 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        if (sendCancel(std::current_exception()))
-            receiveEndOfQueryForInsert();
+        /// Wrap cleanup in try-catch to prevent connection errors
+        /// (e.g., NETWORK_ERROR from sendCancel) from replacing
+        /// the original exception (e.g., a parsing error with row number).
+        try
+        {
+            if (sendCancel(std::current_exception()))
+                receiveEndOfQueryForInsert();
+        }
+        catch (...) {} // NOLINT
         throw;
     }
 }
@@ -3621,6 +3628,7 @@ void ClientBase::runInteractive()
         .in_fd = stdin_fd,
         .out_fd = stdout_fd,
         .err_fd = stderr_fd,
+        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
 
     lr = std::make_unique<ReplxxLineReader>(std::move(options));

@@ -97,7 +97,7 @@ def test_kill_query(setup_mongodb_users):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chuck")
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(1)
 
     node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
@@ -125,7 +125,7 @@ def test_cancel_query(setup_mongodb_users):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chuck")
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(1)
 
     node1.stop_clickhouse_client()
