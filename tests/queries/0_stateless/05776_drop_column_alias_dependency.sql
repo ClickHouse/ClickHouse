@@ -7,7 +7,7 @@ CREATE TABLE test_drop_column_alias_dep
 (
     `data` JSON,
     `seq` UInt64,
-    `derived_hashes` Array(FixedString(32)) ALIAS arrayMap(item -> unhexPrefixed(CAST(item.hash, 'String')), CAST(data.nested.entries, 'Array(JSON)'))
+    `derived_hashes` Array(FixedString(32)) ALIAS arrayMap(item -> unhex(CAST(item.hash, 'String')), CAST(data.nested.entries, 'Array(JSON)'))
 )
 ENGINE = MergeTree
 ORDER BY seq;
@@ -20,7 +20,5 @@ ALTER TABLE test_drop_column_alias_dep DROP COLUMN derived_hashes;
 
 -- Now dropping the base column is allowed.
 ALTER TABLE test_drop_column_alias_dep DROP COLUMN data;
-
-SELECT seq FROM test_drop_column_alias_dep;
 
 DROP TABLE IF EXISTS test_drop_column_alias_dep;

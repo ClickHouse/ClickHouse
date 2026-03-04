@@ -1578,10 +1578,27 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         const auto & default_expression = column.default_desc.expression;
                         if (default_expression)
                         {
-                            auto expression = buildQueryTree(default_expression->clone(), context);
-                            if (collectIdentifiersFullNames(expression).contains(command.column_name))
-                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
-                                        backQuote(command.column_name), backQuote(column.name));
+                            Names columns_used_in_expression;
+                            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+                            {
+                                auto expression = buildQueryTree(default_expression->clone(), context);
+                                auto identifiers = collectIdentifiersFullNames(expression);
+                                columns_used_in_expression.insert(columns_used_in_expression.end(), identifiers.begin(), identifiers.end());
+                            }
+                            else
+                            {
+                                ASTPtr query = default_expression->clone();
+                                auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
+                                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                                columns_used_in_expression = actions->getRequiredColumns();
+                            }
+
+                            for (const auto & required_column : columns_used_in_expression)
+                            {
+                                auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                                if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
+                            }
                         }
                     }
                 }
