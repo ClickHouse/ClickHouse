@@ -1576,17 +1576,20 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
+void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     UniqueLock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+
+    while (tables_marked_dropped_ids.contains(uuid) && !is_shutting_down)
     {
-        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
-    });
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+        wait_table_finally_dropped.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
+    }
 
     const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
