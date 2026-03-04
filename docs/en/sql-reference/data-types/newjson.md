@@ -322,7 +322,60 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 :::note
-Reading sub-objects as sub-columns may be inefficient, as this may require a near full scan of the JSON data.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+:::
+
+## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
+
+The `JSON` type supports reading a path as a **combined sub-column** using the special syntax `json.$some.path`.
+A combined sub-column for a given path returns:
+- The literal value stored at that path as `Dynamic`, if the path has a literal value.
+- A JSON sub-object at that path as `Dynamic`, if the path has no literal value but has nested sub-paths.
+- `NULL`, if neither a literal value nor any sub-paths exist for that path.
+
+This is useful when a path may hold either a scalar value or a nested object across different rows, and is more convenient than separately querying the literal sub-column (`json.a`) and the sub-object sub-column (`json.^a`).
+
+The following example compares all three sub-column types for path `a`:
+
+```sql title="Query"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : 42, "b" : {"c" : 1, "d" : "Hello"}}'), ('{"a" : {"x": 1, "y": 2}, "b" : {"c" : 1}}'), ('{"c" : "World"}');
+SELECT json FROM test;
+```
+
+```text title="Response"
+┌─json────────────────────────────┐
+│ {"a":42,"b":{"c":1,"d":"Hello"}}│
+│ {"a":{"x":1,"y":2},"b":{"c":1}}│
+│ {"c":"World"}                   │
+└─────────────────────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    json.a,
+    dynamicType(json.a),
+    json.^a,
+    toTypeName(json.^a),
+    json.$a,
+    dynamicType(json.$a)
+FROM test;
+```
+
+```text title="Response"
+┌─json.a─┬─dynamicType(json.a)─┬─json.^a───────┬─toTypeName(json.^a)─┬─json.$a───────┬─dynamicType(json.$a)─┐
+│ 42     │ Int64               │ {}            │ JSON                │ 42            │ Int64                │
+│ NULL   │ None                │ {"x":1,"y":2} │ JSON                │ {"x":1,"y":2} │ JSON                 │
+│ NULL   │ None                │ {}            │ JSON                │ NULL          │ None                 │
+└────────┴─────────────────────┴───────────────┴─────────────────────┴───────────────┴──────────────────────┘
+```
+
+- Row 1: `a` holds a literal `42`. `json.a` returns it as `Dynamic(Int64)`, `json.^a` returns an empty sub-object `{}` (no nested keys under `a`), and `json.$a` returns the literal `42`.
+- Row 2: `a` holds a nested object. `json.a` returns `NULL` (no literal at that path), `json.^a` returns the sub-object as `JSON`, and `json.$a` also returns the sub-object as `Dynamic(JSON)`.
+- Row 3: `a` is absent entirely. Both `json.a` and `json.$a` return `NULL`, while `json.^a` returns an empty `{}`.
+
+:::note
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
 :::
 
 ## Type inference for paths {#type-inference-for-paths}
