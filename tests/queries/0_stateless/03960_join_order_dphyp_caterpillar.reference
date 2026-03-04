@@ -6,3 +6,4 @@ K=15 caterpillar: DPhyp (limit=30)
 10
 K=15 caterpillar: greedy (must match)
 10
+K=15 caterpillar: DPsize (must time out)

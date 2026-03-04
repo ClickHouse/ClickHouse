@@ -1,5 +1,3 @@
-=========================================
-Plan with DPhyp algorithm
 Expression ((Project names + (Projection + )))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
@@ -22,34 +20,3 @@ Expression ((Project names + (Projection + )))
               Expression ((WHERE + Change column names to column identifiers))
                 ReadFromMergeTree (default.R4)
 5684007341784604324
-=========================================
-Fallback to greedy for outer joins
-1
-=========================================
-Test: Chain of 5 tables
-10189656014784360137
-10189656014784360137
-=========================================
-Test: Star topology
-13034374399331649129
-13034374399331649129
-=========================================
-Test: Cycle topology
-13039736836325006954
-13039736836325006954
-=========================================
-Test: Two chains with a bridge
-10728382869611409896
-10728382869611409896
-10728382869611409896
-=========================================
-Test: Chain of 10 tables
-15600811841830304255
-15600811841830304255
-=========================================
-Test: Disconnected components
-48
-=========================================
-Test: Range predicate (DPhyp fallback)
-63
-63
