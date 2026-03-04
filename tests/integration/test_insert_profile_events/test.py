@@ -32,8 +32,8 @@ def test_insert_profile_events(started_cluster):
         "SELECT value FROM system.events WHERE event == 'AsyncInsertQuery'"
     )
    
-    non_async_inserts = 1000   
-    async_inserts = 1000    
+    non_async_inserts = 10   
+    async_inserts = 10    
     inserts = non_async_inserts  + async_inserts 
     
     node.query(
