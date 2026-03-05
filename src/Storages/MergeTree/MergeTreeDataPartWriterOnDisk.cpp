@@ -153,6 +153,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
+
+            if (settings.save_marks_in_cache)
+                cached_index_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
         skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
@@ -235,13 +238,18 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     if (stream->compressed_hashing.offset() >= settings.min_compress_block_size)
                         stream->compressed_hashing.next();
 
-                    writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
-                    writeBinaryLittleEndian(stream->compressed_hashing.offset(), marks_out);
+                    MarkInCompressedFile mark{stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
                     /// Actually this numbers is redundant, but we have to store them
                     /// to be compatible with the normal .mrk2 file format
                     if (settings.can_use_adaptive_granularity)
                         writeBinaryLittleEndian(1UL, marks_out);
+
+                    if (auto it = cached_index_marks.find(stream->escaped_column_name); it != cached_index_marks.end())
+                        it->second->push_back(mark);
                 }
             }
 
