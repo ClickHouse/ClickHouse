@@ -106,6 +106,7 @@ class WriteBuffer;
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
+    M(CLASS_NAME, ParameterizedViewSchemaDefinitionMode) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI) \

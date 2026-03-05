@@ -1,0 +1,163 @@
+-- { echoOn }
+SET use_declared_schema_for_parameterized_views = 'off';
+CREATE VIEW 03271_parametrized_v AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+CREATE VIEW 03271_parametrized_v_expl (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+-- Should return no columns
+SHOW COLUMNS IN 03271_parametrized_v;
+-- Should return no columns
+SHOW COLUMNS IN 03271_parametrized_v_expl;
+n	UInt64	NO		\N	
+-- Should return no columns
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v' AND database = currentDatabase();
+-- Should return no columns
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
+default	03271_parametrized_v_expl	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
+-- Mismatched schema: should return no error
+CREATE VIEW 03271_parametrized_v_expl_mismatch (n UInt64, s String) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+0
+1
+2
+EXPLAIN AST SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Asterisk
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function 03271_parametrized_v_expl_mismatch (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier upper_bound
+          Literal UInt64_3
+EXPLAIN QUERY TREE SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+QUERY id: 0
+  PROJECTION COLUMNS
+    n UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: n, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.03271_parametrized_v_expl_mismatch
+SELECT *
+FROM 03271_parametrized_v_expl(upper_bound = 3);
+0
+1
+2
+SET use_declared_schema_for_parameterized_views = 'insecure';
+CREATE OR REPLACE VIEW 03271_parametrized_v AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+CREATE OR REPLACE VIEW 03271_parametrized_v_expl (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+-- Should return no columns
+SHOW COLUMNS IN 03271_parametrized_v;
+-- Should return one column 'n' of type 'UInt64'
+SHOW COLUMNS IN 03271_parametrized_v_expl;
+n	UInt64	NO		\N	
+-- Should return no columns
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v' AND database = currentDatabase();
+-- Should return one column 'n' of type 'UInt64'
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
+default	03271_parametrized_v_expl	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
+-- Mismatched schema: should return error on query tree building
+CREATE OR REPLACE VIEW 03271_parametrized_v_expl_mismatch (n UInt64, s String) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+0
+1
+2
+EXPLAIN AST SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Asterisk
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function 03271_parametrized_v_expl_mismatch (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier upper_bound
+          Literal UInt64_3
+EXPLAIN QUERY TREE SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+QUERY id: 0
+  PROJECTION COLUMNS
+    n UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: n, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.03271_parametrized_v_expl_mismatch
+SELECT *
+FROM 03271_parametrized_v_expl(upper_bound = 3);
+0
+1
+2
+SET use_declared_schema_for_parameterized_views = 'throwing';
+-- Should return no columns
+SHOW COLUMNS IN 03271_parametrized_v;
+-- Should return one column 'n' of type 'UInt64'
+SHOW COLUMNS IN 03271_parametrized_v_expl;
+n	UInt64	NO		\N	
+-- Should return no columns
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v' AND database = currentDatabase();
+-- Should return one column 'n' of type 'UInt64'
+SELECT *
+FROM system.columns
+WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
+default	03271_parametrized_v_expl	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
+SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+EXPLAIN AST SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Asterisk
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function 03271_parametrized_v_expl_mismatch (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier upper_bound
+          Literal UInt64_3
+EXPLAIN QUERY TREE SELECT *
+FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+SELECT *
+FROM 03271_parametrized_v_expl(upper_bound = 3);
+0
+1
+2
