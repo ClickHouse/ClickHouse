@@ -393,7 +393,9 @@ object_storages_properties = {
         "s3_max_upload_part_size": threshold_generator(
             0.2, 0.2, 0, 5 * 1024 * 1024 * 1024, 33
         ),
-        "s3_strict_upload_part_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
+        "s3_strict_upload_part_size": threshold_generator(
+            0.2, 0.2, 0, 100 * 1024 * 1024
+        ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
             0.2, 0.2, 1, 1000
