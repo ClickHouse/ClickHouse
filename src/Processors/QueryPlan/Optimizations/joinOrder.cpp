@@ -764,6 +764,15 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
 ///
 /// We first try direct complements that are non-empty subsets of `csg`'s neighborhood,
 /// then recurse outward via `enumerateCmpRec` to find complements that extend beyond it.
+///
+/// Per the DPhyp paper (Algorithm EmitCsg, Moerkotte & Neumann), `enumerateCmpRec` must
+/// be called once per individual neighbour node `v`, not with the entire neighbourhood as
+/// the starting complement. Calling it with the full neighbourhood `N` forces every
+/// recursive extension to include all nodes in `N` simultaneously, making it impossible
+/// to discover complements rooted in only one branch of `N`. For example, with
+/// CSG = {hub} and N = {la, ra}, starting from {la, ra} cannot reach {la, ll} because
+/// {la, ra, ll} is disconnected, whereas starting from {la} alone discovers {la, ll}
+/// naturally by extending through ll's edge to la.
 void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 {
     size_t min_relation_idx = *csg.begin();
@@ -783,8 +792,16 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
         emitCsgCmp(csg, complement_seed);
     });
 
-    /// Recurse outward: grow complements beyond the direct neighborhood.
-    enumerateCmpRec(csg, csg_neighborhood, exclusion | csg_neighborhood);
+    /// Recurse outward: for each individual neighbour node, grow complements that extend
+    /// beyond the direct neighbourhood. The exclusion covers the neighbourhood itself so
+    /// each complement is discovered exactly once regardless of iteration order.
+    BitSet extended_exclusion = exclusion | csg_neighborhood;
+    for (size_t v : csg_neighborhood)
+    {
+        BitSet single_node;
+        single_node.set(v);
+        enumerateCmpRec(csg, single_node, extended_exclusion);
+    }
 }
 
 /// Recursively enumerate all connected subgraphs (CSGs) that contain `csg` by extending
