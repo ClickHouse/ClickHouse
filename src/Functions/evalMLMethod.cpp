@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FunctionDocumentation.h>
 #include <Common/typeid_cast.h>
 
 
@@ -69,8 +70,11 @@ public:
         FunctionArgumentDescriptors mandatory_args{
             {"model", &isAggregateFunctionState, nullptr, "AggregateFunctionState"}
         };
+        FunctionArgumentDescriptor optional_args{
+            "xi", &isNumber, nullptr, "Float* or (U)Int*"
+        };
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, optional_args);
 
         const auto* agg_function = static_cast<const DataTypeAggregateFunction *>(arguments[0].type.get());
         return agg_function->getReturnTypeToPredict();
