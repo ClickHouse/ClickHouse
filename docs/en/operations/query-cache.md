@@ -230,9 +230,12 @@ Set `query_cache.type` to `redis` and provide the Redis connection parameters:
     <redis>
         <host>redis.example.com</host>
         <port>6379</port>
-        <password>secret</password>   <!-- optional -->
-        <db_index>0</db_index>        <!-- Redis database index, default 0 -->
-        <pool_size>16</pool_size>     <!-- connection pool size, default 16 -->
+        <password>secret</password>       <!-- optional -->
+        <db_index>0</db_index>            <!-- Redis database index, default 0 -->
+        <pool_size>16</pool_size>         <!-- connection pool size, default 16 -->
+        <lock_ttl_ms>30000</lock_ttl_ms>  <!-- stampede lock TTL in ms, default 30000 -->
+        <lock_poll_interval_ms>200</lock_poll_interval_ms>  <!-- polling interval in ms, default 200 -->
+        <lock_max_wait_ms>30000</lock_max_wait_ms>          <!-- max wait before degrading, default = lock_ttl_ms -->
     </redis>
     <!-- same size limits as for the local cache -->
     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
@@ -273,6 +276,28 @@ Use `max_entries` to limit how many entries are returned.
 If the Redis server is unavailable, the query executes normally and returns the correct result.
 Cache reads and writes are silently skipped and errors are logged at the `Error` level.
 This means the cluster degrades gracefully to uncached operation rather than returning errors to clients.
+
+### Stampede protection
+
+When multiple nodes simultaneously miss the same key, without coordination each would execute the full query independently and race to write the result.
+To avoid this redundant work, the Redis backend implements an `IN_PROGRESS` lock mechanism:
+
+1. The first node to detect a miss atomically acquires a lock (`{key}:lock`) using `SET … NX PX <lock_ttl_ms>` and executes the query.
+2. Concurrent nodes that find the lock already held sleep for `lock_poll_interval_ms` and retry, polling until the real result appears.
+3. Once the writer stores the result, it deletes the lock key. Polling nodes find the result and return it directly without running the query.
+4. If the lock expires (e.g. the writer node crashed), polling nodes stop waiting and execute the query themselves, preventing a permanent stall.
+
+The three lock parameters in `query_cache.redis` control this behaviour:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `lock_ttl_ms` | `30000` | Lock key TTL in milliseconds. Must be longer than the slowest expected query. |
+| `lock_poll_interval_ms` | `200` | How long each waiting node sleeps between Redis polls. |
+| `lock_max_wait_ms` | `lock_ttl_ms` | Maximum total time a node will wait before degrading to executing the query itself. |
+
+:::note
+Stampede protection requires Redis 2.6.12 or later (for the `SET … NX PX` command).
+:::
 
 ### Known limitations
 
