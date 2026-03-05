@@ -1,4 +1,3 @@
-
 #include "config.h"
 #if USE_AVRO
 
@@ -32,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -40,10 +40,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Interpreters/IcebergMetadataLog.h>
 
 
 #include <Common/ProfileEvents.h>
@@ -65,14 +64,13 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 
 namespace Iceberg
 {
-Iceberg::ManifestFilePtr getManifestFile(
+Iceberg::ManifestFileCacheableInfo getManifestFile(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
     const String & filename,
-    Int64 inherited_sequence_number,
-    Int64 inherited_snapshot_id)
+    size_t bytes_size)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -89,19 +87,10 @@ Iceberg::ManifestFilePtr getManifestFile(
             read_settings.enable_filesystem_cache = false;
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
-        Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
+        auto manifest_file_deserializer = std::make_unique<Iceberg::AvroForIcebergDeserializer>(
+            std::move(buffer), filename, getFormatSettings(local_context));
 
-        return std::make_shared<Iceberg::ManifestFileContent>(
-            manifest_file_deserializer,
-            filename,
-            persistent_table_components.format_version,
-            persistent_table_components.table_path,
-            *persistent_table_components.schema_processor,
-            inherited_sequence_number,
-            inherited_snapshot_id,
-            persistent_table_components.table_location,
-            local_context,
-            filename);
+        return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
@@ -111,6 +100,43 @@ Iceberg::ManifestFilePtr getManifestFile(
         return manifest_file;
     }
     return create_fn();
+}
+
+Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    LoggerPtr log,
+    const ManifestFileCacheKey & cache_key,
+    Int32 table_snapshot_schema_id)
+{
+    auto cacheable_info = getManifestFile(
+        object_storage,
+        persistent_table_components,
+        local_context,
+        log,
+        cache_key.manifest_file_path,
+        static_cast<size_t>(cache_key.manifest_file_byte_size));
+
+    auto iterator = Iceberg::ManifestFileIterator::create(
+        cacheable_info.deserializer,
+        cache_key.manifest_file_path,
+        persistent_table_components.format_version,
+        persistent_table_components.table_path,
+        *persistent_table_components.schema_processor,
+        cache_key.added_sequence_number,
+        cache_key.added_snapshot_id,
+        persistent_table_components.table_location,
+        local_context,
+        cache_key.manifest_file_path,
+        nullptr,
+        table_snapshot_schema_id);
+
+    while (iterator->next())
+    {
+    }
+
+    return iterator->getFilesWithoutDeletedHandle();
 }
 
 ManifestFileCacheKeys getManifestList(
@@ -164,6 +190,16 @@ ManifestFileCacheKeys getManifestList(
                     f_added_snapshot_id);
 
             ManifestFileContentType content_type = ManifestFileContentType::DATA;
+            Int64 manifest_length
+                = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_length, TypeIndex::Int64).safeGet<Int64>();
+            if (manifest_length < 0)
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has negative value for field '{}', but it is required",
+                    i,
+                    f_manifest_length);
+            }
             if (persistent_table_components.format_version > 1)
             {
                 added_sequence_number
@@ -172,7 +208,7 @@ ManifestFileCacheKeys getManifestList(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
             insertRowToLogTable(
                 local_context,

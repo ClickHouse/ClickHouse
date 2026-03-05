@@ -5,14 +5,14 @@ Script to check mypy errors on files changed from the last common ancestor with 
 Compares mypy errors between the base branch (master) and the current branch.
 """
 
+import os
+import re
 import subprocess
 import sys
-import os
 import tempfile
-import re
-from pathlib import Path
-from typing import List, Set, Tuple, Dict, Optional
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 
 def run_command(cmd: List[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:

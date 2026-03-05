@@ -21,6 +21,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnMap.h>
+#include <base/find_symbols.h>
 
 #include <boost/algorithm/string.hpp>
 

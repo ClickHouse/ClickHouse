@@ -100,12 +100,12 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     using Key = FileCacheKey;
     using iterator = iterator;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = OriginInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const UserInfo & user_id_,
+        const OriginInfo & origin_,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
@@ -117,7 +117,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const UserInfo user;
+    const OriginInfo origin;
 
     LockedKeyPtr lock();
 
@@ -168,8 +168,8 @@ class CacheMetadata : private boost::noncopyable
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = OriginInfo::UserID;
 
     explicit CacheMetadata(
         const std::string & path_,
@@ -183,13 +183,13 @@ public:
 
     const String & getBaseDirectory() const { return path; }
 
-    String getKeyPath(const Key & key, const UserInfo & user) const;
+    String getKeyPath(const Key & key, const OriginInfo & origin) const;
 
     String getFileSegmentPath(
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind,
-        const UserInfo & user) const;
+        const OriginInfo & origin) const;
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
@@ -208,13 +208,13 @@ public:
     KeyMetadataPtr getKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const UserInfo & user,
+        const OriginInfo & origin,
         bool is_initial_load = false);
 
     LockedKeyPtr lockKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
-        const UserInfo & user,
+        const OriginInfo & origin,
         bool is_initial_load = false);
 
     void removeKey(const Key & key, bool if_exists, bool if_releasable, const UserID & user_id);

@@ -30,6 +30,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
 namespace ErrorCodes
@@ -181,7 +182,9 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
     [[maybe_unused]] TaskHolder prev;
     [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
-    assert(prefetch_queue.top().task->priority == highest_priority);
+    /// Due to the difference in `estimated_memory_usage_for_single_prefetch` for different parts (column sizes might be different), it might happen that for the given thread, task number N won't fit in the prefetch memory limit, but the next task will.
+    /// So the top of the queue may have a priority higher than `highest_priority`.
+    assert(prefetch_queue.top().task->priority >= highest_priority);
 
     while (!prefetch_queue.empty())
     {
@@ -353,7 +356,16 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
-            size_t column_size = read_info.data_part->getColumnSize(column_name).data_compressed;
+            size_t column_size = 0;
+            auto column = read_info.data_part->tryGetColumn(column_name);
+            if (column)
+            {
+                if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
+                    column_size = read_info.data_part->getSubcolumnSize(column_name).data_compressed;
+                else
+                    column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
+            }
+
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
             ++part_stat.required_readers_num;
         };

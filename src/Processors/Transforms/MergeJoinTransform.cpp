@@ -352,7 +352,7 @@ const Chunk & FullMergeJoinCursor::getCurrent() const
 
 void FullMergeJoinCursor::setChunk(Chunk && chunk)
 {
-    chassert(!recieved_all_blocks || !chunk);
+    chassert(!received_all_blocks || !chunk);
     chassert(!isValid() || !chunk);
 
     // should match the structure of sample_block (after materialization)
@@ -392,7 +392,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
 
 bool FullMergeJoinCursor::fullyCompleted() const
 {
-    return !isValid() && recieved_all_blocks;
+    return !isValid() && received_all_blocks;
 }
 
 /// clang-tidy-21 false positive, loses track during the brace-initialization of the std::array.

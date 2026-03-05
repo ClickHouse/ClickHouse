@@ -115,6 +115,13 @@ If you want to use identifiers the same as keywords or you want to use other sym
 The same rules that apply for escaping in quoted identifiers also apply for string literals. See [String](#string) for more details.
 :::
 
+:::tip[Avoid using dots in column names]
+Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions. 
+
+Avoid using dots in column names if possible.
+Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
+:::
+
 ## Literals {#literals}
 
 In ClickHouse, a literal is a value which is directly represented in a query.

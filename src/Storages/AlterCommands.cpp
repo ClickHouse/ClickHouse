@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -41,6 +42,9 @@
 
 #include <ranges>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -48,6 +52,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
@@ -602,6 +607,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 if (data_type)
                 {
                     column.type = data_type;
+                    /// Update statistics data type to match the new column type
+                    if (!column.statistics.empty())
+                        column.statistics.data_type = data_type;
                     /// The type changed, so assume that implicit indices may change too
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
@@ -864,6 +872,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
+
+#if CLICKHOUSE_CLOUD
+        /// For Shared Catalog on secondary replicas very likely we don't have the settings used to run the SELECT on the initiator.
+        /// Because of that we can fail, or the resulting columns can be different from the original ones.
+        /// So we return early and set the columns ourselves, if they differ.
+        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+            return;
+#endif
+
         SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -872,10 +889,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
         else
         {
+            /// For refreshable materialized views, allow parameterized views in the query.
+            /// This prevents the old analyzer from trying to execute table functions during analysis.
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(select->clone(),
                 context,
                 false /* is_subquery */,
-                false);
+                metadata.refresh != nullptr /* is_create_parameterized_view */);
         }
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
@@ -966,7 +985,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         for (auto & index : metadata.secondary_indices)
         {
-            if (index.isImplicitlyCreated() && index.column_names.front() == column_name)
+            /// For implicit indices, check the index name rather than column_names because
+            /// for ALIAS columns, column_names contains the underlying expression columns.
+            if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
             else
                 rename_visitor.visit(index.definition_ast);
@@ -981,10 +1002,40 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 namespace
 {
 
+/// Checks if the only difference between two JSON (DataTypeObject) types is their
+/// typed_paths. All other parameters must be identical, making this safe to treat
+/// as a metadata-only conversion without rewriting data.
+bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_type)
+{
+    const auto * from_json = typeid_cast<const DataTypeObject *>(from_type);
+    const auto * to_json = typeid_cast<const DataTypeObject *>(to_type);
+
+    if (!from_json || !to_json)
+        return false;
+
+    if (from_json->getSchemaFormat() != DataTypeObject::SchemaFormat::JSON
+        || to_json->getSchemaFormat() != DataTypeObject::SchemaFormat::JSON)
+        return false;
+
+    if (from_json->getMaxDynamicPaths() != to_json->getMaxDynamicPaths())
+        return false;
+
+    if (from_json->getMaxDynamicTypes() != to_json->getMaxDynamicTypes())
+        return false;
+
+    if (from_json->getPathsToSkip() != to_json->getPathsToSkip())
+        return false;
+
+    if (from_json->getPathRegexpsToSkip() != to_json->getPathRegexpsToSkip())
+        return false;
+
+    return true;
+}
+
 /// If true, then in order to ALTER the type of the column from the type from to the type to
 /// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
 /// The function works for Arrays and Nullables of the same structure.
-bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
@@ -1024,6 +1075,13 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         if (is_compatible_enum_types_conversion(from, to))
             return true;
 
+        /// JSON type hint changes are metadata-only when the experimental setting is enabled
+        if (context && context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
+        {
+            if (isJSONTypeHintOnlyChange(from, to))
+                return true;
+        }
+
         /// Types changed, but representation on disk didn't
         auto it_range = allowed_conversions.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
@@ -1061,7 +1119,7 @@ bool AlterCommand::isSettingsAlter() const
     return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
-bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
+bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
 {
     if (ignore)
         return false;
@@ -1082,7 +1140,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get()))
+        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get(), context))
             return true;
     }
     return false;
@@ -1144,7 +1202,7 @@ bool AlterCommand::isDropOrRename() const
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
-    if (!isRequireMutationStage(metadata))
+    if (!isRequireMutationStage(metadata, context))
         return {};
 
     MutationCommand result;

@@ -102,6 +102,11 @@
                 <disk>s3_plain_rewritable_cache</disk>
                 <key>1234567812345678</key>
             </encrypted_s3_plain_rewritable_cache>
+            <s3_cache_encrypted>
+                <type>encrypted</type>
+                <disk>s3_cache</disk>
+                <key>1234567812345678</key>
+            </s3_cache_encrypted>
         </disks>
         <policies>
             <local_remote>
@@ -131,6 +136,21 @@
                     </main>
                 </volumes>
             </s3_cache_multi>
+            <s3_cache_encrypted>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_encrypted</disk>
+                    </main>
+                </volumes>
+            </s3_cache_encrypted>
         </policies>
     </storage_configuration>
+    <filesystem_caches>
+        <cache_for_readbigat>
+            <path>./cache_for_readbigat/</path>
+            <max_size>1Gi</max_size>
+            <max_file_segment_size>1Mi</max_file_segment_size>
+            <boundary_alignment>1Mi</boundary_alignment>
+        </cache_for_readbigat>
+    </filesystem_caches>
 </clickhouse>

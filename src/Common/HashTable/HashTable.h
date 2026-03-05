@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string.h>
-
-#include <math.h>
-
-#include <new>
-#include <utility>
-
-#include <boost/noncopyable.hpp>
-
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -19,9 +10,16 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <utility>
+#include <math.h>
+#include <string.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -272,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -330,7 +328,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
@@ -532,32 +530,33 @@ protected:
             new_grower.increaseSize();
 
         /// Expand the space.
-
         size_t old_buffer_size = getBufferSizeInBytes();
         buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
-
         grower = new_grower;
 
-        /** Now some items may need to be moved to a new location.
-          * The element can stay in place, or move to a new location "on the right",
-          *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
-          */
-        size_t i = 0;
-        for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this))
-                reinsert(buf[i], buf[i].getHash(*this));
+        if (!empty())
+        {
+            /** Now some items may need to be moved to a new location.
+              * The element can stay in place, or move to a new location "on the right",
+              *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
+              */
+            size_t i = 0;
+            for (; i < old_size; ++i)
+                if (!buf[i].isZero(*this))
+                    reinsert(buf[i], buf[i].getHash(*this));
 
-        /** There is also a special case:
-          *    if the element was to be at the end of the old buffer,                  [        x]
-          *    but is at the beginning because of the collision resolution chain,      [o       x]
-          *    then after resizing, it will first be out of place again,               [        xo        ]
-          *    and in order to transfer it where necessary,
-          *    after transferring all the elements from the old halves you need to     [         o   x    ]
-          *    process tail from the collision resolution chain immediately after it   [        o    x    ]
-          */
-        size_t new_size = grower.bufSize();
-        for (; i < new_size && !buf[i].isZero(*this); ++i)
-            reinsert(buf[i], buf[i].getHash(*this));
+            /** There is also a special case:
+              *    if the element was to be at the end of the old buffer,                  [        x]
+              *    but is at the beginning because of the collision resolution chain,      [o       x]
+              *    then after resizing, it will first be out of place again,               [        xo        ]
+              *    and in order to transfer it where necessary,
+              *    after transferring all the elements from the old halves you need to     [         o   x    ]
+              *    process tail from the collision resolution chain immediately after it   [        o    x    ]
+              */
+            size_t new_size = grower.bufSize();
+            for (; i < new_size && !buf[i].isZero(*this); ++i)
+                reinsert(buf[i], buf[i].getHash(*this));
+        }
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();

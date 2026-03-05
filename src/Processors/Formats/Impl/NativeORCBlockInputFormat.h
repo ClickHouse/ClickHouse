@@ -4,6 +4,7 @@
 
 #if USE_ORC
 
+#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>

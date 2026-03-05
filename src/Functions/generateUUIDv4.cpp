@@ -8,7 +8,7 @@ namespace DB
 
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
@@ -72,8 +72,8 @@ public:
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionGenerateUUIDv4>();
 #endif
     }
 
@@ -94,13 +94,13 @@ private:
 REGISTER_FUNCTION(GenerateUUIDv4)
 {
     /// generateUUIDv4 documentation
-    FunctionDocumentation::Description description_generateUUIDv4 = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).)";
-    FunctionDocumentation::Syntax syntax_generateUUIDv4 = "generateUUIDv4([expr])";
-    FunctionDocumentation::Arguments arguments_generateUUIDv4 = {
+    FunctionDocumentation::Description description = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).)";
+    FunctionDocumentation::Syntax syntax = "generateUUIDv4([expr])";
+    FunctionDocumentation::Arguments arguments = {
         {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv4 = {"Returns a UUIDv4.", {"UUID"}};
-    FunctionDocumentation::Examples examples_generateUUIDv4 = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv4.", {"UUID"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -126,11 +126,11 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv4 = {1, 1};
-    FunctionDocumentation::Category category_generateUUIDv4 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, {}, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGenerateUUIDv4>(documentation_generateUUIDv4);
+    factory.registerFunction<FunctionGenerateUUIDv4>(documentation);
 }
 
 }

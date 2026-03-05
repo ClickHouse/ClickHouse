@@ -198,6 +198,7 @@ public:
         hi = v2 ^ v3;
     }
 
+    /// ATTENTION: This is not constant method, if you call it several times, it will return different results, because of the finalization step.
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;

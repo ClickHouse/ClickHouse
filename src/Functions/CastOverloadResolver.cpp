@@ -136,7 +136,9 @@ protected:
         if (internal)
             return type;
 
-        if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
+        if (keep_nullable
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable())
+            && type->canBeInsideNullable())
             return makeNullable(type);
 
         return type;
@@ -163,7 +165,7 @@ FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, C
 
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
-    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Insensitive);
     /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
 
     /// CAST documentation

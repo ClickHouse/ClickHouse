@@ -236,15 +236,23 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             /// Should ignore limit if there is filtering.
             limit = 0;
 
-            //std::cerr << "====== Adding prewhere " << std::endl;
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
 
         }
+        if (const auto row_level_filter = reading->getRowLevelFilter())
+        {
+            /// Should ignore limit if there is filtering.
+            limit = 0;
+
+            appendExpression(dag, row_level_filter->actions);
+            if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+
+        }
         return;
     }
-
 
     if (typeid_cast<JoinStep *>(step) || typeid_cast<FilledJoinStep *>(step))
     {
@@ -420,7 +428,7 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
             args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
     }
 
-    return &dag.addFunction(node->function_base, std::move(args), {});
+    return &dag.addFunction(node->function_base, std::move(args), node->result_name);
 }
 
 struct SortingInputOrder
@@ -1071,6 +1079,15 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// With parallel replicas, the read-in-order-through-join optimization can produce
+        /// different results on the initiator and remote replicas (due to differences in plan
+        /// construction such as AST optimizations), leading to coordination mode mismatch
+        /// ("Replica decided to read in Default mode, not in WithOrder").
+        /// Skip this optimization for parallel replicas when it goes through a JOIN,
+        /// similar to the existing check for parallel replicas in the Union case.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return nullptr;
+
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1147,7 +1164,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1182,6 +1199,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1229,7 +1251,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return {};
         }
@@ -1298,6 +1320,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip distinct-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1344,7 +1371,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder(order_info.input_order))
+        if (!object_storage_step->requestReadingInOrder())
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

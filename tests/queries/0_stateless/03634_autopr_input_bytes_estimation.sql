@@ -1,6 +1,6 @@
 -- Tags: stateful, long
 
-SET local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
+SET use_uncompressed_cache=0;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -8,14 +8,21 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_rep
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
-SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
+-- Override randomized max_threads to avoid timeout on slow builds (ASan)
+SET max_threads=0;
+
+-- settings override: while the total amount of data to be read is small (in order of 100KB), with different settings we may wastefully overread much more data
+SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1',
+  remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi', use_query_condition_cache=0;
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
 -- SELECT COUNT(DISTINCT SearchPhrase) FROM test.hits FORMAT Null SETTINGS log_comment='query_5';
 
-SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM test.hits WHERE MobilePhoneModel <> '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_10';
+-- With smaller block sizes we can get slightly lower estimations and it will send us over the threshold. Instead of relaxing the check for all queries I prefer to specify the block size here.
+SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM test.hits WHERE MobilePhoneModel <> '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_10', max_block_size=65409;
 
-SELECT SearchPhrase, COUNT(*) AS c FROM test.hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_12';
+-- With smaller block sizes we can get slightly lower estimations and it will send us over the threshold. Instead of relaxing the check for all queries I prefer to specify the block size here.
+SELECT SearchPhrase, COUNT(*) AS c FROM test.hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_12', max_block_size=65409;
 
 SELECT UserID, COUNT(*) FROM test.hits GROUP BY UserID ORDER BY COUNT(*) DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_15';
 
