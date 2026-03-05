@@ -7,7 +7,6 @@
 #include <Processors/Port.h>
 
 #include <algorithm>
-#include <limits>
 
 namespace DB
 {
@@ -65,25 +64,20 @@ TopNAggregatingTransform::TopNAggregatingTransform(
 
     sort_direction = sort_description.front().direction;
 
-    if (!sorted_input)
+    total_state_size = 0;
+    state_align = 1;
+    agg_state_offsets.resize(aggregates.size());
+    for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        total_state_size = 0;
-        state_align = 1;
-        agg_state_offsets.resize(aggregates.size());
-        for (size_t i = 0; i < aggregates.size(); ++i)
-        {
-            total_state_size = (total_state_size + aggregates[i].function->alignOfData() - 1)
-                / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
-            agg_state_offsets[i] = total_state_size;
-            total_state_size += aggregates[i].function->sizeOfData();
-            state_align = std::max(state_align, aggregates[i].function->alignOfData());
-        }
+        total_state_size = (total_state_size + aggregates[i].function->alignOfData() - 1)
+            / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
+        agg_state_offsets[i] = total_state_size;
+        total_state_size += aggregates[i].function->sizeOfData();
+        state_align = std::max(state_align, aggregates[i].function->alignOfData());
     }
 
     if (enable_threshold_pruning && !sorted_input)
     {
-        const auto & order_arg_name = aggregates[order_by_agg_index].argument_names.back();
-        order_agg_arg_col_idx = input_header_.getPositionByName(order_arg_name);
         auto result_type = aggregates[order_by_agg_index].function->getResultType();
         boundary_column = result_type->createColumn();
     }
@@ -91,21 +85,10 @@ TopNAggregatingTransform::TopNAggregatingTransform(
 
 TopNAggregatingTransform::~TopNAggregatingTransform()
 {
-    if (!sorted_input && !partial)
+    for (auto & gs : group_states)
     {
-        for (auto & gs : group_states)
-        {
-            if (gs.state)
-                destroyAggregateStates(gs.state);
-        }
-    }
-    if (!sorted_input && partial && !generated)
-    {
-        for (auto & gs : group_states)
-        {
-            if (gs.state)
-                destroyAggregateStates(gs.state);
-        }
+        if (gs.state)
+            destroyAggregateStates(gs.state);
     }
 }
 
@@ -155,7 +138,7 @@ void TopNAggregatingTransform::destroyAggregateStates(AggregateDataPtr place) co
         aggregates[i].function->destroy(place + agg_state_offsets[i]);
 }
 
-void TopNAggregatingTransform::addRowToAggregateStates(AggregateDataPtr place, const Columns & /*columns*/, size_t row)
+void TopNAggregatingTransform::addRowToAggregateStates(AggregateDataPtr place, size_t row)
 {
     for (size_t i = 0; i < aggregates.size(); ++i)
         aggregates[i].function->add(
@@ -169,55 +152,6 @@ void TopNAggregatingTransform::insertResultsFromStates(
     for (size_t i = 0; i < aggregates.size(); ++i)
         aggregates[i].function->insertResultInto(
             place + agg_state_offsets[i], *output_columns[num_keys + i], arena.get());
-}
-
-void TopNAggregatingTransform::refreshThresholdFromStates()
-{
-    size_t n = group_states.size();
-    if (n < limit)
-        return;
-
-    /// Materialize current ORDER BY aggregate values from all group states.
-    auto result_type = aggregates[order_by_agg_index].function->getResultType();
-    auto agg_col = result_type->createColumn();
-    size_t off = agg_state_offsets[order_by_agg_index];
-    for (size_t g = 0; g < n; ++g)
-        aggregates[order_by_agg_index].function->insertResultInto(
-            group_states[g].state + off, *agg_col, arena.get());
-
-    /// Partial sort to find the K-th best value.
-    auto direction = (sort_direction < 0)
-        ? IColumn::PermutationSortDirection::Descending
-        : IColumn::PermutationSortDirection::Ascending;
-
-    IColumn::Permutation perm;
-    agg_col->getPermutation(direction, IColumn::PermutationSortStability::Unstable,
-                            limit, /*nan_direction_hint=*/1, perm);
-
-    size_t boundary_pos = std::min(limit, n) - 1;
-
-    boundary_column->popBack(boundary_column->size());
-    boundary_column->insertFrom(*agg_col, perm[boundary_pos]);
-    threshold_active = true;
-
-    if (threshold_tracker)
-    {
-        Field val;
-        boundary_column->get(0, val);
-        threshold_tracker->testAndSet(val);
-    }
-}
-
-bool TopNAggregatingTransform::isBelowThreshold(const IColumn & col, size_t row) const
-{
-    if (!threshold_active)
-        return false;
-
-    int cmp = col.compareAt(row, 0, *boundary_column, sort_direction);
-    if (sort_direction < 0)
-        return cmp < 0;
-    else
-        return cmp > 0;
 }
 
 void TopNAggregatingTransform::consume(Chunk chunk)
@@ -245,7 +179,6 @@ void TopNAggregatingTransform::consumeMode1(Chunk & chunk)
         result_columns = out_header.cloneEmptyColumns();
     }
 
-    /// Populate per-chunk cached column pointers.
     agg_arg_column_ptrs.resize(aggregates.size());
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
@@ -296,18 +229,38 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
     size_t num_rows = chunk.getNumRows();
+    if (num_rows == 0)
+        return;
 
-    if (result_columns.empty())
+    if (enable_threshold_pruning && threshold_tracker && num_rows >= limit)
     {
-        result_columns.resize(key_names.size());
-        for (size_t k = 0; k < key_names.size(); ++k)
-        {
-            const auto & out_header = getOutputPort().getHeader();
-            result_columns[k] = out_header.getByPosition(k).type->createColumn();
-        }
+        const size_t arg_col_idx = agg_arg_columns[order_by_agg_index][0];
+        const auto & arg_col = *columns[arg_col_idx];
+
+        auto direction = (sort_direction < 0)
+            ? IColumn::PermutationSortDirection::Descending
+            : IColumn::PermutationSortDirection::Ascending;
+
+        IColumn::Permutation perm;
+        arg_col.getPermutation(
+            direction, IColumn::PermutationSortStability::Unstable,
+            limit, /*nan_direction_hint=*/1, perm);
+
+        boundary_column->popBack(boundary_column->size());
+        boundary_column->insertFrom(arg_col, perm[limit - 1]);
+
+        Field val;
+        boundary_column->get(0, val);
+        threshold_tracker->testAndSet(val);
     }
 
-    /// Populate per-chunk cached raw column pointers for aggregate arguments.
+    if (mode2_accumulated_keys.empty())
+    {
+        for (size_t k = 0; k < key_names.size(); ++k)
+            mode2_accumulated_keys.push_back(
+                stored_input_header.getByPosition(key_column_indices[k]).column->cloneEmpty());
+    }
+
     agg_arg_column_ptrs.resize(aggregates.size());
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
@@ -317,44 +270,34 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
             agg_arg_column_ptrs[i][j] = columns[arg_indices[j]].get();
     }
 
-    const IColumn * order_arg_col = enable_threshold_pruning ? columns[order_agg_arg_col_idx].get() : nullptr;
-
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (enable_threshold_pruning && isBelowThreshold(*order_arg_col, row))
-            continue;
-
         UInt128 hash = hashGroupKey(columns, row);
 
-        auto it = group_indices.find(hash);
-        if (it != group_indices.end())
+        decltype(group_indices)::LookupResult it;
+        bool inserted = false;
+        group_indices.emplace(hash, it, inserted);
+
+        if (inserted)
         {
-            addRowToAggregateStates(group_states[it->getMapped()].state, columns, row);
+            it->getMapped() = num_groups;
+
+            for (size_t k = 0; k < key_names.size(); ++k)
+                mode2_accumulated_keys[k]->insertFrom(*columns[key_column_indices[k]], row);
+
+            auto * buf = arena->alignedAlloc(total_state_size, state_align);
+            AggregateDataPtr state = reinterpret_cast<AggregateDataPtr>(buf);
+            createAggregateStates(state);
+            group_states.push_back({state});
+
+            addRowToAggregateStates(state, row);
+            ++num_groups;
         }
         else
         {
-            size_t group_idx = group_states.size();
-            group_indices[hash] = group_idx;
-
-            for (size_t k = 0; k < key_names.size(); ++k)
-                result_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
-
-            auto * place = arena->alignedAlloc(total_state_size, state_align);
-            createAggregateStates(reinterpret_cast<AggregateDataPtr>(place));
-
-            GroupState gs{.state = reinterpret_cast<AggregateDataPtr>(place)};
-            group_states.push_back(gs);
-
-            addRowToAggregateStates(gs.state, columns, row);
-
-            ++num_groups;
+            addRowToAggregateStates(group_states[it->getMapped()].state, row);
         }
     }
-
-    /// Refresh threshold from actual aggregate states. Cap at limit*10000 groups
-    /// to keep per-chunk cost bounded (O(100K) for K=10) even with high cardinality.
-    if (enable_threshold_pruning && group_states.size() >= limit && group_states.size() <= limit * 10000)
-        refreshThresholdFromStates();
 }
 
 Chunk TopNAggregatingTransform::generate()
@@ -386,28 +329,21 @@ Chunk TopNAggregatingTransform::generateMode1()
 
 Chunk TopNAggregatingTransform::generateMode2()
 {
-    if (group_states.empty())
+    if (num_groups == 0)
         return {};
 
-    size_t num_groups_total = group_states.size();
-    size_t num_keys = key_names.size();
-
     const auto & out_header = getOutputPort().getHeader();
-    MutableColumns all_columns = out_header.cloneEmptyColumns();
+    size_t num_keys = key_names.size();
+    MutableColumns output = out_header.cloneEmptyColumns();
 
-    for (size_t g = 0; g < num_groups_total; ++g)
-    {
-        for (size_t k = 0; k < num_keys; ++k)
-            all_columns[k]->insertFrom(*result_columns[k], g);
+    for (size_t k = 0; k < num_keys; ++k)
+        output[k] = std::move(mode2_accumulated_keys[k]);
 
-        insertResultsFromStates(group_states[g].state, all_columns);
-    }
+    for (size_t g = 0; g < num_groups; ++g)
+        insertResultsFromStates(group_states[g].state, output);
 
-    /// Use IColumn::getPermutation for vectorized partial sort instead of
-    /// std::partial_sort with per-element virtual compareAt calls.
     size_t order_col_idx = num_keys + order_by_agg_index;
-    const auto & order_col = all_columns[order_col_idx];
-    size_t output_limit = std::min(limit, num_groups_total);
+    size_t output_limit = std::min(limit, num_groups);
 
     const auto & sort_col_desc = sort_description.front();
     int nulls_dir = sort_col_desc.nulls_direction;
@@ -420,20 +356,20 @@ Chunk TopNAggregatingTransform::generateMode2()
     IColumn::Permutation permutation;
     if (collator)
     {
-        order_col->getPermutationWithCollation(
+        output[order_col_idx]->getPermutationWithCollation(
             *collator, direction, IColumn::PermutationSortStability::Unstable,
             output_limit, nulls_dir, permutation);
     }
     else
     {
-        order_col->getPermutation(
+        output[order_col_idx]->getPermutation(
             direction, IColumn::PermutationSortStability::Unstable,
             output_limit, nulls_dir, permutation);
     }
 
     Columns final_columns;
-    final_columns.reserve(all_columns.size());
-    for (auto & col : all_columns)
+    final_columns.reserve(output.size());
+    for (auto & col : output)
         final_columns.push_back(col->permute(permutation, output_limit));
 
     return Chunk(std::move(final_columns), output_limit);
@@ -441,37 +377,72 @@ Chunk TopNAggregatingTransform::generateMode2()
 
 Chunk TopNAggregatingTransform::generateMode2Partial()
 {
-    if (group_states.empty())
+    if (num_groups == 0)
         return {};
 
-    size_t num_keys = key_names.size();
-    size_t num_groups_total = group_states.size();
+    size_t output_limit = std::min(limit, num_groups);
 
-    Columns output;
-    output.reserve(num_keys + aggregates.size());
+    /// Materialize ORDER BY aggregate values to determine local top K.
+    auto order_result_type = aggregates[order_by_agg_index].function->getResultType();
+    auto order_col = order_result_type->createColumn();
+    order_col->reserve(num_groups);
+    for (size_t g = 0; g < num_groups; ++g)
+        aggregates[order_by_agg_index].function->insertResultInto(
+            group_states[g].state + agg_state_offsets[order_by_agg_index],
+            *order_col, arena.get());
+
+    auto direction = (sort_direction < 0)
+        ? IColumn::PermutationSortDirection::Descending
+        : IColumn::PermutationSortDirection::Ascending;
+
+    const auto & sort_col_desc = sort_description.front();
+    int nulls_dir = sort_col_desc.nulls_direction;
+
+    IColumn::Permutation perm;
+    order_col->getPermutation(
+        direction, IColumn::PermutationSortStability::Unstable,
+        output_limit, nulls_dir, perm);
+
+    if (threshold_tracker && output_limit == limit)
+    {
+        Field val;
+        order_col->get(perm[output_limit - 1], val);
+        threshold_tracker->testAndSet(val);
+    }
+
+    const auto & out_header = getOutputPort().getHeader();
+    size_t num_keys = key_names.size();
+    MutableColumns output = out_header.cloneEmptyColumns();
 
     for (size_t k = 0; k < num_keys; ++k)
-        output.push_back(std::move(result_columns[k]));
+    {
+        output[k]->reserve(output_limit);
+        for (size_t j = 0; j < output_limit; ++j)
+            output[k]->insertFrom(*mode2_accumulated_keys[k], perm[j]);
+    }
 
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        auto col = ColumnAggregateFunction::create(aggregates[i].function);
-        col->addArena(arena);
-
-        auto & data = col->getData();
-        data.reserve(num_groups_total);
-
-        size_t off = agg_state_offsets[i];
-        for (size_t g = 0; g < num_groups_total; ++g)
-            data.push_back(group_states[g].state + off);
-
-        output.push_back(std::move(col));
+        auto & col = assert_cast<ColumnAggregateFunction &>(*output[num_keys + i]);
+        col.reserve(output_limit);
+        for (size_t j = 0; j < output_limit; ++j)
+            col.insertFrom(group_states[perm[j]].state + agg_state_offsets[i]);
     }
 
-    for (auto & gs : group_states)
-        gs.state = nullptr;
+    /// States in top K are now owned by ColumnAggregateFunction columns.
+    /// Destroy remaining states that were not selected.
+    std::vector<bool> in_top_k(num_groups, false);
+    for (size_t j = 0; j < output_limit; ++j)
+        in_top_k[perm[j]] = true;
 
-    return Chunk(std::move(output), num_groups_total);
+    for (size_t g = 0; g < num_groups; ++g)
+    {
+        if (!in_top_k[g])
+            destroyAggregateStates(group_states[g].state);
+    }
+    group_states.clear();
+
+    return Chunk(out_header.cloneWithColumns(std::move(output)).getColumns(), output_limit);
 }
 
 
@@ -492,12 +463,8 @@ TopNAggregatingMergeTransform::TopNAggregatingMergeTransform(
     , sort_description(sort_description_)
     , limit(limit_)
     , stored_header(intermediate_header_)
-    , final_header(output_header_)
+    , arena(std::make_shared<Arena>())
 {
-    key_column_indices.resize(key_names.size());
-    for (size_t i = 0; i < key_names.size(); ++i)
-        key_column_indices[i] = intermediate_header_.getPositionByName(key_names[i]);
-
     const auto & sort_col_name = sort_description.front().column_name;
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
@@ -510,14 +477,24 @@ TopNAggregatingMergeTransform::TopNAggregatingMergeTransform(
 
     sort_direction = sort_description.front().direction;
 
+    key_column_indices.resize(key_names.size());
+    for (size_t i = 0; i < key_names.size(); ++i)
+        key_column_indices[i] = intermediate_header_.getPositionByName(key_names[i]);
+
+    agg_column_indices.resize(aggregates.size());
+    for (size_t i = 0; i < aggregates.size(); ++i)
+        agg_column_indices[i] = intermediate_header_.getPositionByName(aggregates[i].column_name);
+
     total_state_size = 0;
     state_align = 1;
-    for (const auto & aggregate : aggregates)
+    agg_state_offsets.resize(aggregates.size());
+    for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        total_state_size = (total_state_size + aggregate.function->alignOfData() - 1)
-            / aggregate.function->alignOfData() * aggregate.function->alignOfData();
-        total_state_size += aggregate.function->sizeOfData();
-        state_align = std::max(state_align, aggregate.function->alignOfData());
+        total_state_size = (total_state_size + aggregates[i].function->alignOfData() - 1)
+            / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
+        agg_state_offsets[i] = total_state_size;
+        total_state_size += aggregates[i].function->sizeOfData();
+        state_align = std::max(state_align, aggregates[i].function->alignOfData());
     }
 }
 
@@ -526,47 +503,10 @@ TopNAggregatingMergeTransform::~TopNAggregatingMergeTransform()
     for (auto & gs : group_states)
     {
         if (gs.state)
-            destroyAggregateStates(gs.state);
-    }
-}
-
-UInt128 TopNAggregatingMergeTransform::hashGroupKey(const Columns & columns, size_t row) const
-{
-    SipHash hash;
-    for (size_t idx : key_column_indices)
-        columns[idx]->updateHashWithValue(row, hash);
-    return hash.get128();
-}
-
-size_t TopNAggregatingMergeTransform::findGroupIndex(UInt128 hash, const Columns & /*columns*/, size_t /*row*/) const
-{
-    auto it = group_indices.find(hash);
-    if (it != group_indices.end())
-        return it->getMapped();
-    return std::numeric_limits<size_t>::max();
-}
-
-void TopNAggregatingMergeTransform::createAggregateStates(AggregateDataPtr place) const
-{
-    size_t offset = 0;
-    for (const auto & aggregate : aggregates)
-    {
-        offset = (offset + aggregate.function->alignOfData() - 1)
-            / aggregate.function->alignOfData() * aggregate.function->alignOfData();
-        aggregate.function->create(place + offset);
-        offset += aggregate.function->sizeOfData();
-    }
-}
-
-void TopNAggregatingMergeTransform::destroyAggregateStates(AggregateDataPtr place) const
-{
-    size_t offset = 0;
-    for (const auto & aggregate : aggregates)
-    {
-        offset = (offset + aggregate.function->alignOfData() - 1)
-            / aggregate.function->alignOfData() * aggregate.function->alignOfData();
-        aggregate.function->destroy(place + offset);
-        offset += aggregate.function->sizeOfData();
+        {
+            for (size_t i = 0; i < aggregates.size(); ++i)
+                aggregates[i].function->destroy(gs.state + agg_state_offsets[i]);
+        }
     }
 }
 
@@ -577,62 +517,59 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
 
     const auto & columns = chunk.getColumns();
     size_t num_rows = chunk.getNumRows();
-    size_t num_keys = key_names.size();
 
-    if (key_columns.empty())
+    if (accumulated_keys.empty())
     {
-        key_columns.resize(num_keys);
-        for (size_t k = 0; k < num_keys; ++k)
-            key_columns[k] = columns[key_column_indices[k]]->cloneEmpty();
+        for (size_t k = 0; k < key_names.size(); ++k)
+            accumulated_keys.push_back(columns[key_column_indices[k]]->cloneEmpty());
     }
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        UInt128 hash = hashGroupKey(columns, row);
-        auto it = group_indices.find(hash);
+        SipHash hash;
+        for (size_t idx : key_column_indices)
+            columns[idx]->updateHashWithValue(row, hash);
+        UInt128 h = hash.get128();
 
-        if (it != group_indices.end())
+        decltype(group_indices)::LookupResult it;
+        bool inserted = false;
+        group_indices.emplace(h, it, inserted);
+
+        if (inserted)
         {
-            size_t found = it->getMapped();
-            size_t offset = 0;
+            it->getMapped() = num_groups;
+
+            for (size_t k = 0; k < key_names.size(); ++k)
+                accumulated_keys[k]->insertFrom(*columns[key_column_indices[k]], row);
+
+            auto * buf = arena->alignedAlloc(total_state_size, state_align);
+            AggregateDataPtr state = reinterpret_cast<AggregateDataPtr>(buf);
+            for (size_t i = 0; i < aggregates.size(); ++i)
+                aggregates[i].function->create(state + agg_state_offsets[i]);
+            group_states.push_back({state});
+
             for (size_t i = 0; i < aggregates.size(); ++i)
             {
-                offset = (offset + aggregates[i].function->alignOfData() - 1)
-                    / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
-
-                const auto & src_col = assert_cast<const ColumnAggregateFunction &>(*columns[num_keys + i]);
-                ConstAggregateDataPtr src_state = src_col.getData()[row];
+                const auto & agg_col = assert_cast<const ColumnAggregateFunction &>(*columns[agg_column_indices[i]]);
                 aggregates[i].function->merge(
-                    group_states[found].state + offset, src_state, &arena);
-                offset += aggregates[i].function->sizeOfData();
-            }
-        }
-        else
-        {
-            size_t group_idx = num_groups;
-            group_indices[hash] = group_idx;
-
-            for (size_t k = 0; k < num_keys; ++k)
-                key_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
-
-            auto * place = arena.alignedAlloc(total_state_size, state_align);
-            auto state_ptr = reinterpret_cast<AggregateDataPtr>(place);
-            createAggregateStates(state_ptr);
-            group_states.push_back({.state = state_ptr});
-
-            size_t offset = 0;
-            for (size_t i = 0; i < aggregates.size(); ++i)
-            {
-                offset = (offset + aggregates[i].function->alignOfData() - 1)
-                    / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
-
-                const auto & src_col = assert_cast<const ColumnAggregateFunction &>(*columns[num_keys + i]);
-                ConstAggregateDataPtr src_state = src_col.getData()[row];
-                aggregates[i].function->merge(state_ptr + offset, src_state, &arena);
-                offset += aggregates[i].function->sizeOfData();
+                    state + agg_state_offsets[i],
+                    agg_col.getData()[row],
+                    arena.get());
             }
 
             ++num_groups;
+        }
+        else
+        {
+            AggregateDataPtr state = group_states[it->getMapped()].state;
+            for (size_t i = 0; i < aggregates.size(); ++i)
+            {
+                const auto & agg_col = assert_cast<const ColumnAggregateFunction &>(*columns[agg_column_indices[i]]);
+                aggregates[i].function->merge(
+                    state + agg_state_offsets[i],
+                    agg_col.getData()[row],
+                    arena.get());
+            }
         }
     }
 }
@@ -643,32 +580,26 @@ Chunk TopNAggregatingMergeTransform::generate()
         return {};
     generated = true;
 
-    if (group_states.empty())
+    if (num_groups == 0)
         return {};
 
+    const auto & out_header = getOutputPort().getHeader();
     size_t num_keys = key_names.size();
+    MutableColumns output = out_header.cloneEmptyColumns();
 
-    MutableColumns all_columns = final_header.cloneEmptyColumns();
+    for (size_t k = 0; k < num_keys; ++k)
+        output[k] = std::move(accumulated_keys[k]);
 
     for (size_t g = 0; g < num_groups; ++g)
     {
-        for (size_t k = 0; k < num_keys; ++k)
-            all_columns[k]->insertFrom(*key_columns[k], g);
-
-        size_t offset = 0;
         for (size_t i = 0; i < aggregates.size(); ++i)
-        {
-            offset = (offset + aggregates[i].function->alignOfData() - 1)
-                / aggregates[i].function->alignOfData() * aggregates[i].function->alignOfData();
             aggregates[i].function->insertResultInto(
-                group_states[g].state + offset, *all_columns[num_keys + i], &arena);
-            offset += aggregates[i].function->sizeOfData();
-        }
+                group_states[g].state + agg_state_offsets[i],
+                *output[num_keys + i],
+                arena.get());
     }
 
-    /// Vectorized partial sort via getPermutation.
     size_t order_col_idx = num_keys + order_by_agg_index;
-    const auto & order_col = all_columns[order_col_idx];
     size_t output_limit = std::min(limit, num_groups);
 
     const auto & sort_col_desc = sort_description.front();
@@ -682,20 +613,20 @@ Chunk TopNAggregatingMergeTransform::generate()
     IColumn::Permutation permutation;
     if (collator)
     {
-        order_col->getPermutationWithCollation(
+        output[order_col_idx]->getPermutationWithCollation(
             *collator, direction, IColumn::PermutationSortStability::Unstable,
             output_limit, nulls_dir, permutation);
     }
     else
     {
-        order_col->getPermutation(
+        output[order_col_idx]->getPermutation(
             direction, IColumn::PermutationSortStability::Unstable,
             output_limit, nulls_dir, permutation);
     }
 
     Columns final_columns;
-    final_columns.reserve(all_columns.size());
-    for (auto & col : all_columns)
+    final_columns.reserve(output.size());
+    for (auto & col : output)
         final_columns.push_back(col->permute(permutation, output_limit));
 
     return Chunk(std::move(final_columns), output_limit);

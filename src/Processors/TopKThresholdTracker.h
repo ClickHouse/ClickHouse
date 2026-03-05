@@ -23,6 +23,7 @@ struct TopKThresholdTracker
         {
             threshold = value;
             is_set = true;
+            ++version;
             return;
         }
         if (direction == 1) /// ASC
@@ -30,6 +31,7 @@ struct TopKThresholdTracker
             if (value < threshold)
             {
                 threshold = value;
+                ++version;
             }
         }
         else if (direction == -1) /// DESC
@@ -37,6 +39,7 @@ struct TopKThresholdTracker
             if (value > threshold)
             {
                 threshold = value;
+                ++version;
             }
         }
     }
@@ -66,10 +69,15 @@ struct TopKThresholdTracker
 
     int getDirection() const { return direction; }
 
+    /// Monotonically increasing counter, bumped on every threshold change.
+    /// Allows consumers to cheaply detect whether a rebuild is needed.
+    uint64_t getVersion() const { return version.load(std::memory_order_acquire); }
+
 private:
     Field threshold;
     mutable SharedMutex mutex;
     std::atomic<bool> is_set{false};
+    std::atomic<uint64_t> version{0};
     int direction{0};
 };
 

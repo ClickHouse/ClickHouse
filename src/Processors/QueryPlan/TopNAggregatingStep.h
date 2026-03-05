@@ -2,7 +2,6 @@
 
 #include <Core/SortDescription.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/TopKThresholdTracker.h>
 
@@ -20,7 +19,11 @@ public:
         size_t limit_,
         bool sorted_input_,
         bool enable_threshold_pruning_ = false,
-        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr,
+        /// For Mode 1: the input column by which the table is physically sorted
+        /// (= the ORDER BY aggregate's argument, resolved to the pre-aggregation header).
+        /// Used to build a MergingSortedTransform when N sorted streams need merging.
+        String order_arg_col_name_ = {});
 
     String getName() const override { return "TopNAggregating"; }
 
@@ -48,6 +51,7 @@ private:
     bool sorted_input;
     bool enable_threshold_pruning;
     TopKThresholdTrackerPtr threshold_tracker;
+    String order_arg_col_name;
 };
 
 }

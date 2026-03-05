@@ -2,6 +2,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/TopNAggregatingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -45,7 +47,8 @@ TopNAggregatingStep::TopNAggregatingStep(
     size_t limit_,
     bool sorted_input_,
     bool enable_threshold_pruning_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_,
+    String order_arg_col_name_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(buildOutputHeader(*input_header_, key_names_, aggregates_)),
@@ -57,6 +60,7 @@ TopNAggregatingStep::TopNAggregatingStep(
     , sorted_input(sorted_input_)
     , enable_threshold_pruning(enable_threshold_pruning_)
     , threshold_tracker(std::move(threshold_tracker_))
+    , order_arg_col_name(std::move(order_arg_col_name_))
 {
 }
 
@@ -72,12 +76,48 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 
     if (sorted_input)
     {
-        pipeline.resize(1);
+        /// Mode 1: input is physically sorted by the sort key. Merge N sorted
+        /// streams into one before the single-threaded accumulating transform.
+        if (pipeline.getNumStreams() > 1 && !order_arg_col_name.empty()
+            && in_header.has(order_arg_col_name))
+        {
+            SortDescription merge_sort_desc;
+            SortColumnDescription scd(
+                order_arg_col_name,
+                sort_description.front().direction,
+                sort_description.front().nulls_direction);
+            scd.collator = sort_description.front().collator;
+            merge_sort_desc.push_back(std::move(scd));
+
+            pipeline.addTransform(std::make_shared<MergingSortedTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                merge_sort_desc,
+                /*max_block_size=*/DEFAULT_BLOCK_SIZE,
+                /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns=*/std::nullopt,
+                SortingQueueStrategy::Batch,
+                limit,
+                /*always_read_till_end=*/false,
+                /*out_row_sources_buf=*/nullptr,
+                /*filter_column_name=*/std::nullopt,
+                /*use_average_block_sizes=*/false,
+                /*apply_virtual_row_conversions=*/true));
+        }
+        else
+        {
+            pipeline.resize(1);
+        }
+
         pipeline.addTransform(std::make_shared<TopNAggregatingTransform>(
             in_header, out_header, key_names, aggregates, sort_description, limit, sorted_input));
     }
     else
     {
+        /// Mode 2: N parallel partial workers (direct HashMap + IAggregateFunction
+        /// states), each producing intermediate aggregate state columns, followed
+        /// by a single-threaded merge transform. Each worker gets its own reader
+        /// stream and benefits from the shared __topKFilter prewhere.
         const auto intermediate_header = buildIntermediateHeader(in_header, key_names, aggregates);
 
         pipeline.addSimpleTransform([&](const SharedHeader &)

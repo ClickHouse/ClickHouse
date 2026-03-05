@@ -85,6 +85,13 @@ static String resolveOriginalArgName(const String & arg_name, QueryPlan::Node * 
     return resolved;
 }
 
+static String unqualifyColumnName(const String & name)
+{
+    if (const auto pos = name.rfind('.'); pos != String::npos)
+        return name.substr(pos + 1);
+    return name;
+}
+
 /**
  * Fuse GROUP BY ... ORDER BY aggregate LIMIT K into a single TopNAggregatingStep.
  *
@@ -214,6 +221,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     bool enable_threshold_pruning = false;
     TopKThresholdTrackerPtr threshold_tracker;
     ReadFromMergeTree * read_from_mt = nullptr;
+    String sorted_input_arg_col_name;
 
     if (agg_node->children.size() == 1)
         read_from_mt = findReadFromMergeTree(*agg_node->children[0]);
@@ -231,15 +239,38 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (!sorting_key_columns.empty() && sorting_key_columns[0] == order_arg_name)
         {
             if (read_from_mt->requestReadingInOrder(1, required_direction, limit_value))
+            {
                 sorted_input = true;
+                /// TopNAggregatingStep consumes the pre-aggregation header where the
+                /// argument is represented by the identifier name (for example,
+                /// `__table1.start_time`) instead of the storage column name.
+                sorted_input_arg_col_name = order_agg.argument_names.back();
+            }
+        }
+    }
+
+    bool group_by_matches_sorting_prefix = false;
+    if (read_from_mt)
+    {
+        const auto & sorting_key_columns = read_from_mt->getStorageMetadata()->getSortingKeyColumns();
+        if (!sorting_key_columns.empty() && params.keys.size() <= sorting_key_columns.size())
+        {
+            group_by_matches_sorting_prefix = true;
+            for (size_t i = 0; i < params.keys.size(); ++i)
+            {
+                if (unqualifyColumnName(params.keys[i]) != sorting_key_columns[i])
+                {
+                    group_by_matches_sorting_prefix = false;
+                    break;
+                }
+            }
         }
     }
 
     /// Mode 2 (unsorted input): only apply when we can push a __topKFilter prewhere
-    /// into ReadFromMergeTree so the storage layer can skip entire granules. Without
-    /// prewhere, the per-row SipHash overhead makes our custom aggregation slower than
-    /// the standard Aggregator pipeline.
-    if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
+    /// into ReadFromMergeTree so the storage layer can skip entire granules.
+    if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo()
+        && !group_by_matches_sorting_prefix)
     {
         String order_arg_name = resolveOriginalArgName(
             order_agg.argument_names.back(),
@@ -311,7 +342,8 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         limit_value,
         sorted_input,
         enable_threshold_pruning,
-        threshold_tracker);
+        threshold_tracker,
+        sorted_input_arg_col_name);
 
     if (expr_node)
     {
