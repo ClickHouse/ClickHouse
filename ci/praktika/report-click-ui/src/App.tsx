@@ -811,7 +811,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           )}
           {result.ext?.run_url && (
             <Link href={result.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', padding: '4px' }}>
-              <Logo name={theme === 'dark' ? 'github-dark' : 'github-light'} size="sm" />
+              <Logo name="github" theme={theme} size="sm" />
             </Link>
           )}
           <div
@@ -1178,7 +1178,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                       <>
                         <Text>|</Text>
                         <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
-                          <Logo name={theme === 'dark' ? 'github-dark' : 'github-light'} size="sm" />
+                          <Logo name="github" theme={theme} size="sm" />
                         </Link>
                       </>
                     )}
@@ -1218,6 +1218,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 headers={headers}
                 rows={rows}
                 loading={loading}
+                responsiveMode="scroll"
               />
             </div>
           )}
@@ -1248,7 +1249,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center' }}
               >
-                <Logo name={theme === 'dark' ? 'clickhouse-dark' : 'clickhouse-light'} size="md" />
+                <Logo name="clickhouse" theme={theme} size="md" />
               </Link>
             </div>
           </div>
