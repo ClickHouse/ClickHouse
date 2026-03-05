@@ -210,7 +210,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         else
         {
             auto io = interpreter->execute();
-            auto cancel_callback = data.getContext()->getQueryContext()->getSubqueryCancelCallback();
+            auto cancel_callback = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getSubqueryCancelCallback() : nullptr;
             const UInt64 interactive_delay_ms = data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000;
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
