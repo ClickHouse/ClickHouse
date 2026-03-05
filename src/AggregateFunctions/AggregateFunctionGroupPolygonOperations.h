@@ -16,6 +16,7 @@
 
 #include <Common/WKB.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometry.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -65,18 +66,18 @@ private:
     }
 
     static std::optional<MultiPolygon<Point>> extractMultiPolygon(
-        const ColumnPtr & single_row_col, WKBGeometry type, bool should_correct)
+        const Field & field, WKBGeometry type, bool should_correct)
     {
         MultiPolygon<Point> result;
         switch (type)
         {
             case WKB_RING:
             {
-                auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
-                if (rings.empty())
+                auto ring = getRingFromField<Point>(field);
+                if (ring.empty())
                     return std::nullopt;
                 Polygon<Point> polygon;
-                polygon.outer() = std::move(rings[0]);
+                polygon.outer() = std::move(ring);
                 if (should_correct)
                     boost::geometry::correct(polygon);
                 result.emplace_back(std::move(polygon));
@@ -84,20 +85,17 @@ private:
             }
             case WKBGeometry::Polygon:
             {
-                auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
-                if (polygons.empty())
-                    return std::nullopt;
+                auto polygon = getPolygonFromField<Point>(field);
                 if (should_correct)
-                    boost::geometry::correct(polygons[0]);
-                result.emplace_back(std::move(polygons[0]));
+                    boost::geometry::correct(polygon);
+                result.emplace_back(std::move(polygon));
                 break;
             }
             case WKBGeometry::MultiPolygon:
             {
-                auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
-                if (multi_polygons.empty())
+                result = getMultiPolygonFromField<Point>(field);
+                if (result.empty())
                     return std::nullopt;
-                result = std::move(multi_polygons[0]);
                 if (should_correct)
                     boost::geometry::correct(result);
                 break;
@@ -134,8 +132,9 @@ public:
             should_correct = col.getData()[row_num] != 0;
         }
 
-        auto single_row_col = columns[0]->cut(row_num, 1);
-        auto current = extractMultiPolygon(single_row_col, input_type, should_correct);
+        Field field;
+        columns[0]->get(row_num, field);
+        auto current = extractMultiPolygon(field, input_type, should_correct);
         if (!current)
             return;
 
