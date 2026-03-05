@@ -28,7 +28,6 @@ SELECT count() FROM t_cache_arena_marks WHERE NOT ignore(*) FORMAT Null;
 SELECT 'after_select', value > 0 FROM system.metrics WHERE metric = 'MarkCacheBytes';
 
 -- Wait for asynchronous_metrics to update
-SELECT sleep(3) FORMAT Null;
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
 -- Verify cache arena has active pages (guarded for non-jemalloc builds)
@@ -52,7 +51,6 @@ SYSTEM CLEAR MARK CACHE;
 SELECT 'after_clear', value FROM system.metrics WHERE metric = 'MarkCacheBytes';
 
 -- Wait for asynchronous_metrics to update
-SELECT sleep(3) FORMAT Null;
 SYSTEM RELOAD ASYNCHRONOUS METRICS;
 
 -- Snapshot pactive after clear
