@@ -199,10 +199,10 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions * forceMaterializeCTE(bool value = true)
+    SelectQueryOptions & forceMaterializeCTE(bool value = true)
     {
         force_materialize_cte = value;
-        return this;
+        return *this;
     }
 };
 

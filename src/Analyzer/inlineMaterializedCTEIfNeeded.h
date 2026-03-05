@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <unordered_set>
 
