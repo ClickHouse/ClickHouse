@@ -31,6 +31,12 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (params.overflow_row)
         return nullptr;
 
+    /// When max_rows_to_group_by is set, the aggregation already limits groups
+    /// (via any/throw overflow mode). The heap optimization would interfere
+    /// by changing which groups survive.
+    if (params.max_rows_to_group_by > 0)
+        return nullptr;
+
     if (params.keys.empty())
         return nullptr;
 
