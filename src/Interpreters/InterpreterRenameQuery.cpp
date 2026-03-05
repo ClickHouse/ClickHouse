@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -185,7 +187,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     return {};
 }
 
-BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
+BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
 {
     assert(descriptions.size() == 1);
     assert(descriptions.front().from_table_name.empty());
@@ -195,12 +197,19 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
+    /// Forward database-level DDL through DatabaseReplicator if enabled.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
+        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+
     auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+
+        if (DatabaseReplicator::isEnabled())
+            DatabaseReplicator::instance().commitRenameDatabase(old_name, new_name, rename.exchange, getContext());
     }
 
     return {};

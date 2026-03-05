@@ -87,6 +87,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -194,6 +195,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+
+    /// Forward database-level DDL through DatabaseReplicator if enabled.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
+    {
+        guard.reset();
+        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+    }
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
@@ -393,6 +401,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+
+    /// Update DatabaseReplicator digest after successful CREATE DATABASE.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name))
+        DatabaseReplicator::instance().commitCreateDatabase(database_name, getContext());
 
     return {};
 }

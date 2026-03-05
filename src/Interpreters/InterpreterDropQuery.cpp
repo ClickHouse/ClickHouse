@@ -26,6 +26,7 @@
 #include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 #include "config.h"
 
@@ -441,6 +442,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!database)
         return {};
 
+    /// Forward database-level DDL through DatabaseReplicator if enabled.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), current_query_ptr))
+    {
+        ddl_guard.reset();
+        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(current_query_ptr, getContext(), {});
+    }
+
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
 
@@ -720,6 +728,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
+    /// Update DatabaseReplicator digest after successful DROP DATABASE.
+    if (drop && DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name))
+        DatabaseReplicator::instance().commitDropDatabase(database_name, getContext());
 
     return {};
 }
