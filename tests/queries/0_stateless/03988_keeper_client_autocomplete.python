@@ -1,0 +1,169 @@
+import multiprocessing
+import os
+import pty
+import shlex
+import sys
+import time
+
+COMPLETION_TIMEOUT_SECONDS = 30
+
+DEBUG_LOG = os.path.join(
+    os.environ.get("CLICKHOUSE_TMP", "/tmp"),
+    "03988_keeper_client_autocomplete.debuglog",
+)
+
+STATE_MAP = {
+    -1: "process did not start",
+    0: "completion was found",
+    1: "process started and showed prompt",
+    2: "completion search was started",
+    3: "completion is missing",
+}
+
+
+def run_with_timeout(func, args, timeout):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=func, args=args, kwargs={"state": state}
+        )
+        process.start()
+        process.join(timeout)
+
+        if state.value in (0, 3):
+            return
+
+        if process.is_alive():
+            process.terminate()
+
+        if attempt < 4:
+            continue
+
+        if state.value in (1, 2):
+            print(f"Timeout, state: {STATE_MAP[state.value]}")
+            return
+
+
+def test_completion(program, argv, input_text, expected_text, test_name, state=None):
+    """
+    Spawn keeper-client in a PTY, wait for the prompt, type input_text,
+    send TAB, and check that expected_text appears in the output.
+
+    input_text: what to type before pressing TAB (e.g. "ls " or 'ls "/some/path')
+    expected_text: substring expected in output after TAB (e.g. '"/some/path/child')
+    """
+
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.execv(program, argv)
+    else:
+        try:
+            debug_log_fd = open(DEBUG_LOG, "a")
+
+            # Wait for the keeper-client prompt ":) "
+            output_b = os.read(master, 4096)
+            output = output_b.decode(errors="replace")
+            debug_log_fd.write(f"=== {test_name} ===\n")
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+            while ":)" not in output:
+                output_b = os.read(master, 4096)
+                output += output_b.decode(errors="replace")
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
+
+            state.value = 1
+
+            # Type the input text
+            os.write(master, input_text.encode())
+            time.sleep(0.05)
+
+            # Read back what was echoed
+            output_b = os.read(master, 4096)
+            output = output_b.decode(errors="replace")
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+
+            # Send TAB
+            os.write(master, b"\t")
+
+            state.value = 2
+
+            # Read output looking for expected completion
+            output_b = os.read(master, 4096)
+            output = output_b.decode(errors="replace")
+            debug_log_fd.write(repr(output_b) + "\n")
+            debug_log_fd.flush()
+
+            while expected_text not in output:
+                if "\x07" in output:
+                    print(f"{test_name}: FAIL (bell, no completion)")
+                    state.value = 3
+                    return
+
+                output_b = os.read(master, 4096)
+                output += output_b.decode(errors="replace")
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
+
+            print(f"{test_name}: OK")
+            state.value = 0
+        except Exception as e:
+            debug_log_fd.write(f"Exception: {e}\n")
+            debug_log_fd.flush()
+        finally:
+            os.close(master)
+            debug_log_fd.close()
+
+
+if __name__ == "__main__":
+    test_path = sys.argv[1]
+
+    keeper_client = os.environ.get("CLICKHOUSE_KEEPER_CLIENT", "")
+    if not keeper_client:
+        print("CLICKHOUSE_KEEPER_CLIENT is not set")
+        sys.exit(1)
+
+    args = shlex.split(keeper_client)
+    program = args[0]
+
+    test_cases = [
+        # Test 1: Command name completion (unique prefix)
+        {
+            "input": "get_d",
+            "expected": "get_direct_children_number",
+            "name": "command_completion",
+        },
+        # Test 2: Path completion — type partial path prefix that uniquely matches
+        # our test znode. The opening quote is auto-inserted by prependDoubleQuoteForPath.
+        {
+            "input": f"ls \"{test_path}/uni",
+            "expected": f"{test_path}/unique_prefix_xyz",
+            "name": "path_completion_unique_match",
+        },
+        # Test 3: Directory completion — unique directory match should get trailing /
+        {
+            "input": f'ls "{test_path}/dir_no',
+            "expected": f"{test_path}/dir_node/",
+            "name": "directory_completion_trailing_slash",
+        },
+        # Test 4: Leaf completion — unique leaf match should get closing quote
+        {
+            "input": f'ls "{test_path}/leaf',
+            "expected": f'{test_path}/leaf_node"',
+            "name": "leaf_completion_closing_quote",
+        },
+        # Test 5: Drill into directory — complete children after /
+        {
+            "input": f'ls "{test_path}/dir_node/',
+            "expected": "child",
+            "name": "drill_into_directory",
+        },
+    ]
+
+    for tc in test_cases:
+        run_with_timeout(
+            test_completion,
+            [program, args, tc["input"], tc["expected"], tc["name"]],
+            COMPLETION_TIMEOUT_SECONDS,
+        )
