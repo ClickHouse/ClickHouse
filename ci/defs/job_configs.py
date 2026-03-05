@@ -1274,6 +1274,7 @@ class JobConfigs:
             ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         ],
         command="python3 ./ci/jobs/llvm_coverage_job.py",
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/llvm_coverage_job.py"],
         ),

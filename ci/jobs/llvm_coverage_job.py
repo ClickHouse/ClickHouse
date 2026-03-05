@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shlex
@@ -7,7 +8,6 @@ from pathlib import Path
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.praktika.gh import GH
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 
@@ -244,7 +244,11 @@ if __name__ == "__main__":
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
-            _s3_prefix = f"PRs/{pr_number}/{current_commit_sha}" if int(pr_number) > 0 else f"REFs/{branch}/{current_commit_sha}"
+            _s3_prefix = (
+                f"PRs/{pr_number}/{current_commit_sha}"
+                if int(pr_number) > 0
+                else f"REFs/{branch}/{current_commit_sha}"
+            )
             _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
@@ -252,7 +256,9 @@ if __name__ == "__main__":
             CIDBCluster().insert_json(
                 table="coverage_ci.coverage_data",
                 json_str={
-                    "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "check_start_time": datetime.now(timezone.utc).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
                     "pull_request_number": pr_number,
                     "commit_sha": current_commit_sha,
                     "base_commit_sha": merge_base_commit_sha,
@@ -274,25 +280,22 @@ if __name__ == "__main__":
 
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             _pr_changed_lines_info = print_res.ext.get("comment", "")
-            _pr_changed_lines_row = (
-                f"\n**PR changed lines:** {_pr_changed_lines_info}"
-                if _pr_changed_lines_info
-                else ""
-            )
-            GH.post_fresh_comment(
-                tag="llvm-coverage",
-                body=(
-                    f"## LLVM Coverage Report\n"
-                    f"| Metric | Baseline | Current | Δ |\n"
-                    f"|--------|----------|---------|---|\n"
-                    f"| Lines | {b_line_cov:.2f}% | {c_line_cov:.2f}% | {c_line_cov - b_line_cov:+.2f}% |\n"
-                    f"| Functions | {b_function_cov:.2f}% | {c_function_cov:.2f}% | {c_function_cov - b_function_cov:+.2f}% |\n"
-                    f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
-                    f"{_pr_changed_lines_row}"
-                    f"\n[Diff coverage report]({_diff_url})"
-                    f"\n[Uncovered code]({uncovered_code_url})"
-                ),
-            )
+
+            # Write coverage data for the post-hook to pick up and post as a GitHub comment.
+            # The hook runs on the host (outside Docker) where the GH token is available.
+            _comment_data = {
+                "b_line_cov": b_line_cov,
+                "c_line_cov": c_line_cov,
+                "b_function_cov": b_function_cov,
+                "c_function_cov": c_function_cov,
+                "b_branch_cov": b_branch_cov,
+                "c_branch_cov": c_branch_cov,
+                "pr_changed_lines_info": _pr_changed_lines_info,
+                "diff_url": _diff_url,
+                "uncovered_code_url": uncovered_code_url,
+            }
+            with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                json.dump(_comment_data, f)
         else:
             print("Local run, skipping CI DB update with coverage results")
     else:
@@ -303,7 +306,11 @@ if __name__ == "__main__":
     # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
     if not info.is_local_run:
-        _s3_prefix = f"PRs/{pr_number}/{current_commit_sha}" if int(pr_number) > 0 else f"REFs/{branch}/{current_commit_sha}"
+        _s3_prefix = (
+            f"PRs/{pr_number}/{current_commit_sha}"
+            if int(pr_number) > 0
+            else f"REFs/{branch}/{current_commit_sha}"
+        )
         _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
         report_links.append(
             f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
