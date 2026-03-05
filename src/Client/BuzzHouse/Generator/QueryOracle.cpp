@@ -673,9 +673,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
 
             gen.setBackupDestination(rg, bac);
-            res->set_backup_number(bac->backup_number());
-            res->set_out(bac->out());
-            res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);

@@ -169,9 +169,9 @@ bool SQLDatabase::isSharedDatabase() const
     return deng == DatabaseEngineValues::DShared;
 }
 
-bool SQLDatabase::isLazyDatabase() const
+bool SQLDatabase::isBackupDatabase() const
 {
-    return deng == DatabaseEngineValues::DLazy;
+    return deng == DatabaseEngineValues::DBackup;
 }
 
 bool SQLDatabase::isOrdinaryDatabase() const

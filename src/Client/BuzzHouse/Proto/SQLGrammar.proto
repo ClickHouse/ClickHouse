@@ -3028,27 +3028,42 @@ enum DatabaseEngineValues {
     DMemory = 2;
     DReplicated = 3;
     DShared = 4;
-    DLazy = 5;
-    DOrdinary = 6;
-    DDataLakeCatalog = 7;
-    DPostgreSQL = 8;
-    DMySQL = 9;
-    DSQLite = 10;
-    DBackup = 11;
-    DMaterializedPostgreSQL = 12;
+    DOrdinary = 5;
+    DDataLakeCatalog = 6;
+    DPostgreSQL = 7;
+    DMySQL = 8;
+    DSQLite = 9;
+    DBackup = 10;
+    DMaterializedPostgreSQL = 11;
 }
 
-message BackupDisk {
-    required string disk = 1;
-    required Database database = 2;
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupOut {
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
+        AzureBlobStorage = 6;
+    }
+    required BackupOutput out = 1;
+    repeated BackupParam out_params = 2;
+    /// Need to know backup number
+    required uint32 backup_number = 3;
 }
 
 message DatabaseEngineParam {
     oneof database_engine_param_oneof {
         string svalue = 1;
-        Database database = 2;
-        BackupDisk disk = 3;
-        Expr expr = 4;
+        Expr expr = 2;
+        BackupOut backup_out = 3;
     }
 }
 
@@ -4199,17 +4214,6 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
-message BackupParam {
-    oneof backup_param_oneof {
-        string svalue = 1;
-        string rvalue = 2;
-    }
-}
-
-message BackupParams {
-    repeated BackupParam out_params = 1;
-}
-
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -4219,28 +4223,17 @@ message BackupRestore {
     required BackupRestoreElement backup_element = 2;
     repeated BackupRestoreElement other_elements = 3;
     optional Cluster cluster = 4;
-    enum BackupOutput {
-        Disk = 1;
-        File = 2;
-        Memory = 3;
-        Null = 4;
-        S3 = 5;
-        AzureBlobStorage = 6;
-    }
-    required BackupOutput out = 5;
-    required BackupParams params = 6;
-    optional SettingValues setting_values = 7;
+    required BackupOut out = 5;
+    optional SettingValues setting_values = 6;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 8;
+    optional SyncOrAsync sync = 7;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        InFormat informat = 8;
+        OutFormat outformat = 9;
     }
-    /// Need to know backup number
-    required uint32 backup_number = 11;
 }
 
 message Rename {

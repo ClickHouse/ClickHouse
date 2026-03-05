@@ -2854,12 +2854,16 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DDataLakeCatalog);
     }
+    if (std::ranges::any_of(backups, [](const auto & b) { return !b.second.databases.empty(); }) && (fc.engine_mask & allow_backup) != 0)
+    {
+        this->ids.emplace_back(DBackup);
+    }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
     return res;
 }
 
-void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d)
+void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de)
 {
     if (d.isReplicatedDatabase())
     {
@@ -2892,6 +2896,20 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
             d.shard_name = "{shard}";
             d.replica_name = "{replica}";
         }
+        d.finishDatabaseSpecification(de);
+    }
+    else if (d.isBackupDatabase())
+    {
+        std::vector<std::reference_wrapper<const CatalogBackup>> candidates;
+
+        for (const auto & [k, b] : backups)
+            if (!b.databases.empty())
+                candidates.emplace_back(std::cref(b));
+        const CatalogBackup & backup = rg.pickRandomly(candidates);
+
+        de->add_params()->set_svalue(rg.pickValueRandomlyFromMap(backup.databases)->getName());
+        de->add_params()->mutable_backup_out()->CopyFrom(backup.bout);
+        d.backup_number = backup.bout.backup_number();
     }
 }
 
@@ -2922,8 +2940,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else
     {
-        generateDatabaseEngineDetails(rg, next);
-        next.finishDatabaseSpecification(deng);
+        generateDatabaseEngineDetails(rg, next, deng);
     }
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)

@@ -317,7 +317,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
            {"alias", allow_alias},
-           {"kafka", allow_kafka}};
+           {"kafka", allow_kafka},
+           {"backup", allow_backup}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},

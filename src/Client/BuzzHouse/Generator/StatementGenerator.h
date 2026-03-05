@@ -122,11 +122,9 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
 class CatalogBackup
 {
 public:
-    uint32_t backup_num = 0;
+    BackupOut bout;
     bool everything = false;
-    BackupRestore_BackupOutput outf;
     std::optional<OutFormat> out_format;
-    BackupParams out_params;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
@@ -530,7 +528,7 @@ private:
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg, const SQLDatabase & d);
-    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d);
+    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);

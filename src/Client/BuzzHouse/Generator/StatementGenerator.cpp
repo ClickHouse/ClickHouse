@@ -2776,11 +2776,12 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
     const uint32_t nopt2 = next_dist2(rg.generator);
     String backup_file = "backup";
-    BackupRestore_BackupOutput outf = BackupRestore_BackupOutput_Null;
+    BackupOut_BackupOutput outf = BackupOut_BackupOutput_Null;
+    BackupOut * bout = br->mutable_out();
 
     /// Set backup file
-    br->set_backup_number(backup_counter++);
-    backup_file += std::to_string(br->backup_number());
+    bout->set_backup_number(backup_counter++);
+    backup_file += std::to_string(bout->backup_number());
     if (rg.nextSmallNumber() < 8)
     {
         static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
@@ -2798,39 +2799,39 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     }
     if (out_to_disk && (nopt2 < out_to_disk + 1))
     {
-        outf = BackupRestore_BackupOutput_Disk;
-        br->mutable_params()->add_out_params()->set_svalue(rg.pickRandomly(fc.disks));
-        br->mutable_params()->add_out_params()->set_svalue(std::move(backup_file));
+        outf = BackupOut_BackupOutput_Disk;
+        bout->add_out_params()->set_svalue(rg.pickRandomly(fc.disks));
+        bout->add_out_params()->set_svalue(std::move(backup_file));
     }
     else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
     {
-        outf = BackupRestore_BackupOutput_File;
-        br->mutable_params()->add_out_params()->set_svalue((fc.server_file_path / std::move(backup_file)).generic_string());
+        outf = BackupOut_BackupOutput_File;
+        bout->add_out_params()->set_svalue((fc.server_file_path / std::move(backup_file)).generic_string());
     }
     else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
     {
-        outf = BackupRestore_BackupOutput_S3;
-        connections.setBackupDetails(IntegrationCall::MinIO, backup_file, br);
+        outf = BackupOut_BackupOutput_S3;
+        connections.setBackupDetails(IntegrationCall::MinIO, backup_file, bout);
     }
     else if (out_to_azure && (nopt2 < out_to_disk + out_to_file + out_to_s3 + out_to_azure + 1))
     {
-        outf = BackupRestore_BackupOutput_AzureBlobStorage;
-        connections.setBackupDetails(IntegrationCall::Azurite, backup_file, br);
+        outf = BackupOut_BackupOutput_AzureBlobStorage;
+        connections.setBackupDetails(IntegrationCall::Azurite, backup_file, bout);
     }
     else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + 1))
     {
-        outf = BackupRestore_BackupOutput_Memory;
-        br->mutable_params()->add_out_params()->set_svalue(std::move(backup_file));
+        outf = BackupOut_BackupOutput_Memory;
+        bout->add_out_params()->set_svalue(std::move(backup_file));
     }
     else if (out_to_null && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null + 1))
     {
-        outf = BackupRestore_BackupOutput_Null;
+        outf = BackupOut_BackupOutput_Null;
     }
     else
     {
         UNREACHABLE();
     }
-    br->set_out(outf);
+    bout->set_out(outf);
 }
 
 void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore * br)
@@ -2977,8 +2978,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     }
 
     setClusterClause(rg, cluster, br->mutable_cluster());
-    br->set_out(backup.outf);
-    br->mutable_params()->CopyFrom(backup.out_params);
+    br->mutable_out()->CopyFrom(backup.bout);
     if (backup.out_format.has_value())
     {
         br->set_informat(
@@ -2986,7 +2986,6 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
                 ? outIn.at(backup.out_format.value())
                 : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1));
     }
-    br->set_backup_number(backup.backup_num);
 }
 
 void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br)
@@ -3014,8 +3013,7 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
         const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
 
         sv->set_property("base_backup");
-        info += BackupRestore_BackupOutput_Name(backup.outf);
-        BackupParamsToString(info, backup.out_params);
+        BackupOutToString(info, backup.bout);
         sv->set_value(std::move(info));
     }
     if (rg.nextSmallNumber() < 4)
@@ -3968,6 +3966,44 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         if (!ssq.explain().is_explain() && success && !this->staged_databases[dname]->random_engine)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
+            auto & d = this->databases[dname];
+            if (d->isBackupDatabase() && backups.contains(d->backup_number))
+            {
+                /// Copy all backup tables, views and dictionaries back
+                const CatalogBackup & backup = backups.at(d->backup_number);
+                const String & odname = query.create_database().dengine().params(0).svalue();
+
+                if (!backup.partition_id.has_value())
+                {
+                    for (const auto & [key, val] : backup.tables)
+                    {
+                        if (val.db && val.db->getName() == odname)
+                        {
+                            SQLTable ntab = val;
+                            ntab.db = d;
+                            this->tables[key] = std::move(ntab);
+                        }
+                    }
+                    for (const auto & [key, val] : backup.views)
+                    {
+                        if (val.db && val.db->getName() == odname)
+                        {
+                            SQLView nview = val;
+                            nview.db = d;
+                            this->views[key] = std::move(nview);
+                        }
+                    }
+                    for (const auto & [key, val] : backup.dictionaries)
+                    {
+                        if (val.db && val.db->getName() == odname)
+                        {
+                            SQLDictionary ndict = val;
+                            ndict.db = d;
+                            this->dictionaries[key] = std::move(ndict);
+                        }
+                    }
+                }
+            }
         }
         this->staged_databases.erase(dname);
     }
@@ -4008,18 +4044,17 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     {
         const BackupRestore & br = query.backup_restore();
         const BackupRestoreElement & bre = br.backup_element();
+        const uint32_t backup_number = br.out().backup_number();
 
         if (br.command() == BackupRestore_BackupCommand_BACKUP)
         {
             CatalogBackup newb;
 
-            newb.backup_num = br.backup_number();
-            newb.outf = br.out();
+            newb.bout.CopyFrom(br.out());
             if (br.has_outformat())
             {
                 newb.out_format = br.outformat();
             }
-            newb.out_params.CopyFrom(br.params());
             if (bre.has_all())
             {
                 newb.tables = this->tables;
@@ -4108,12 +4143,12 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             }
             if (!newb.databases.empty() || !newb.tables.empty() || !newb.views.empty() || !newb.dictionaries.empty())
             {
-                this->backups[br.backup_number()] = std::move(newb);
+                this->backups[backup_number] = std::move(newb);
             }
         }
-        else if (backups.contains(br.backup_number()))
+        else if (backups.contains(backup_number))
         {
-            const CatalogBackup & backup = backups.at(br.backup_number());
+            const CatalogBackup & backup = backups.at(backup_number);
 
             if (!backup.partition_id.has_value())
             {

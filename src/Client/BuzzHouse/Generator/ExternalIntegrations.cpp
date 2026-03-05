@@ -1435,10 +1435,10 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+void MinIOIntegration::setBackupDetails(const String & filename, BackupOut * bout)
 {
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
+    bout->add_out_params()->set_rvalue(sc.named_collection);
+    bout->add_out_params()->set_svalue(filename);
 }
 
 bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1451,10 +1451,10 @@ void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupOut * bout)
 {
-    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
-    br->mutable_params()->add_out_params()->set_svalue(filename);
+    bout->add_out_params()->set_rvalue(sc.named_collection);
+    bout->add_out_params()->set_svalue(filename);
 }
 
 bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -2072,15 +2072,15 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupRestore * br)
+void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupOut * bout)
 {
     switch (dc)
     {
         case IntegrationCall::MinIO:
-            minio->setBackupDetails(filename, br);
+            minio->setBackupDetails(filename, bout);
             break;
         case IntegrationCall::Azurite:
-            azurite->setBackupDetails(filename, br);
+            azurite->setBackupDetails(filename, bout);
             break;
         default:
             UNREACHABLE();
