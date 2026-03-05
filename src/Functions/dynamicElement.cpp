@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -66,7 +67,7 @@ public:
                             getName(),
                             arguments[0].type->getName());
 
-        auto return_type = makeNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
+        auto return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
 
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
