@@ -21,6 +21,23 @@ class ReplicatedMergeTreeCleanupThread : public IMergeTreeCleanupThread
 public:
     explicit ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
+    struct NodeCacheEntry
+    {
+        Int64 ctime = 0;
+        Int64 czxid = 0;
+        Int32 version = 0;
+    };
+    using NodeCTimeAndVersionCache = std::map<String, NodeCacheEntry>;
+    /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks
+    static size_t clearOldBlocks(
+        const String & zookeeper_path,
+        const String & blocks_dir_name,
+        zkutil::ZooKeeper & zookeeper,
+        UInt64 window_seconds,
+        UInt64 window_size,
+        NodeCTimeAndVersionCache & cached_block_stats,
+        LoggerPtr log_);
+
 private:
     StorageReplicatedMergeTree & storage;
 
@@ -38,23 +55,6 @@ private:
         const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
         size_t replicas_count,
         const zkutil::ZooKeeperPtr & zookeeper);
-
-    struct NodeCacheEntry
-    {
-        Int64 ctime = 0;
-        Int64 czxid = 0;
-        Int32 version = 0;
-    };
-    using NodeCTimeAndVersionCache = std::map<String, NodeCacheEntry>;
-    /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks
-    static size_t clearOldBlocks(
-        const String & zookeeper_path,
-        const String & blocks_dir_name,
-        zkutil::ZooKeeper & zookeeper,
-        UInt64 window_seconds,
-        UInt64 window_size,
-        NodeCTimeAndVersionCache & cached_block_stats,
-        LoggerPtr log_);
 
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica. Returns the number of removed mutations
     size_t clearOldMutations();
