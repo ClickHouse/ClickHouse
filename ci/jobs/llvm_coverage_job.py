@@ -140,7 +140,7 @@ if __name__ == "__main__":
     # Pass workspace path to the shell script via environment variable
     os.environ["WORKSPACE_PATH"] = CURRENT_DIR
 
-    info = Info()
+    is_local_run = Info().is_local_run
 
     (
         current_commit_sha,
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     os.environ["BASE_COMMIT"] = merge_base_commit_sha
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
-    os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits or [])
+    os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits)
 
     is_master_branch = branch == "master"
 
@@ -249,7 +249,7 @@ if __name__ == "__main__":
         print_res.files.append(_print_log)
         results.append(print_res)
 
-        if not info.is_local_run:
+        if not is_local_run:
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
@@ -314,7 +314,7 @@ if __name__ == "__main__":
     # HTML files are uploaded within the corresponding generate sub-result;
     # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
-    if not info.is_local_run:
+    if not is_local_run:
         _s3_prefix = (
             f"PRs/{pr_number}/{current_commit_sha}"
             if pr_number > 0
