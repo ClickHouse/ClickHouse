@@ -29,6 +29,11 @@ WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5))
 SELECT key, value FROM fact_dist LEFT JOIN t ON fact_dist.key = t.c
 ORDER BY key, value;
 
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5))
+SELECT key, value FROM fact_dist LEFT JOIN t ON fact_dist.key = t.c
+WHERE fact_dist.key IN t
+ORDER BY key, value;
+
 SELECT '---';
 
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5))

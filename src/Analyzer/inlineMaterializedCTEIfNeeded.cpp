@@ -29,6 +29,11 @@ public:
                 const auto & materialized_cte = table_node->getMaterializedCTE();
                 if (!reused_materialized_cte.contains(materialized_cte))
                 {
+                    /// If the materialized CTE is not reused, we can inline it and remove the temporary table from the context.
+                    /// If table is not removed from Context, it would cause an exception in distributed queries,
+                    /// because the temporary table would already exist in the Context
+                    /// and there would be an attempt to read it to send the temporary table to remote servers.
+                    getContext()->getQueryContext()->removeExternalTable(table_node->getTemporaryTableName());
                     replacement_map.emplace(table_node, table_node->getMaterializedCTESubquery());
                 }
             }
