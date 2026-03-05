@@ -480,12 +480,12 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     try
     {
         bool db_exists = false;
-        mongocxx::client client = mongocxx::client(mongocxx::uri(std::move(connection_str)));
-        auto databases = client.list_databases();
+        mongocxx::client client(mongocxx::uri(std::move(connection_str)));
+        auto databases = client.list_database_names();
 
         for (const auto & db : databases)
         {
-            if (db["name"].get_utf8().value == scc.database)
+            if (db == scc.database)
             {
                 db_exists = true;
                 break;
