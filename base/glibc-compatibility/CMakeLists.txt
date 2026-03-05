@@ -34,15 +34,6 @@ if (GLIBC_COMPATIBILITY)
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
-    # Force x86-64-v2 for musl math functions on higher arch-level builds.
-    # These are scalar and don't benefit from AVX2, but the different code
-    # generation (VEX encoding, alignment) can cause microarchitectural
-    # regressions in tight per-element call loops.
-    if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-        file(GLOB MUSL_MATH_SOURCES "musl/exp*.c" "musl/log*.c" "musl/pow*.c")
-        set_source_files_properties(${MUSL_MATH_SOURCES}
-                PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
-    endif()
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 

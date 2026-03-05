@@ -120,6 +120,14 @@ elseif (ARCH_AMD64)
         list (APPEND RUSTFLAGS_CPU "-C" "target-feature=+pclmulqdq")
     endif ()
 
+    # The SSE/AVX transition penalty that `vzeroupper` guards against was
+    # eliminated in Intel Ice Lake and was never significant on AMD Zen.
+    # On v3+ builds every function uses VEX encoding, so the instruction
+    # is pure overhead — remove it globally.
+    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mno-vzeroupper")
+    endif ()
+
 else ()
     # RISC-V + exotic platforms
 endif ()
