@@ -16,13 +16,14 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 
+#include <Storages/MergeTree/MergeTreeIndexText.h>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -30,7 +31,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
-    , arguments(other.arguments ? other.arguments->clone() : nullptr)
+    , arguments(other.arguments)
     , column_names(other.column_names)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
@@ -66,11 +67,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     else
         expression.reset();
 
-    if (other.arguments)
-        arguments = other.arguments->clone();
-    else
-        arguments.reset();
-
+    arguments = other.arguments;
     column_names = other.column_names;
     data_types = other.data_types;
     sample_block = other.sample_block;
@@ -109,7 +106,6 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
-    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
@@ -121,11 +117,12 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.data_types.push_back(elem.type);
     }
 
-    if (result.column_names.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
-
     if (index_type && index_type->arguments)
-        result.arguments = index_type->arguments->clone();
+    {
+        result.arguments = (index_type->name == TEXT_INDEX_NAME)
+            ? MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments)
+            : IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
+    }
 
     return result;
 }
@@ -160,26 +157,23 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     sample_block = expression->getSampleBlock();
 }
 
-Field getFieldFromIndexArgumentAST(const ASTPtr & ast)
-{
-    /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
-    if (const auto * ast_literal = ast->as<ASTLiteral>())
-        return ast_literal->value;
-    /// E.g. INDEX index_name column_name TYPE vector_similarity(index_name, column_name)
-    if (const auto * ast_identifier = ast->as<ASTIdentifier>())
-        return Field(ast_identifier->name());
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals and identifiers can be skip index arguments");
-}
-
-FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
+FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arguments)
 {
     FieldVector result;
-    if (!arguments)
-        return result;
 
-    result.reserve(arguments->children.size());
-    for (const auto & child : arguments->children)
-        result.emplace_back(getFieldFromIndexArgumentAST(child));
+    for (size_t i = 0; i < arguments->children.size(); ++i)
+    {
+        const auto & child = arguments->children[i];
+        if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+            result.emplace_back(ast_literal->value);
+        else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
+            result.emplace_back(ast_identifier->name());
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+    }
+
     return result;
 }
 
@@ -195,14 +189,6 @@ bool IndicesDescription::has(const String & name) const
         if (index.name == name)
             return true;
     return false;
-}
-
-const IndexDescription & IndicesDescription::getByName(const String & name) const
-{
-    for (const auto & index : *this)
-        if (index.name == name)
-            return index;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no index with name '{}'", name);
 }
 
 bool IndicesDescription::hasType(const String & type) const

@@ -75,7 +75,7 @@ private:
             data.uniq_names.insert(column_name);
             data.aggregates.push_back(ast);
         }
-        else if (node.isWindowFunction())
+        else if (node.is_window_function)
         {
             if (data.assert_no_windows)
                 throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
@@ -101,7 +101,7 @@ private:
     {
         // Aggregate functions can also be calculated as window functions, but
         // here we are interested in aggregate functions calculated in GROUP BY.
-        return !node.isWindowFunction() && AggregateUtils::isAggregateFunction(node);
+        return !node.is_window_function && AggregateUtils::isAggregateFunction(node);
     }
 };
 

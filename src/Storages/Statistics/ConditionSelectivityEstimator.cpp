@@ -45,7 +45,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     RPNElement last_rpn;
     last_rpn.function = RPNElement::FUNCTION_AND;
     rpn.push_back(last_rpn);
-    return estimateRelationProfileImpl(rpn, metadata);
+    return estimateRelationProfileImpl(rpn);
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
@@ -54,24 +54,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     {
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
-    return estimateRelationProfileImpl(rpn, metadata);
+    return estimateRelationProfileImpl(rpn);
 }
 
-static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
-{
-    if (!metadata)
-        return true;
-
-    const auto * column = metadata->getColumns().tryGet(column_name);
-    if (!column)
-        return false;
-
-    /// Skip if the column statistics has outdated data type.
-    /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
-    return column->type->equals(*stats->getDataType());
-}
-
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
@@ -102,8 +88,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     rpn_stack.push(&element);
                 else
                 {
-                    left_element->finalize(column_estimators, metadata);
-                    right_element->finalize(column_estimators, metadata);
+                    left_element->finalize(column_estimators);
+                    right_element->finalize(column_estimators);
                     /// P(c1 and c2) = P(c1) * P(c2)
                     if (element.function == RPNElement::FUNCTION_AND)
                         element.selectivity = left_element->selectivity * right_element->selectivity;
@@ -138,17 +124,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 rpn_stack.push(&element);
         }
     }
-    auto * final_element = rpn_stack.top();
-    final_element->finalize(column_estimators, metadata);
+    auto* final_element = rpn_stack.top();
+    final_element->finalize(column_estimators);
     RelationProfile result;
     Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
     final_rows = std::max<Float64>(final_rows, 0);
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
-            continue;
-
         UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
         result.column_stats.emplace(column_name, cardinality);
     }
@@ -336,13 +319,12 @@ void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data
     estimator->total_rows += data_part->rows_count;
 }
 
-void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
+void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr column_stats)
 {
     if (column_stats != nullptr)
     {
         has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
-
+        auto & column_estimator = estimator->column_estimators[column_stats->getColumnName()];
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
         else
@@ -352,7 +334,9 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+    return estimator;
 }
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
@@ -363,9 +347,9 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
         result += stats->estimateRange(range);
     }
     /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
+    if (stats->rowCount() == 0)
         return 0;
-    Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
+    Float64 selectivity = result / static_cast<Float64>(stats->rowCount());
     selectivity = std::max<Float64>(selectivity, 0);
     return selectivity;
 }
@@ -500,7 +484,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
 }
 
 /// finalization of a expression means we would calculate the seletivity and no longer analyze ranges further.
-void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata)
+void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators & column_estimators_)
 {
     if (finalized)
         return;
@@ -533,7 +517,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     for (const auto & [column_name, ranges] : column_ranges)
     {
         auto it = column_estimators_.find(column_name);
-        if (it == column_estimators_.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+        if (it == column_estimators_.end())
         {
             estimate_results.emplace_back(estimate_unknown_ranges(ranges));
         }
@@ -544,7 +528,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
         auto it = column_estimators_.find(column_name);
-        if (it == column_estimators_.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+        if (it == column_estimators_.end())
         {
             estimate_results.emplace_back(1 - estimate_unknown_ranges(ranges));
         }

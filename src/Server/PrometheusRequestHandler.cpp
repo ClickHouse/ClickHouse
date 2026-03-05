@@ -135,9 +135,9 @@ protected:
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
         /// Initialize query scope.
-        CurrentThread::QueryScope query_scope;
+        std::optional<CurrentThread::QueryScope> query_scope;
         if (context)
-            query_scope = CurrentThread::QueryScope::create(context);
+            query_scope.emplace(context);
 
         handlingRequestWithContext(request, response);
     }

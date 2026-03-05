@@ -31,43 +31,19 @@ void checkResultCodeImpl(int code, const String & filename)
 }
 }
 
-/// This is a thin wrapper for libarchive to be able to write the archive to a WriteBuffer.
-///
-/// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
-/// The callback catches exceptions and stores them for later re-throwing in C++ code.
+// this is a thin wrapper for libarchive to be able to write the archive to a WriteBuffer
 class LibArchiveWriter::StreamInfo
 {
 public:
     explicit StreamInfo(std::unique_ptr<WriteBuffer> archive_write_buffer_) : archive_write_buffer(std::move(archive_write_buffer_)) { }
-
     static ssize_t memory_write(struct archive *, void * client_data, const void * buff, size_t length)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(client_data);
-        try
-        {
-            stream_info->archive_write_buffer->write(reinterpret_cast<const char *>(buff), length);
-            return length;
-        }
-        catch (...)
-        {
-            if (!stream_info->stored_exception)
-                stream_info->stored_exception = std::current_exception();
-            return -1;
-        }
-    }
-
-    void rethrowIfNeeded()
-    {
-        if (stored_exception)
-        {
-            auto ex = stored_exception;
-            stored_exception = nullptr;
-            std::rethrow_exception(ex);
-        }
+        stream_info->archive_write_buffer->write(reinterpret_cast<const char *>(buff), length);
+        return length;
     }
 
     std::unique_ptr<WriteBuffer> archive_write_buffer;
-    std::exception_ptr stored_exception;
 };
 
 class LibArchiveWriter::WriteBufferFromLibArchive : public WriteBufferFromFileBase
@@ -155,10 +131,7 @@ private:
         archive_entry_set_size(entry, expected_size);
         archive_entry_set_filetype(entry, static_cast<__LA_MODE_T>(0100000));
         archive_entry_set_perm(entry, 0644);
-        int code = archive_write_header(archive, entry);
-        if (auto writer = archive_writer.lock())
-            writer->rethrowStoredException();
-        checkResult(code);
+        checkResult(archive_write_header(archive, entry));
     }
 
     void writeDataChunk()
@@ -167,8 +140,6 @@ private:
             writeEntry();
         ssize_t to_write = offset();
         ssize_t written = archive_write_data(archive, working_buffer.begin(), offset());
-        if (auto writer = archive_writer.lock())
-            writer->rethrowStoredException();
         if (written != to_write)
         {
             throw Exception(
@@ -225,10 +196,10 @@ private:
 
     std::weak_ptr<LibArchiveWriter> archive_writer;
     const String filename;
-    Entry entry = nullptr;
-    Archive archive = nullptr;
-    size_t size = 0;
-    size_t expected_size = 0;
+    Entry entry;
+    Archive archive;
+    size_t size;
+    size_t expected_size;
 };
 
 LibArchiveWriter::LibArchiveWriter(
@@ -314,7 +285,6 @@ void LibArchiveWriter::finalize()
         return;
     if (archive)
         archive_write_close(archive);
-    rethrowStoredExceptionLocked();
     if (stream_info)
     {
         stream_info->archive_write_buffer->finalize();
@@ -335,7 +305,6 @@ void LibArchiveWriter::cancel() noexcept
         stream_info->archive_write_buffer->cancel();
         stream_info.reset();
     }
-    finalized = true;
 }
 
 void LibArchiveWriter::setPassword(const String & password_)
@@ -349,18 +318,6 @@ LibArchiveWriter::Archive LibArchiveWriter::getArchive()
 {
     std::lock_guard lock{mutex};
     return archive;
-}
-
-void LibArchiveWriter::rethrowStoredException()
-{
-    std::lock_guard lock{mutex};
-    rethrowStoredExceptionLocked();
-}
-
-void LibArchiveWriter::rethrowStoredExceptionLocked()
-{
-    if (stream_info)
-        stream_info->rethrowIfNeeded();
 }
 }
 #endif

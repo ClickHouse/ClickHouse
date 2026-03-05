@@ -1,10 +1,6 @@
 #pragma once
-
-#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
-#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
-
 #include <boost/noncopyable.hpp>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 
 namespace DB
 {
@@ -16,8 +12,7 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages)>;
+        ObjectStoragePtr object_storage)>;
 
     static MetadataStorageFactory & instance();
 
@@ -27,8 +22,7 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages,
+        ObjectStoragePtr object_storage,
         const std::string & compatibility_type_hint) const;
 
     static std::string getMetadataType(
@@ -36,9 +30,7 @@ public:
         const std::string & config_prefix,
         const std::string & compatibility_type_hint = "");
 
-    static std::string getCompatibilityMetadataTypeHint(
-        const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages);
+    static std::string getCompatibilityMetadataTypeHint(const ObjectStorageType & type);
 
     void clearRegistry();
 

@@ -8,7 +8,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
 
@@ -25,7 +24,6 @@ DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseMemory::DatabaseMemory");
     /// Temporary database should not have any data at the moment of its creation.
     /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -100,7 +98,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, make_intrusive<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
-    engine->setNoEmptyArgs(true);
+    engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
     if (!comment.empty())

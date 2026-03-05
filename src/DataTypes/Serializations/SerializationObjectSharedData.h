@@ -2,11 +2,8 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation-html"
 
-#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
-
-#include <map>
 
 namespace DB
 {

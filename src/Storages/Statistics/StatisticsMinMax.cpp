@@ -22,7 +22,7 @@ void StatisticsMinMax::build(const ColumnPtr & column)
     Field min_field;
     Field max_field;
 
-    column->getExtremes(min_field, max_field, 0, column->size());
+    column->getExtremes(min_field, max_field);
 
     if (!min_field.isNull())
     {

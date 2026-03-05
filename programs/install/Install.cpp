@@ -16,7 +16,6 @@
 #endif
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>

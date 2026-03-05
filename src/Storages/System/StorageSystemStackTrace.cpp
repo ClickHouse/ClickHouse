@@ -25,7 +25,6 @@
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/SymbolIndex.h>
-#include <Common/ErrnoException.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>

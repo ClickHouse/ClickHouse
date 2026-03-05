@@ -193,10 +193,7 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
-    /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
-    /// Due to floating point precision, a value slightly less than max when compared
-    /// as double could still overflow when cast to UInt64
-    if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
+    if (joined_rows > static_cast<double>(std::numeric_limits<UInt64>::max()))
         return std::numeric_limits<UInt64>::max();
     if (joined_rows < 1)
         return 1;
@@ -439,10 +436,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (left->relations & right->relations)
                         continue;
 
-                    /// If both components are of the same size then check each pair just once, not twice
-                    if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
-                        continue;
-
                     const auto combined_relations = left->relations | right->relations;
 
                     auto join_kind = isValidJoinOrder(left->relations, right->relations);
@@ -550,9 +543,6 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return right_join_type;
     if (right_join_type == JoinKind::Inner)
         return left_join_type;
-    /// Allow FULL join as it's restricted to table swapping and no reordering
-    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
-        return JoinKind::Full;
 
     /// Conflict, join is not possible:
     /// FROM t1 LEFT JOIN t2 LEFT JOIN t3

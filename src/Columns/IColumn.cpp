@@ -29,7 +29,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
-#include <Common/Exception.h>
 #include <Common/SipHash.h>
 
 using Hash = CityHash_v1_0_2::uint128;
@@ -46,32 +45,17 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
-void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, column_name, column_size);
-}
-
-void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as {}", type_name, as_type);
-}
-
-bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
-{
-    return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
-}
-
-String IColumn::getValueName(size_t n, const Options & options) const
+std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    getValueNameImpl(name_buf, n, options);
+    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return name_buf.str();
+        return {name_buf.str(), type};
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return fmt::format("{}_{}", p.high64, p.low64);
+    return {fmt::format("{}_{}", p.high64, p.low64), type};
 }
 
 String IColumn::dumpStructure() const
@@ -870,7 +854,6 @@ void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & pa
     else
         updateInplaceFrom<false>(dst, patch);
 }
-
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;

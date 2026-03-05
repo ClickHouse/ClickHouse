@@ -1631,6 +1631,11 @@ void StorageWindowView::writeIntoWindowView(
 
     builder.addSimpleTransform([&](const SharedHeader & stream_header)
     {
+        return std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
         return std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(window_view.getStorageID(), stream_header);
     });
 

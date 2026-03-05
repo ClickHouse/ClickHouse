@@ -18,6 +18,7 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+
     enum class Type : UInt64
     {
         UNKNOWN,
@@ -34,7 +35,7 @@ public:
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
         CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_TOKENS_CACHE,
+        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
@@ -80,7 +81,6 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_ASYNCHRONOUS_METRICS,
-        RELOAD_DELTA_KERNEL_TRACING,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -106,8 +106,6 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
-        ALLOCATE_MEMORY,
-        FREE_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -136,7 +134,6 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
-        RESET_DDL_WORKER,
         END
     };
 
@@ -159,8 +156,6 @@ public:
     String target_function;
     String replica;
     String shard;
-    String zk_name;
-    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -168,7 +163,6 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
-    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 
@@ -195,8 +189,6 @@ public:
         RESUME
     };
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
-
-    String delta_kernel_tracing_level;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

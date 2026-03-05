@@ -11,9 +11,8 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
-from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
-def get_spark(log_dir=None):
+def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_schema_evolution")
         .config(
@@ -29,14 +28,6 @@ def get_spark(log_dir=None):
         )
         .master("local")
     )
-
-    if log_dir:
-        props_path = write_spark_log_config(log_dir)
-        builder = builder.config(
-            "spark.driver.extraJavaOptions",
-            f"-Dlog4j2.configurationFile=file:{props_path}",
-        )
-
     return builder.getOrCreate()
 
 @pytest.fixture(scope="package")
@@ -58,9 +49,7 @@ def started_cluster_iceberg_schema_evolution():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = ResilientSparkSession(
-            lambda: get_spark(cluster.instances_dir)
-        )
+        cluster.spark_session = get_spark()
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

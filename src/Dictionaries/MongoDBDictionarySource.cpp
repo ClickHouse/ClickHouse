@@ -1,8 +1,6 @@
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
-#include <Common/Exception.h>
-
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -29,7 +27,6 @@ namespace ErrorCodes
     #if USE_MONGODB
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
@@ -53,9 +50,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                if (named_collection->has("options"))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
-                validateNamedCollection(*named_collection, {"uri", "collection"}, {});
+                validateNamedCollection(*named_collection, {"collection"}, {});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
@@ -149,7 +144,7 @@ BlockIO MongoDBDictionarySource::loadAll()
     return io;
 }
 
-BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -164,7 +159,7 @@ BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> 
 }
 
 
-BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");

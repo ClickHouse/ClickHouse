@@ -4,7 +4,7 @@ import random
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
-from ci.jobs.ci_utils import is_extended_run
+from ci.praktika.info import Info
 from ci.praktika.utils import Utils
 
 
@@ -179,30 +179,26 @@ def main():
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, max_string_length),
-        # Disable parallel queries, there are issues in the CI currently
-        # "max_parallel_queries": (
-        #    1
-        #    if (
-        #        any(x in Info().job_name for x in ["tsan", "asan", "msan"])
-        #        or random.randint(1, 2) == 1
-        #    )
-        #    else random.randint(1, 5)
-        # ),
-        "max_parallel_queries": 1,
+        "max_parallel_queries": (
+            1
+            if (
+                any(x in Info().job_name for x in ["tsan", "asan", "msan"])
+                or random.randint(1, 2) == 1
+            )
+            else random.randint(1, 5)
+        ),
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": random.randint(1, 7) == 1,
+        "use_dump_table_oracle": random.randint(1, 3) == 1,
+        "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": random.randint(1, 7) == 1,
+        "allow_infinite_tables": False,  # Creating too many issues
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
-        "enable_backups": random.randint(1, 4) == 1,
-        "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -225,8 +221,8 @@ def main():
         "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
-        # Run for 30 minutes by default, or 60 minutes for feature/improvement/performance PRs
-        "time_to_run": 60 if is_extended_run() else 30,
+        # Run for 30 minutes max
+        "time_to_run": 30,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],

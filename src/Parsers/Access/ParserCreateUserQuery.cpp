@@ -425,24 +425,21 @@ namespace
     }
 
 
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, bool default_roles, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{default_roles ? Keyword::DEFAULT_ROLE : Keyword::ROLE}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::DEFAULT_ROLE}.ignore(pos, expected))
                 return false;
-
-            ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode);
-            if (default_roles)
-                roles_p.allowAll();
 
             ASTPtr ast;
-            if (!roles_p.parse(pos, ast, expected))
+            ParserRolesOrUsersSet default_roles_p;
+            default_roles_p.allowAll().allowRoles().useIDMode(id_mode);
+            if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
-            roles->allow_users = false;
+            default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            default_roles->allow_users = false;
             return true;
         });
     }
@@ -587,7 +584,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
     std::vector<boost::intrusive_ptr<ASTAuthenticationData>> auth_data;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
@@ -662,10 +658,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
 
-        if (!roles && !alter && !attach_mode && parseRoles(pos, expected, /* default_roles = */ false, attach_mode, roles))
-            continue;
-
-        if (!default_roles && parseRoles(pos, expected, /* default_roles = */ true, attach_mode, default_roles))
+        if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
@@ -742,7 +735,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
-    query->roles = std::move(roles);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
     query->alter_settings = std::move(alter_settings);

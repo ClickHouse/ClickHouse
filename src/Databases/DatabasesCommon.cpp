@@ -21,7 +21,6 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -126,15 +125,15 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     std::optional<KeyDescription> primary_key;
     /// First get the key description from order by, so if there is no primary key we will use that
     if (storage.order_by)
-        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.getChild(*storage.order_by), columns_desc, context);
     if (storage.primary_key)
-        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.getChild(*storage.primary_key), columns_desc, context);
     if (storage.partition_by)
-        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.getChild(*storage.partition_by), columns_desc, context);
     if (storage.sample_by)
-        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.getChild(*storage.sample_by), columns_desc, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
+        TTLTableDescription::getTTLForTableFromAST(storage.getChild(*storage.ttl_table), columns_desc, context, *primary_key, true);
 }
 }
 
@@ -345,7 +344,6 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
-    auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
     std::lock_guard lock{mutex};
 
     const String old_comment = comment;

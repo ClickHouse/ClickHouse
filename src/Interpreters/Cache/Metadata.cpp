@@ -5,9 +5,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/ErrnoException.h>
 #include <filesystem>
-#include <Interpreters/Cache/FileSegmentInfo.h>
 
 namespace fs = std::filesystem;
 
@@ -65,18 +63,18 @@ size_t FileSegmentMetadata::size() const
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
-    const OriginInfo & origin_,
+    const UserInfo & user_,
     const CacheMetadata * cache_metadata_,
     bool created_base_directory_)
     : key(key_)
-    , origin(origin_)
+    , user(user_)
     , cache_metadata(cache_metadata_)
     , created_base_directory(created_base_directory_)
 {
-    if (origin_ == FileCache::getInternalOrigin())
+    if (user_ == FileCache::getInternalUser())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
-    if (!origin_.weight.has_value())
+    if (!user_.weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
     chassert(!created_base_directory || fs::exists(getPath()));
@@ -84,7 +82,7 @@ KeyMetadata::KeyMetadata(
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
 {
-    return user_id_ == origin.user_id || user_id_ == FileCache::getInternalOrigin().user_id;
+    return user_id_ == user.user_id || user_id_ == FileCache::getInternalUser().user_id;
 }
 
 void KeyMetadata::assertAccess(const UserID & user_id_) const
@@ -163,12 +161,12 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 
 std::string KeyMetadata::getPath() const
 {
-    return cache_metadata->getKeyPath(key, origin);
+    return cache_metadata->getKeyPath(key, user);
 }
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), origin);
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), user);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -208,19 +206,18 @@ String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const OriginInfo & origin) const
+    const UserInfo & user) const
 {
-    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
+    return fs::path(getKeyPath(key, user)) / getFileNameForFileSegment(offset, segment_kind);
 }
 
-String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
+String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
 {
     const auto key_str = key.toString();
-    const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
-        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
 
-    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
+    return fs::path(path) / key_str.substr(0, 3) / key_str;
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -238,10 +235,10 @@ CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
     const FileCacheKey & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const OriginInfo & origin,
+    const UserInfo & user,
     bool is_initial_load)
 {
-    auto key_metadata = getKeyMetadata(key, key_not_found_policy, origin, is_initial_load);
+    auto key_metadata = getKeyMetadata(key, key_not_found_policy, user, is_initial_load);
     if (!key_metadata)
         return nullptr;
 
@@ -274,13 +271,13 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     /// Now we are at the case when the key was removed (key_state == KeyMetadata::KeyState::REMOVED)
     /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
     /// Retry
-    return lockKeyMetadata(key, key_not_found_policy, origin);
+    return lockKeyMetadata(key, key_not_found_policy, user);
 }
 
 KeyMetadataPtr CacheMetadata::getKeyMetadata(
     const Key & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const OriginInfo & origin,
+    const UserInfo & user,
     bool is_initial_load)
 {
     auto & bucket = getMetadataBucket(key);
@@ -297,12 +294,12 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, origin, this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
-    it->second->assertAccess(origin.user_id);
+    it->second->assertAccess(user.user_id);
     return it->second;
 }
 
@@ -573,7 +570,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->origin);
+    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try
@@ -788,7 +785,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
             try
             {
                 {
-                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalOrigin());
+                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalUser());
                     if (!locked_key)
                         continue;
 
@@ -859,8 +856,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (!size_to_download)
         return;
 
-    auto buf = file_segment.getRemoteFileReader();
-    if (!buf)
+    auto reader = file_segment.getRemoteFileReader();
+    if (!reader)
     {
         LOG_TEST(log, "No reader in {}:{} (state: {}, range: {}, downloaded size: {})",
                  file_segment.key(), file_segment.offset(), file_segment.state(),
@@ -868,24 +865,25 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         return;
     }
 
-    chassert(buf->internalBuffer().empty(),
-             fmt::format("Memory buffer for buffer must have been reset before "
-             "being put into background download ({})", file_segment.getInfoForLog()));
-
-    if (!memory)
-        memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
-    buf->set(memory->data(), std::min(size_to_download, memory->size()));
+    /// If remote_fs_read_method == 'threadpool',
+    /// reader itself never owns/allocates the buffer.
+    if (reader->internalBuffer().empty())
+    {
+        if (!memory)
+            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
+        reader->set(memory->data(), memory->size());
+    }
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
         Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     size_t offset = file_segment.getCurrentWriteOffset();
-    if (offset != static_cast<size_t>(buf->getPosition()))
-        buf->seek(offset, SEEK_SET);
+    if (offset != static_cast<size_t>(reader->getPosition()))
+        reader->seek(offset, SEEK_SET);
 
-    while (size_to_download && !buf->eof())
+    while (size_to_download && !reader->eof())
     {
-        const auto available = buf->available();
+        const auto available = reader->available();
         chassert(available);
 
         const auto size = std::min(available, size_to_download);
@@ -904,9 +902,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 
         try
         {
-            file_segment.write(buf->position(), size, offset);
+            file_segment.write(reader->position(), size, offset);
             offset += size;
-            buf->position() += size;
+            reader->position() += size;
         }
         catch (ErrnoException & e)
         {
@@ -920,7 +918,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
-    /// Reset buffer to avoid
+    /// Reset reader to avoid
     /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
     file_segment.completePartAndResetDownloader();

@@ -47,7 +47,7 @@ ReplicatedMergeTreePartsCollector::ReplicatedMergeTreePartsCollector(const Stora
 {
 }
 
-CollectedPartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
+PartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
@@ -55,9 +55,8 @@ CollectedPartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
     LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage), partitions_hint);
-    auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, merge_pred, series_log);
-    return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
+    return constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time);
 }
 
 std::expected<PartsRange, PreformattedMessage> ReplicatedMergeTreePartsCollector::grabAllPartsInsidePartition(

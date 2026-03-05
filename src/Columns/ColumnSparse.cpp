@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-void ColumnSparse::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    values->getValueNameImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -300,8 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+    assert(n <= _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -730,7 +729,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (_size == 0 || replicate_offsets.back() == 0)
+    if (_size == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
     auto res_offsets = offsets->cloneEmpty();
@@ -800,21 +799,12 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
     hash.update(_size);
 }
 
-void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnSparse::getExtremes(Field & min, Field & max) const
 {
-    if (start >= end)
+    if (_size == 0)
     {
         values->get(0, min);
         values->get(0, max);
-        return;
-    }
-
-    /// For ColumnSparse, range-based extremes are not trivially supported
-    /// due to the sparse representation. Fall back to cut + getExtremes.
-    if (start != 0 || end != _size)
-    {
-        auto sub_column = cut(start, end - start);
-        sub_column->getExtremes(min, max, 0, end - start);
         return;
     }
 
@@ -836,7 +826,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t en
         return;
     }
 
-    values->getExtremes(min, max, 0, values->size());
+    values->getExtremes(min, max);
 }
 
 void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const

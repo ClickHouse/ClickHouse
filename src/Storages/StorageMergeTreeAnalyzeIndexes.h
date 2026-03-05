@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/VectorSearchUtils.h>
 
 namespace DB
 {
@@ -14,9 +13,8 @@ public:
         const StorageID & table_id_,
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
-        std::vector<String> parts_,
-        const ASTPtr & primary_key_predicate_,
-        const OptionalVectorSearchParameters & vector_search_parameters_);
+        const String & parts_regexp_,
+        const ASTPtr & primary_key_predicate_);
 
     void read(
         QueryPlan & query_plan,
@@ -37,7 +35,6 @@ private:
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
     ASTPtr predicate;
-    OptionalVectorSearchParameters vector_search_parameters;
 };
 
 }

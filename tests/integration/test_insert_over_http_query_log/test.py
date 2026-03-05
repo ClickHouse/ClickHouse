@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", with_zookeeper=True, user_configs=["configs/users.xml"])
+instance = cluster.add_instance("instance", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -14,12 +14,6 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
-
-
-@pytest.fixture(scope="function", autouse=True)
-def clear_text_log():
-    instance.query("SYSTEM FLUSH LOGS query_log")
-    instance.query("DROP TABLE IF EXISTS system.query_log SYNC")
 
 
 @pytest.mark.parametrize("inject_failpoint", [1, 0])
@@ -44,7 +38,7 @@ def test_insert_over_http_exception(start_cluster, inject_failpoint):
     instance.query("SYSTEM FLUSH LOGS")
 
     assert "1\n" == instance.query(
-        f"select count() from system.query_log where log_comment = '{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'QueryStart'"
+        f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'QueryStart'"
     )
     assert "1\n" == instance.query(
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'ExceptionWhileProcessing'"

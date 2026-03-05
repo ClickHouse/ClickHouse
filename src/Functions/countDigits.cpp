@@ -155,7 +155,7 @@ private:
 
 REGISTER_FUNCTION(CountDigits)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_countDigits = R"(
 Returns the number of decimal digits needed to represent a value.
 
 :::note
@@ -172,12 +172,12 @@ You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
 although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
 :::
 )";
-    FunctionDocumentation::Syntax syntax = "countDigits(x)";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_countDigits = "countDigits(x)";
+    FunctionDocumentation::Arguments arguments_countDigits = {
         {"x", "An integer or decimal value.", {"(U)Int*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of digits needed to represent `x`.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_countDigits = {"Returns the number of digits needed to represent `x`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_countDigits = {
     {
         "Usage example",
         R"(
@@ -192,11 +192,11 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_countDigits = {20, 8};
+    FunctionDocumentation::Category category_countDigits = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, {}, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
 
-    factory.registerFunction<FunctionCountDigits>(documentation);
+    factory.registerFunction<FunctionCountDigits>(documentation_countDigits);
 }
 
 }

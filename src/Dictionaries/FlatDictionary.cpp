@@ -585,7 +585,7 @@ void FlatDictionary::calculateBytesAllocated()
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
     auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-    Attribute attribute{.is_nullable_set = std::move(is_nullable_set), .container = {}, .type = dictionary_attribute.underlying_type};
+    Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {

@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <vector>
 
-#include <base/types.h>
 #include <pcg_random.hpp>
 
 namespace BuzzHouse
@@ -34,7 +33,7 @@ public:
     double drift_strength = 0.10; /// ±10%
     std::vector<ProbabilityBounds> bounds; /// used by Bounded + Drifting
 
-    explicit ProbabilityGenerator(ProbabilityStrategy ps, uint64_t in_seed, const std::vector<ProbabilityBounds> & b, const String & desc);
+    explicit ProbabilityGenerator(ProbabilityStrategy ps, uint64_t in_seed, const std::vector<ProbabilityBounds> & b);
 
     uint64_t getSeed() const;
     ProbabilityStrategy getStrategy() const;
@@ -57,7 +56,6 @@ private:
     std::vector<bool> enabled_values;
     std::vector<double> probabilities;
     uint64_t ops_emitted = 0;
-    const String description;
 
     static void ensureAtLeastOneEnabled(const std::vector<bool> & mask);
 

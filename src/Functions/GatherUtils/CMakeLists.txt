@@ -22,3 +22,5 @@ target_link_libraries(clickhouse_functions_gatherutils PRIVATE dbms)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_gatherutils PRIVATE "-g1")
 endif()
+
+set_target_properties(clickhouse_functions_gatherutils PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")

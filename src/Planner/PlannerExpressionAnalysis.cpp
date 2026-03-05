@@ -101,15 +101,6 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
-            if (!function_node->isOrdinaryFunction())
-            {
-                /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
-                /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
-                /// on them (it would throw), but we also don't need to — they won't produce
-                /// server-specific values. Skip examining their children.
-                continue;
-            }
-
             /// Do not allow removing constants like `hostName()`
             if (function_node->getFunctionOrThrow()->isServerConstant())
                 return false;
@@ -748,17 +739,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
           * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
           * otherwise coordinator does not find it in block.
-          *
-          * Similarly, when ORDER BY has WITH FILL, we must preserve the ORDER BY columns because
-          * the filling step added later requires them in the block header.
-          *
-          * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value()
-            && (sort_analysis_result_optional->has_with_fill
-                || (planner_query_processing_info.isFirstStage()
-                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
+        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->dag.getOutputs())

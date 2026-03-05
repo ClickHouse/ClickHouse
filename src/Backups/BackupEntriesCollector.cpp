@@ -18,7 +18,6 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
@@ -29,10 +28,6 @@
 #include <boost/range/algorithm/copy.hpp>
 
 #include <filesystem>
-
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -228,8 +223,6 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
-
-    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 
@@ -440,11 +433,6 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 {
     checkIsQueryCancelled();
 
-#if CLICKHOUSE_CLOUD
-    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
-        return;
-#endif
-
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())
     {
@@ -628,7 +616,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create->isTemporary())
+            if (!create->temporary)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
@@ -813,13 +801,11 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
         return;
 
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
-    /// So they will outlive runner even if an exception is thrown
-    for (const auto & it : table_infos)
+    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
         runner.enqueueAndKeepTrack([&]()
         {
-            makeBackupEntriesForTableData(it.first);
+            makeBackupEntriesForTableData(table_name);
         });
     }
     runner.waitForAllToFinishAndRethrowFirstError();

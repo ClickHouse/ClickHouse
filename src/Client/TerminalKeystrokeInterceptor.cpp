@@ -3,7 +3,6 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 #include <mutex>
 #include <ostream>

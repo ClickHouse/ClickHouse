@@ -50,7 +50,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
-#include <Common/ErrnoException.h>
 #include <bit>
 
 

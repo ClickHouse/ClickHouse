@@ -60,54 +60,17 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
-    bool need_nullable = scope.join_use_nulls
-        && JoinCommon::canBecomeNullable(resolved_identifier->getResultType())
-        && (isFull(join_kind)
-            || (isLeft(join_kind) && resolved_side == JoinTableSide::Right)
-            || (isRight(join_kind) && resolved_side == JoinTableSide::Left));
-
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
-    {
-        if (!need_nullable)
-            return resolved_identifier;
-
-        /// For function nodes (e.g., `getSubcolumn` wrapping a column from a storage
-        /// that doesn't support direct subcolumn access), we need to wrap inner column
-        /// arguments in Nullable and re-resolve the function to get the correct result type.
-        auto function_clone = resolved_identifier->clone();
-        auto & function_node = function_clone->as<FunctionNode &>();
-        auto & arguments = function_node.getArguments().getNodes();
-
-        bool any_changed = false;
-        for (auto & arg : arguments)
-        {
-            if (arg->getNodeType() == QueryTreeNodeType::COLUMN)
-            {
-                auto nullable_arg = convertJoinedColumnTypeToNullIfNeeded(
-                    arg, arg->getResultType(), join_kind, resolved_side, scope);
-                if (nullable_arg && !nullable_arg->isEqual(*arg))
-                {
-                    arg = nullable_arg;
-                    any_changed = true;
-                }
-            }
-        }
-
-        if (any_changed)
-        {
-            auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), scope.context);
-            if (function_resolver)
-                function_node.resolveAsFunction(function_resolver->build(function_node.getArgumentColumns()));
-        }
-
-        return function_clone;
-    }
-
     if (resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         return resolved_identifier;
 
-    if (need_nullable)
+    if (scope.join_use_nulls &&
+        JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
+        (isFull(join_kind) ||
+        (isLeft(join_kind) && resolved_side == JoinTableSide::Right) ||
+        (isRight(join_kind) && resolved_side == JoinTableSide::Left)))
+    {
         result_type = makeNullableOrLowCardinalityNullable(result_type);
+    }
 
     if (result_type)
     {
@@ -403,10 +366,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
     {
-        /// Don't read subcolumn of aliases directly, only using getSubcolumn,
-        /// because aliases don't have real subcolumns, they should be extracted
-        /// after alias expression evaluation.
-        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
             return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
 
         return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
@@ -547,10 +507,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
         {
-            /// Don't read subcolumn of aliases directly, only using getSubcolumn,
-            /// because aliases don't have real subcolumns, they should be extracted
-            /// after alias expression evaluation.
-            if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
+            if (table_expression_data.supports_subcolumns)
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
             else
                 result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);

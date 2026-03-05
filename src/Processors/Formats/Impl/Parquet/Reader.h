@@ -174,7 +174,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        size_t first_step_to_calculate = 0;
+        bool use_prewhere = false;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -206,7 +206,7 @@ struct Reader
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
 
-        size_t step_idx = 0;
+        bool use_prewhere = false;
     };
 
     struct RowSet
@@ -416,15 +416,19 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
-        std::atomic<size_t> read_ptr {0};
 
+        /// Indexes of the first subgroup that didn't finish
+        /// {prewhere, reading main columns, delivering final chunk}.
+        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
+        std::atomic<size_t> prewhere_ptr {0};
+        std::atomic<size_t> read_ptr {0};
         std::atomic<size_t> delivery_ptr {0};
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
-    struct Step
+    struct PrewhereStep
     {
         ExpressionActions actions;
         std::optional<String> filter_column_name {};
@@ -473,7 +477,7 @@ struct Reader
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<Step> steps;
+    std::vector<PrewhereStep> prewhere_steps;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -515,7 +519,7 @@ struct Reader
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
@@ -541,7 +545,7 @@ private:
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
+    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 };
 
 }

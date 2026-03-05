@@ -76,47 +76,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def stop_refreshable_mvs(node):
-    """Stop refreshable MVs on a node to prevent them from generating DDL entries
-    and creating temporary tables that block DETACH/DROP operations.
-    """
-    node.query(
-        "SYSTEM STOP VIEW db.rmv1; SYSTEM STOP VIEW db.rmv2",
-        ignore_error=True,
-    )
-
-
-def detach_database_with_retry(node, timeout=15):
-    """Detach database with retries. Refreshable materialized views drop temporary
-    tables asynchronously, and those tables stay in the detached_tables map for up
-    to database_atomic_delay_before_drop_table_sec (10s in this test). The DETACH
-    DATABASE command fails while those entries exist. We retry until they are cleaned up.
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            node.query("DETACH DATABASE db")
-            return
-        except Exception as e:
-            if "some tables are still in use" in str(e) and time.monotonic() < deadline:
-                time.sleep(1)
-                continue
-            raise
-
-
-def cleanup_database_on_all_nodes():
-    """Drop the database on all nodes to ensure clean state between tests.
-    Stops refreshable MVs first to avoid 'tables still in use' errors from
-    temporary tables that have a delayed drop (database_atomic_delay_before_drop_table_sec).
-    """
-    for node in [node1, node2, node3, node4]:
-        stop_refreshable_mvs(node)
-        node.query("DROP DATABASE IF EXISTS db SYNC", ignore_error=True)
-
-
 @pytest.mark.parametrize("with_tables", [False, True])
 def test_drop_database_replica(started_cluster, with_tables: bool):
-    cleanup_database_on_all_nodes()
+    node1.query("DROP DATABASE IF EXISTS db")
+    node2.query("DROP DATABASE IF EXISTS db")
+    node3.query("DROP DATABASE IF EXISTS db")
+    node4.query("DROP DATABASE IF EXISTS db")
 
     zk_path = "/test/db"
     node1.query(
@@ -210,8 +175,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     node4.query("ATTACH DATABASE db")
 
-    stop_refreshable_mvs(node3)
-    detach_database_with_retry(node3)
+    node3.query("DETACH DATABASE db")
     node4.query("SYSTEM DROP DATABASE replica 'r1' FROM SHARD 's2' FROM DATABASE db")
     node3.query("ATTACH DATABASE db")
     assert "Database is in readonly mode" in node3.query_and_get_error(
@@ -222,8 +186,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
     )
     node4.query("DROP DATABASE db SYNC")
 
-    stop_refreshable_mvs(node2)
-    detach_database_with_retry(node2)
+    node2.query("DETACH DATABASE db")
     node1.query("SYSTEM DROP DATABASE REPLICA 's1|r2' FROM DATABASE db")
     node2.query("ATTACH DATABASE db")
     assert "Database is in readonly mode" in node2.query_and_get_error(
@@ -233,8 +196,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         },
     )
 
-    stop_refreshable_mvs(node1)
-    detach_database_with_retry(node1)
+    node1.query("DETACH DATABASE db")
     node4.query(
         f"SYSTEM DROP DATABASE REPLICA 's1|r1' FROM ZKPATH '{zk_path}'  {with_tables_clause}"
     )
@@ -281,7 +243,7 @@ def test_drop_database_replica_with_tables_for_non_existing_db(
 def test_drop_database_replica_with_tables_for_dropped_db(
     started_cluster,
 ):
-    cleanup_database_on_all_nodes()
+    node1.query("DROP DATABASE IF EXISTS db SYNC")
 
     zk_path = "/test/db"
     node1.query(
@@ -309,7 +271,7 @@ def test_drop_database_replica_with_tables_for_dropped_db(
 def test_drop_database_replica_with_tables_for_detached_db(
     started_cluster,
 ):
-    cleanup_database_on_all_nodes()
+    node1.query("DROP DATABASE IF EXISTS db SYNC")
 
     zk_path = "/test/db"
     node1.query(
@@ -328,8 +290,7 @@ def test_drop_database_replica_with_tables_for_detached_db(
         "CREATE MATERIALIZED VIEW db.rmv2 REFRESH EVERY 1 SECOND TO db.mv_target AS SELECT 1 AS x"
     )
 
-    stop_refreshable_mvs(node1)
-    detach_database_with_retry(node1)
+    node1.query("DETACH DATABASE `db`")
     assert "There is a detached database" in node1.query_and_get_error(
         f"SYSTEM DROP DATABASE REPLICA 'r1' FROM SHARD 's1' FROM ZKPATH '{zk_path}/' WITH TABLES"
     )

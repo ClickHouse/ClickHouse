@@ -64,7 +64,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -81,14 +80,10 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Common/QueryFuzzer.h>
-#include <Common/randomSeed.h>
-
 #include <Poco/Net/SocketAddress.h>
 
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <random>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -108,7 +103,6 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
-    extern const Event ASTFuzzerQueries;
 }
 
 namespace DB
@@ -119,8 +113,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsBool ast_fuzzer_any_query;
-    extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
@@ -189,8 +181,6 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
-    extern const SettingsBool insert_quorum_parallel;
-    extern const SettingsBool ignore_format_null_for_explain;
 }
 
 namespace ServerSetting
@@ -214,16 +204,11 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
-    extern const int UNSUPPORTED_PARAMETER;
-    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
-    extern const char terminate_with_exception[];
-    extern const char terminate_with_std_exception[];
-    extern const char libcxx_hardening_out_of_bounds_assertion[];
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -285,6 +270,26 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         }
     }
 }
+
+/// Call this inside catch block.
+static void setExceptionStackTrace(QueryLogElement & elem)
+{
+    /// Disable memory tracker for stack trace.
+    /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+
+    try
+    {
+        throw;
+    }
+    catch (const std::exception & e)
+    {
+        elem.stack_trace = getExceptionStackTraceString(e);
+    }
+    catch (...) {} // NOLINT(bugprone-empty-catch)
+}
+
 
 /// Log exception (with query info) into text log (not into system table).
 static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
@@ -604,8 +609,8 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     std::optional<ResultProgress> result_progress;
     if (pulling_pipeline)
     {
-        UInt64 result_rows = 0;
-        UInt64 result_bytes = 0;
+        UInt64 result_rows;
+        UInt64 result_bytes;
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
@@ -816,7 +821,7 @@ void logQueryException(
     elem.is_internal = internal;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
-        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
+        setExceptionStackTrace(elem);
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
@@ -901,7 +906,7 @@ void logExceptionBeforeStart(
         elem.query_settings = std::make_shared<Settings>(settings);
 
     if (settings[Setting::calculate_text_stack_trace])
-        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
+        setExceptionStackTrace(elem);
 
     elem.is_internal = internal;
 
@@ -1230,73 +1235,40 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                 {
-                    struct ASTDifference
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    auto bad_ast = out_ast;
+                    bool found_bad_ast;
+                    do
                     {
-                        enum class Type : uint8_t
+                        found_bad_ast = false;
+                        for (const auto & child : bad_ast->children)
                         {
-                            ID,
-                            FORMAT
-                        };
-
-                        ASTPtr lhs;
-                        ASTPtr rhs;
-                        Type type;
-                    };
-
-                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
-                    {
-                        if (lhs->getID() != rhs->getID())
-                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
-
-                        size_t size_children = std::min(lhs->children.size(), rhs->children.size());
-                        for (size_t i = 0; i < size_children; ++i)
-                        {
-                            const auto & child_lhs = lhs->children[i];
-                            const auto & child_rhs = rhs->children[i];
-                            if (auto difference = self(child_lhs, child_rhs))
+                            auto formatted_child = format_ast(child);
+                            if (formatted1.find(formatted_child) == std::string::npos)
                             {
-                                /// In case the format strings are different, use parent nodes for a better debug output.
-                                if (difference->type == ASTDifference::Type::FORMAT)
-                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
-
-                                return difference;
+                                /// This shouldn't happen
+                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
+                                break;
+                            }
+                            if (formatted2.find(formatted_child) == std::string::npos)
+                            {
+                                /// We didn't find it - so it was formatted in a different way
+                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
+                                bad_ast = child;
+                                found_bad_ast = true;
+                                break;
                             }
                         }
+                    } while (found_bad_ast);
 
-                        if (format_ast(lhs) != format_ast(rhs))
-                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
-
-                        return std::nullopt;
-                    };
-
-                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
-                    if (auto difference = search_difference_in_asts(out_ast, ast2))
-                    {
-                        auto [lhs, rhs, _] = difference.value();
-
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
-                                        "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
-                                        "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
-                                        lhs->getID(), rhs->getID(),
-                                        original_query,
-                                        formatted1, formatted2,
-                                        format_ast(lhs), lhs->dumpTree(),
-                                        format_ast(rhs), rhs->dumpTree());
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                                        original_query, formatted1, formatted2);
-
-                    }
-
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                        bad_ast->getID(), original_query, formatted1, formatted2);
                 }
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1361,7 +1333,7 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+            query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
@@ -1382,10 +1354,8 @@ static BlockIO executeQueryImpl(
     {
         if (auto txn = context->getCurrentTransaction())
         {
-            if (txn->getState() == MergeTreeTransaction::COMMITTING)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
-            if (txn->getState() == MergeTreeTransaction::COMMITTED)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
@@ -1545,11 +1515,10 @@ static BlockIO executeQueryImpl(
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
 
-            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
-            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_PARAMETER,
-                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
+            if (settings[Setting::insert_quorum].valueOr(0) > 0)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Insert quorum cannot be used together with async inserts. " \
+                    "Please disable either `insert_quorum` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1777,7 +1746,7 @@ static BlockIO executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl]);
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
@@ -1957,115 +1926,6 @@ static BlockIO executeQueryImpl(
     return res;
 }
 
-
-std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
-{
-    static std::mutex mutex;
-    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
-    return {fuzzer, std::unique_lock(mutex)};
-}
-
-
-static bool isReadOnlyQuery(const ASTPtr & ast)
-{
-    auto kind = ast->getQueryKind();
-    return kind == IAST::QueryKind::Select
-        || kind == IAST::QueryKind::Explain
-        || kind == IAST::QueryKind::Show
-        || kind == IAST::QueryKind::Describe
-        || kind == IAST::QueryKind::Exists;
-}
-
-
-static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr & context, Float64 ast_fuzzer_runs_value, bool any_query)
-{
-    if (!any_query && !isReadOnlyQuery(ast))
-        return;
-
-    size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
-    double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
-    if (fractional > 0)
-    {
-        std::bernoulli_distribution dist(fractional);
-        if (dist(thread_local_rng))
-            ++num_runs;
-    }
-
-    if (num_runs == 0)
-        return;
-
-    auto logger = getLogger("ASTFuzzer");
-
-    ASTPtr base_ast = ast;
-
-    for (size_t i = 0; i < num_runs; ++i)
-    {
-        ASTPtr fuzzed_ast;
-        {
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzed_ast = base_ast->clone();
-            fuzzer->fuzzMain(fuzzed_ast);
-        }
-
-        WriteBufferFromOwnString fuzzed_query_buf;
-        fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
-        String fuzzed_query = fuzzed_query_buf.str();
-
-        if (fuzzed_query.size() > 10000)
-        {
-            LOG_TRACE(logger, "Fuzzed query too long ({} chars), skipping", fuzzed_query.size());
-            continue;
-        }
-
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
-        LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
-
-        try
-        {
-            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-            context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
-            auto fuzz_session_context = Context::createCopy(context);
-            fuzz_session_context->makeSessionContext();
-
-            auto fuzz_context = Context::createCopy(fuzz_session_context);
-            fuzz_context->makeQueryContext();
-            fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
-            fuzz_context->setCurrentQueryId("");
-
-            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
-
-            if (result.second.pipeline.initialized())
-            {
-                if (result.second.pipeline.pushing())
-                {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
-                }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
-                }
-            }
-
-            base_ast = fuzzed_ast;
-        }
-        catch (...)
-        {
-            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzer->notifyQueryFailed(fuzzed_ast);
-        }
-    }
-}
-
-
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
@@ -2092,64 +1952,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-        const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
-        if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
+        if (boost::iequals(format_name, "Null"))
             res.null_format = true;
-    }
-
-    /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
-    if (ast && !ast->as<ASTSystemQuery>())
-    {
-        fiu_do_on(FailPoints::terminate_with_exception,
-        {
-            try
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::terminate_with_std_exception,
-        {
-            try
-            {
-                throw std::runtime_error("Failpoint terminate_with_std_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
-        {
-            std::vector<int> v;
-            (void)v[0];
-        });
-    }
-
-    if (!flags.internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
     }
 
     return std::make_pair(std::move(ast), std::move(res));
@@ -2368,10 +2172,6 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-            const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
-            if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)
-                format_name = context->getDefaultFormat();
-
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
@@ -2430,23 +2230,6 @@ void executeQuery(
         else
         {
             /// It's possible to have queries without input and output.
-        }
-
-        if (!flags.internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
         }
 
     }
