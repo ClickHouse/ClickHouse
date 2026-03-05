@@ -51,7 +51,6 @@ protected:
         {
             database->format(ostr, settings, state, frame);
         }
-        ostr << '\n';
     }
 };
 
