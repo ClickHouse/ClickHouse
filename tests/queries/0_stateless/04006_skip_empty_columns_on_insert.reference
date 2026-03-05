@@ -1,81 +1,20 @@
-case1_columns
-key
-val1
-case1_read
-1	100		0
-case1_merged_read
+case1_pre_merge
 1	100		0
 2	0		0
-case1_merged_columns
-key
-val1
-case2_columns
-key1
-case2_read
-1	0	
-case3_columns
-key
-case3_read
-1970-01-01	1	
-case4_columns
-key
-val
-case4_read
-1	0	hello
-case5_columns
-key
-val1
-case5_read
-1	100	0
-1	200	0
-case5_proj_query
-1	0
-case6_columns
-key
-case6_read
-1	0	0	
-case6_second_columns
-all_1_1_0	key
-all_2_2_0	base
-all_2_2_0	derived
-all_2_2_0	key
-case6_read_all
-1	0	0	
-2	5	10	
-case7_columns
-key
-ts
-case7_read
-1	2100-01-01 00:00:00	
-case8_columns
-key
-val1
-case8_read
-1	100	
-case9_parts_columns
-all_1_1_0	a
-all_1_1_0	key
-all_2_2_0	b
-all_2_2_0	key
-all_3_3_0	c
-all_3_3_0	key
-case9_read
+case1_post_merge
+1	100		0
+2	0		0
+case2_pre_merge
 1	100	0	
 2	0	200	
 3	0	0	hello
-case9_merged_read
+case2_post_merge
 1	100	0	
 2	0	200	
 3	0	0	hello
-case9_merged_columns
-a
-b
-c
-key
-case10_columns
-key
-case10_read
+case3_pre_merge
 1	\N	\N
-case10_read_all
+2	42	hello
+case3_post_merge
 1	\N	\N
 2	42	hello
