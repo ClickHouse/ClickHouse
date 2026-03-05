@@ -149,7 +149,8 @@ namespace DB
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
-                storage
+                storage,
+                inner_table_function_ast ? inner_table_function_ast->clone() : nullptr
         );
         res->startup();
         return res;

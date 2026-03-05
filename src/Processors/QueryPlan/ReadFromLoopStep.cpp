@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -78,6 +79,53 @@ namespace
             interpreter.buildQueryPlan(plan);
         }
     }
+
+    void buildInterpreterQueryPlanForTableFunction(
+        QueryPlan & plan,
+        const ASTPtr & table_function_ast,
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        ContextPtr context)
+    {
+        auto select_query = make_intrusive<ASTSelectQuery>();
+
+        auto select_expr_list = make_intrusive<ASTExpressionList>();
+        for (const auto & col_name : column_names)
+            select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto table_expr = make_intrusive<ASTTableExpression>();
+        table_expr->table_function = table_function_ast->clone();
+        table_expr->children.push_back(table_expr->table_function);
+        table_element->table_expression = table_expr;
+        table_element->children.push_back(table_element->table_expression);
+        tables->children.push_back(table_element);
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+        auto select_ast = make_intrusive<ASTSelectWithUnionQuery>();
+        select_ast->list_of_selects = make_intrusive<ASTExpressionList>();
+        select_ast->list_of_selects->children.push_back(select_query);
+        select_ast->children.push_back(select_ast->list_of_selects);
+
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
+
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            InterpreterSelectWithUnionQuery interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(plan);
+        }
+    }
 }
 
 class LoopSource : public ISource
@@ -91,6 +139,7 @@ public:
             ContextPtr & context_,
             QueryProcessingStage::Enum processed_stage_,
             StoragePtr inner_storage_,
+            ASTPtr inner_table_function_ast_,
             size_t max_block_size_,
             size_t num_streams_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
@@ -100,6 +149,7 @@ public:
             , processed_stage(processed_stage_)
             , context(context_)
             , inner_storage(std::move(inner_storage_))
+            , inner_table_function_ast(std::move(inner_table_function_ast_))
             , max_block_size(max_block_size_)
             , num_streams(num_streams_)
     {
@@ -122,13 +172,20 @@ public:
                 plan, storage_id.database_name, storage_id.table_name,
                 column_names, query_info, inner_context);
         }
+        else if (inner_table_function_ast)
+        {
+            inner_context = Context::createCopy(context);
+            buildInterpreterQueryPlanForTableFunction(
+                plan, inner_table_function_ast,
+                column_names, query_info, inner_context);
+        }
         else
         {
-            auto storage_snapshot_ = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
+            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
             inner_storage->read(
                     plan,
                     column_names,
-                    storage_snapshot_,
+                    inner_storage_snapshot,
                     query_info,
                     context,
                     processed_stage,
@@ -192,6 +249,7 @@ private:
     QueryProcessingStage::Enum processed_stage;
     ContextPtr context;
     StoragePtr inner_storage;
+    ASTPtr inner_table_function_ast;
     size_t max_block_size;
     size_t num_streams;
     ContextPtr inner_context;
@@ -218,6 +276,7 @@ ReadFromLoopStep::ReadFromLoopStep(
         const ContextPtr & context_,
         QueryProcessingStage::Enum processed_stage_,
         StoragePtr inner_storage_,
+        ASTPtr inner_table_function_ast_,
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
@@ -229,6 +288,7 @@ ReadFromLoopStep::ReadFromLoopStep(
         , column_names(column_names_)
         , processed_stage(processed_stage_)
         , inner_storage(std::move(inner_storage_))
+        , inner_table_function_ast(std::move(inner_table_function_ast_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
 {
@@ -237,7 +297,7 @@ ReadFromLoopStep::ReadFromLoopStep(
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, max_block_size, num_streams));
+            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size, num_streams));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
