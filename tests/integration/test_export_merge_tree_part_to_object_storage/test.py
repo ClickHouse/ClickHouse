@@ -9,6 +9,18 @@ import uuid
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
+
+def skip_if_remote_database_disk_enabled(cluster):
+    """Skip test if any instance in the cluster has remote database disk enabled.
+
+    Tests that block MinIO cannot run when remote database disk is enabled,
+    as the database metadata is stored on MinIO and blocking it would break the database.
+    """
+    for instance in cluster.instances.values():
+        if instance.with_remote_database_disk:
+            pytest.skip("Test cannot run with remote database disk enabled (db disk), as it blocks MinIO which stores database metadata")
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -37,6 +49,7 @@ def create_tables_and_insert_data(node, mt_table, s3_table):
 
 
 def test_drop_column_during_export_snapshot(cluster):
+    skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
     mt_table = "mutations_snapshot_mt_table"
@@ -88,6 +101,7 @@ def test_drop_column_during_export_snapshot(cluster):
 
 
 def test_add_column_during_export(cluster):
+    skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
     mt_table = "add_column_during_export_mt_table"
@@ -193,6 +207,7 @@ def test_pending_mutations_skip_before_export(cluster):
 
 def test_data_mutations_after_export_started(cluster):
     """Test that mutations applied after export starts don't affect the exported data."""
+    skip_if_remote_database_disk_enabled(cluster)
     node = cluster.instances["node1"]
 
     mt_table = "mutations_after_export_mt_table"
