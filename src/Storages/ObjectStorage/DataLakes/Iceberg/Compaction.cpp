@@ -151,7 +151,7 @@ Plan getPlan(
     }
     plan.initial_metadata_object = initial_metadata_object;
 
-    std::vector<ManifestFileEntryPtr> all_positional_delete_files;
+    std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<String, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -161,14 +161,8 @@ Plan getPlan(
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
-            auto manifest_file_content = getManifestFile(
-                object_storage,
-                persistent_table_components,
-                context,
-                log,
-                manifest_file.manifest_file_path,
-                manifest_file.added_sequence_number,
-                manifest_file.added_snapshot_id);
+            auto files_handle = getManifestFileEntriesHandle(
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -176,14 +170,12 @@ Plan getPlan(
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
-            auto data_files = manifest_file_content->getFilesWithoutDeleted(FileContentType::DATA);
-            auto positional_delete_files = manifest_file_content->getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
-            for (const auto & pos_delete_file : positional_delete_files)
+            for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 all_positional_delete_files.push_back(pos_delete_file);
 
-            for (const auto & data_file : data_files)
+            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
@@ -209,14 +201,14 @@ Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file->parsed_entry->partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
 
-        std::vector<Iceberg::ManifestFileEntryPtr> result_delete_files;
+        std::vector<Iceberg::ProcessedManifestFileEntryPtr> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->info.sequence_number <= delete_file->added_sequence_number)
+            if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
                 data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
