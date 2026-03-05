@@ -288,7 +288,16 @@ public:
         std::pair<std::string, IndexAnalysisPartsRanges> local_result{local_address, {}};
 
         auto [local_thread, local_exception] = executeLocalAnalysis(local_parts, local_marks, local_rows, local_result);
-        executeRemoteAnalysis(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
+        try
+        {
+            executeRemoteAnalysis(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
+        }
+        catch (...)
+        {
+            if (local_thread.joinable())
+                local_thread.join();
+            throw;
+        }
 
         if (local_thread.joinable())
             local_thread.join();
