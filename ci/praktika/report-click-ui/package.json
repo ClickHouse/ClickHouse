@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@clickhouse/click-ui": "0.1.0-rc.70",
+    "@clickhouse/click-ui": "file:../../../../click-ui/clickhouse-click-ui-0.0.251-test.67.tgz",
     "dayjs": "^1.11.19",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
