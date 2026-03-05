@@ -171,9 +171,6 @@ Plan getPlan(
         log.get(),
         persistent_table_components.table_uuid);
 
-    // Set the generator version to the next version after the current metadata
-    plan.generator.setVersion(metadata_version + 1);
-
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
