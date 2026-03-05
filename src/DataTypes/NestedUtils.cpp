@@ -215,6 +215,11 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
     std::unordered_map<String, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
+        /// Skip subcolumns (e.g. `a3.null` derived from `a3 Array(Nullable(UInt32))`).
+        /// They are not real flat-nested columns like `n.a Array(T)`, `n.b Array(T)`.
+        if (name_type.isSubcolumn())
+            continue;
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
