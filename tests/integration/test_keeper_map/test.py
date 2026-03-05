@@ -12,9 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper_map.xml"],
-    user_configs=[
-        "configs/keeper_retries.xml",
-        "configs/sync_insert.xml",],
+    user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
     stay_alive=True,
     with_remote_database_disk=False,  # `test_keeper_map_without_zk` stops the Keeper connection, which might not work with the remote DB disk
