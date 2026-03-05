@@ -460,7 +460,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
-            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<std::vector<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
+            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<VectorWithMemoryTracking<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
             Attribute attribute{
                 .containers = AttributeContainerShardsType<ValueType>(configuration.shards),
                 .is_index_null = std::move(is_index_null),

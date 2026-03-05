@@ -195,12 +195,14 @@ def main():
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": False,  # Creating too many issues
+        "test_with_fill": random.randint(1, 7) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": False,  # Creating too many issues
+        "allow_infinite_tables": random.randint(1, 7) == 1,
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_backups": random.randint(1, 4) == 1,
+        "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -251,6 +253,7 @@ def main():
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_optimize_ttl_delete",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

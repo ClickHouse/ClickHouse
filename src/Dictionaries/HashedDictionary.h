@@ -170,10 +170,10 @@ public:
 
 private:
     template <typename Value>
-    using CollectionsHolder = std::vector<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
+    using CollectionsHolder = VectorWithMemoryTracking<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
-    using NullableSets = std::vector<NullableSet>;
+    using NullableSets = VectorWithMemoryTracking<NullableSet>;
 
     struct Attribute final
     {
@@ -265,7 +265,7 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
@@ -275,8 +275,8 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    std::vector<std::unique_ptr<Arena>> string_arenas;
-    std::vector<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
+    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
+    VectorWithMemoryTracking<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

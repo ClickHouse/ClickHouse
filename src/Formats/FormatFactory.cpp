@@ -373,6 +373,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
+    format_settings.max_block_wait_ms = settings[Setting::input_format_max_block_wait_ms];
+    format_settings.connection_handling = settings[Setting::input_format_connection_handling];
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
 
@@ -445,11 +447,16 @@ InputFormatPtr FormatFactory::getInput(
             settings,
             /*num_streams_=*/1);
 
+    if (format_settings.max_block_wait_ms > 0 && !format_settings.connection_handling)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'input_format_max_block_wait_ms' requires 'input_format_connection_handling' to be enabled");
+
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size_rows = max_block_size;
     row_input_format_params.max_block_size_bytes = max_block_size_bytes.value_or(format_settings.max_block_size_bytes);
     row_input_format_params.min_block_size_rows = min_block_size_rows.value_or(0);
     row_input_format_params.min_block_size_bytes = min_block_size_bytes.value_or(0);
+    row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
+    row_input_format_params.connection_handling = format_settings.connection_handling;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
@@ -474,6 +481,9 @@ InputFormatPtr FormatFactory::getInput(
         parallel_parsing = false;
     if (settings[Setting::max_memory_usage_for_user]
         && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
+        parallel_parsing = false;
+
+    if (format_settings.connection_handling)
         parallel_parsing = false;
 
     if (parallel_parsing)

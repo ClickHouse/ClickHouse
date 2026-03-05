@@ -331,7 +331,7 @@ John, Jane
     FunctionDocumentation::Category category_groupConcat = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
 
-    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties, documentation_groupConcat });
+    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
     factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 

@@ -492,7 +492,7 @@ class FuzzerLogParser:
         from_matches = re.findall(from_pattern, failed_query, re.IGNORECASE)
         join_matches = re.findall(join_pattern, failed_query, re.IGNORECASE)
 
-        table_finctions = set()
+        table_functions = set()
         for match in from_matches + join_matches:
             if match.startswith("file("):
                 # Extract filename from file(...) function, handling nested functions
@@ -501,11 +501,11 @@ class FuzzerLogParser:
                 if file_match:
                     table_files.add(file_match.group(1))
             if match.startswith("numbers(") or match.startswith("file("):
-                table_finctions.add(match)
+                table_functions.add(match)
             else:
                 tables.add(match)
 
-        if not (tables or table_files or table_finctions):
+        if not (tables or table_files or table_functions):
             print("WARNING: No tables found in query command")
             return [
                 failed_query + ";" if not failed_query.endswith(";") else failed_query

@@ -13,7 +13,7 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
-from helpers.spark_tools import ResilientSparkSession
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 def check_spark(spark):
     p = subprocess.run(["echo", "hello world!"], capture_output=True, text=True)
@@ -72,6 +72,13 @@ def get_spark(cluster : ClickHouseCluster):
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
                 .master("local")
             )
+
+    props_path = write_spark_log_config(cluster.instances_dir)
+    builder = builder.config(
+        "spark.driver.extraJavaOptions",
+        f"-Dlog4j2.configurationFile=file:{props_path}",
+    )
+
     return builder.getOrCreate()
 
 @pytest.fixture(scope="package")

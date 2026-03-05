@@ -321,15 +321,15 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     DataTypePtr internal_type;
     bool check_date_range = false;
 
-    if (!type_hint || isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint))
+    if (type_hint && isNumber(type_hint))
     {
-        internal_type = std::make_shared<DataTypeDate32>();
-        check_date_range = true;
+        /// If requested type is a number, read as raw number without checking if it's a valid date.
+        internal_type = std::make_shared<DataTypeInt32>();
     }
     else
     {
-        /// If requested type is raw number, read as raw number without checking if it's a valid date.
-        internal_type = std::make_shared<DataTypeInt32>();
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_date_range = true;
     }
 
     auto internal_column = internal_type->createColumn();
@@ -1165,10 +1165,12 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             DataTypePtr array_type;
             /// If type hint is Nested, we should return Nested type,
             /// because we differentiate Nested and simple Array(Tuple)
-            if (type_hint && isNested(type_hint))
+            const auto * tuple_type = type_hint && isNested(type_hint)
+                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
+                : nullptr;
+            if (tuple_type)
             {
-                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
-                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
+                array_type = createNested(tuple_type->getElements(), tuple_type->getElementNames());
             }
             else
             {

@@ -334,7 +334,16 @@ class Shell:
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        delay = 1
+
         for retry in range(retries):
+
+            if retry > 0:
+                delay = min(2 * delay, 60)
+                if verbose:
+                    print(f"Retrying in {delay}s...")
+                time.sleep(delay)
+
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -365,7 +374,8 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
-                            sys.stdout.write(line)
+                            if verbose:
+                                sys.stdout.write(line)
                             output_fp.write(line)
                             if output is not None:
                                 output.append(line)
@@ -386,48 +396,64 @@ class Shell:
 
                     proc.wait()  # Wait for the process to finish
 
-                    if proc.returncode == 0:
-                        break  # Exit retry loop if success
-                    else:
-                        if verbose:
-                            print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
-                            )
-                        should_retry = not retry_errors
-                        if retry_errors:
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
-                        if should_retry and retry < retries - 1:
-                            delay = min(2 ** (retry + 1), 60)
-                            print(f"Retrying in {delay}s...")
-                            time.sleep(delay)
+                if proc.returncode == 0:
+                    return 0
+
+                if verbose and retries > 1:
+                    print(
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                    )
+
+                if not retry_errors:
+                    continue  # No retry errors specified, just retry on any failure
+
+                if not any(
+                    err in err_line for err_line in err_output for err in retry_errors
+                ):
+                    if verbose:
+                        print(f"No retryable errors found, stopping retries")
+                    break
+
+                if verbose:
+                    matched = next(
+                        (
+                            err
+                            for err in retry_errors
+                            if any(err in line for line in err_output)
+                        ),
+                        "",
+                    )
+                    print(
+                        f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
+                    )
             except Exception as e:
                 if verbose:
-                    print(
-                        f"ERROR: command failed, exception: {e}, retry: {retry}/{retries}"
-                    )
+                    if retries == 1:
+                        print(f"ERROR: exception {e}")
+                    else:
+                        print(f"Retry {retry+1}/{retries}: exception {e}")
+                        if retry == retries - 1:
+                            print(f"ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
-                if strict and retry == retries - 1:
-                    raise e
+                if retry == retries - 1:
+                    if strict:
+                        raise
+                    else:
+                        return 1  # Return non-zero for failure
 
-        if strict and (not proc or proc.returncode != 0):
+        if verbose:
+            print(
+                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+            )
+
+        if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
                 f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode if proc else 1  # Return 1 if the process never started
+        return proc.returncode
 
     @classmethod
     def run_async(

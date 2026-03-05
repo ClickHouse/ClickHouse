@@ -168,7 +168,7 @@ jobs:
 
   clickhouse_keeper_jepsen:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary]
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tIb3VzZSBLZWVwZXIgSmVwc2Vu') }}
     name: "ClickHouse Keeper Jepsen"
     outputs:
@@ -206,7 +206,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_binary, clickhouse_keeper_jepsen]
+    needs: [build_amd_binary, clickhouse_keeper_jepsen, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

@@ -66,7 +66,7 @@ public:
         std::cerr << "Requests executed: " << num << ".\n";
     }
 
-    bool tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener);
+    bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
@@ -122,7 +122,7 @@ private:
 
     std::mutex mutex;
 
-    using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
+    using Queue = ConcurrentBoundedQueue<ZooKeeperRequestWithCallbacks>;
     std::optional<Queue> queue;
 
     std::mutex connection_mutex;

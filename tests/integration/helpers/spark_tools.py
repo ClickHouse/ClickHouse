@@ -1,6 +1,41 @@
 import logging
+import os
 
 import pyspark
+
+
+def write_spark_log_config(log_dir):
+    """Create a log4j2 properties file that writes Spark logs to a file.
+
+    Returns the path to the properties file so it can be passed to Spark via
+    spark.driver.extraJavaOptions.
+    """
+    os.makedirs(log_dir, exist_ok=True)
+    spark_log_path = os.path.join(log_dir, "spark.log")
+    props_path = os.path.join(log_dir, "log4j2-spark.properties")
+    with open(props_path, "w") as f:
+        f.write(
+            f"""\
+rootLogger.level = info
+rootLogger.appenderRef.file.ref = file
+rootLogger.appenderRef.console.ref = console
+
+appender.console.type = Console
+appender.console.name = console
+appender.console.target = SYSTEM_ERR
+appender.console.layout.type = PatternLayout
+appender.console.layout.pattern = %d{{yy/MM/dd HH:mm:ss}} %p %c{{1}}: %m%n%ex
+appender.console.filter.threshold.type = ThresholdFilter
+appender.console.filter.threshold.level = warn
+
+appender.file.type = File
+appender.file.name = file
+appender.file.fileName = {spark_log_path}
+appender.file.layout.type = PatternLayout
+appender.file.layout.pattern = %d{{yy/MM/dd HH:mm:ss}} %p %c{{1}}: %m%n%ex
+"""
+        )
+    return props_path
 
 
 class ResilientSparkSession:

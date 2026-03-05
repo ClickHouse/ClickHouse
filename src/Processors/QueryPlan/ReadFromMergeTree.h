@@ -37,22 +37,9 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    struct MergedDataSkippingIndexAndCondition
-    {
-        std::vector<MergeTreeIndexPtr> indices;
-        MergeTreeIndexMergedConditionPtr condition;
-
-        void addIndex(const MergeTreeIndexPtr & index)
-        {
-            indices.push_back(index);
-            condition->addIndex(indices.back());
-        }
-    };
-
-    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
+    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
@@ -321,7 +308,6 @@ public:
         bool allow_query_condition_cache_,
         bool supports_skip_indexes_on_data_read);
 
-    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -388,7 +374,8 @@ public:
         [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
         const ContextPtr & query_context,
         const SelectQueryInfo & query_info_,
-        const StorageMetadataPtr & metadata_snapshot);
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_partition_pruning_ = false);
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
@@ -403,6 +390,8 @@ public:
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    void deferFiltersAfterFinalIfNeeded();
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -430,6 +419,11 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Row policy / prewhere deferred to after FINAL, if needed
+    FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
+    bool skip_partition_pruning = false;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;

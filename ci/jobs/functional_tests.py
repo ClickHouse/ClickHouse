@@ -16,7 +16,6 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
-
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
@@ -108,6 +107,7 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -410,7 +410,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -433,7 +433,7 @@ def main():
             commands.append(CH.enable_thread_fuzzer_config)
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
         if not is_coverage:
@@ -516,9 +516,10 @@ def main():
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 5-minute margin.
+        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
+        # (server shutdown, system table export, log collection — all slow under sanitizers).
         job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 300
+        soft_limit_margin = 3600
         global_time_limit = 0
         if is_flaky_check or is_targeted_check:
             global_time_limit = max(
@@ -532,6 +533,10 @@ def main():
         # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
         collected_test_results = []
         seen_test_names = set()
+        # Track accumulated run time per test for the targeted check per-test time cap
+        test_time_accumulated: dict[str, float] = {}
+        TIME_CAP_PER_TEST_SEC = 10 * 60
+        tests_to_run = list(tests) if tests else tests
 
         for cnt in range(run_sets_cnt):
             # For targeted checks with multiple iterations, recalculate
@@ -540,11 +545,16 @@ def main():
                 global_time_limit = max(
                     job_timeout - soft_limit_margin - int(stop_watch.duration), 0
                 )
+                if global_time_limit <= 0:
+                    print(
+                        "NOTE: Soft time limit exhausted; stopping before next iteration"
+                    )
+                    break
 
             run_tests(
-                batch_num=batch_num if not tests else 0,
-                batch_total=total_batches if not tests else 0,
-                tests=tests,
+                batch_num=batch_num if not tests_to_run else 0,
+                batch_total=total_batches if not tests_to_run else 0,
+                tests=tests_to_run,
                 extra_args=runner_options,
                 random_order=is_flaky_check
                 or is_targeted_check
@@ -558,6 +568,27 @@ def main():
             # or all results on the final attempt
             if run_sets_cnt > 1:
                 is_final_run = cnt == run_sets_cnt - 1
+
+                # Accumulate per-test run time and filter tests that exceeded the time cap
+                if is_targeted_check:
+                    for test_case_result in test_result.results:
+                        if test_case_result.duration is not None:
+                            test_time_accumulated[test_case_result.name] = (
+                                test_time_accumulated.get(test_case_result.name, 0.0)
+                                + test_case_result.duration
+                            )
+                    if not is_final_run:
+                        tests_to_run = [
+                            t
+                            for t in tests_to_run
+                            if test_time_accumulated.get(t, 0.0)
+                            < TIME_CAP_PER_TEST_SEC
+                        ]
+                        if not tests_to_run:
+                            print(
+                                "NOTE: All tests exceeded the time cap; stopping early"
+                            )
+                            is_final_run = True
 
                 for test_case_result in test_result.results:
                     # Only collect each test once (first failure or final result)
@@ -576,12 +607,15 @@ def main():
 
                 # On final run, replace results with collected ones
                 if is_final_run or stop_by_elapsed_time:
-                    test_result.results = collected_test_results
-                    # Set overall status to failed if any collected test cases failed
-                    has_failures = any(not t.is_ok() for t in collected_test_results)
-                    if has_failures and test_result.is_ok():
-                        test_result.set_failed()
                     break
+
+        # Apply collected results from multi-run mode
+        if run_sets_cnt > 1 and collected_test_results:
+            test_result.results = collected_test_results
+            # Set overall status to failed if any collected test cases failed
+            has_failures = any(not t.is_ok() for t in collected_test_results)
+            if has_failures and test_result.is_ok():
+                test_result.set_failed()
 
         if not info.is_local_run:
             CH.stop_log_exports()
