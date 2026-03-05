@@ -16,6 +16,6 @@ struct PartitionStatistics
 };
 using PartitionsStatistics = std::unordered_map<std::string, PartitionStatistics>;
 
-PartitionsStatistics calculateStatisticsForPartitions(const PartsRanges & ranges);
+PartitionsStatistics calculateStatisticsForParts(const std::vector<MergeTreeDataPartPtr> & parts, time_t current_time);
 
 }

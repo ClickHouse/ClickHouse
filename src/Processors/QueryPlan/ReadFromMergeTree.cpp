@@ -2211,6 +2211,19 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
+        /// PREWHERE is evaluated at the storage level during data reading, before the
+        /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
+        /// uses DelayedPortsProcessor to ensure sets are built before the main query starts,
+        /// there is a race condition: if a downstream processor (e.g. JoiningTransform with
+        /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
+        /// the set-building pipeline before the set is ready.
+        /// Building sets synchronously here eliminates this race condition entirely.
+        if (query_info.prewhere_info)
+            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+        if (query_info.row_level_filter)
+            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+
         buildIndexes(
             indexes,
             index_filter_dag,
