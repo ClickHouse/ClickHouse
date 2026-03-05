@@ -2238,25 +2238,23 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
     ReadFromMergeTree::IndexStats ignore_stats;
     auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
 
-    std::unordered_set<std::string_view> processed_parts;
-
     /// Convert RangesInDataParts to IndexAnalysisPartsRanges
     IndexAnalysisPartsRanges res;
     for (auto & part_ranges : parts_ranges_res)
     {
         const auto & part_name = part_ranges.data_part->name;
-        auto & part_result = res[part_name];
-        part_result.ranges.insert(part_result.ranges.end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
-        part_result.extra_data.merge(part_ranges.skip_indexes_extra_data.serialized_index_data);
+        auto [it, inserted] = res.try_emplace(part_name);
+
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} already exists in IndexAnalysisPartsRanges", part_name);
+
+        it->second.ranges = std::move(part_ranges.ranges);
+        it->second.extra_data = std::move(part_ranges.skip_indexes_extra_data.serialized_index_data);
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
     for (const auto & part_name : parts_to_analyze)
-    {
-        if (processed_parts.contains(part_name))
-            continue;
         res.emplace(part_name, IndexAnalysisPartResult{});
-    }
 
     return res;
 }

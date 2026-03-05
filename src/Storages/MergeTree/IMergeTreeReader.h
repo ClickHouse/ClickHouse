@@ -190,5 +190,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
     bool can_skip_mark,
-    const std::unordered_map<String, String> & serialized_index_data = {});
+    const std::unordered_map<String, String> & serialized_index_data);
 }
