@@ -99,7 +99,7 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
                 /*max_block_size_bytes=*/0,
                 /*max_dynamic_subcolumns=*/std::nullopt,
                 SortingQueueStrategy::Batch,
-                limit,
+                /*limit=*/0,
                 /*always_read_till_end=*/false,
                 /*out_row_sources_buf=*/nullptr,
                 /*filter_column_name=*/std::nullopt,
