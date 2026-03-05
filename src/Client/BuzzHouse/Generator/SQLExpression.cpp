@@ -203,6 +203,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     litMask[static_cast<size_t>(LitOp::LitJSON)] = (this->next_type_mask & allow_JSON) != 0;
     /// litMask[static_cast<size_t>(LitOp::LitNULLVal)] = true;
     /// litMask[static_cast<size_t>(LitOp::LitFraction)] = true;
+    /// litMask[static_cast<size_t>(LitOp::LitAggrState)] = true;
     litGen.setEnabled(litMask);
 
     switch (static_cast<LitOp>(litGen.nextOp())) /// drifts over time
@@ -348,6 +349,131 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             std::uniform_int_distribution<uint32_t> frange(1, 999);
 
             lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
+        }
+        break;
+        case LitOp::LitAggrState: {
+            /// Exercise finalizeAggregation + CAST(unhex(...), 'AggregateFunction(...)') as in issue #97370.
+            ///
+            /// Three orthogonal dimensions:
+            ///  1. Function: broad list including complex-state functions (uniqExact, quantileExact, …)
+            ///  2. Modifier: plain AggregateFunction, SimpleAggregateFunction (different serialization path),
+            ///               or -If combinator (wraps state with a condition flag)
+            ///  3. Mode: valid round-trip (catches serialization bugs) or random bytes (tests
+            ///           deserializer robustness against garbage input)
+
+            /// Functions whose state is compatible with SimpleAggregateFunction
+            static const std::vector<SQLFunc> simple_funcs = {
+                SQLFunc::FUNCany,
+                SQLFunc::FUNCanyLast,
+                SQLFunc::FUNCgroupBitAnd,
+                SQLFunc::FUNCgroupBitOr,
+                SQLFunc::FUNCgroupBitXor,
+                SQLFunc::FUNCmax,
+                SQLFunc::FUNCmin,
+                SQLFunc::FUNCsum,
+                SQLFunc::FUNCsumWithOverflow,
+            };
+
+            /// Full list for plain AggregateFunction / -If combinator
+            static const std::vector<SQLFunc> aggr_funcs = {
+                SQLFunc::FUNCany,
+                SQLFunc::FUNCanyLast,
+                SQLFunc::FUNCavg,
+                SQLFunc::FUNCcount,
+                SQLFunc::FUNCentropy,
+                SQLFunc::FUNCgroupBitAnd,
+                SQLFunc::FUNCgroupBitOr,
+                SQLFunc::FUNCgroupBitXor,
+                SQLFunc::FUNCkurtSamp,
+                SQLFunc::FUNCmax,
+                SQLFunc::FUNCmin,
+                SQLFunc::FUNCquantileExact,
+                SQLFunc::FUNCquantileExactLow,
+                SQLFunc::FUNCquantileExactHigh,
+                SQLFunc::FUNCskewSamp,
+                SQLFunc::FUNCstddevSamp,
+                SQLFunc::FUNCsum,
+                SQLFunc::FUNCsumCount,
+                SQLFunc::FUNCsumKahan,
+                SQLFunc::FUNCsumWithOverflow,
+                SQLFunc::FUNCuniq,
+                SQLFunc::FUNCuniqCombined,
+                SQLFunc::FUNCuniqCombined64,
+                SQLFunc::FUNCuniqExact,
+                SQLFunc::FUNCvarSamp,
+            };
+
+            /// Dimension 2: modifier
+            const uint32_t modifier = rg.nextSmallNumber(); /// 0-9
+            const bool use_simple = modifier < 2; /// ~20%: SimpleAggregateFunction
+            const bool use_if = !use_simple && modifier < 5; /// ~30%: -If combinator
+            const SQLFunc aggr = use_simple ? rg.pickRandomly(simple_funcs) : rg.pickRandomly(aggr_funcs);
+            const String base_name = SQLFunc_Name(aggr).substr(4);
+            /// Dimension 3: mode
+            String hex_bytes;
+            const bool use_random_bytes = rg.nextBool();
+
+            if (use_random_bytes)
+            {
+                const uint32_t nchunks = rg.randomInt<uint32_t>(1, 20);
+                for (uint32_t i = 0; i < nchunks; i++)
+                    hex_bytes += fmt::format("{:016x}", rg.nextInFullRange());
+            }
+
+            /// Scalar type mask: no nested/aggregate types; nullable + low-cardinality allowed
+            /// to cover cases like LowCardinality(Nullable(Float32)) from the issue.
+            constexpr uint64_t scalar_mask = allow_unsigned_int | allow_int8 | allow_int16 | allow_int64 | allow_float32 | allow_float64
+                | allow_strings | allow_dates | allow_datetimes | allow_decimals | allow_nullable | allow_low_cardinality;
+
+            if (!use_simple && !use_if && aggr == SQLFunc::FUNCcount)
+            {
+                /// count has no subtype
+                lv->set_no_quote_str(
+                    use_random_bytes
+                        ? fmt::format("finalizeAggregation(CAST(unhex('{}'), 'AggregateFunction(count)'))", hex_bytes)
+                        : "finalizeAggregation(CAST(unhex(hex(initializeAggregation('count', 1))), 'AggregateFunction(count)'))");
+            }
+            else
+            {
+                uint32_t col_counter = 0;
+                this->depth++;
+                const SQLType * subtype = this->randomNextType(rg, scalar_mask, col_counter, nullptr);
+                this->depth--;
+                const String type_name = subtype->typeName(false, false);
+
+                /// Build function name and initializeAggregation call depending on modifier
+                String func_name;
+                String init_args; /// argument list inside initializeAggregation(...)
+                String aggr_type; /// full AggregateFunction(...) or SimpleAggregateFunction(...) type
+
+                if (use_simple)
+                {
+                    /// SimpleAggregateFunction stores the value directly — different serialization path
+                    func_name = base_name;
+                    init_args = fmt::format("'{}', CAST({}, '{}')", func_name, subtype->appendRandomRawValue(rg, *this), type_name);
+                    aggr_type = fmt::format("SimpleAggregateFunction({}, {})", func_name, type_name);
+                }
+                else if (use_if)
+                {
+                    /// -If combinator: funcIf(val, condition) with AggregateFunction(funcIf, T, UInt8)
+                    func_name = base_name + "If";
+                    init_args = fmt::format(
+                        "'{}', CAST({}, '{}'), CAST(1, 'UInt8')", func_name, subtype->appendRandomRawValue(rg, *this), type_name);
+                    aggr_type = fmt::format("AggregateFunction({}, {}, UInt8)", func_name, type_name);
+                }
+                else
+                {
+                    func_name = base_name;
+                    init_args = fmt::format("'{}', CAST({}, '{}')", func_name, subtype->appendRandomRawValue(rg, *this), type_name);
+                    aggr_type = fmt::format("AggregateFunction({}, {})", func_name, type_name);
+                }
+                delete subtype;
+
+                lv->set_no_quote_str(
+                    use_random_bytes
+                        ? fmt::format("finalizeAggregation(CAST(unhex('{}'), '{}'))", hex_bytes, aggr_type)
+                        : fmt::format("finalizeAggregation(CAST(unhex(hex(initializeAggregation({}))), '{}'))", init_args, aggr_type));
+            }
         }
         break;
     }

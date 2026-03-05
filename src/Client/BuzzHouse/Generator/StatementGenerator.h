@@ -294,7 +294,8 @@ private:
         LitSpecial,
         LitJSON,
         LitNULLVal,
-        LitFraction
+        LitFraction,
+        LitAggrState
     };
 
     enum class ExpOp

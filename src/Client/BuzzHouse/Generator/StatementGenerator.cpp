@@ -78,7 +78,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.25}, /// LitSpecial
               {0.01, 0.10}, /// LitJSON
               {0.01, 0.15}, /// LitNULLVal
-              {0.01, 0.10} /// LitFraction
+              {0.01, 0.10}, /// LitFraction
+              {0.01, 0.15} /// LitAggrState
           }},
           "SQL expression literals"))
     , expGen(ProbabilityGenerator(
@@ -150,7 +151,7 @@ StatementGenerator::StatementGenerator(
           }},
           "SQL queries"))
     , SQLMask(static_cast<size_t>(SQLOp::ShowStatement) + 1, true)
-    , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
+    , litMask(static_cast<size_t>(LitOp::LitAggrState) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
     , queryMask(static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF) + 1, true)
