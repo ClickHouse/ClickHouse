@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-ordinary-database
+# Tags: no-parallel, no-replicated-database, no-ordinary-database, no-encrypted-storage
 # no-parallel: The PAUSEABLE_ONCE failpoint fires exactly once globally; a concurrent DROP DATABASE
 #   from another parallel test could steal the failpoint pause from Q1, causing this test to hang.
 # no-replicated-database: Failpoints are single-server; DROP DATABASE behavior inside a replicated
 #   database differs (DDL is replicated via ZooKeeper, not executed directly on each replica).
 # no-ordinary-database: The bug involves UUID-based waitTableFinallyDropped which is specific to
 #   DatabaseAtomic; DatabaseOrdinary uses a different table-dropping mechanism with no UUIDs.
+# no-encrypted-storage: Encrypted-storage CI jobs skip installing transactions.xml, so
+#   allow_experimental_transactions is unset. The implicit-transaction query then fails before
+#   reaching the failpoint, leaving SYSTEM WAIT FAILPOINT PAUSE blocked indefinitely.
 # Regression test: implicit-transaction StoragePtr deadlock in DROP DATABASE SYNC.
 #
 # Bug: executeToDatabaseImpl reuses a single ASTDropQuery object across the tables_to_drop loop.
