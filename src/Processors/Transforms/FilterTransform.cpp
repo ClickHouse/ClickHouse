@@ -374,22 +374,27 @@ void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtrati
     String query_id(CurrentThread::getQueryId());
 
     /// resolve database/table from MarkRangesInfo, caching to avoid repeated DatabaseCatalog lookups
-    if (auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>())
+    /// without MarkRangesInfo there is no table identity — skip logging
+    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_ranges_info)
+        return;
+
+    if (mark_ranges_info->table_uuid != cached_table_uuid)
     {
-        if (mark_ranges_info->table_uuid != cached_table_uuid)
+        cached_table_uuid = mark_ranges_info->table_uuid;
+        cached_database.clear();
+        cached_table.clear();
+        auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(cached_table_uuid);
+        if (db_and_table.first && db_and_table.second)
         {
-            cached_table_uuid = mark_ranges_info->table_uuid;
-            cached_database.clear();
-            cached_table.clear();
-            auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(cached_table_uuid);
-            if (db_and_table.first && db_and_table.second)
-            {
-                auto storage_id = db_and_table.second->getStorageID();
-                cached_database = storage_id.database_name;
-                cached_table = storage_id.table_name;
-            }
+            auto storage_id = db_and_table.second->getStorageID();
+            cached_database = storage_id.database_name;
+            cached_table = storage_id.table_name;
         }
     }
+
+    if (cached_database.empty())
+        return;
 
     /// for conjunctive filters (multiple atoms), the selectivity recorded here is the
     /// combined pass rate, which is a lower bound on each individual atom's selectivity.

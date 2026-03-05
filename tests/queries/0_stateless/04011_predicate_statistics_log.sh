@@ -30,11 +30,11 @@ CREATE TABLE test_pred_stats (id UInt64, status String, value Float64) ENGINE = 
 INSERT INTO test_pred_stats SELECT number, if(number % 10 = 0, 'active', 'inactive'), rand() FROM numbers(100000);
 
 -- Equality predicate
-SELECT count() FROM test_pred_stats WHERE status = 'active' FORMAT Null;
+SELECT count() FROM test_pred_stats WHERE status = 'active' SETTINGS optimize_move_to_prewhere = 0 FORMAT Null;
 -- Range predicate
-SELECT count() FROM test_pred_stats WHERE id > 50000 FORMAT Null;
+SELECT count() FROM test_pred_stats WHERE id > 50000 SETTINGS optimize_move_to_prewhere = 0 FORMAT Null;
 -- In predicate
-SELECT count() FROM test_pred_stats WHERE id IN (1, 2, 3) FORMAT Null;
+SELECT count() FROM test_pred_stats WHERE id IN (1, 2, 3) SETTINGS optimize_move_to_prewhere = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS predicate_statistics_log;
 
