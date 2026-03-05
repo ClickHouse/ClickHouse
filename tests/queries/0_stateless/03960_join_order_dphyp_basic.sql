@@ -1,6 +1,8 @@
--- Basic DPhyp correctness on a 4-table diamond.
--- EXPLAIN confirms that cost-based reordering changes the join order
--- relative to the written order (R1, R2, R3, R4 -> R2, R3, R1, R4).
+-- Basic DPhyp correctness on a 4-table chain (R2 - R1 - R3 - R4).
+-- R1 is filtered to 1 row; R4 is 10 rows with no filter.
+-- R1 is unambiguously the cheapest build side (1 row vs 10),
+-- so the optimal plan has a unique structure: R2 JOIN (R3 JOIN R1) JOIN R4.
+-- EXPLAIN confirms cost-based reordering relative to the written order.
 -- Result hash must match DPsize.
 
 SET allow_experimental_analyzer = 1;
@@ -75,7 +77,6 @@ WHERE
     AND T1.A_ID = T3.R1_A_ID
     AND T3.R4_D_ID = T4.D_ID
     AND T1.A_Description = 'Type H'
-    AND T4.D_LookupCode = 'Lookup S'
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', enable_parallel_replicas = 0;
 
 -- DPhyp result must match DPsize.
@@ -90,7 +91,6 @@ WHERE
     AND T1.A_ID = T3.R1_A_ID
     AND T3.R4_D_ID = T4.D_ID
     AND T1.A_Description = 'Type H'
-    AND T4.D_LookupCode = 'Lookup S'
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp';
 
 DROP TABLE R1;

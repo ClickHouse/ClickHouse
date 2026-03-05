@@ -17,6 +17,6 @@ Expression ((Project names + (Projection + )))
                     Expression ((WHERE + Change column names to column identifiers))
                       ReadFromMergeTree (default.R1)
             Expression (Right Pre Join Actions)
-              Expression ((WHERE + Change column names to column identifiers))
+              Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.R4)
 5684007341784604324
