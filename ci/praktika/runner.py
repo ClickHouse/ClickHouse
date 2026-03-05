@@ -1,5 +1,6 @@
 import dataclasses
 import glob
+import hashlib
 import json
 import os
 import re
@@ -313,6 +314,15 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            # Use a hash of the real worktree path as container name so
+            # multiple worktrees can run tests in parallel without conflicts.
+            # The same path always produces the same name, allowing cleanup.
+            container_name = (
+                "praktika_"
+                + hashlib.sha1(
+                    Path(current_dir).resolve().as_posix().encode()
+                ).hexdigest()[:12]
+            )
             workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
@@ -328,11 +338,11 @@ class Runner:
                     )
                     workdir = ""
             if not Shell.check(
-                "if docker ps -a --format '{{.Names}}' | grep -qx praktika; then docker rm -f praktika; fi",
+                f"if docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}; then docker rm -f {container_name}; fi",
                 verbose=True,
             ):
                 raise RuntimeError(
-                    "Failed to remove existing docker container 'praktika'"
+                    f"Failed to remove existing docker container '{container_name}'"
                 )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
@@ -349,7 +359,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")

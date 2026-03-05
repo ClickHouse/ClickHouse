@@ -238,8 +238,8 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
         [](const auto & arg) { return isNullConstant(arg); });
 
-    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !common_type->isNullable())
-        common_type = makeNullable(common_type);
+    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !isNullableOrLowCardinalityNullable(common_type))
+        common_type = makeNullableOrLowCardinalityNullable(common_type);
 
     for (const auto & arg : tuple_args)
         array_arguments_list->getNodes().push_back(castNodeToType(arg, common_type, scope));
@@ -1222,7 +1222,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
-            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name);
+            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
 
