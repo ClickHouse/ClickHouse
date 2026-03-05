@@ -11,16 +11,27 @@ namespace DB::QueryPlanOptimizations
 /// Optimization for GROUP BY ... ORDER BY ... LIMIT queries.
 ///
 /// When the query has the pattern:
-///   SELECT ... GROUP BY <key> ORDER BY <key> ASC LIMIT N
+///   SELECT ... GROUP BY <keys> ORDER BY <prefix of keys> ASC LIMIT N
 /// we can maintain a bounded max-heap of size N during aggregation,
-/// pruning GROUP BY keys that will never appear in the final top-N result.
+/// pruning GROUP BY keys whose ORDER BY prefix is worse than the current
+/// top-N boundary.
+///
+/// The ORDER BY columns must be a prefix of the GROUP BY keys.
+/// For example, GROUP BY x, y, z ORDER BY x, y LIMIT 10 is supported:
+/// the heap tracks (x, y) pairs and skips rows where (x, y) is strictly
+/// greater than the heap boundary. Rows with equal (x, y) prefix are
+/// kept regardless of z, which is correct because the final ORDER BY + LIMIT
+/// will select among them.
+///
+/// Supports both single-column and composite (multi-column) ORDER BY prefixes.
+/// For composite keys, the heap performs lexicographic comparison with
+/// per-column collators.
 ///
 /// Pattern matched in the query plan (top to bottom):
 ///   LimitStep -> SortingStep -> [ExpressionStep] -> AggregatingStep
 ///
 /// Conditions:
-///   - Single GROUP BY key (multi-key not yet supported)
-///   - ORDER BY columns match GROUP BY keys exactly
+///   - ORDER BY columns are a prefix of GROUP BY keys (in order)
 ///   - ASC sort order only (DESC not yet supported)
 ///   - Final aggregation (not distributed partial)
 ///   - No GROUPING SETS
@@ -97,18 +108,15 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (params.keys.empty())
         return 0;
 
-    /// Currently only single-column GROUP BY is supported because the heap
-    /// compares keys as single Field values. Multi-column composite keys
-    /// would need lexicographic comparison which is not implemented yet.
-    if (params.keys.size() != 1)
-        return 0;
-
     const auto & sort_description = sorting_step->getSortDescription();
 
-    /// ORDER BY column count must match GROUP BY key count.
-    /// TODO: support GROUP BY y, z ORDER BY y (prefix match).
-    if (sort_description.size() != params.keys.size())
+    /// ORDER BY columns must be a prefix of GROUP BY keys (in order).
+    /// E.g. GROUP BY x, y, z ORDER BY x, y is valid; ORDER BY y, x is not.
+    if (sort_description.empty() || sort_description.size() > params.keys.size())
         return 0;
+
+    std::vector<const Collator *> collators;
+    collators.reserve(sort_description.size());
 
     for (size_t i = 0; i < sort_description.size(); ++i)
     {
@@ -118,14 +126,15 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         /// Currently only ascending sort order is supported.
         if (sort_description[i].direction != 1)
             return 0;
+
+        collators.push_back(sort_description[i].collator ? sort_description[i].collator.get() : nullptr);
     }
 
-    const Collator * collator = nullptr;
-    if (sort_description[0].collator)
-        collator = sort_description[0].collator.get();
-
-    LOG_DEBUG(getLogger("QueryPlanOptimizations"), "GROUP BY ... ORDER BY ... LIMIT optimization applied (top_n_keys={})", limit);
-    aggregating_step->applyLimitPushdown(limit, collator);
+    size_t num_key_columns = sort_description.size();
+    LOG_DEBUG(getLogger("QueryPlanOptimizations"),
+        "GROUP BY ... ORDER BY ... LIMIT optimization applied (top_n_keys={}, order_by_keys={}, group_by_keys={})",
+        limit, num_key_columns, params.keys.size());
+    aggregating_step->applyLimitPushdown(limit, std::move(collators), num_key_columns);
     return 0;
 }
 

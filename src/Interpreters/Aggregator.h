@@ -125,8 +125,11 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
-        size_t top_n_keys = 0; // TODO better piping
-        const Collator * top_n_keys_collator = nullptr;  // non-null if ORDER BY uses COLLATE
+        size_t top_n_keys = 0;
+        std::vector<const Collator *> top_n_keys_collators;  // per-column collators for ORDER BY COLLATE
+        /// How many leading GROUP BY key columns the heap compares on.
+        /// Equals the number of ORDER BY columns (which is a prefix of GROUP BY keys).
+        size_t top_n_key_columns = 0;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 

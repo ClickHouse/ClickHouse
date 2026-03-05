@@ -22,4 +22,27 @@
 <!-- Synthetic high cardinality with numbers_mt() -->
 <query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number ASC LIMIT 100 FORMAT Null</query>
 
+<!-- Composite keys: 2-column GROUP BY with high cardinality (~18M unique pairs) -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 1000 FORMAT Null</query>
+
+<!-- Composite keys: 3-column GROUP BY -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Composite keys: medium cardinality (~630K unique pairs) -->
+<query>SELECT RegionID, CounterID, count() FROM hits_100m_single GROUP BY RegionID, CounterID ORDER BY RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Prefix ORDER BY: ORDER BY is a leading prefix of GROUP BY keys.
+     The heap tracks only the prefix columns, keeping all groups where
+     the prefix matches the boundary. -->
+<!-- Prefix 1 of 2: ORDER BY UserID for GROUP BY UserID, RegionID -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
+
+<!-- Prefix 1 of 3: ORDER BY UserID for GROUP BY UserID, RegionID, CounterID -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Prefix 2 of 3: ORDER BY UserID, RegionID for GROUP BY UserID, RegionID, CounterID -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+
 </test>

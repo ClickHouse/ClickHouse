@@ -1152,6 +1152,16 @@ void Aggregator::executeImpl(
 template <typename Method>
 void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states) const
 {
+    /// For composite (multi-column) keys, reconstructing the hash table key from the
+    /// evicted ColumnTuple row is too complex and not worth the overhead.
+    /// Just trim the heap without pruning — the hash table may keep some extra entries,
+    /// but the heap still bounds the final result correctly.
+    if (method.top_n_heap.is_composite)
+    {
+        method.top_n_heap.trimAndCompact([](size_t) {});
+        return;
+    }
+
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
     if constexpr (requires(DataType d, KeyType k) { { d.erase(k) } -> std::same_as<bool>; })
@@ -1281,7 +1291,20 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_n)
     {
         if (!method.top_n_heap.heap_column)
-            method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys, params.top_n_keys_collator);
+        {
+            const auto & key_cols = state.getKeyColumns();
+            /// The heap compares only the leading ORDER BY prefix of GROUP BY keys.
+            size_t heap_key_count = params.top_n_key_columns;
+            if (heap_key_count == 1)
+                method.top_n_heap.init(
+                    *key_cols[0], params.top_n_keys,
+                    params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
+            else
+            {
+                ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
+                method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
+            }
+        }
     }
     else
     {
@@ -1292,7 +1315,19 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (params.top_n_keys > 0)
         {
             if (!method.top_n_heap.heap_column)
-                method.top_n_heap.init(*state.getKeyColumn(), params.top_n_keys, params.top_n_keys_collator);
+            {
+                const auto & key_cols = state.getKeyColumns();
+                size_t heap_key_count = params.top_n_key_columns;
+                if (heap_key_count == 1)
+                    method.top_n_heap.init(
+                        *key_cols[0], params.top_n_keys,
+                        params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
+                else
+                {
+                    ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
+                    method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
+                }
+            }
 
             executeImplBatch<prefetch, true>(
                 method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
@@ -1359,8 +1394,16 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     [[maybe_unused]] const IColumn * key_col = nullptr;
+    [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_n)
-        key_col = state.getKeyColumn();
+    {
+        const auto & all_key_cols = state.getKeyColumns();
+        size_t heap_key_count = params.top_n_key_columns;
+        if (!method.top_n_heap.is_composite)
+            key_col = all_key_cols[0];
+        else
+            heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
+    }
 
     if (is_simple_count)
     {
@@ -1403,7 +1446,9 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (method.top_n_heap.size() >= params.top_n_keys)
                     {
-                        if (method.top_n_heap.shouldSkip(*key_col, i))
+                        if (method.top_n_heap.is_composite
+                            ? method.top_n_heap.shouldSkip(heap_key_cols, i)
+                            : method.top_n_heap.shouldSkip(*key_col, i))
                             continue;
                     }
                 }
@@ -1413,7 +1458,12 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_n)
                 {
                     if (emplace_result.isInserted())
-                        method.top_n_heap.push(*key_col, i);
+                    {
+                        if (method.top_n_heap.is_composite)
+                            method.top_n_heap.push(heap_key_cols, i);
+                        else
+                            method.top_n_heap.push(*key_col, i);
+                    }
                 }
 
                 if (emplace_result.isInserted())
@@ -1505,7 +1555,9 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (method.top_n_heap.size() >= params.top_n_keys)
                 {
-                    if (method.top_n_heap.shouldSkip(*key_col, i))
+                    if (method.top_n_heap.is_composite
+                        ? method.top_n_heap.shouldSkip(heap_key_cols, i)
+                        : method.top_n_heap.shouldSkip(*key_col, i))
                     {
                         places[i] = temp;
                         continue;
@@ -1518,7 +1570,12 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_n)
             {
                 if (emplace_result.isInserted())
-                    method.top_n_heap.push(*key_col, i);
+                {
+                    if (method.top_n_heap.is_composite)
+                        method.top_n_heap.push(heap_key_cols, i);
+                    else
+                        method.top_n_heap.push(*key_col, i);
+                }
             }
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.

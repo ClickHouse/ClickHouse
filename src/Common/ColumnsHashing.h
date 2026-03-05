@@ -195,10 +195,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
 
-        /// Override key_column set by Base constructor (which points to the dictionary column)
-        /// with the original LowCardinality column. This is needed so that getKeyColumn()
+        /// Override key columns set by Base constructor (which points to the dictionary column)
+        /// with the original LowCardinality column. This is needed so that getKeyColumns()
         /// returns the LC column for correct compareAt() behavior in the top-N heap.
-        this->setKeyColumn(key_columns_low_cardinality[0]);
+        this->setKeyColumns({key_columns_low_cardinality[0]});
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -441,10 +441,10 @@ struct HashMethodSerialized
             }
         }
 
-        /// For single-key GROUP BY, initialize key_column so that the top-N heap
-        /// optimization can use getKeyColumn() for IColumn::compareAt comparisons.
-        if (keys_size == 1)
-            this->setKeyColumn(key_columns_[0]);
+        /// Initialize key columns for the top-N heap optimization. Use the original
+        /// key_columns_ (before nullable stripping) so that IColumn::compareAt works
+        /// correctly with ColumnNullable.
+        this->setKeyColumns(ColumnRawPtrs(key_columns_.begin(), key_columns_.begin() + keys_size));
     }
 
     bool shouldUseBatchSerialize() const

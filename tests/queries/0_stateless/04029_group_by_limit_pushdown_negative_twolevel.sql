@@ -90,7 +90,7 @@ SELECT k_u32, count() AS cnt
 FROM t_gbylimit GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
 SETTINGS ordered_group_by_limit_pushdown = 0;
 
--- Multiple GROUP BY keys (not yet supported)
+-- Multiple GROUP BY keys
 SELECT 'negative_multi_key';
 SELECT k_u32, k_u64, count()
 FROM t_gbylimit GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
