@@ -436,9 +436,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
-            system_context->clearTextIndexDictionaryBlockCache();
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
+            system_context->clearTextIndexTokensCache();
             break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
@@ -450,7 +450,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexTokensCache();
             system_context->clearTextIndexHeaderCache();
             system_context->clearTextIndexPostingsCache();
             break;
@@ -2082,17 +2082,16 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+    MergeTreeData::CachesToPrewarm caches;
+    caches.mark_cache = getContext()->getMarkCache();
+    caches.index_mark_cache = getContext()->getIndexMarkCache();
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 void InterpreterSystemQuery::prewarmPrimaryIndexCache()
@@ -2117,7 +2116,9 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    MergeTreeData::CachesToPrewarm caches;
+    caches.primary_index_cache = index_cache;
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 
@@ -2149,7 +2150,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_INDEX_MARK_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:

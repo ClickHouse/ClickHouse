@@ -755,7 +755,7 @@ class ClickHouseCluster:
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
+        self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -4929,6 +4929,13 @@ class ClickHouseInstance:
                     time.sleep(time_to_sleep)
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
+
+    def stop_clickhouse_client(self, signal="INT"):
+        client_pid = self.get_process_pid("clickhouse client")
+        self.exec_in_container(
+            ["bash", "-c", f"kill -{signal} {client_pid}"],
+            user="root",
+        )
 
     def wait_start(self, start_wait_sec):
         start_time = time.time()
