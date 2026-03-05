@@ -54,18 +54,12 @@ public:
 
     void visitDDL(ASTPtr & ast) const
     {
-        visitDDLWithParent(nullptr, ast);
-    }
-
-    /// TODO: Add `parent` to the IAST
-    void visitDDLWithParent(ASTPtr parent, ASTPtr & ast) const
-    {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
-            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
-            !tryVisitDynamicCast<ASTFunction>(parent, ast))
+        if (!tryVisitDynamicCast<ASTAlterQuery>(ast) &&
+            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
+            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
+            !tryVisitDynamicCast<ASTFunction>(ast))
         {}
     }
 
@@ -184,7 +178,7 @@ private:
         if (with_aliases.contains(identifier.name()))
             return;
 
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
+        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
@@ -210,7 +204,7 @@ private:
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
-                            child->children[i] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
+                            child->children[i] = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
@@ -279,7 +273,7 @@ private:
     }
 
 
-    void visitDDL(ASTPtr & /* parent */, ASTQueryWithTableAndOutput & node, ASTPtr &) const
+    void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -288,7 +282,7 @@ private:
             node.setDatabase(database_name);
     }
 
-    void visitDDL(ASTPtr & /* parent */, ASTRenameQuery & node, ASTPtr &) const
+    void visitDDL(ASTRenameQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -296,7 +290,7 @@ private:
         node.setDatabaseIfNotExists(database_name);
     }
 
-    void visitDDL(ASTPtr & /* parent */, ASTAlterQuery & node, ASTPtr &) const
+    void visitDDL(ASTAlterQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -314,34 +308,27 @@ private:
         }
     }
 
-    void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const
+    void visitDDL(ASTFunction & function, ASTPtr & node) const
     {
         if (function.name == "currentDatabase")
         {
-            /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
-            /// However, just for safety, let's store the old node for a little longer.
-            ASTPtr old_node = node;
-            node = make_intrusive<ASTLiteral>(database_name);
-
-            if (parent)
-            {
-                parent->updatePointerToChild(old_node.get(), node.get());
-            }
+            node = std::make_shared<ASTLiteral>(database_name);
+            return;
         }
     }
 
     void visitDDLChildren(ASTPtr & ast) const
     {
         for (auto & child : ast->children)
-            visitDDLWithParent(ast, child);
+            visitDDL(child);
     }
 
     template <typename T>
-    bool tryVisitDynamicCast(ASTPtr & parent, ASTPtr & ast) const
+    bool tryVisitDynamicCast(ASTPtr & ast) const
     {
         if (T * t = dynamic_cast<T *>(ast.get()))
         {
-            visitDDL(parent, *t, ast);
+            visitDDL(*t, ast);
             return true;
         }
         return false;

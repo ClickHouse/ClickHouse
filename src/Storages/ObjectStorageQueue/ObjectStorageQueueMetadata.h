@@ -8,11 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/CacheBase.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
 
 namespace fs = std::filesystem;
@@ -24,17 +20,7 @@ class StorageObjectStorageQueue;
 struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
-
-struct ObjectStorageQueueMetadataCacheWeightFunction
-{
-    size_t operator()(const ObjectStorageQueueIFileMetadata::FileStatus & cell) const
-    {
-        return sizeof(cell)
-            + sizeof(UInt128) /// Cache key
-            + cell.path.capacity()
-            + cell.getException().capacity();
-    }
-};
+using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.
@@ -53,7 +39,7 @@ struct ObjectStorageQueueMetadataCacheWeightFunction
  * we can differently store metadata in /processed node.
  *
  * Implements caching of zookeeper metadata for faster responses.
- * Cached part is located in FileStatusesCache.
+ * Cached part is located in LocalFileStatuses.
  *
  * In case of Unordered mode - if files TTL is enabled or maximum tracked files limit is set
  * starts a background cleanup thread which is responsible for maintaining them.
@@ -61,27 +47,20 @@ struct ObjectStorageQueueMetadataCacheWeightFunction
 class ObjectStorageQueueMetadata
 {
 public:
+    using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
     using FileMetadataPtr = std::shared_ptr<ObjectStorageQueueIFileMetadata>;
-    using FileStatusesCache = CacheBase<
-        UInt128,
-        ObjectStorageQueueIFileMetadata::FileStatus,
-        UInt128TrivialHash,
-        ObjectStorageQueueMetadataCacheWeightFunction>;
+    using FileStatusPtr = std::shared_ptr<FileStatus>;
+    using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
     using Bucket = size_t;
     using Processor = std::string;
 
     ObjectStorageQueueMetadata(
         ObjectStorageType storage_type_,
-        const std::string & zookeeper_name_,
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
         size_t cleanup_interval_max_ms_,
-        bool use_persistent_processing_nodes_,
-        size_t persistent_processing_nodes_ttl_seconds_,
-        size_t keeper_multiread_batch_size_,
-        size_t metadata_cache_size_bytes_,
-        size_t metadata_cache_size_elements_);
+        size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -99,7 +78,6 @@ public:
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
     static ObjectStorageQueueTableMetadata syncWithKeeper(
-        const String & zookeeper_name,
         const fs::path & zookeeper_path,
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
@@ -116,8 +94,8 @@ public:
     /// Get base path to keeper metadata.
     std::string getPath() const { return zookeeper_path; }
     /// Get statuses (state, processed rows, processing time)
-    /// of all files stored in FileStatusesCache cache.
-    const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
+    /// of all files stored in LocalFileStatuses cache.
+    FileStatuses getFileStatuses() const;
 
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
@@ -144,13 +122,10 @@ public:
     /// active = true:
     ///     We also want to register nodes only for a period when they are active.
     ///     For this we create ephemeral nodes in "zookeeper_path / registry / <node_info>"
-    void registerNonActive(const StorageID & storage_id, bool & created_new_metadata);
-    void registerActive(const StorageID & storage_id);
-
+    void registerIfNot(const StorageID & storage_id, bool active);
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
-    void unregisterActive(const StorageID & storage_id);
-    void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
+    size_t unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
     /// According to current *active* registered tables,
@@ -162,43 +137,26 @@ public:
     bool useBucketsForProcessing() const;
     /// Get number of buckets in case of bucket-based processing.
     size_t getBucketsNum() const { return buckets_num; }
-    ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
-    static Bucket getBucketForPath(
-        const std::string & path,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
-
-    const String & getZooKeeperName() const { return zookeeper_name; }
-    std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper() const { return getZooKeeper(log, zookeeper_name); }
-    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log, const String & zookeeper_name);
-    static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
+    tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
-    ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
-    const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
-
-    void updateSettings(const SettingsChanges & changes);
-
-    std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
-
-    bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
-    size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
-
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
 
     void migrateToBucketsInKeeper(size_t value);
+
+    void registerNonActive(const StorageID & storage_id);
+    void registerActive(const StorageID & storage_id);
+
+    size_t unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
+    size_t unregisterActive(const StorageID & storage_id);
 
     void updateRegistryFunc();
     void updateRegistry(const DB::Strings & registered_);
@@ -209,33 +167,19 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
-    const ObjectStorageQueueBucketingMode bucketing_mode;
-    const ObjectStorageQueuePartitioningMode partitioning_mode;
-    const std::string zookeeper_name;
     const fs::path zookeeper_path;
+    const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
-
-    const bool cleanup_processed_files = false;
-    const bool cleanup_failed_files = false;
-    const bool cleanup_processing_files = false;
-
-    std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;
-
-    std::atomic<size_t> cleanup_interval_min_ms;
-    std::atomic<size_t> cleanup_interval_max_ms;
-    std::atomic<bool> use_persistent_processing_nodes;
-    std::atomic<size_t> persistent_processing_node_ttl_seconds;
-
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    std::atomic_bool startup_called = false;
-    BackgroundSchedulePoolTaskHolder cleanup_task;
+    BackgroundSchedulePoolTaskHolder task;
 
-    FileStatusesCache local_file_statuses;
+    class LocalFileStatuses;
+    std::shared_ptr<LocalFileStatuses> local_file_statuses;
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

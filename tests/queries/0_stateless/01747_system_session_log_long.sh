@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest, no-debug, no-openssl-fips
-# fips: SHA1 is not available in FIPS mode
+# Tags: long, no-parallel, no-fasttest, no-debug
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
@@ -203,7 +202,12 @@ function testHTTPNamedSession()
     echo "HTTP endpoint with named session"
     local HTTP_SESSION_ID
     HTTP_SESSION_ID="session_id_$(tr -cd 'a-f0-9' < /dev/urandom | head -c 32)"
-    CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}&session_id=${HTTP_SESSION_ID}"
+    if [ -v CLICKHOUSE_URL_PARAMS ]
+    then
+        CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}&session_id=${HTTP_SESSION_ID}"
+    else
+        CLICKHOUSE_URL_WITH_SESSION_ID="${CLICKHOUSE_URL}?session_id=${HTTP_SESSION_ID}"
+    fi
 
     testHTTPWithURL "${1}" "${2}" "${3}" "${CLICKHOUSE_URL_WITH_SESSION_ID}"
 }

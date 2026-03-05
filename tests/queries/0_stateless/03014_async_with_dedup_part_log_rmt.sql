@@ -8,17 +8,17 @@ SET async_insert_deduplicate = 1;
 SELECT '-- Inserted part --';
 INSERT INTO 03014_async_with_dedup_part_log VALUES (2);
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 SELECT error, count() FROM system.part_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = '03014_async_with_dedup_part_log' AND database = currentDatabase() AND event_type = 'NewPart'
+WHERE table = '03014_async_with_dedup_part_log' AND database = currentDatabase() AND event_type = 'NewPart'
 GROUP BY error
 ORDER BY error;
 
 SELECT '-- Deduplicated part --';
 INSERT INTO 03014_async_with_dedup_part_log VALUES (2);
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 SELECT error, count() FROM system.part_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table = '03014_async_with_dedup_part_log' AND database = currentDatabase() AND event_type = 'NewPart'
+WHERE table = '03014_async_with_dedup_part_log' AND database = currentDatabase() AND event_type = 'NewPart'
 GROUP BY error
 ORDER BY error;

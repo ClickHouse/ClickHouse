@@ -69,14 +69,14 @@ SELECT * FROM t_mutation_events_1 ORDER BY id SETTINGS apply_mutations_on_fly = 
 SELECT * FROM t_mutation_events_2 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 SELECT * FROM t_mutation_events_2 ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     query,
     ProfileEvents['ReadTasksWithAppliedMutationsOnFly'],
     ProfileEvents['MutationsAppliedOnFlyInAllReadTasks']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query ILIKE 'SELECT%FROM t_mutation_events_%' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query ILIKE 'SELECT%FROM t_mutation_events_%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_mutation_events_1;

@@ -585,7 +585,10 @@ unset IFS
 # --memsuspend:
 #
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
+
+#TODO: check why parallel hangs locally
 parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
+#bash analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -613,6 +616,65 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     order by test, query_index, metric_name
     ;
 " 2> >(tee -a analyze/errors.log 1>&2)
+
+# Fetch historical query variability thresholds from the CI database
+if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+then
+    set +x # Don't show password in the log
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
+        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --date_time_input_format=best_effort)
+
+
+# Precision is going to be 1.5 times worse for PRs, because we run the queries
+# less times. How do I know it? I ran this:
+# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
+# FROM
+# (
+#     SELECT
+#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
+#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
+#     FROM query_metrics_v2
+#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
+#     GROUP BY
+#         test,
+#         query_index,
+#         query_display_name
+#     HAVING count(*) > 100
+# )
+#
+# The file can be empty if the server is inaccessible, so we can't use
+# TSVWithNamesAndTypes.
+#
+    "${client[@]}" --query "
+            select test, query_index,
+                quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+                query_display_name
+            from query_metrics_v2
+            -- We use results at least one week in the past, so that the current
+            -- changes do not immediately influence the statistics, and we have
+            -- some time to notice that something is wrong.
+            where event_date between now() - interval 1 month - interval 1 week
+                    and now() - interval 1 week
+                and metric = 'client_time'
+                and pr_number = 0
+            group by test, query_index, query_display_name
+            having count(*) > 100
+            " > analyze/historical-thresholds.tsv
+    set -x
+else
+    touch analyze/historical-thresholds.tsv
+fi
+
 }
 
 # Analyze results
@@ -664,7 +726,7 @@ create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresho
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
-    left join file('./historical-thresholds.tsv', TSV,
+    left join file('analyze/historical-thresholds.tsv', TSV,
         'test text, query_index int, max_diff float, max_stat_threshold float,
             query_display_name text') historical_thresholds
     on query_display_names.test = historical_thresholds.test
@@ -811,7 +873,8 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if we can't determine the number of runs.
+        -- Default to 7 runs if there are only 'short' queries in the test, and
+        -- we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select
@@ -1044,7 +1107,7 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | flamegraph.pl --hash > "$query_file.$version.svg" &
+            | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
     done
 done
 wait
@@ -1053,10 +1116,10 @@ unset IFS
 # Create differential flamegraphs.
 while IFS= read -r query_file
 do
-    difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+    ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | flamegraph.pl > "$query_file.diff.svg" &
+        | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
@@ -1086,7 +1149,7 @@ do
         # "socket.timeout: timed out".
         rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
-            || head -10 "$log"
+            || head -2 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
 }
@@ -1188,54 +1251,120 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         union all
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                multiIf(
-                    changed_fail != 0 and diff > 0, 'slower',
-                    unstable_fail != 0, 'unstable',
-                    'success'
-                ) test_status,
+                'slower' test_status,
                 test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/'
-                    || multiIf(
-                        changed_fail != 0 and diff > 0, 'report.html#changes-in-performance.',
-                        unstable_fail != 0, 'report.html#unstable-queries.',
-                        'report.html#all-queries.'
-                    )
-                    || test || '.' || toString(query_index) report_url
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
             from queries
             array join map('old', left, 'new', right) as test_desc_
+            where changed_fail != 0 and diff > 0
+        union all
+            select
+                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
+                'unstable' test_status,
+                test_desc_.2*1e3 test_duration_ms,
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
+            from queries
+            array join map('old', left, 'new', right) as test_desc_
+            where unstable_fail != 0
     )
 ;
     "
 
+    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+    then
+        echo Database for test results is not specified, will not upload them.
+        return 0
+    fi
+
+    set +x # Don't show password in the log
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
+        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --date_time_input_format=best_effort)
+
+    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
+    #     `event_date` Date,
+    #     `event_time` DateTime,
+    #     `pr_number` UInt32,
+    #     `old_sha` String,
+    #     `new_sha` String,
+    #     `test` LowCardinality(String),
+    #     `query_index` UInt32,
+    #     `query_display_name` String,
+    #     `metric` LowCardinality(String),
+    #     `old_value` Float64,
+    #     `new_value` Float64,
+    #     `diff` Float64,
+    #     `stat_threshold` Float64
+    # ) ENGINE = ReplicatedMergeTree
+    # ORDER BY event_date
+
+    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
+    #     `old_sha` String,
+    #     `new_sha` String,
+    #     `metric` LowCardinality(String),
+    #     `metric_value` String
+    # ) ENGINE = ReplicatedMergeTree
+    # ORDER BY (old_sha, new_sha)
+
+    "${client[@]}" --query "
+            insert into query_metrics_v2
+            select
+                toDate(event_time) event_date,
+                toDateTime('$(git -C right/ch log -1 --format=%cd --date=iso "$SHA_TO_TEST" | cut -d' ' -f-2)') event_time,
+                $PR_TO_TEST pr_number,
+                '$REF_SHA' old_sha,
+                '$SHA_TO_TEST' new_sha,
+                test,
+                query_index,
+                query_display_name,
+                metric_name as metric,
+                old_value,
+                new_value,
+                diff,
+                stat_threshold
+            from input('metric_name text, old_value float, new_value float, diff float,
+                    ratio_display_text text, stat_threshold float,
+                    test text, query_index int, query_display_name text')
+            format TSV
+" < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
-#    cat compare.log \
-#        | sed -n '
-#            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
-#            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
-#            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
-#            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
-#            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
-#            s/.*left_sha=\(.*\)$/old-sha	\1/p;
-#            s/.*right_sha=\(.*\)/new-sha	\1/p' \
-#        | awk '
-#            BEGIN { FS = "\t"; OFS = "\t" }
-#            /^old-sha/ { old_sha=$2 }
-#            /^new-sha/ { new_sha=$2 }
-#            /^metric/ { print old_sha, new_sha, $2, $3 }' \
-#        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+    cat compare.log \
+        | sed -n '
+            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+        | awk '
+            BEGIN { FS = "\t"; OFS = "\t" }
+            /^old-sha/ { old_sha=$2 }
+            /^new-sha/ { new_sha=$2 }
+            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
-#    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-#$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-#$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
-#EOF
-#
-#    # Also insert some data about the check into the CI checks table.
-#    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
-#        < ci-checks.tsv
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
 
-#    set -x
+    # Also insert some data about the check into the CI checks table.
+    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
+        < ci-checks.tsv
+
+    set -x
 }
 
 # Check that local and client are in PATH
@@ -1312,9 +1441,9 @@ case "$stage" in
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
-"upload_results")
-    time upload_results ||:
-    ;&
+#"upload_results")
+#    time upload_results ||:
+#    ;&
 esac
 
 # Print some final debug info to help debug Weirdness, of which there is plenty.

@@ -56,7 +56,7 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         std::shared_ptr<TableJoin> table_join_,
-        SharedHeader left_sample_block_, SharedHeader right_sample_block_,
+        const Block & left_sample_block_, const Block & right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false);
 
@@ -69,16 +69,16 @@ public:
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    JoinResultPtr joinBlock(Block block) override;
+    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -131,8 +131,8 @@ private:
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
-    SharedHeader left_sample_block;
-    SharedHeader right_sample_block;
+    Block left_sample_block;
+    Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
     const size_t initial_num_buckets;
@@ -154,8 +154,6 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
-
-    mutable std::mutex totals_mutex;
 };
 
 }

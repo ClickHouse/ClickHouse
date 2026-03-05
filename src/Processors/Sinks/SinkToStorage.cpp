@@ -3,7 +3,7 @@
 namespace DB
 {
 
-SinkToStorage::SinkToStorage(SharedHeader header) : ExceptionKeepingTransform(header, header, false) {}
+SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(header, header, false) {}
 
 void SinkToStorage::onConsume(Chunk chunk)
 {

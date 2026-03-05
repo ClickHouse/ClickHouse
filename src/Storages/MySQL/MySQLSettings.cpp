@@ -29,7 +29,7 @@ namespace ErrorCodes
     DECLARE(Bool, connection_auto_close, true, "Auto-close connection after query execution, i.e. disable connection reuse.", 0) \
     DECLARE(UInt64, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "Connect timeout (in seconds)", 0) \
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', or 'date2String'.", 0) \
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, MySQLDataTypesSupportList{}, "Which MySQL types should be converted to corresponding ClickHouse types (rather than being represented as String). Can be empty or any combination of 'decimal' or 'datetime64'. When empty MySQL's DECIMAL and DATETIME/TIMESTAMP with non-zero precision are seen as String on ClickHouse's side.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
@@ -38,11 +38,11 @@ struct MySQLSettingsImpl : public BaseSettings<MySQLSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
 
 namespace MySQLSetting
 {
-LIST_OF_MYSQL_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_MYSQL_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -86,7 +86,7 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
@@ -106,7 +106,7 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
 
         if (!storage_def.settings)
         {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
+            auto settings_ast = std::make_shared<ASTSetQuery>();
             settings_ast->is_standalone = false;
             storage_def.set(storage_def.settings, settings_ast);
         }

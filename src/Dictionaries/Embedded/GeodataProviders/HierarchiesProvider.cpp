@@ -1,10 +1,10 @@
-#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
+#include "HierarchiesProvider.h"
 
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
-#include <Dictionaries/Embedded/GeodataProviders/HierarchyFormatReader.h>
+#include "HierarchyFormatReader.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -50,9 +50,9 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
     }
 }
 
-VectorWithMemoryTracking<std::string> RegionsHierarchiesDataProvider::listCustomHierarchies() const
+std::vector<std::string> RegionsHierarchiesDataProvider::listCustomHierarchies() const
 {
-    VectorWithMemoryTracking<std::string> names;
+    std::vector<std::string> names;
     names.reserve(hierarchy_files.size());
     for (const auto & it : hierarchy_files)
         names.push_back(it.first);

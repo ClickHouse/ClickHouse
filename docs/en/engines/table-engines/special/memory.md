@@ -5,11 +5,10 @@ description: 'The Memory engine stores data in RAM, in uncompressed form. Data i
 sidebar_label: 'Memory'
 sidebar_position: 110
 slug: /engines/table-engines/special/memory
-title: 'Memory table engine'
-doc_type: 'reference'
+title: 'Memory Table Engine'
 ---
 
-# Memory table engine
+# Memory Table Engine
 
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
@@ -29,7 +28,7 @@ The Memory engine is used by the system for temporary tables with external query
 
 Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular buffer (see [Engine Parameters](#engine-parameters)).
 
-## Engine parameters {#engine-parameters}
+## Engine Parameters {#engine-parameters}
 
 - `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
   - Default value: `0`
@@ -45,6 +44,7 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
   - Default value: `false`
 
 ## Usage {#usage}
+
 
 **Initialize settings**
 ```sql
@@ -74,7 +74,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
 /* 4. checking a very large block overrides all */
 INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
 
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 ```
 
 ```text
@@ -100,7 +100,7 @@ INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 rows
 /* 4. checking a very large block overrides all */
 INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 rows
 
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 ```
 
 ```text
@@ -108,3 +108,4 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
+

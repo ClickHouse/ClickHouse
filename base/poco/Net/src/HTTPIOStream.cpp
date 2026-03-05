@@ -53,7 +53,6 @@ HTTPResponseStream::HTTPResponseStream(std::istream& istr, HTTPClientSession* pS
 	std::istream(&_buf),
 	_pSession(pSession)
 {
-	poco_ios_init(&_buf);
 }
 
 

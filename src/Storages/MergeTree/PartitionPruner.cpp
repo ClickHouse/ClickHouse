@@ -4,20 +4,9 @@
 namespace DB
 {
 
-PartitionPruner::PartitionPruner(
-    const StorageMetadataPtr & metadata,
-    const ActionsDAGWithInversionPushDown & filter_dag,
-    ContextPtr context,
-    bool strict,
-    bool skip_analysis)
+PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool strict)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
-    , partition_condition(
-          filter_dag,
-          context,
-          partition_key.column_names,
-          partition_key.expression,
-          true /* single_point */,
-          skip_analysis)
+    , partition_condition(filter_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
@@ -27,7 +16,7 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
     if (part.isEmpty())
         return true;
 
-    const auto & partition_id = part.info.getPartitionId();
+    const auto & partition_id = part.info.partition_id;
     bool is_valid = false;
 
     if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())

@@ -16,7 +16,6 @@ CREATE TABLE t_ind_merge_2 (
 ENGINE = MergeTree
 ORDER BY a SETTINGS
     index_granularity = 64,
-    index_granularity_bytes = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0,
@@ -28,7 +27,7 @@ INSERT INTO t_ind_merge_2 SELECT number, number, rand(), rand(), rand(), rand() 
 INSERT INTO t_ind_merge_2 SELECT number, number, rand(), rand(), rand(), rand() FROM numbers(1000);
 
 OPTIMIZE TABLE t_ind_merge_2 FINAL;
-SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 
 --- merged: a, c, d; gathered: b, e, f
@@ -40,7 +39,7 @@ SELECT
     groups[2] AS merged,
     groups[3] AS gathered
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND ((query_id = uuid || '::all_1_2_1') OR (query_id = currentDatabase() || '.t_ind_merge_2::all_1_2_1')) AND notEmpty(groups)
+WHERE ((query_id = uuid || '::all_1_2_1') OR (query_id = currentDatabase() || '.t_ind_merge_2::all_1_2_1')) AND notEmpty(groups)
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_ind_merge_2;

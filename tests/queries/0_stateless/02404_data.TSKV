@@ -1,0 +1,10 @@
+number=0	toDate(number)=1970-01-01
+number=1	toDate(number)=1970-01-02
+number=2	toDate(number)=1970-01-03
+number=3	toDate(number)=1970-01-04
+number=4	toDate(number)=1970-01-05
+number=5	toDate(number)=1970-01-06
+number=6	toDate(number)=1970-01-07
+number=7	toDate(number)=1970-01-08
+number=8	toDate(number)=1970-01-09
+number=9	toDate(number)=1970-01-10

@@ -2,18 +2,23 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
-#include <Daemon/CrashWriter.h>
+#include <Daemon/SentryWriter.h>
+#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
@@ -35,8 +40,6 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
-#include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -49,9 +52,7 @@
 #include <filesystem>
 
 #include <Loggers/OwnFormattingChannel.h>
-#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
-#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 
@@ -111,7 +112,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 }
 
 
-void BaseDaemon::loadConfiguration()
+void BaseDaemon::reloadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
       *  then we use config from 'config.xml' file in current directory,
@@ -123,7 +124,11 @@ void BaseDaemon::loadConfiguration()
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
-    config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
+
+    if (last_configuration != nullptr)
+        config().removeConfiguration(last_configuration);
+    last_configuration = loaded_config.configuration.duplicate();
+    config().add(last_configuration, PRIO_DEFAULT, false);
 }
 
 
@@ -137,13 +142,14 @@ BaseDaemon::~BaseDaemon()
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+        SentryWriter::resetInstance();
     }
     catch (...)
     {
         tryLogCurrentException(&logger());
     }
 
-    stopLogging();
+    disableLogging();
 }
 
 
@@ -246,16 +252,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + path);
     }
 
-    loadConfiguration();
-
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-#endif
+    reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
@@ -274,22 +271,20 @@ void BaseDaemon::initialize(Application & self)
 #endif
     );
 
-
-#if defined(OS_LINUX)
-    /// Configure RLIMIT_SIGPENDING
-    /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
-    if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
+    /// Write core dump on crash.
     {
         struct rlimit rlim;
-        if (getrlimit(RLIMIT_SIGPENDING, &rlim))
+        if (getrlimit(RLIMIT_CORE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
-        rlim.rlim_cur = pending_signals;
-        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+        /// 1 GiB by default. If more - it writes to disk too long.
+        rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
+
+        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
-            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+            /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
-#endif
 
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
@@ -422,22 +417,24 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
-    CrashWriter::initialize(config());
-    if (config().getBool("send_crash_reports.enabled", false)
-        && config().getBool("send_crash_reports.send_logical_errors", false)
-        && CrashWriter::initialized())
+    SentryWriter::initializeInstance(config());
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
     {
-        LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
         {
-            if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
-                CrashWriter::FramePointers frame_pointers;
-                for (size_t i = 0; i < trace.size(); ++i)
-                    frame_pointers[i] = trace[i];
-                CrashWriter::onException(code, format_string, frame_pointers, /* offset= */ 0, trace.size());
-            }
-        };
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
     }
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -514,17 +511,24 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 
 void BaseDaemon::handleSignal(int signal_id)
 {
-    if (!(signal_id == SIGINT ||
+    if (signal_id == SIGINT ||
         signal_id == SIGQUIT ||
-        signal_id == SIGTERM))
-        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    std::lock_guard lock(signal_handler_mutex);
+        signal_id == SIGTERM)
     {
-        ++terminate_signals_counter;
-        signal_event.notify_all();
-    }
+        std::lock_guard lock(signal_handler_mutex);
+        {
+            ++terminate_signals_counter;
+            signal_event.notify_all();
+        }
 
+        onInterruptSignals(signal_id);
+    }
+    else
+        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+}
+
+void BaseDaemon::onInterruptSignals(int signal_id)
+{
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
@@ -536,6 +540,7 @@ void BaseDaemon::handleSignal(int signal_id)
         _exit(128 + signal_id);
     }
 }
+
 
 void BaseDaemon::waitForTerminationRequest()
 {
@@ -571,28 +576,7 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
-        /// Temporarily close the logging thread and open it in each process later
-        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
-        if (async_channel)
-            async_channel->close();
         pid = fork();
-
-#if USE_JEMALLOC
-        if (0 == pid)
-        {
-            /// Re-apply jemalloc settings after fork because background threads
-            /// and other jemalloc state do not survive across fork.
-            Jemalloc::setup(
-                config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-                config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-                config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-                config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-                config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-        }
-#endif
-
-        if (async_channel)
-            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -632,7 +616,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
+        setThreadName("clckhouse-watch");   /// 15 characters
 
         if (argv0)
         {
@@ -644,17 +628,21 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config(), "console");
+            Poco::AutoPtr<OwnPatternFormatter> pf;
+            if (config().getString("logger.formatting.type", "") == "json")
+                pf = new OwnJSONPatternFormatter(config());
+            else
+                pf = new OwnPatternFormatter;
             Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannelBase *>(logger().getChannel()))
+        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
-            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATION, "never");
-            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));

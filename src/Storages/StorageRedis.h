@@ -14,7 +14,6 @@ namespace DB
  */
 class StorageRedis : public IStorage, public IKeyValueEntity, WithContext
 {
-    friend class ReadFromRedis;
 public:
     StorageRedis(
         const StorageID & table_id_,
@@ -25,13 +24,12 @@ public:
 
     std::string getName() const override { return "Redis"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
-        QueryProcessingStage::Enum /*processed_stage*/,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
 
@@ -68,11 +66,12 @@ public:
     void multiSet(const RedisArray & data) const;
     RedisInteger multiDelete(const RedisArray & keys) const;
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
 
     Block getSampleBlock(const Names &) const override;
 
 private:
+    StorageID table_id;
     RedisConfiguration configuration;
 
     LoggerPtr log;

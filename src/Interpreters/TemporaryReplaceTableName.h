@@ -12,8 +12,7 @@ namespace DB
         String random_suffix;
 
         String toString() const;
-        static std::optional<TemporaryReplaceTableName> fromString(const String & str);
 
-        static String calculateHash(String database, String table);
+        static std::optional<TemporaryReplaceTableName> fromString(const String & str);
     };
 }
