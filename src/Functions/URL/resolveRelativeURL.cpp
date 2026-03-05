@@ -1,13 +1,13 @@
+#include <string_view>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include <base/find_symbols.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/URL/protocol.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <base/find_symbols.h>
 #include <Common/FunctionDocumentation.h>
-#include <string_view>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ using std::string_view;
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_COLUMN;
 }
 
 class FunctionResolveRelativeURL : public IFunction
@@ -46,10 +46,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -67,7 +64,10 @@ public:
         if (!relative_url)
         {
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(),
+                getName());
         }
 
         const auto * base_url = checkAndGetColumn<ColumnString>(base_url_column.get());
@@ -75,14 +75,24 @@ public:
         if (!base_url)
         {
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second argument of function {}",
+                arguments[1].column->getName(),
+                getName());
         }
 
         auto col_res = ColumnString::create();
 
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vector(relative_url->getChars(), relative_url->getOffsets(), base_url->getChars(), base_url->getOffsets(), vec_res, offsets_res, input_rows_count);
+        vector(
+            relative_url->getChars(),
+            relative_url->getOffsets(),
+            base_url->getChars(),
+            base_url->getOffsets(),
+            vec_res,
+            offsets_res,
+            input_rows_count);
         return col_res;
     }
 
@@ -114,8 +124,7 @@ public:
             const char * base_url_end = reinterpret_cast<const char *>(&base_url_data[base_url_offset]);
 
             size_t res_url_len = 0;
-            resolveURL(relative_url_begin, relative_url_end, base_url_begin, base_url_end,
-                res_data, res_offset, res_url_len);
+            resolveURL(relative_url_begin, relative_url_end, base_url_begin, base_url_end, res_data, res_offset, res_url_len);
 
             res_offset += res_url_len;
             res_offsets[i] = res_offset;
@@ -126,25 +135,49 @@ public:
     }
 
     /// Helper to remove "." and ".." segments from a path (RFC 3986 Section 5.2.4)
-    static std::string removeDotSegements(std::string_view path) {
-        if (path.empty()) return "";
+    static std::string removeDotSegements(std::string_view path)
+    {
+        if (path.empty())
+            return "";
 
         std::string result;
         size_t i = 0;
-        while (i < path.size()) {
-            if (path.substr(i, 3) == "../" || path.substr(i, 2) == "./") {
-                i += (path[i+1] == '.' ? 3 : 2);
-            } else if (path.substr(i, 3) == "/./") {
+        while (i < path.size())
+        {
+            if (path.substr(i, 3) == "../" || path.substr(i, 2) == "./")
+            {
+                i += (path[i + 1] == '.' ? 3 : 2);
+            }
+            else if (path.substr(i, 3) == "/./")
+            {
                 i += 2;
-            } else if (path.substr(i, 2) == "/." && i + 2 == path.size()) {
-                path = "/"; i = 0;
-            } else if (path.substr(i, 4) == "/../" || (path.substr(i, 3) == "/.." && i + 3 == path.size())) {
-                if (path.substr(i, 3) == "/.." && i + 3 == path.size()) { path = "/"; i = 0; } else { i += 3; }
+            }
+            else if (path.substr(i, 2) == "/." && i + 2 == path.size())
+            {
+                path = "/";
+                i = 0;
+            }
+            else if (path.substr(i, 4) == "/../" || (path.substr(i, 3) == "/.." && i + 3 == path.size()))
+            {
+                if (path.substr(i, 3) == "/.." && i + 3 == path.size())
+                {
+                    path = "/";
+                    i = 0;
+                }
+                else
+                {
+                    i += 3;
+                }
                 size_t last_slash = result.find_last_of('/');
-                if (last_slash != std::string::npos) result.erase(last_slash);
-            } else if (path == "." || path == "..") {
+                if (last_slash != std::string::npos)
+                    result.erase(last_slash);
+            }
+            else if (path == "." || path == "..")
+            {
                 break;
-            } else {
+            }
+            else
+            {
                 size_t next_slash = path.find('/', i + (path[i] == '/' ? 1 : 0));
                 size_t len = (next_slash == std::string_view::npos) ? path.size() - i : next_slash - i;
                 result.append(path.substr(i, len));
@@ -156,26 +189,50 @@ public:
 
     /// Helper to resolve relative URL, write result to data array at given offset
     static void resolveURL(
-        const char* rel_beg, const char* rel_end,
-        const char* base_beg, const char* base_end,
-        ColumnString::Chars& result_data, size_t result_offset, size_t& result_length
-    ) {
+        const char * rel_beg,
+        const char * rel_end,
+        const char * base_beg,
+        const char * base_end,
+        ColumnString::Chars & result_data,
+        size_t result_offset,
+        size_t & result_length)
+    {
         using sv = std::string_view;
         sv rel(rel_beg, rel_end - rel_beg);
         sv base(base_beg, base_end - base_beg);
 
         // 1. URL components parser
-        auto get_parts = [](sv u, sv& scheme, sv& auth, sv& path, sv& query, sv& frag) {
-            size_t f = u.find('#'); if (f != sv::npos) { frag = u.substr(f); u = u.substr(0, f); }
-            size_t q = u.find('?'); if (q != sv::npos) { query = u.substr(q); u = u.substr(0, q); }
+        auto get_parts = [](sv u, sv & scheme, sv & auth, sv & path, sv & query, sv & frag)
+        {
+            size_t f = u.find('#');
+            if (f != sv::npos)
+            {
+                frag = u.substr(f);
+                u = u.substr(0, f);
+            }
+            size_t q = u.find('?');
+            if (q != sv::npos)
+            {
+                query = u.substr(q);
+                u = u.substr(0, q);
+            }
             size_t s = u.find(':');
             size_t sl = u.find('/');
-            if (s != sv::npos && (sl == sv::npos || s < sl)) { scheme = u.substr(0, s + 1); u = u.substr(s + 1); }
-            if (u.starts_with("//")) {
+            if (s != sv::npos && (sl == sv::npos || s < sl))
+            {
+                scheme = u.substr(0, s + 1);
+                u = u.substr(s + 1);
+            }
+            if (u.starts_with("//"))
+            {
                 size_t a_end = u.find('/', 2);
                 auth = u.substr(0, a_end);
                 path = (a_end == sv::npos) ? "" : u.substr(a_end);
-            } else { path = u; }
+            }
+            else
+            {
+                path = u;
+            }
         };
 
         sv base_url_scheme;
@@ -199,29 +256,49 @@ public:
         std::string target_url_query;
         std::string target_url_frag;
 
-        if (!relative_url_scheme.empty()) {
-            target_url_scheme = relative_url_scheme; target_url_auth = relative_url_auth;
-            target_url_path = removeDotSegements(relative_url_path); target_url_query = relative_url_query;
-        } else {
+        if (!relative_url_scheme.empty())
+        {
+            target_url_scheme = relative_url_scheme;
+            target_url_auth = relative_url_auth;
+            target_url_path = removeDotSegements(relative_url_path);
+            target_url_query = relative_url_query;
+        }
+        else
+        {
             target_url_scheme = base_url_scheme;
-            if (!relative_url_auth.empty()) {
-                target_url_auth = relative_url_auth; target_url_path = removeDotSegements(relative_url_path); target_url_query = relative_url_query;
-            } else {
+            if (!relative_url_auth.empty())
+            {
+                target_url_auth = relative_url_auth;
+                target_url_path = removeDotSegements(relative_url_path);
+                target_url_query = relative_url_query;
+            }
+            else
+            {
                 target_url_auth = base_url_auth;
-                if (relative_url_path.empty()) {
+                if (relative_url_path.empty())
+                {
                     target_url_path = base_url_path;
                     target_url_query = (!relative_url_query.empty()) ? relative_url_query : base_url_query;
-                } else {
-                    if (relative_url_path.starts_with('/')) {
+                }
+                else
+                {
+                    if (relative_url_path.starts_with('/'))
+                    {
                         target_url_path = removeDotSegements(relative_url_path);
-                    } else {
+                    }
+                    else
+                    {
                         // Merge paths (5.2.3)
                         std::string merged;
-                        if (!base_url_auth.empty() && base_url_path.empty()) {
+                        if (!base_url_auth.empty() && base_url_path.empty())
+                        {
                             merged = "/";
-                        } else {
+                        }
+                        else
+                        {
                             size_t last = base_url_path.find_last_of('/');
-                            if (last != std::string::npos) { 
+                            if (last != std::string::npos)
+                            {
                                 merged = std::string(base_url_path.substr(0, last + 1));
                             }
                         }
@@ -240,25 +317,26 @@ public:
         std::memcpy(&result_data[result_offset], res.data(), res.size());
         result_length = res.size();
     }
-
 };
 
 REGISTER_FUNCTION(ResolveRelativeURL)
 {
-    factory.registerFunction<FunctionResolveRelativeURL>(
-        FunctionDocumentation{
-            .description=R"(
+    factory.registerFunction<FunctionResolveRelativeURL>(FunctionDocumentation{
+        .description = R"(
 Resolves a relative URL to its absolute form based on a given base URL.
 This is particularly useful to resolve relative URLs from HTML pages.
 For details, see Internet Standard RFC 3986 section 5.2-5.4. This
 is a strict implementation of the RFC - some results may differ from
 implementations that favor backward compatibility.
 )",
-            .syntax=R"(resolveRelativeURL(relative_url, base_url))",
-            .arguments={{"relative_url", "The relative URL to be resolved.", {"String"}},
-                {"base_url", "The base URL to be used for resolution.", {"String"}}},
-            .returned_value= {"The resolved absolute URL.", {"String"}},
-            .examples={{"Usage example",R"(
+        .syntax = R"(resolveRelativeURL(relative_url, base_url))",
+        .arguments
+        = {{"relative_url", "The relative URL to be resolved.", {"String"}},
+           {"base_url", "The base URL to be used for resolution.", {"String"}}},
+        .returned_value = {"The resolved absolute URL.", {"String"}},
+        .examples
+        = {{"Usage example",
+            R"(
 SELECT
     resolveRelativeURL('image.gif', 'http://click.com/blog/') AS absolute_url1,
     resolveRelativeURL('/image.gif', 'http://click.com/blog/') AS absolute_url2;
@@ -268,10 +346,9 @@ SELECT
 │ http://click.com/blog/image.gif │ http://click.com/image.gif │
 └─────────────────────────────────┴────────────────────────────┘
 )"}},
-            .introduced_in={1,1},
-            .category=FunctionDocumentation::Category::URL,
-        }
-    );
+        .introduced_in = {1, 1},
+        .category = FunctionDocumentation::Category::URL,
+    });
 };
 
 }
