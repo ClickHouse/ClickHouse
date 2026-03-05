@@ -3,6 +3,7 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -102,8 +103,8 @@ static inline void convertToNullable(Block & header, const Names & keys)
     {
         auto & column = header.getByName(key);
 
-        column.type = makeNullableSafe(column.type);
-        column.column = makeNullableSafe(column.column);
+        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
+        column.column = makeNullableOrLowCardinalityNullableSafe(column.column);
     }
 }
 
