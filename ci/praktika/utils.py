@@ -784,19 +784,16 @@ class Utils:
                 )
         return path_out
 
-    AES_KEY = "aes.key"
-    AES_KEY_RSA = f"{AES_KEY}.rsa"
- 
     @classmethod
-    def encrypt(cls, path: str, key_path: str) -> str:
+    def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
         if not Path(Utils.AES_KEY_RSA).exists():
             Shell.run(f"""
-openssl rand 32 >{Utils.AES_KEY}
-openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {Utils.AES_KEY} -out {Utils.AES_KEY_RSA} \
+openssl rand 32 >{aes_key_path}
+openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)
 
-        Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{Utils.AES_KEY}")
+        Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
         return f"{path}.enc"
 
     @classmethod

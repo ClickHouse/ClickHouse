@@ -67,6 +67,8 @@ class ClickHouseProc:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
+        self.aes_key = f"{temp_dir}/aes.key"
+
         # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
@@ -776,8 +778,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
-                if Path(Utils.AES_KEY_RSA).exists():
-                    res.append(Utils.AES_KEY_RSA)
+                if Path(f"{self.aes_key}.rsa").exists():
+                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -804,7 +806,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def _collect_core_dumps(self) -> List[str]:
         Shell.check(f"echo test >{temp_dir}/run_r0/core.test", verbose=True) #REMOVEME
         return [
-            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/defs/public.pem")
+            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/defs/public.pem", self.aes_key)
             for f in Path(temp_dir).glob("run_r*/core.*")
         ]
 
