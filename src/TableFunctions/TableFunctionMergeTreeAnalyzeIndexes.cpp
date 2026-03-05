@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -9,6 +10,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace
@@ -29,9 +31,47 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
+}
+
+/// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
+/// While for non-analyzer there is no _CAST
+std::vector<String> extractParts(const ASTPtr & argument)
+{
+    ASTPtr array = argument;
+    if (const auto * func = array->as<ASTFunction>())
+    {
+        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
+            array = func->arguments->children.at(0);
+        else if (func->name == "array") /// array(ExpressionList)
+            array = func->arguments;
+        else
+            array = ASTPtr();
+    }
+
+    if (array)
+    {
+        if (const auto * literal = array->as<ASTLiteral>())
+        {
+            std::vector<String> result;
+            for (const auto & element : literal->value.safeGet<Array>())
+                result.push_back(element.safeGet<String>());
+            return result;
+        }
+
+        if (const auto * expr_list = array->as<ASTExpressionList>())
+        {
+            std::vector<String> result;
+            for (const auto & element : expr_list->children)
+                result.push_back(element->as<ASTLiteral &>().value.safeGet<String>());
+            return result;
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
 }
 
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
@@ -72,7 +112,7 @@ private:
 
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
-    String parts_regexp;
+    std::vector<String> parts;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
@@ -104,7 +144,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
     if (args.empty() || args.size() > 5)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 1 to 3 or 5 arguments (UUID, condition[, parts_regexp], [, optimization, args_array]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 1 to 3 or 5 arguments (UUID, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
@@ -113,10 +153,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         predicate = args[1]->clone();
 
     if (args.size() > 2)
-    {
-        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
-    }
+        parts = extractParts(args[2]);
 
     if (args.size() > 3)
         parseArgumentsForOptimizations(args, context);
@@ -129,7 +166,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     ASTs & args = args_func.at(0)->children;
     if (args.size() < 2 || args.size() > 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 2 to 4 arguments (database, table, condition[, parts_regexp]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 2 to 4 arguments (database, table, condition[, parts_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     auto database = checkAndGetLiteralArgument<String>(args[0], "database");
@@ -141,10 +178,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
         predicate = args[2]->clone();
 
     if (args.size() > 3)
-    {
-        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[3], "parts_regexp");
-    }
+        parts = extractParts(args[3]);
 
     if (args.size() > 3)
         parseArgumentsForOptimizations(args, context);
@@ -220,7 +254,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(storage_id),
         std::move(source_table),
         std::move(columns),
-        parts_regexp,
+        parts,
         predicate,
         vector_search_parameters);
     res->startup();
@@ -231,28 +265,22 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
-        TableFunctionProperties{
-            .documentation =
-            {
-                .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, 'parts_regexp'])", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
-            .allow_readonly = true,
-        }
+        {
+            .description = "Internal function for index analysis",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true}
     });
 
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ true), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
-        TableFunctionProperties{
-            .documentation =
-            {
-                .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, 'parts_regexp'])", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
-            .allow_readonly = true,
-        }
+        {
+            .description = "Internal function for index analysis",
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true}
     });
 }
 

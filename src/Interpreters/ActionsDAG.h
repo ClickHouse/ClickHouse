@@ -351,6 +351,10 @@ public:
     /// Apply materialize() function to node. Unlike for materializeNodeWithoutRename, result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
+    /// Remove materialize() and identity() wrapper functions from the DAG.
+    /// These are transparent wrappers that don't change values. Removing them projection matching for queries through views.
+    void removeTrivialWrappers();
+
     enum class MatchColumnsMode : uint8_t
     {
         Position,

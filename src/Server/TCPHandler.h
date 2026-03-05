@@ -316,7 +316,7 @@ private:
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress(QueryState & state);
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
-    void sendLogs(QueryState & state);
+    void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
     void sendPartUUIDs(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
@@ -325,9 +325,9 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
-    void sendProfileEvents(QueryState & state);
-    void sendSelectProfileEvents(QueryState & state);
-    void sendInsertProfileEvents(QueryState & state);
+    void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
+    void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
