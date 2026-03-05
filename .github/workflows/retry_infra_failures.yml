@@ -157,11 +157,14 @@ jobs:
           cutoff_seconds=3600  # 60 minutes
 
           # Get open PRs with auto-merge enabled that have mergeStateStatus=CLEAN
-          # (checks passed but not queued into merge queue)
+          # (checks passed but not queued into merge queue).
+          # Note: --search "auto-merge:enabled" does not work with gh pr list
+          # (silently returns empty results), so we fetch a large window and
+          # filter client-side via the GraphQL autoMergeRequest field.
           stuck_prs=$(gh pr list \
             --repo "$GH_REPO" \
             --state open \
-            --limit 50 \
+            --limit 200 \
             --json number,autoMergeRequest,mergeStateStatus,isDraft \
             --jq '[.[] | select(
               .autoMergeRequest != null and
