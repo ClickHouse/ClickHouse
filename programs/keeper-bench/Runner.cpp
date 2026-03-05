@@ -979,11 +979,11 @@ void requestFromLogExecutor(
     Stats * bench_info)
 {
     RequestFromLog request_from_log;
-    std::vector<std::future<void>> pending_requests;
+    std::optional<std::future<void>> last_request;
     while (queue->pop(request_from_log))
     {
         auto request_promise = std::make_shared<std::promise<void>>();
-        pending_requests.push_back(request_promise->get_future());
+        last_request = request_promise->get_future();
         auto start_time = std::chrono::steady_clock::now();
         Coordination::ResponseCallback callback = [&,
                                                   request_promise,
@@ -1048,8 +1048,8 @@ void requestFromLogExecutor(
         request_from_log.connection->executeGenericRequest(request_from_log.request, callback, watch);
     }
 
-    for (auto & future : pending_requests)
-        future.wait();
+    if (last_request)
+        last_request->wait();
 }
 
 }
