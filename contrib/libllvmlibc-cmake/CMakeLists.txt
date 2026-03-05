@@ -7,8 +7,6 @@ endif()
 
 # List of exported functions should be also updated in ci/jobs/compatibility_check.py
 set(SRCS
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/common_constants.cpp"
-
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
