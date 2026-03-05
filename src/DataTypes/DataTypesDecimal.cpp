@@ -523,29 +523,58 @@ void convertToDecimalBatch(
         using WideType = std::conditional_t<(sizeof(FromIntermediate) > sizeof(ToNativeType)),
                                             FromIntermediate, ToNativeType>;
 
-        const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
-
-        for (size_t i = 0; i < size; ++i)
+        if (scale == 0)
         {
-            WideType converted_value;
-            bool overflow = common::mulOverflow(static_cast<WideType>(from[i]), multiplier, converted_value);
-
-            overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
-                     || converted_value > std::numeric_limits<ToNativeType>::max();
-
-            if constexpr (has_nullmap)
+            /// Fast path: scale 0 means multiplier is 1, just widen and bounds-check.
+            /// This avoids expensive wide multiplication (especially for Int256).
+            for (size_t i = 0; i < size; ++i)
             {
-                nullmap[i] = overflow;
-                if (overflow)
-                    to[i] = static_cast<ToNativeType>(0);
+                WideType converted_value = static_cast<WideType>(from[i]);
+                bool overflow = converted_value < std::numeric_limits<ToNativeType>::min()
+                             || converted_value > std::numeric_limits<ToNativeType>::max();
+
+                if constexpr (has_nullmap)
+                {
+                    nullmap[i] = overflow;
+                    if (overflow)
+                        to[i] = static_cast<ToNativeType>(0);
+                    else
+                        to[i] = static_cast<ToNativeType>(converted_value);
+                }
                 else
+                {
+                    if (overflow)
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
                     to[i] = static_cast<ToNativeType>(converted_value);
+                }
             }
-            else
+        }
+        else
+        {
+            const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
+
+            for (size_t i = 0; i < size; ++i)
             {
-                if (overflow)
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
-                to[i] = static_cast<ToNativeType>(converted_value);
+                WideType converted_value;
+                bool overflow = common::mulOverflow(static_cast<WideType>(from[i]), multiplier, converted_value);
+
+                overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
+                         || converted_value > std::numeric_limits<ToNativeType>::max();
+
+                if constexpr (has_nullmap)
+                {
+                    nullmap[i] = overflow;
+                    if (overflow)
+                        to[i] = static_cast<ToNativeType>(0);
+                    else
+                        to[i] = static_cast<ToNativeType>(converted_value);
+                }
+                else
+                {
+                    if (overflow)
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
+                    to[i] = static_cast<ToNativeType>(converted_value);
+                }
             }
         }
     }
