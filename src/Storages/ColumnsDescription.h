@@ -11,6 +11,8 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
+#include <Parsers/IAST.h>
+
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -172,7 +174,7 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
-    bool hasSubcolumn(const String & column_name) const;
+    bool hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
     const ColumnDescription * tryGet(const String & column_name) const;
 
@@ -275,7 +277,7 @@ private:
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
 
-    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name) const;
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
 };
 
 class ASTColumnDeclaration;
