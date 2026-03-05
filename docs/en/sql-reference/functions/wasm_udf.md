@@ -180,11 +180,7 @@ RETURNS return_type
   - `BUFFERED_V1`: Block-based processing with serialization
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
-    - `max_fuel` UInt64 — Instruction fuel per instance. Default: `100000`.
-    - `max_memory` UInt64 — Max memory usage per instance, in bytes. Range: 64 KiB … 4 GiB. Default: `104857600` (100 MiB).
     - `serialization_format` String — Serialization format for ABI requires it. Default: `MsgPack`.
-    - `max_input_block_size` UInt64 — If specified, limits the maximum input block size in rows for ABI using block-based processing. Default: `0` (unlimited).
-    - `max_instances` UInt64 — Maximum parallel instances per function in single query. Default: `128`.
 
 ## ABIs Versions
 
@@ -267,9 +263,6 @@ void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
 ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
 ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
 ```
-<!--
-
-!!! TODO: crate is not yet published
 
 ### Note for developing UDFs in Rust
 
@@ -291,16 +284,33 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 Macros will generate wrapper function accepting and returning buffer structures and handle serialization/deserialization automatically using `serde`.
 
--->
-
 ## Host API available to modules
 
 The following host functions may be imported and used by modules:
 
 - `clickhouse_server_version() -> i64` — returns ClickHouse server version as integer (e.g. 25011001 for v25.11.1.1).
-- `clickhouse_terminate(ptr: i32, size: i32)` — throws an error with the provided message. Accepts pointer to the memory location containing the error message string and size of the string.
+- `clickhouse_throw(ptr: i32, size: i32)` — throws an error with the provided message. Accepts pointer to the memory location containing the error message string and size of the string.
 - `clickhouse_log(ptr: i32, size: i32)` — logs a message to ClickHouse server text log.
 - `clickhouse_random(ptr: i32, size: i32)` — fills memory with random bytes.
+
+## Settings
+
+The following query-level settings control WebAssembly UDF execution:
+
+- `webassembly_udf_max_fuel` — Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. Set to 0 for no limit.
+
+- `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
+
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+
+- `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
+
+Example usage:
+
+```sql
+SET webassembly_udf_max_fuel = 200000;
+SELECT my_wasm_udf(column) FROM table;
+```
 
 ## See also
 

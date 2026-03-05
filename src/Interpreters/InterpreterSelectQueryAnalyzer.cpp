@@ -214,12 +214,12 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names)
+    const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names, const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
