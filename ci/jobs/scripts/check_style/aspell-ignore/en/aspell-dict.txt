@@ -1492,6 +1492,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
