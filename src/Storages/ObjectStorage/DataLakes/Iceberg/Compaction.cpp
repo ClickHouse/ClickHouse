@@ -413,16 +413,10 @@ void writeConsolidatedManifestFile(
         auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
         for (const auto & manifest_file : manifest_list)
         {
-            auto manifest_file_content = getManifestFile(
-                object_storage,
-                persistent_table_components,
-                context,
-                log,
-                manifest_file.manifest_file_path,
-                manifest_file.added_sequence_number,
-                manifest_file.added_snapshot_id);
+            auto files_handle = getManifestFileEntriesHandle(
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
-            auto data_files = manifest_file_content->getFilesWithoutDeleted(FileContentType::DATA);
+            auto data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
 
             for (const auto & data_file : data_files)
             {
@@ -430,7 +424,7 @@ void writeConsolidatedManifestFile(
 
                 // Track partitions for counting
                 std::string partition_key;
-                for (const auto & val : data_file->partition_key_value)
+                for (const auto & val : data_file->parsed_entry->partition_key_value)
                 {
                     partition_key += val.dump() + "|";
                 }
