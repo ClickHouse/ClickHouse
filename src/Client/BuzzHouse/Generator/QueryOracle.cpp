@@ -136,6 +136,218 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
+/// Roundtrip oracle
+/// Query 1: SELECT count() FROM t WHERE col IS NOT NULL       (baseline: non-null rows)
+/// Query 2: SELECT count() FROM t WHERE roundtrip(col) = col  (must equal query 1)
+///
+/// Detects bugs where an encoding/encryption function fails to preserve data through a
+/// round-trip: if roundtrip(col) != col for any non-null row the counts diverge.
+///
+/// Roundtrip predicates evaluate to NULL when col IS NULL (NULL = x is NULL, not TRUE),
+/// so sq2's WHERE naturally excludes NULL rows just like sq1's IS NOT NULL filter.
+/// This makes the oracle correct for Nullable columns without special-casing.
+///
+/// Any insertable column type is accepted; for non-String types the predicate wraps the
+/// value in `toString` so that hex/base64 functions always receive a String argument.
+void QueryOracle::generateRoundtripOracleQueries(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false; /// Don't compare query success, queries are different
+
+    /// Collect all insertable flat column paths (including nested fields)
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+    const ColumnPathChain & entry = rg.pickRandomly(gen.entries);
+    const String col_ref = entry.columnPathRef(); /// e.g. `c0` or `c0`.`field`
+    /// For String/FixedString: apply roundtrip directly on the column.
+    /// For all other types: cast to String first so hex/base64 always receive a String argument.
+    const String val = entry.getBottomType()->getTypeClass() == SQLTypeClass::STRING ? col_ref : fmt::format("toString({})", col_ref);
+    gen.entries.clear();
+
+    /// Choose roundtrip function pair
+    String roundtrip_pred;
+    switch (rg.randomInt<uint32_t>(0, 6))
+    {
+        case 0:
+            /// hex/unhex — exercises hex encoding path
+            roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
+            break;
+        case 1:
+            /// baseEncode/Decode
+            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            break;
+        case 2:
+            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal
+            roundtrip_pred = fmt::format("reverse{0}(reverse({1})) = {1}", rg.nextBool() ? "UTF8" : "", val);
+            break;
+        case 3:
+            /// URL encode/decode — exercises URL percent-encoding
+            roundtrip_pred = fmt::format("decodeURL{0}Component(encodeURL{0}Component({1})) = {1}", rg.nextBool() ? "Form" : "", val);
+            break;
+        case 4: {
+            /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
+            struct CipherSpec
+            {
+                const char * name;
+                uint32_t key_bytes; /// 16 = aes-128, 24 = aes-192, 32 = aes-256
+                uint32_t iv_bytes; /// 0 = ECB (no IV), 16 = CBC/CFB128/OFB, 12 = GCM
+            };
+            static const std::vector<CipherSpec> ciphers = {
+                {"aes-128-ecb", 16, 0},
+                {"aes-192-ecb", 24, 0},
+                {"aes-256-ecb", 32, 0},
+                {"aes-128-cbc", 16, 16},
+                {"aes-192-cbc", 24, 16},
+                {"aes-256-cbc", 32, 16},
+                {"aes-128-cfb128", 16, 16},
+                {"aes-192-cfb128", 24, 16},
+                {"aes-256-cfb128", 32, 16},
+                {"aes-128-ofb", 16, 16},
+                {"aes-192-ofb", 24, 16},
+                {"aes-256-ofb", 32, 16},
+                {"aes-128-gcm", 16, 12},
+                {"aes-192-gcm", 24, 12},
+                {"aes-256-gcm", 32, 12},
+            };
+            const CipherSpec & spec = rg.pickRandomly(ciphers);
+
+            auto gen_hex = [&](uint32_t bytes) -> String
+            {
+                String hex;
+                for (uint32_t i = 0; i < bytes; i++)
+                    hex += fmt::format("{:02x}", rg.randomInt<uint8_t>(0, 255));
+                return hex;
+            };
+            const String key_hex = gen_hex(spec.key_bytes);
+
+            if (spec.iv_bytes == 0)
+            {
+                roundtrip_pred
+                    = fmt::format("decrypt('{2}', encrypt('{2}', {0}, unhex('{1}')), unhex('{1}')) = {0}", val, key_hex, spec.name);
+            }
+            else
+            {
+                const String iv_hex = gen_hex(spec.iv_bytes);
+                roundtrip_pred = fmt::format(
+                    "decrypt('{3}', encrypt('{3}', {0}, unhex('{1}'), unhex('{2}')), unhex('{1}'), unhex('{2}')) = {0}",
+                    val,
+                    key_hex,
+                    iv_hex,
+                    spec.name);
+            }
+            break;
+        }
+        case 5: {
+            /// compress/decompress — exercises compression codecs
+            static const std::vector<String> dcodecs = {"lz4", "zstd", "deflate_qpl", "brotli", "lzma", "bz2", "snappy"};
+            roundtrip_pred = fmt::format("decompress(compress({0}, '{1}'), '{1}') = {0}", val, rg.pickRandomly(dcodecs));
+            break;
+        }
+        default: {
+            /// parseDateTime/formatDateTime roundtrip — exercises datetime parsing and formatting.
+            /// Uses col_ref directly (not val) since formatDateTime requires a Date/DateTime argument.
+            /// The predicate format→parse→format = format ensures the roundtrip holds for valid DateTime values.
+            static const std::vector<String> dt_formats = {
+                "%Y-%m-%d %H:%i:%s",
+                "%Y/%m/%d %H:%i:%s",
+                "%d.%m.%Y %H:%i:%s",
+                "%Y-%m-%d",
+                "%Y/%m/%d",
+            };
+            const String & fmt_str = rg.pickRandomly(dt_formats);
+            const uint32_t scale = rg.randomInt<uint32_t>(0, 9);
+            switch (rg.randomInt<uint32_t>(0, 5))
+            {
+                case 0:
+                    /// parseDateTime(str, fmt) — strict format-based parsing → DateTime
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTime(formatDateTime({0}, '{1}'), '{1}'), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str);
+                    break;
+                case 1:
+                    /// parseDateTimeBestEffort(str) — heuristic parsing → DateTime
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTimeBestEffort(formatDateTime({0}, '{1}')), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str);
+                    break;
+                case 2:
+                    /// parseDateTimeBestEffortUS(str) — US month-first heuristic parsing → DateTime
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTimeBestEffortUS(formatDateTime({0}, '{1}')), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str);
+                    break;
+                case 3:
+                    /// parseDateTime64(str, scale, fmt) — strict format-based parsing → DateTime64(scale)
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTime64(formatDateTime({0}, '{1}'), {2}, '{1}'), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str,
+                        scale);
+                    break;
+                case 4:
+                    /// parseDateTime64BestEffort(str, scale) — heuristic parsing → DateTime64(scale)
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTime64BestEffort(formatDateTime({0}, '{1}'), {2}), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str,
+                        scale);
+                    break;
+                default:
+                    /// parseDateTime64BestEffortUS(str, scale) — US month-first heuristic parsing → DateTime64(scale)
+                    roundtrip_pred = fmt::format(
+                        "formatDateTime(parseDateTime64BestEffortUS(formatDateTime({0}, '{1}'), {2}), '{1}') = formatDateTime({0}, '{1}')",
+                        col_ref,
+                        fmt_str,
+                        scale);
+                    break;
+            }
+            break;
+        }
+    }
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    /// Build sq1: SELECT count() FROM t WHERE col IS NOT NULL  (baseline)
+    {
+        TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+        SelectIntoFile * sif = ts->mutable_intofile();
+        Select * sel = ts->mutable_sel();
+        SelectStatementCore * ssc = sel->mutable_select_core();
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+        insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
+        jtf->set_final(t.supportsFinal());
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_func_call()
+            ->mutable_func()
+            ->set_catalog_func(FUNCcount);
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
+        finishSettings(sel->mutable_setting_values());
+        ts->set_format(OutFormat::OUT_CSV);
+        const auto err = std::filesystem::remove(qcfile);
+        UNUSED(err);
+        sif->set_path(qcfile.generic_string());
+        sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+    }
+
+    /// Build sq2: SELECT count() FROM t WHERE roundtrip(col) = col
+    /// CopyFrom clones the table reference, format, and output file from sq1.
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(roundtrip_pred);
+    }
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+}
+
 void QueryOracle::insertOnTableOrCluster(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool peer, TableOrFunction * tof) const
 {
@@ -1093,7 +1305,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
-    can_test_oracle_result = fc.compare_success_results;
+    can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
@@ -1127,7 +1339,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
 {
     if (other_steps_success && can_test_oracle_result)
     {
-        if (((first_errcode && !errcode) || (!first_errcode && errcode))
+        if (can_test_success && ((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(

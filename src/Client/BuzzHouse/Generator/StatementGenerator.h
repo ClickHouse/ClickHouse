@@ -294,8 +294,7 @@ private:
         LitSpecial,
         LitJSON,
         LitNULLVal,
-        LitFraction,
-        LitAggrState
+        LitFraction
     };
 
     enum class ExpOp
@@ -319,7 +318,10 @@ private:
         ProjectionExpr,
         DictExpr,
         JoinExpr,
-        StarExpr
+        StarExpr,
+        LitAggrState,
+        LitReinterpret,
+        LitAccurateCast
     };
 
     enum class PredOp
