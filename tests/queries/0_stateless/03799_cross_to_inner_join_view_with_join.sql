@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SET allow_experimental_analyzer = 0;
 
 -- view() table function with an inner JOIN used inside an outer JOIN
