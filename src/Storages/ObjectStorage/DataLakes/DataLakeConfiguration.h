@@ -92,17 +92,22 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before) override
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
-        const bool updated_before = current_metadata != nullptr;
-        if (updated_before && if_not_updated_before)
-            return;
-
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
+        BaseStorageConfiguration::update(object_storage, local_context);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
             return;
         }
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+    }
+
+    void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
+    {
+        if (current_metadata != nullptr)
+            return;
+        BaseStorageConfiguration::update(object_storage, local_context);
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
@@ -123,7 +128,7 @@ public:
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
-        BaseStorageConfiguration::update(object_storage, local_context, true);
+        BaseStorageConfiguration::update(object_storage, local_context);
 
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
@@ -321,7 +326,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-        update(object_storage, context, /* if_not_updated_before */ true);
+        lazyInitializeIfNeeded(object_storage, context);
         return current_metadata->write(
             sample_block,
             table_id,
