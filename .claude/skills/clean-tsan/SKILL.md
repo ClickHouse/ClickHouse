@@ -104,84 +104,48 @@ Report log path and `tail -f build_tsan/tsan_test.log` command to user.
 
 #### Unit Tests
 
-Use `--gtest_repeat` to run multiple iterations in a single process (avoids startup overhead).
-`halt_on_error=1` stops the process immediately on the first TSan alert — without it the test keeps running and generates cascading failures that obscure the root alert.
+**Do NOT use `run_in_background` for unit tests.** Use the `run-unittest.sh` script which handles test launch, hang detection, and structured output in one call.
 
 ```bash
-TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7" \
-  ./build_tsan/src/unit_tests_dbms \
-  --gtest_filter="*<test_name>*" \
-  --gtest_repeat=20 \
-  --gtest_break_on_failure \
-  > <log_file> 2>&1
+bash .claude/skills/clean-tsan/scripts/run-unittest.sh "*<test_name>*" <log_file>
 ```
 
-`--gtest_break_on_failure` stops GTest on the first test assertion failure (separate from TSan).
-`--gtest_repeat=20` keeps repeating until the first TSan hit — combined with `halt_on_error=1` the process aborts immediately when a race is found, so a larger repeat count costs nothing if a race is hit early.
+The script launches the test binary with `TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7"`, `--gtest_repeat=20`, and `--gtest_break_on_failure`. It monitors the log file for stalled output (hang detection with 10-second polling).
 
-TSan output goes directly to the log file (stdout/stderr of the binary). With `halt_on_error=1`, TSan calls `abort()` on error — the exit code will be non-zero (typically 134 for SIGABRT), not the default 66. Check `$?` non-zero as a fast indicator before grepping logs.
+**Output (key=value lines on stdout):**
+- Always: `PID=<pid>`
+- On normal exit: `EXIT_CODE=<code>` (0 = clean, non-zero = TSan error or test failure)
+- On hang: `HANG_DETECTED=1`, `HUNG_TEST=<last [ RUN ] line>`, `CPU=<percent>`
 
-**Do NOT use `run_in_background` for unit tests** — run the test process in the shell background (`&`) and capture the PID immediately with `pid=$!`, so you can monitor output and detect hangs from the same Bash session.
+**Interpreting hangs:** CPU value classifies the hang:
+- **~0% CPU** → deadlock (all threads blocked on locks or condition variables)
+- **High CPU** → livelock (threads are running but making no progress)
 
-#### Unit Test Hang Detection
+Include this classification in the report and the RCA prompt — it changes the analysis focus.
 
-Individual ClickHouse unit tests complete in 1-2 seconds even under TSan. If a test hangs (deadlock or livelock), no TSan alert is produced — the process just stops making progress. Detect this by monitoring the log file for stalled output.
+Options: `--repeat N` (default 20), `--poll-interval N` (default 10 seconds).
 
-**After launching the unit test** (with `&`), poll the log file every 10 seconds. If the last line has not changed between two consecutive checks, the test is hung:
+#### Unit Test Hang Handling
+
+When `run-unittest.sh` reports `HANG_DETECTED=1`, the process is still alive (the script does NOT kill it). Use `handle-hang.sh` to capture stacktraces and kill the process:
 
 ```bash
-prev_line=""
-while kill -0 <pid> 2>/dev/null; do
-    sleep 10
-    curr_line=$(tail -1 <log_file>)
-    if [ "$curr_line" = "$prev_line" ] && [ -n "$curr_line" ]; then
-        # Output stalled — test is hung
-        break
-    fi
-    prev_line="$curr_line"
-done
+bash .claude/skills/clean-tsan/scripts/handle-hang.sh <pid> _clean-tsan/<test_name>
 ```
 
-When a hang is detected:
+The script:
+1. Finds the versioned lldb binary (e.g. `lldb-21`)
+2. Computes next iteration NNN from `_clean-tsan/progress.md` and existing artifacts
+3. Captures all-thread stacktraces via `sudo lldb -o "bt all"`
+4. Kills the process
 
-1. **Classify the hang** — check process CPU usage to distinguish deadlock from livelock:
-   ```bash
-   ps -p <pid> -o %cpu --no-headers
-   ```
-   - **~0% CPU** → deadlock (all threads blocked on locks or condition variables)
-   - **High CPU** → livelock (threads are running but making no progress — spinning, retrying, or undoing each other's work)
+**Output:** `LLDB=<path>`, `ITERATION=<NNN>`, `STACKTRACE_FILE=<path>`, `KILLED=1`
 
-   Include this classification in the report and the RCA prompt — it changes the analysis focus.
+Do NOT read the stacktrace output into the main conversation context — it can be very large. The RCA subagent (Phase 5) reads the file.
 
-2. **Create artifact directory** (if not already done):
-   ```bash
-   mkdir -p _clean-tsan/<test_name>
-   ```
+After the script completes, report to the user: "Test `<test_case>` hung (<deadlock|livelock>, CPU: <N>%). Captured all-thread stacktraces to `<STACKTRACE_FILE>`"
 
-3. **Find lldb** — it is versioned (e.g., `lldb-21`):
-   ```bash
-   ls /usr/bin/lldb-* 2>/dev/null | grep -v -E 'argdumper|dap|instr|server' | head -1
-   ```
-
-4. **Capture all-thread stacktraces** using `sudo` (required for ptrace attach). NNN is the iteration number (`001`, `002`, ...) — if the artifact directory already has files from previous iterations, continue from the last used number:
-   ```bash
-   sudo <lldb> -p <pid> -o "bt all" -o "detach" -o "quit" > _clean-tsan/<test_name>/stacktrace-NNN.txt 2>&1
-   ```
-   Do NOT read the stacktrace output into the main conversation context — it can be very large. The RCA subagent (Phase 5) reads the file.
-
-5. **Kill the hung process**:
-   ```bash
-   kill <pid>
-   ```
-
-6. **Extract the hung test name** from the last `[ RUN      ]` line in the log:
-   ```bash
-   grep '^\[ RUN' <log_file> | tail -1
-   ```
-
-7. **Report to user**: "Test `<test_case>` hung (<deadlock|livelock>, CPU: <N>%). Captured all-thread stacktraces to `_clean-tsan/<test_name>/stacktrace-NNN.txt`"
-
-8. **Set `hang_detected=true`** — this flag controls branching in Phase 3c and Phase 4.
+Set `hang_detected=true` — this flag controls branching in Phase 3c and Phase 4.
 
 #### Integration Tests
 
@@ -256,10 +220,13 @@ Both files must be checked for TSan errors.
 
 **Otherwise**, check for TSan alerts:
 
-**Unit tests:** Check exit code (non-zero = error; `halt_on_error=1` aborts with SIGABRT rather than exit 66) and grep the log:
-```bash
-grep -c "SUMMARY: ThreadSanitizer:" <log_file>
-```
+**Unit tests:** Parse the script output from Phase 3b:
+- If output contains `HANG_DETECTED` → hang was detected, proceed to Phase 5 (stacktrace already captured)
+- If output contains `EXIT_CODE=0` → tests passed cleanly
+- If output contains `EXIT_CODE=<non-zero>` → TSan error or test failure; grep the log:
+  ```bash
+  grep -c "SUMMARY: ThreadSanitizer:" <log_file>
+  ```
 
 **Integration tests:** Check if the test passed or failed (exit code). If failed, search instance stderr logs as described in 3b above.
 
@@ -276,46 +243,25 @@ grep -c "SUMMARY: ThreadSanitizer:" <server_stderr_log>
 
 ## Phase 4: Extract First TSan Alert
 
-**Skip this phase if a hang was detected** — the stacktrace artifact (`stacktrace-NNN.txt`) is already saved during hang detection (Phase 3b). Proceed directly to Phase 5.
+**Skip this phase if a hang was detected** — the stacktrace artifact (`stacktrace-NNN.txt`) is already saved during hang handling. Proceed directly to Phase 5.
 
 The skill processes alerts **one at a time**: extract the first alert, analyze it, fix it, rerun tests, and repeat until clean.
 
-### Direct extraction using markers
-
-TSan alerts have clear boundaries:
-- **Start marker**: a line containing `WARNING: ThreadSanitizer:`
-- **End marker**: a line containing `SUMMARY: ThreadSanitizer:`
-
-**IMPORTANT:** Do NOT read the alert contents into the main conversation context — this pollutes it with large stack traces. The main agent extracts the alert **mechanically** (using line numbers and Bash) and writes it to a file. Only the RCA subagent (Phase 5) reads the alert text.
-
-**For each log file containing TSan errors:**
-
-1. Count total alerts:
-   ```bash
-   grep -c "SUMMARY: ThreadSanitizer:" <log_file>
-   ```
-
-2. Find line numbers of the first alert's start and end markers:
-   ```bash
-   grep -n -E "WARNING: ThreadSanitizer:|SUMMARY: ThreadSanitizer:" <log_file> | head -2
-   ```
-
-3. Extract directly to a file using `sed` — do NOT use Read tool here:
-   ```bash
-   sed -n '<start_line>,<end_line>p' <log_file> > _clean-tsan/<test_name>/alert-NNN.txt
-   ```
-
-### Save extracted alert
-
-Create the artifact directory (once per skill invocation):
+### Extract using script
 
 ```bash
-mkdir -p _clean-tsan/<test_name>
+bash .claude/skills/clean-tsan/scripts/extract-alert.sh <log_file> _clean-tsan/<test_name>
 ```
 
-NNN is the iteration number (001, 002, ...). If the directory already has artifacts from a previous session, continue numbering from the last NNN. The `sed` command in step 3 above writes directly to `_clean-tsan/<test_name>/alert-NNN.txt`.
+The script finds the first `WARNING: ThreadSanitizer:` ... `SUMMARY: ThreadSanitizer:` pair, auto-numbers the output file based on `_clean-tsan/progress.md` and existing artifacts, and extracts to `alert-NNN.txt`.
 
-Report to the user: "Extracted TSan alert to `_clean-tsan/<test_name>/alert-NNN.txt`".
+**Output:** `ALERT_COUNT=<N>`, `ITERATION=<NNN>`, `ALERT_FILE=<path>`, `ALERT_TYPE=<type>`
+
+Do NOT read the alert contents into the main conversation context — this pollutes it with large stack traces. Only the RCA subagent (Phase 5) reads the alert text.
+
+Report to the user: "Extracted TSan alert (<ALERT_TYPE>) to `<ALERT_FILE>`. Total alerts in log: <ALERT_COUNT>."
+
+For **integration tests**, you may need to run the script on multiple log files (one per instance). Use the first log file that contains alerts.
 
 ### Progress file format
 
@@ -483,6 +429,18 @@ Each iteration processes one alert or hang at a time. The loop continues until e
 | Progress log | `_clean-tsan/progress.md` (shared across tests) |
 | Threading model | `_clean-tsan/threading-model.md` (shared across tests) |
 
+## Scripts
+
+Helper scripts in `.claude/skills/clean-tsan/scripts/` handle mechanical steps and output structured `KEY=value` lines.
+
+| Script | Purpose |
+|--------|---------|
+| `run-unittest.sh <filter> <log>` | Launch gtest under TSan, monitor for hang, report outcome |
+| `handle-hang.sh <pid> <artifact_dir>` | Capture all-thread stacktraces via lldb, kill process, auto-number artifacts |
+| `extract-alert.sh <log> <artifact_dir>` | Extract first TSan alert to auto-numbered file |
+
+All scripts accept `--progress-file PATH` (default: `_clean-tsan/progress.md`) for iteration numbering.
+
 ---
 
 ## Examples
@@ -495,7 +453,7 @@ Each iteration processes one alert or hang at a time. The loop continues until e
 
 ## Important Notes
 
-- **Builds** MUST run in background with `run_in_background: true`. **Unit tests** run in shell background (`&`) with hang detection polling. **Integration/stateless tests** run with `run_in_background: true`.
+- **Builds** MUST run in background with `run_in_background: true`. **Unit tests** use `run-unittest.sh` (handles hang detection internally). **Integration/stateless tests** run with `run_in_background: true`.
 - **Use Task subagents** for ALL analysis to avoid polluting main conversation context
 - **Each RCA gets its own subagent** to prevent cross-contamination between alerts
 - **Stack traces guide analysis** — the RCA subagent reads source files referenced in the alert, no upfront class search needed

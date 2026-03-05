@@ -1,5 +1,7 @@
 Perform root cause analysis of this ThreadSanitizer alert or test hang in ClickHouse.
 
+**IMPORTANT: This is a READ-ONLY analysis task. Do NOT modify any source code files (*.cpp, *.h, etc.). Your only writable outputs are the threading model file (`threading-model.md`) and the RCA report text. A separate Fix subagent will apply source code changes based on your analysis.**
+
 ## TSan Alert or Hang Stacktraces
 Read from: {{ALERT_FILE}}
 (Use the Read tool to load the file contents before proceeding. This file contains either a TSan alert with stack traces, or all-thread backtraces captured from a hung process via lldb.)
