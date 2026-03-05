@@ -16,6 +16,7 @@
 
 #include <array>
 #include <condition_variable>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -214,7 +215,7 @@ public:
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
-    void waitTableFinallyDropped(const UUID & uuid);
+    void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
