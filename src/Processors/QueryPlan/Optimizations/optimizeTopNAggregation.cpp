@@ -97,7 +97,10 @@ static String resolveOriginalArgName(const String & arg_name, QueryPlan::Node * 
  * Applicability criteria:
  *   1. ORDER BY references exactly one column which is the output of an aggregate.
  *   2. That aggregate's getTopKAggregateInfo().determined_by_first_row_direction != 0.
- *   3. ALL aggregates in the query satisfy the same direction constraint.
+ *   3. ALL aggregates in the query satisfy the same direction constraint AND
+ *      every non-any companion aggregate operates on the same determining
+ *      argument column as the ORDER BY aggregate (e.g. argMax(payload, val)
+ *      is rejected alongside max(ts) because val != ts).
  *   4. No HAVING, TOTALS, WITH TIES, grouping sets, overflow row, or OFFSET.
  *
  * Mode selection:
@@ -197,12 +200,22 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (required_direction == INT_MAX)
         required_direction = sort_direction;
 
+    /// The determining argument of the ORDER BY aggregate — the column whose
+    /// sort order lets the first row decide the aggregate result.  For min/max
+    /// this is the only argument; for argMin/argMax it is the last argument.
+    const auto & order_agg_arg = order_agg.argument_names.back();
+
     for (const auto & agg : agg_descs)
     {
         auto info = agg.function->getTopKAggregateInfo();
         if (info.determined_by_first_row_direction == 0)
             return;
         if (info.determined_by_first_row_direction != INT_MAX && info.determined_by_first_row_direction != required_direction)
+            return;
+        /// Non-any companions must operate on the same determining argument as
+        /// the ORDER BY aggregate.  Otherwise Mode 1 (first-row-per-group) and
+        /// Mode 2 (threshold pruning on that argument) produce wrong results.
+        if (info.determined_by_first_row_direction != INT_MAX && agg.argument_names.back() != order_agg_arg)
             return;
     }
 
