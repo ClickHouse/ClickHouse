@@ -495,7 +495,8 @@ policy_properties = {
     "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
     "least_used_ttl_ms": threshold_generator(0.2, 0.2, 0, 120000),
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
-    "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    # Cannot set `max_data_part_size_bytes` and `max_data_part_size_ratio` at the same time
+    #"max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "max_data_part_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": true_false_lambda,
