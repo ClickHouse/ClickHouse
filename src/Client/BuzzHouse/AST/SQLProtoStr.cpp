@@ -2383,11 +2383,20 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
-    if (mfunc.has_part())
+    if (mfunc.has_plist())
     {
-        ret += ", '";
-        ret += mfunc.part();
-        ret += "'";
+        ret += ", [";
+        for (int i = 0; i < mfunc.plist().parts_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += mfunc.plist().parts(i);
+            ret += "'";
+        }
+        ret += "]";
     }
     ret += ")";
 }

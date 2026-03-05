@@ -1197,9 +1197,14 @@ bool StatementGenerator::joinedTableOrFunction(
                 std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", tt));
 
                 generateTableExpression(rg, trel, rg.nextMediumNumber() < 16, rg.nextMediumNumber() < 81, mtudf->mutable_pred());
-                if (rg.nextSmallNumber() < 4 && fc.tableHasPartitions(false, dname, tname))
+                if (rg.nextSmallNumber() < 4)
                 {
-                    mtudf->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+                    PartsList * pl = mtudf->mutable_plist();
+
+                    if (rg.nextSmallNumber() < 9 && fc.tableHasPartitions(false, dname, tname))
+                    {
+                        pl->add_parts(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+                    }
                 }
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));

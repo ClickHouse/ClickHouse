@@ -2793,10 +2793,14 @@ message MergeTreeTextIndexFunc {
     required Index idx = 2;
 }
 
+message PartsList {
+    repeated string parts = 1;
+}
+
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
-    optional string part = 3;
+    optional PartsList plist = 3;
 }
 
 message GenerateRandomFunc {
