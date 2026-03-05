@@ -786,7 +786,7 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
-        if not Path(Utils.AES_KEY_RSA).exists():
+        if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
 openssl rand 32 >{aes_key_path}
 openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
