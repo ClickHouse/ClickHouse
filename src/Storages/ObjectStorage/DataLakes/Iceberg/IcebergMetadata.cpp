@@ -565,18 +565,22 @@ void IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (!args || args->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects exactly one argument (timestamp), got {}", args ? args->children.size() : 0);
+        if (args && args->children.size() > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects zero or one argument (timestamp), got {}", args->children.size());
 
-        const auto * literal = args->children[0]->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects a string timestamp argument like '2024-06-01 00:00:00'");
+        std::optional<Int64> expire_before_ms;
+        if (args && args->children.size() == 1)
+        {
+            const auto * literal = args->children[0]->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects a string timestamp argument like '2024-06-01 00:00:00'");
 
-        const String & timestamp_str = literal->value.safeGet<String>();
-        ReadBufferFromString buf(timestamp_str);
-        time_t expire_time;
-        readDateTimeText(expire_time, buf);
-        Int64 expire_before_ms = static_cast<Int64>(expire_time) * 1000;
+            const String & timestamp_str = literal->value.safeGet<String>();
+            ReadBufferFromString buf(timestamp_str);
+            time_t expire_time;
+            readDateTimeText(expire_time, buf);
+            expire_before_ms = static_cast<Int64>(expire_time) * 1000;
+        }
 
         Iceberg::expireSnapshots(
             expire_before_ms,

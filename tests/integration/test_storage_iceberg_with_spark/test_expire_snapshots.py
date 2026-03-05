@@ -288,3 +288,79 @@ def test_expire_snapshots_retention_max_age(started_cluster_iceberg_with_spark, 
     )
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n2\n3\n4\n5\n"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_no_args_default_retention(started_cluster_iceberg_with_spark, storage_type):
+    """No-arg expire_snapshots uses default max-snapshot-age-ms (5 days); all recent snapshots are retained."""
+    format_version = 2
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_expire_no_args_default_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int)", format_version
+    )
+
+    for val in range(1, 4):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} VALUES ({val});",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+
+    history_before = int(instance.query(
+        f"SELECT count() FROM system.iceberg_history WHERE database = 'default' AND table = '{TABLE_NAME}'"
+    ).strip())
+    assert history_before == 3
+
+    instance.query(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    history_after = int(instance.query(
+        f"SELECT count() FROM system.iceberg_history WHERE database = 'default' AND table = '{TABLE_NAME}'"
+    ).strip())
+    assert history_after == 3, (
+        f"All snapshots are less than 5 days old (default), none should be expired; got {history_after}"
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n2\n3\n"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_no_args_with_short_max_age(started_cluster_iceberg_with_spark, storage_type):
+    """No-arg expire_snapshots with a very short max-snapshot-age-ms expires old snapshots."""
+    format_version = 2
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_expire_no_args_short_age_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int)", format_version
+    )
+
+    for val in range(1, 6):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} VALUES ({val});",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+
+    time.sleep(2)
+
+    set_iceberg_table_properties(instance, TABLE_NAME, {
+        "history.expire.min-snapshots-to-keep": "1",
+        "history.expire.max-snapshot-age-ms": "1",
+    })
+
+    instance.query(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots();",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    history_after = int(instance.query(
+        f"SELECT count() FROM system.iceberg_history WHERE database = 'default' AND table = '{TABLE_NAME}'"
+    ).strip())
+    assert history_after == 1, (
+        f"With 1ms max age and min-keep=1, only current snapshot should remain; got {history_after}"
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n2\n3\n4\n5\n"

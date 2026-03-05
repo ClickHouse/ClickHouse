@@ -41,7 +41,7 @@ void alter(
     const String & write_format);
 
 void expireSnapshots(
-    Int64 expire_before_ms,
+    std::optional<Int64> expire_before_ms,
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,

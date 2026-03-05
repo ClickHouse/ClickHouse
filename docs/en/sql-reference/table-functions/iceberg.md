@@ -530,10 +530,12 @@ Iceberg tables accumulate snapshots with each INSERT, DELETE, or UPDATE operatio
 **Syntax:**
 
 ```sql
-ALTER TABLE iceberg_table EXECUTE expire_snapshots('timestamp');
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(['timestamp']);
 ```
 
-Where `timestamp` is a datetime string (e.g., `'2024-06-01 00:00:00'`). The timestamp is interpreted in the **server's timezone** (the `timezone` configuration setting, or the system timezone if not set). All snapshots older than this timestamp will be expired, subject to the retention policy described below.
+The `timestamp` argument is optional. When provided, it is a datetime string (e.g., `'2024-06-01 00:00:00'`) interpreted in the **server's timezone** (the `timezone` configuration setting, or the system timezone if not set). All snapshots older than this timestamp will be expired, subject to the retention policy described below.
+
+When no timestamp is provided, the cutoff is derived automatically from the table property `history.expire.max-snapshot-age-ms` (default: 432000000 ms = 5 days). In this mode, snapshots older than `now - max-snapshot-age-ms` are expired.
 
 **Example:**
 
@@ -547,12 +549,15 @@ INSERT INTO iceberg_table VALUES (3);
 
 -- Expire snapshots older than the given timestamp
 ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
+
+-- Or expire using default retention policy (snapshots older than 5 days)
+ALTER TABLE iceberg_table EXECUTE expire_snapshots();
 ```
 
 The command performs the following steps:
 
 1. Evaluates the retention policy (see below) to determine which snapshots must be preserved
-2. Identifies candidate snapshots older than the given timestamp that are not protected by the retention policy
+2. Identifies candidate snapshots older than the cutoff (explicit timestamp or derived from `max-snapshot-age-ms`) that are not protected by the retention policy
 3. Computes which files are exclusively associated with expired snapshots
 4. Generates new metadata without the expired snapshots
 5. Physically deletes unreachable manifest lists, manifest files, and data files
@@ -561,11 +566,11 @@ The command performs the following steps:
 
 The `expire_snapshots` command respects the [Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy). Retention can be configured via Iceberg table properties and per-reference overrides:
 
-| Property | Scope | Description |
-|---|---|---|
-| `history.expire.min-snapshots-to-keep` | Table (default: 1) | Minimum number of snapshots to keep in each branch's ancestor chain |
-| `history.expire.max-snapshot-age-ms` | Table | Maximum age (in ms) of snapshots to retain in a branch, even if they are older than the cutoff timestamp |
-| `history.expire.max-ref-age-ms` | Table | Maximum age (in ms) for a snapshot reference (branch or tag) before the reference itself is removed |
+| Property | Scope | Default | Description |
+|---|---|---|---|
+| `history.expire.min-snapshots-to-keep` | Table | 1 | Minimum number of snapshots to keep in each branch's ancestor chain |
+| `history.expire.max-snapshot-age-ms` | Table | 432000000 (5 days) | Maximum age (in ms) of snapshots to retain in a branch; also used as the expiration cutoff when no timestamp is provided |
+| `history.expire.max-ref-age-ms` | Table | — | Maximum age (in ms) for a snapshot reference (branch or tag) before the reference itself is removed |
 
 Each snapshot reference (`refs` in the Iceberg metadata) can override these with per-ref fields: `min-snapshots-to-keep`, `max-snapshot-age-ms`, and `max-ref-age-ms`.
 

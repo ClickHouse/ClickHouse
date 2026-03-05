@@ -746,7 +746,7 @@ void alter(
 }
 
 void expireSnapshots(
-    Int64 expire_before_ms,
+    std::optional<Int64> expire_before_ms,
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
@@ -794,6 +794,9 @@ void expireSnapshots(
 
         auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
 
+        static constexpr Int64 DEFAULT_MAX_SNAPSHOT_AGE_MS = 432000000; // 5 days
+        static constexpr Int32 DEFAULT_MIN_SNAPSHOTS_TO_KEEP = 1;
+
         std::optional<Int32> table_min_snapshots_to_keep;
         std::optional<Int64> table_max_snapshot_age_ms;
         std::optional<Int64> table_max_ref_age_ms;
@@ -821,6 +824,9 @@ void expireSnapshots(
 
         auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
+        Int64 effective_expire_before_ms = expire_before_ms.value_or(
+            now_ms - table_max_snapshot_age_ms.value_or(DEFAULT_MAX_SNAPSHOT_AGE_MS));
+
         auto walk_branch_ancestors = [&](Int64 head_id, Int32 min_keep, std::optional<Int64> max_age_ms, std::set<Int64> & retained)
         {
             Int64 walk_id = head_id;
@@ -843,7 +849,7 @@ void expireSnapshots(
         std::set<Int64> retention_retained_ids;
         retention_retained_ids.insert(current_snapshot_id);
 
-        Int32 main_min_keep = table_min_snapshots_to_keep.value_or(1);
+        Int32 main_min_keep = table_min_snapshots_to_keep.value_or(DEFAULT_MIN_SNAPSHOTS_TO_KEEP);
         walk_branch_ancestors(current_snapshot_id, main_min_keep, table_max_snapshot_age_ms, retention_retained_ids);
 
         Strings expired_ref_names;
@@ -905,7 +911,7 @@ void expireSnapshots(
             Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
 
             bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
-            bool is_newer = (snap_ts >= expire_before_ms);
+            bool is_newer = (snap_ts >= effective_expire_before_ms);
 
             if (is_retained_by_policy || is_newer)
             {
