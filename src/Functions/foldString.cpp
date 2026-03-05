@@ -36,8 +36,19 @@ enum class FoldFunction
     FullFold
 };
 
-/// Shared processing pipeline for all fold functions.
-/// Template parameters control which steps are compiled in.
+/// Maximum expansion factors for UTF-16 normalization/folding operations.
+/// See https://unicode.org/faq/normalization.html#12 and
+constexpr int MAX_NFC_EXPANSION = 3;
+constexpr int MAX_NFD_EXPANSION = 4;
+constexpr int MAX_NFKC_CASEFOLD_EXPANSION = 18;
+
+/// Case folding can also expand, e.g. ligatures. See https://unicode.org/Public/UCD/latest/ucd/CaseFolding.txt
+constexpr int MAX_CASEFOLD_EXPANSION = 3;
+
+/// Each UTF-16 code unit produces at most 3 UTF-8 bytes.
+/// Chars which require 4 UTF-8 bytes also require 2 UTF-16 code units, so the max expansion factor is 3.
+constexpr int MAX_UTF16_TO_UTF8_EXPANSION = 3;
+
 template <FoldFunction fold_function>
 struct FoldUTF8Impl
 {
@@ -115,7 +126,7 @@ struct FoldUTF8Impl
                     if (aggressive)
                     {
                         /// Aggressive: NFKC_Casefold (does NFKC + case fold in one shot)
-                        buf2.resize(len * 18);
+                        buf2.resize(len * MAX_NFKC_CASEFOLD_EXPANSION);
                         err = U_ZERO_ERROR;
                         len = unorm2_normalize(nfkc_cf_normalizer, buf1.data(), len,
                             buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -126,7 +137,7 @@ struct FoldUTF8Impl
                     else
                     {
                         /// Conservative step 1: NFC normalize
-                        buf2.resize(len * 3);
+                        buf2.resize(len * MAX_NFC_EXPANSION);
                         err = U_ZERO_ERROR;
                         len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
                             buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -135,7 +146,7 @@ struct FoldUTF8Impl
                         std::swap(buf1, buf2);
 
                         /// Conservative step 2: Case fold
-                        buf2.resize(len * 2);
+                        buf2.resize(len * MAX_CASEFOLD_EXPANSION);
                         err = U_ZERO_ERROR;
                         len = u_strFoldCase(buf2.data(), static_cast<int32_t>(buf2.size()),
                             buf1.data(), len, fold_options, &err);
@@ -148,7 +159,7 @@ struct FoldUTF8Impl
                 if constexpr (fold_function == FoldFunction::AccentFold || fold_function == FoldFunction::FullFold)
                 {
                     /// NFD decompose (to separate base characters from combining marks)
-                    buf2.resize(len * 4);
+                    buf2.resize(len * MAX_NFD_EXPANSION);
                     err = U_ZERO_ERROR;
                     len = unorm2_normalize(nfd_normalizer, buf1.data(), len,
                         buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -177,7 +188,7 @@ struct FoldUTF8Impl
                 if constexpr (fold_function == FoldFunction::FullFold)
                 {
                     /// Final NFC recompose (both paths)
-                    buf2.resize(len * 3);
+                    buf2.resize(len * MAX_NFC_EXPANSION);
                     err = U_ZERO_ERROR;
                     len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
                         buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -188,7 +199,7 @@ struct FoldUTF8Impl
                 else if constexpr (fold_function == FoldFunction::CaseFold)
                 {
                     /// caseFoldUTF8: NFC recompose at the end
-                    buf2.resize(len * 3);
+                    buf2.resize(len * MAX_NFC_EXPANSION);
                     err = U_ZERO_ERROR;
                     len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
                         buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -199,7 +210,7 @@ struct FoldUTF8Impl
                 else if constexpr (fold_function == FoldFunction::AccentFold)
                 {
                     /// accentFoldUTF8: NFC recompose at the end
-                    buf2.resize(len * 3);
+                    buf2.resize(len * MAX_NFC_EXPANSION);
                     err = U_ZERO_ERROR;
                     len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
                         buf2.data(), static_cast<int32_t>(buf2.size()), &err);
@@ -209,7 +220,7 @@ struct FoldUTF8Impl
                 }
 
                 /// UTF-16 → UTF-8
-                size_t max_to_size = current_to_offset + 4 * static_cast<size_t>(len);
+                size_t max_to_size = current_to_offset + MAX_UTF16_TO_UTF8_EXPANSION * static_cast<size_t>(len);
                 if (res_data.size() < max_to_size)
                     res_data.resize(max_to_size);
 

@@ -1,0 +1,31 @@
+-- caseFoldUTF8 aggressive (default)
+hello world
+strasse
+héllo
+ffi
+-- caseFoldUTF8 conservative
+hello world
+strasse
+héllo
+ffi
+-- accentFoldUTF8
+cafe resume naive
+Angstrom
+pinata
+-- foldUTF8 aggressive (default)
+cafe resume
+hello world
+strasse
+-- foldUTF8 conservative
+cafe resume
+hello world
+-- foldUTF8 with special I handling
+istanbul
+-- empty strings
+
+
+
+-- ASCII only
+abc
+abc
+abc
