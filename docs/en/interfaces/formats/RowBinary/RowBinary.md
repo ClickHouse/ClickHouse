@@ -1150,7 +1150,7 @@ INSERT INTO test_saf VALUES (1, 42);
 SELECT val FROM test_saf;
 ```
 
-The RBWNAT header reports the type as `SimpleAggregateFunction(max, UInt32)`, but the value on the wire is just a `UInt32`:
+The RowBinaryWithNamesAndTypes header reports the type as `SimpleAggregateFunction(max, UInt32)`, but the value on the wire is just a `UInt32`:
 
 ```text
 0x2A, 0x00, 0x00, 0x00, // 42 as UInt32

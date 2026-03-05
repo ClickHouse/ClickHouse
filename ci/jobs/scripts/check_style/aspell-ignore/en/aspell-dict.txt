@@ -1849,6 +1849,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -2802,6 +2803,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -3518,6 +3520,7 @@ varpop
 varpopstable
 varsamp
 varsampstable
+VarUInt
 vectorized
 vectorscan
 vendoring
