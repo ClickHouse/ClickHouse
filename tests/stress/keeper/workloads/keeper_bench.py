@@ -33,7 +33,8 @@ def _parse_hosts(servers):
 def _patch_keeper_bench_config(src, servers, clients, duration_s):
     """Patch keeper-bench config with dynamic values: servers, duration."""
     out = dict(src)
-    out["timelimit"] = int(duration_s - 60) # Buffer for keeper-bench to finish before scenario timeout
+    # Buffer for keeper-bench to finish before scenario timeout; keep positive for short scenarios
+    out["timelimit"] = max(1, int(duration_s) - 10)
     
     # Patch connections: distribute sessions across hosts
     conn = dict(out.get("connections", {}))
@@ -80,8 +81,11 @@ class KeeperBench:
     """Runs keeper-bench workload on host. For ZooKeeper backend, uses node IPs and ZK-specific connection settings."""
     
     def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False):
-        self._is_zookeeper = bool(nodes and getattr(nodes[0], "is_zookeeper", False))
-        # Always run on host; servers_arg uses node ip_address:port (host-reachable for ZK and Keeper).
+        # RaftKeeper uses same workload as default (multi-connection); only ZooKeeper uses single-conn + high timeouts
+        is_zk = bool(nodes and getattr(nodes[0], "is_zookeeper", False))
+        is_raftkeeper = bool(nodes and getattr(nodes[0], "is_raftkeeper", False))
+        self._is_zookeeper = is_zk and not is_raftkeeper
+        # Always run on host; servers_arg uses node ip_address:port (host-reachable for ZK, RaftKeeper, Keeper).
         self.servers = servers_arg(nodes, in_container=False)
         self.nodes = nodes
         self.ctx = ctx
@@ -194,8 +198,8 @@ class KeeperBench:
         Path(patched_cfg_path).write_text(yaml.safe_dump(bench_cfg, sort_keys=False), encoding="utf-8")
         self.patched_config_path = patched_cfg_path
         
-        # Run keeper-bench
-        bench_timeout = bench_cfg.get("timelimit") + 30
+        # Run keeper-bench (timeout must be at least duration_s + buffer for short scenarios)
+        bench_timeout = max(bench_cfg.get("timelimit", 0) + 30, self.duration_s + 30)
         
         stdout_path = f"/tmp/keeper_bench_stdout_{uuid.uuid4().hex[:8]}.log"
         stderr_path = f"/tmp/keeper_bench_stderr_{uuid.uuid4().hex[:8]}.log"

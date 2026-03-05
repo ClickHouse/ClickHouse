@@ -27,9 +27,15 @@ ENSURE_PATHS_ZK_HOST_TIMEOUT = 10
 
 
 def _touch_path_zookeeper_from_host(cluster, node, path, retries=ENSURE_PATHS_TOUCH_RETRIES):
-    """Create znode at path using keeper-client run from host (for ZooNodeWrapper / ZKBackedNode)."""
-    # Use zk_name when set (ZKBackedNode: connect to ZK container, not CH)
+    """Create znode at path using keeper-client run from host (for ZooNodeWrapper / ZKBackedNode / RaftKeeperNode)."""
+    # Use zk_name when set (ZKBackedNode: connect to ZK container; RaftKeeperNode: service name)
     zk_host = getattr(node, "zk_name", node.name)
+    host = str(cluster.get_instance_ip(zk_host))
+    # RaftKeeper uses per-node host ports (dynamic or 18101..18103); ZooKeeper uses cluster.zookeeper_port
+    if getattr(node, "is_raftkeeper", False):
+        port = getattr(node, "client_port", 2181)
+    else:
+        port = getattr(cluster, "zookeeper_port", None) or getattr(node, "client_port", 2181)
     for _ in range(retries):
         try:
             proc = subprocess.run(
@@ -37,9 +43,9 @@ def _touch_path_zookeeper_from_host(cluster, node, path, retries=ENSURE_PATHS_TO
                     cluster.server_bin_path,
                     "keeper-client",
                     "--host",
-                    str(cluster.get_instance_ip(zk_host)),
+                    host,
                     "--port",
-                    str(cluster.zookeeper_port),
+                    str(port),
                     "-q",
                     f"touch {shlex.quote(path)}",
                 ],
@@ -49,6 +55,8 @@ def _touch_path_zookeeper_from_host(cluster, node, path, retries=ENSURE_PATHS_TO
             )
             if proc.returncode == 0:
                 return True
+            if proc.stderr:
+                print(f"[keeper][ensure_paths] keeper-client touch {path} for {node.name} (rc={proc.returncode}): {proc.stderr.strip()}")
         except Exception as e:
             print(f"[keeper][ensure_paths] keeper-client touch {path} for {node.name}: {e}")
     return False

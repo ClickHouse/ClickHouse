@@ -1,6 +1,9 @@
 import os
 import pathlib
+import re
 import shutil
+import subprocess
+import time
 
 from keeper.framework.core.settings import (
     CLIENT_PORT,
@@ -9,6 +12,8 @@ from keeper.framework.core.settings import (
     ID_BASE,
     PROM_PORT,
     RAFT_PORT,
+    RAFTKEEPER_CLIENT_PORT,
+    RAFTKEEPER_HOST_PORTS,
     ZK_CLIENT_PORT,
     keeper_node_names,
 )
@@ -70,6 +75,128 @@ class ZKBackedNode:
     def query(self, sql, *args, **kwargs):
         """Run SQL on the ClickHouse instance (for ch_metrics, ch_async_metrics)."""
         return self._ch.query(sql, *args, **kwargs)
+
+
+class RaftKeeperNode:
+    """Node for RaftKeeper (JDRaftKeeper) backend: ZK-compatible, 4LW from host via keeper-client.
+
+    Uses published ports (18101, 18102, 18103) so bench and 4LW run from host against 127.0.0.1:port.
+    is_zookeeper=True so sampler skips lgif; is_raftkeeper=True so probes use node ip/port for 4LW.
+    """
+    is_zookeeper = True
+    is_raftkeeper = True
+
+    def __init__(self, name, rk_name, host_port, cluster):
+        self.name = name
+        self.zk_name = rk_name  # service name for container_stats (exec_in_container_zk)
+        self._cluster = cluster
+        self.ip_address = "127.0.0.1"
+        self.client_port = host_port  # host-mapped port (18101, 18102, 18103)
+        self.keeper_client_host_port = host_port
+
+    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
+        """Not used for RaftKeeper (no CH). Stub for compatibility."""
+        return None
+
+    def exec_in_container_zk(self, cmd, detach=False, nothrow=False, **kwargs):
+        """Run command in the RaftKeeper container."""
+        return self._cluster.exec_in_container(self.zk_name, cmd, detach=detach, nothrow=nothrow, **kwargs)
+
+
+def _raftkeeper_config_xml(my_id, hostnames):
+    """Generate RaftKeeper config.xml for one node (JDRaftKeeper format)."""
+    servers_xml = "\n            ".join(
+        f'<server><id>{i}</id><host>{h}</host></server>' for i, h in enumerate(hostnames, 1)
+    )
+    return f"""<?xml version="1.0"?>
+<raftkeeper>
+    <logger>
+        <path>/var/log/raftkeeper/raftkeeper.log</path>
+        <err_log_path>/var/log/raftkeeper/raftkeeper.err.log</err_log_path>
+    </logger>
+    <keeper>
+        <my_id>{my_id}</my_id>
+        <port>{RAFTKEEPER_CLIENT_PORT}</port>
+        <log_dir>/var/lib/raftkeeper/log</log_dir>
+        <snapshot_dir>/var/lib/raftkeeper/snapshot</snapshot_dir>
+        <cluster>
+            {servers_xml}
+        </cluster>
+    </keeper>
+</raftkeeper>
+"""
+
+
+class RaftKeeperCluster:
+    """Minimal cluster wrapper: runs docker compose for RaftKeeper, provides get_instance_ip and shutdown."""
+
+    def __init__(self, project_name, compose_path, base_dir, env):
+        self.project_name = project_name
+        self.compose_path = str(compose_path)
+        self.base_dir = pathlib.Path(base_dir)
+        self.instances_dir = self.base_dir  # for cleanup path in test_scenarios
+        self.env = env
+        self.server_bin_path = os.environ.get("CLICKHOUSE_BINARY", "clickhouse")
+        self._container_ids = {}
+
+    def get_instance_ip(self, name):
+        """From host we use published ports; return 127.0.0.1 so callers use node.client_port."""
+        return "127.0.0.1"
+
+    def start(self, timeout: float = 120) -> None:
+        """Run docker compose up -d and wait until all nodes respond to ruok."""
+        subprocess.run(
+            ["docker", "compose", "-p", self.project_name, "-f", self.compose_path, "up", "-d"],
+            check=True, capture_output=True, timeout=60, env={**os.environ, **self.env}
+        )
+        n = len(RAFTKEEPER_HOST_PORTS)
+        ports = [int(self.env.get(f"RAFTKEEPER_HOST_PORT_{i}", RAFTKEEPER_HOST_PORTS[i - 1])) for i in range(1, n + 1)]
+        start_t = time.time()
+        err = None
+        while time.time() - start_t < timeout:
+            try:
+                for port in ports:
+                    out = subprocess.run(
+                        [self.server_bin_path, "keeper-client", "--host", "127.0.0.1", "--port", str(port), "-q", "ruok"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if out.returncode != 0 or "imok" not in (out.stdout or "").lower():
+                        raise RuntimeError(f"127.0.0.1:{port} ruok failed: {out.stderr or out.stdout}")
+                return
+            except Exception as e:
+                err = e
+                time.sleep(0.5)
+        raise RuntimeError(f"RaftKeeper did not become ready within {timeout}s") from err
+
+    def exec_in_container(self, service_name, cmd, detach=False, nothrow=False, timeout=30):
+        """Run command in the RaftKeeper container for the given service."""
+        if service_name not in self._container_ids:
+            out = subprocess.run(
+                ["docker", "compose", "-p", self.project_name, "-f", self.compose_path, "ps", "-q", service_name],
+                capture_output=True, text=True, timeout=10, env={**os.environ, **self.env}
+            )
+            cid = (out.stdout or "").strip()
+            if not cid:
+                if nothrow:
+                    return None
+                raise RuntimeError(f"Container for {service_name} not found")
+            self._container_ids[service_name] = cid
+        args = ["docker", "exec", self._container_ids[service_name]]
+        args.extend(cmd if isinstance(cmd, (list, tuple)) else ["bash", "-lc", cmd])
+        result = subprocess.run(args, capture_output=True, text=True, timeout=(timeout or 30) + 5, env=os.environ)
+        if not nothrow and result.returncode != 0:
+            raise RuntimeError(f"exec {service_name}: {result.stderr or result.stdout}")
+        return result.stdout or result.stderr or ""
+
+    def shutdown(self):
+        """Stop and remove RaftKeeper containers."""
+        try:
+            subprocess.run(
+                ["docker", "compose", "-p", self.project_name, "-f", self.compose_path, "down", "-v", "--remove-orphans"],
+                capture_output=True, timeout=60, env={**os.environ, **self.env}
+            )
+        except Exception:
+            pass
 
 
 def _feature_flags_xml(flags):
@@ -311,12 +438,58 @@ class ClusterBuilder:
         ]
         return self.cluster, nodes
 
+    def _build_raftkeeper_cluster(self, topology, opts):
+        """Build RaftKeeper (JDRaftKeeper) cluster via docker compose; fixed host ports from RAFTKEEPER_HOST_PORTS."""
+        root = pathlib.Path(__file__).resolve().parents[5]
+        compose_path = root / "tests" / "integration" / "compose" / "docker_compose_raftkeeper.yml"
+        if not compose_path.exists():
+            raise FileNotFoundError(f"RaftKeeper compose not found: {compose_path}")
+
+        ready_timeout = env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
+        base_dir_raftkeeper = root / "_raftkeeper" / self.cname
+        if base_dir_raftkeeper.exists():
+            shutil.rmtree(base_dir_raftkeeper, ignore_errors=True)
+        base_dir_raftkeeper.mkdir(parents=True, exist_ok=True)
+
+        hostnames = [f"raftkeeper{i}" for i in range(1, topology + 1)]
+        raftkeeper_env = {"RAFTKEEPER_IMAGE": os.environ.get("RAFTKEEPER_IMAGE", "raftkeeper:test")}
+        for i in range(1, topology + 1):
+            node_dir = base_dir_raftkeeper / f"raftkeeper{i}"
+            (node_dir / "data").mkdir(parents=True, exist_ok=True)
+            (node_dir / "log").mkdir(parents=True, exist_ok=True)
+            (node_dir / "config.xml").write_text(_raftkeeper_config_xml(i, hostnames))
+            raftkeeper_env[f"RAFTKEEPER_CONFIG_DIR{i}"] = str(node_dir)
+            raftkeeper_env[f"RAFTKEEPER_DATA_DIR{i}"] = str(node_dir / "data")
+            raftkeeper_env[f"RAFTKEEPER_LOG_DIR{i}"] = str(node_dir / "log")
+
+        self.cluster = RaftKeeperCluster(
+            project_name=self.cname,
+            compose_path=compose_path,
+            base_dir=base_dir_raftkeeper,
+            env=raftkeeper_env,
+        )
+        self.base_dir = self.cluster.base_dir
+        self.conf_dir = base_dir_raftkeeper / "_config"
+        self.conf_dir.mkdir(parents=True, exist_ok=True)
+        self.cluster.start(timeout=ready_timeout)
+
+        ch_names = keeper_node_names(topology)
+        rk_names = hostnames
+        ports = list(RAFTKEEPER_HOST_PORTS[:topology])
+        nodes = [
+            RaftKeeperNode(ch_name, rk_name, ports[j], self.cluster)
+            for j, (ch_name, rk_name) in enumerate(zip(ch_names, rk_names))
+        ]
+        return self.cluster, nodes
+
     def build(self, topology, backend, opts):
         opts = opts or {}
         backend_norm = _normalize_backend(backend)
 
         if backend_norm == "zookeeper":
             return self._build_zookeeper_cluster(topology, opts)
+        if backend_norm == "raftkeeper":
+            return self._build_raftkeeper_cluster(topology, opts)
 
         self.cluster = ClickHouseCluster(self.file_anchor, name=self.cname)
         self.base_dir = pathlib.Path(self.cluster.base_dir)
@@ -378,12 +551,11 @@ class ClusterBuilder:
         
         if clean_artifacts:
             try:
-                # Remove config directory
                 if self.conf_dir and self.conf_dir.exists():
                     shutil.rmtree(self.conf_dir, ignore_errors=True)
-                # Remove instance directory
-                if self.cluster:
-                    if self.cluster.instances_dir.exists():
-                        shutil.rmtree(self.cluster.instances_dir, ignore_errors=True)
+                if self.cluster and getattr(self.cluster, "instances_dir", None):
+                    inst_dir = pathlib.Path(self.cluster.instances_dir)
+                    if inst_dir.exists():
+                        shutil.rmtree(inst_dir, ignore_errors=True)
             except Exception:
                 pass

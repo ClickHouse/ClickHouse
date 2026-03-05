@@ -2,6 +2,8 @@ import copy
 import json
 import os
 import pathlib
+import platform
+import re
 import shutil
 import sys
 import threading
@@ -788,11 +790,16 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     faults_override = request.config.getoption("--faults")
     if not faults_override:
         fs_effective = []
-    # Fault injection (kill, stop, etc.) targets ClickHouse Keeper processes and is not supported for ZooKeeper backend.
-    if backend == "zookeeper" and fs_effective:
-        pytest.skip("Fault injection not supported for ZooKeeper backend; use no-fault scenarios only")
+    # Fault injection (kill, stop, etc.) targets ClickHouse Keeper processes and is not supported for ZooKeeper/RaftKeeper backend.
+    if backend in ("zookeeper", "raftkeeper") and fs_effective:
+        pytest.skip(f"Fault injection not supported for {backend} backend; use no-fault scenarios only")
     if backend == "zookeeper" and _scenario_base_id(scenario) in ZOOKEEPER_SKIP_SCENARIO_IDS:
         pytest.skip(f"ZooKeeper backend: scenario {_scenario_base_id(scenario)} is skipped (known incompatible or failing)")
+    if backend == "raftkeeper" and _scenario_base_id(scenario) in ZOOKEEPER_SKIP_SCENARIO_IDS:
+        pytest.skip(f"RaftKeeper backend: scenario {_scenario_base_id(scenario)} is skipped (known incompatible or failing)")
+    # Pre-built RaftKeeper image is x86_64 only; skip on other arches (set KEEPER_RUN_RAFTKEEPER_ANYARCH=1 to force run)
+    if backend == "raftkeeper" and platform.machine().lower() not in ("x86_64", "amd64") and not env_bool("KEEPER_RUN_RAFTKEEPER_ANYARCH", False):
+        pytest.skip("RaftKeeper backend requires x86_64 (pre-built RAFTKEEPER_IMAGE is amd64 only)")
     seed_val = request.config.getoption("--seed")
     print(f"[keeper] seed={int(seed_val)} faults={'enabled' if fs_effective else 'disabled'} (scenario={scenario.get('id')})")
 
@@ -802,7 +809,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     _set_privileged_env(scenario)
     
     run_id = f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
-    cname = run_id.replace("/", "_").replace(" ", "_")
+    cname = re.sub(r"[^a-zA-Z0-9_-]", "_", run_id)
     os.environ["KEEPER_CLUSTER_NAME"] = cname
     cluster, nodes = cluster_factory(cname, topo, backend, opts)
 

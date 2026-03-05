@@ -12,7 +12,30 @@ from keeper.framework.core.util import _exec, sh
 
 
 def four(node, cmd):
-    """Execute 4LW command on keeper node. For ZooKeeper, runs keeper-client from host."""
+    """Execute 4LW command on keeper node. For ZooKeeper/RaftKeeper, runs keeper-client from host."""
+    if getattr(node, "is_raftkeeper", False):
+        bin_path = os.environ.get("CLICKHOUSE_BINARY", "clickhouse")
+        try:
+            proc = subprocess.run(
+                [
+                    bin_path,
+                    "keeper-client",
+                    "--host",
+                    str(node.ip_address),
+                    "--port",
+                    str(node.client_port),
+                    "-q",
+                    cmd,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return (proc.stdout or proc.stderr or "").strip()
+        except Exception as e:
+            print(f"[keeper][four] keeper-client failed for {node.name}: {e}. Skipping.")
+        return ""
+
     if getattr(node, "is_zookeeper", False):
         cluster = getattr(node, "_cluster", None)
         if cluster:
