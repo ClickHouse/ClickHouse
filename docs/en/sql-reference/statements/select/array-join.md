@@ -384,6 +384,34 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 `arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
 
+### Processing of empty arrays with NULL {#processing-of-empty-arrays-with-null}
+
+While using `LEFT ARRAY JOIN`, rows with empty arrays produce placeholder values. The setting [array_join_use_nulls](/operations/settings/settings#array_join_use_nulls) defines how ClickHouse fills these cells.
+
+If `array_join_use_nulls = 0` (default), empty arrays produce the default value of the element type (e.g. `0` for integers, `''` for strings).
+
+If `array_join_use_nulls = 1`, the type of the array-joined column is converted to [Nullable](/sql-reference/data-types/nullable), and empty arrays produce [NULL](/sql-reference/syntax#null). This is analogous to how [join_use_nulls](/operations/settings/settings#join_use_nulls) works for `JOIN`.
+
+```sql
+SELECT s, arr
+FROM arrays_test
+LEFT ARRAY JOIN arr
+SETTINGS array_join_use_nulls = 1;
+```
+
+```response
+┌─s───────────┬──arr─┐
+│ Hello       │    1 │
+│ Hello       │    2 │
+│ World       │    3 │
+│ World       │    4 │
+│ World       │    5 │
+│ Goodbye     │ ᴺᵁᴸᴸ │
+└─────────────┴──────┘
+```
+
+This setting only affects `LEFT ARRAY JOIN`. Regular `ARRAY JOIN` drops rows with empty arrays regardless of this setting.
+
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

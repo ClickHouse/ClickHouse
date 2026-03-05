@@ -1,8 +1,10 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -61,10 +63,11 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     return array_col;
 }
 
-ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
+ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_, bool array_join_use_nulls_)
     : columns(columns_.begin(), columns_.end())
     , is_left(is_left_)
     , is_unaligned(is_unaligned_)
+    , array_join_use_nulls(array_join_use_nulls_)
     , max_block_size(max_block_size_)
     , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
@@ -80,13 +83,13 @@ ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_
         function_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl());
 }
 
-void ArrayJoinAction::prepare(const Names & columns, ColumnsWithTypeAndName & sample)
+void ArrayJoinAction::prepare(const Names & columns, ColumnsWithTypeAndName & sample, bool array_join_use_nulls)
 {
     NameSet columns_set(columns.begin(), columns.end());
-    prepare(columns_set, sample);
+    prepare(columns_set, sample, array_join_use_nulls);
 }
 
-void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & sample)
+void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & sample, bool array_join_use_nulls)
 {
     for (auto & current : sample)
     {
@@ -96,7 +99,10 @@ void ArrayJoinAction::prepare(const NameSet & columns, ColumnsWithTypeAndName & 
         if (const auto & type = getArrayJoinDataType(current.type))
         {
             current.column = nullptr;
-            current.type = type->getNestedType();
+            auto nested_type = type->getNestedType();
+            if (array_join_use_nulls)
+                nested_type = makeNullableSafe(nested_type);
+            current.type = nested_type;
         }
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
@@ -157,6 +163,21 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     if (!any_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
 
+    /// Wrap array elements as Nullable so that padding/default values become NULL.
+    auto wrap_array_elements_as_nullable = [](ColumnWithTypeAndName array_col) -> ColumnWithTypeAndName
+    {
+        const auto & arr_type = assert_cast<const DataTypeArray &>(*array_col.type);
+        auto nested_type = arr_type.getNestedType();
+        if (nested_type->canBeInsideNullable() && !nested_type->isNullable())
+        {
+            const auto & col_array = assert_cast<const ColumnArray &>(*array_col.column);
+            auto nullable_data = makeNullable(col_array.getDataPtr());
+            array_col.column = ColumnArray::create(nullable_data->assumeMutable(), col_array.getOffsetsPtr());
+            array_col.type = std::make_shared<DataTypeArray>(makeNullable(nested_type));
+        }
+        return array_col;
+    };
+
     if (is_unaligned)
     {
         /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
@@ -180,6 +201,9 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             auto & src_col = block.getByName(name);
 
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
+            if (is_left && array_join->array_join_use_nulls)
+                array_col = wrap_array_elements_as_nullable(std::move(array_col));
+
             ColumnsWithTypeAndName tmp_block{array_col, column_of_max_length};
             array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows, /* dry_run = */ false);
 
@@ -197,6 +221,10 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
         {
             const auto & src_col = block.getByName(name);
             ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
+
+            if (array_join->array_join_use_nulls)
+                array_col = wrap_array_elements_as_nullable(std::move(array_col));
+
             ColumnsWithTypeAndName tmp_block{array_col};
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size(), /* dry_run = */ false);
         }
@@ -278,7 +306,10 @@ Block ArrayJoinResultIterator::next()
                     throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
 
                 current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-                current.type = type->getNestedType();
+                auto nested_type = type->getNestedType();
+                if (array_join->array_join_use_nulls)
+                    nested_type = makeNullableSafe(nested_type);
+                current.type = nested_type;
             }
             else
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", current.name);

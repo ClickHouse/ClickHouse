@@ -2240,6 +2240,12 @@ Possible values:
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](/sql-reference/data-types/nullable), and empty cells are filled with [NULL](/sql-reference/syntax).
 )", IMPORTANT) \
     \
+    DECLARE(Bool, array_join_use_nulls, false, R"(
+When enabled, `LEFT ARRAY JOIN` fills the array-joined column with NULL instead of the default value
+for rows where the array is empty. The result type becomes `Nullable`.
+Only affects `LEFT ARRAY JOIN`; regular `ARRAY JOIN` drops rows with empty arrays regardless.
+)", 0) \
+    \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
 The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
 )", 0) \
