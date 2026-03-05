@@ -4,35 +4,35 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsNumber.h>
 
-#include <Common/WKB.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/WKB.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Functions/geometryConverters.h>
 #include <Functions/geometry.h>
+#include <Functions/geometryConverters.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/io/wkt/wkt.hpp>
 
-#include <magic_enum.hpp>
 #include <sstream>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 template <typename Point>
@@ -64,12 +64,14 @@ private:
 
         /// LineString and Ring share the same underlying structure Array(Tuple(Float64, Float64)).
         /// Disambiguate by checking the custom type name.
-        if (factory.get(WKBLineStringTransform::name)->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == WKBLineStringTransform::name)
+        if (factory.get(WKBLineStringTransform::name)->equals(*type) && type->getCustomName()
+            && type->getCustomName()->getName() == WKBLineStringTransform::name)
             return WKBGeometry::LineString;
 
         /// MultiLineString and Polygon share the same underlying structure Array(Array(Tuple(Float64, Float64))).
         /// Disambiguate by checking the custom type name.
-        if (factory.get(WKBMultiLineStringTransform::name)->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
+        if (factory.get(WKBMultiLineStringTransform::name)->equals(*type) && type->getCustomName()
+            && type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
             return WKBGeometry::MultiLineString;
 
         static const DataTypePtr RING = factory.get("Ring");
@@ -85,18 +87,21 @@ private:
         if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
             return WKB_GEOMETRY;
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Unsupported geometry type for {}: {}. Expected Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString, or Geometry",
-            "groupConvexHull", type->getName());
+            "groupConvexHull",
+            type->getName());
     }
 
 public:
     explicit AggregateFunctionGroupConvexHull(const DataTypes & argument_types_, bool correct_geometry_ = true)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionGroupConvexHull<Point>>(
-            argument_types_, {}, DataTypeFactory::instance().get("Ring"))
+              argument_types_, {}, DataTypeFactory::instance().get("Ring"))
         , input_type(resolveInputType(argument_types_.at(0)))
         , correct_geometry(correct_geometry_)
-    {}
+    {
+    }
 
     String getName() const override { return "groupConvexHull"; }
 
@@ -185,50 +190,43 @@ public:
 
         switch (input_type)
         {
-            case WKBGeometry::Point:
-            {
+            case WKBGeometry::Point: {
                 auto points = ColumnToPointsConverter<Point>::convert(single_row_col);
                 if (!points.empty())
                     accumulatePoint(state, std::move(points[0]), should_correct);
                 break;
             }
-            case WKB_RING:
-            {
+            case WKB_RING: {
                 auto rings = ColumnToRingsConverter<Point>::convert(single_row_col);
                 if (!rings.empty())
                     accumulateRing(state, std::move(rings[0]), should_correct);
                 break;
             }
-            case WKBGeometry::Polygon:
-            {
+            case WKBGeometry::Polygon: {
                 auto polygons = ColumnToPolygonsConverter<Point>::convert(single_row_col);
                 if (!polygons.empty())
                     accumulatePolygon(state, std::move(polygons[0]), should_correct);
                 break;
             }
-            case WKBGeometry::MultiPolygon:
-            {
+            case WKBGeometry::MultiPolygon: {
                 auto multi_polygons = ColumnToMultiPolygonsConverter<Point>::convert(single_row_col);
                 if (!multi_polygons.empty())
                     accumulateMultiPolygon(state, std::move(multi_polygons[0]), should_correct);
                 break;
             }
-            case WKBGeometry::LineString:
-            {
+            case WKBGeometry::LineString: {
                 auto linestrings = ColumnToLineStringsConverter<Point>::convert(single_row_col);
                 if (!linestrings.empty())
                     accumulateLineString(state, std::move(linestrings[0]), should_correct);
                 break;
             }
-            case WKBGeometry::MultiLineString:
-            {
+            case WKBGeometry::MultiLineString: {
                 auto multi_linestrings = ColumnToMultiLineStringsConverter<Point>::convert(single_row_col);
                 if (!multi_linestrings.empty())
                     accumulateMultiLineString(state, std::move(multi_linestrings[0]), should_correct);
                 break;
             }
-            case WKB_GEOMETRY:
-            {
+            case WKB_GEOMETRY: {
                 const auto & variant_col = assert_cast<const ColumnVariant &>(*columns[0]);
 
                 auto local_discr = variant_col.localDiscriminatorAt(row_num);
@@ -238,8 +236,7 @@ public:
                 Field field;
                 variant_col.get(row_num, field);
 
-                auto geo_type = magic_enum::enum_cast<GeometryColumnType>(
-                    static_cast<int>(variant_col.globalDiscriminatorAt(row_num)));
+                auto geo_type = magic_enum::enum_cast<GeometryColumnType>(static_cast<int>(variant_col.globalDiscriminatorAt(row_num)));
                 if (!geo_type)
                     return;
 
@@ -287,10 +284,7 @@ public:
         else
         {
             /// Append all polygons from rhs into our accumulator.
-            state.accumulated.insert(
-                state.accumulated.end(),
-                rhs_state.accumulated.begin(),
-                rhs_state.accumulated.end());
+            state.accumulated.insert(state.accumulated.end(), rhs_state.accumulated.begin(), rhs_state.accumulated.end());
         }
     }
 
