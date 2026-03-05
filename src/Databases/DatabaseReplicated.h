@@ -7,10 +7,7 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
-#include <Parsers/SyncReplicaMode.h>
-#include <QueryPipeline/BlockIO.h>
-#include <base/defines.h>
-#include <Common/ZooKeeper/IKeeper.h>
+#include <Interpreters/DDLReplicator.h>
 
 
 namespace zkutil
@@ -21,15 +18,8 @@ class ZooKeeper;
 namespace DB
 {
 
-class DatabaseReplicatedDDLWorker;
-using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
-
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
-
-class ZooKeeperMetadataTransaction;
-using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
-
 
 struct ReplicaInfo
 {
@@ -45,11 +35,10 @@ struct ReplicasInfo
     bool replicas_belong_to_shared_catalog;
 };
 
-class DatabaseReplicated : public DatabaseAtomic
+class DatabaseReplicated : public DatabaseAtomic, public DDLReplicator
 {
 public:
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
-    static constexpr auto REPLICA_UNSYNCED_MARKER = "\tUNSYNCED";
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
     static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
@@ -85,7 +74,7 @@ public:
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
-    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode = SyncReplicaMode::DEFAULT);
+    bool waitForReplicaToProcessAllEntries(ContextPtr context_, UInt64 timeout_ms, SyncReplicaMode mode = SyncReplicaMode::DEFAULT) override; /// NOLINT
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
@@ -110,15 +99,8 @@ public:
 
     void stopReplication() override;
 
-    String getShardName() const { return shard_name; }
-    String getReplicaName() const { return replica_name; }
-    String getReplicaGroupName() const { return replica_group_name; }
-    String getFullReplicaName() const;
-    static String getFullReplicaName(const String & shard, const String & replica);
-    static std::pair<String, String> parseFullReplicaName(const String & name);
-
-    const String & getZooKeeperName() const { return zookeeper_name; }
-    const String & getZooKeeperPath() const { return zookeeper_path; }
+    String getName() const override;
+    const DDLReplicatorSettings & getSettings() const override;
 
     void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
 
@@ -141,7 +123,7 @@ public:
 
     static void dropReplica(
         DatabaseReplicated * database,
-        const String & zookeeper_name,
+        const String & zookeeper_name_,
         const String & database_zookeeper_path,
         const String & shard,
         const String & replica,
@@ -170,10 +152,6 @@ protected:
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     void initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode);
-    Coordination::Requests buildDatabaseNodesInZooKeeper();
-    bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
-    static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
-    void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     /// For Replicated database will return ATTACH for MVs with inner table
     ASTPtr tryGetCreateOrAttachTableQuery(const String & name, ContextPtr context) const;
 
@@ -185,18 +163,15 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
+    String getHostID(ContextPtr global_context, bool secure) const override;
+    LoggerPtr getLogger() const override { return log; }
+
     void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
-
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
-
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
-
-    std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr) const;
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr) override;
 
     static ASTPtr parseQueryFromMetadata(
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
@@ -206,22 +181,14 @@ private:
     ClusterPtr getClusterImpl(bool all_groups = false) const;
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
-    void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
-
     bool allowMoveTableToOtherDatabaseEngine(IDatabase & to_database) const override
     {
         return is_recovering && typeid_cast<DatabaseAtomic *>(&to_database);
     }
 
+    UInt64 getLocalDigest() const override;
     UInt64 getMetadataHash(const String & table_name) const;
-    bool checkDigestValid(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
-    void assertDigestWithProbability(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
-
-    /// Assert digest either inline or in transaction if it is internal query (using finalizer)
-    /// (since in case of internal queries it is not submitted in place)
-    void assertDigest(const ContextPtr & local_context) TSA_REQUIRES(metadata_mutex);
-    /// If @txn is set check digest in transaction, otherwise - inline.
-    void assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn) TSA_REQUIRES(metadata_mutex);
+    bool checkDigestValid(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex) override;
 
     /// For debug purposes only, don't use in production code
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
@@ -234,41 +201,9 @@ private:
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
 
-    static BlockIO getQueryStatus(
-        const String & zookeeper_name,
-        const String & node_path,
-        const String & replicas_path,
-        ContextPtr context,
-        const Strings & hosts_to_wait,
-        DDLGuardPtr && database_guard);
-
-    const String zookeeper_name;
-    const String zookeeper_path;
-    const String shard_name;
-    const String replica_name;
-    const String replica_path;
-
-    String replica_group_name;
     DatabaseReplicatedSettings db_settings;
 
-    ZooKeeperPtr getZooKeeper() const;
-
-    std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;
-    std::atomic_bool is_recovering = false;
-    std::atomic_bool ddl_worker_initialized = false;
-    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
-    mutable std::mutex ddl_worker_mutex;
-    UInt32 max_log_ptr_at_creation = 0;
-
-    /// Usually operation with metadata are single-threaded because of the way replication works,
-    /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
-    std::mutex metadata_mutex;
-
-    /// Sum of hashes of pairs (table_name, table_create_statement).
-    /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
-    /// It allows to detect if metadata is broken and recover replica.
-    UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     /// Counter for tables currently being restarted by SYSTEM RESTART REPLICA.
     /// During restart, the table is temporarily removed from the in-memory tables map,
