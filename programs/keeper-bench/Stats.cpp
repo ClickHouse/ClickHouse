@@ -65,8 +65,14 @@ void Stats::report(size_t concurrency)
     if (0 == read_requests && 0 == write_requests)
         return;
 
-    auto [read_rps, read_bps] = read_collector.getThroughput(concurrency);
-    auto [write_rps, write_bps] = write_collector.getThroughput(concurrency);
+    double read_rps = 0;
+    double read_bps = 0;
+    double write_rps = 0;
+    double write_bps = 0;
+    if (read_requests != 0)
+        std::tie(read_rps, read_bps) = read_collector.getThroughput(concurrency);
+    if (write_requests != 0)
+        std::tie(write_rps, write_bps) = write_collector.getThroughput(concurrency);
 
     std::cerr << "read requests " << read_requests << ", write requests " << write_requests << ", ";
     if (errors)
