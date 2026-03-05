@@ -25,6 +25,8 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+static constexpr size_t MIN_LIKE_PATTERN_TOKEN_LENGTH = 4;
+
 namespace Setting
 {
     extern const SettingsBool query_plan_text_index_add_hint;
@@ -573,6 +575,10 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
         ++pos;
 
     const size_t end = pos;
+
+    /// Reject short needles: it might match too many dictionary tokens.
+    if (end - start < MIN_LIKE_PATTERN_TOKEN_LENGTH)
+        return {};
 
     /// Trailing '%' must follow immediately after the content.
     if (pos >= length || data[pos] != '%')
