@@ -494,7 +494,7 @@ void TableJoin::setUsedColumns(const Names & column_names)
             setUsedColumn(*rit->second, JoinTableSide::Right);
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                "Column '{}' not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
                 fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
                 fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
     }

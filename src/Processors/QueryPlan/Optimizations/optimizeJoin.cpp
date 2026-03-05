@@ -1074,7 +1074,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                     {
                         auto mapped_it = join_expression_map.find(input_node);
                         if (mapped_it == join_expression_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                         first_dropped_node = mapped_it->second;
                         first_dropped_node_pos = input_pos;
                     }
@@ -1084,9 +1084,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
                 auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                 dag_outputs.push_back(mapped_it->second);
             }
+            auto actions_after_join = dag_outputs;
 
             /// Last step, output should correspond to the global actions DAG
             if (entry_idx == sequence.size() - 1)
@@ -1096,7 +1097,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 {
                     auto mapped_it = join_expression_map.find(output_node);
                     if (mapped_it == join_expression_map.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", output_node->result_name);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
                 }
             }
@@ -1105,6 +1106,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             {
                 if (!first_dropped_node)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned from join: {}", current_dag->dumpDAG());
+                actions_after_join.push_back(first_dropped_node);
                 dag_outputs.push_back(first_dropped_node);
                 current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
@@ -1117,7 +1119,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
-                dag_outputs,
+                actions_after_join,
                 join_settings,
                 sorting_settings);
 
