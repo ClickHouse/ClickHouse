@@ -572,7 +572,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.hasGlobsIgnorePartitionWildcard())
+    if (raw_path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -643,7 +643,7 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
-    if (path.hasGlobs())
+    if (path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,

@@ -75,7 +75,7 @@ public:
 
         bool hasPartitionWildcard() const;
         bool hasSchemaHashWildcard() const;
-        bool hasGlobsIgnorePartitionWildcard() const;
+        bool hasGlobsIgnorePlaceholders() const;
         bool hasGlobs() const;
         std::string cutGlobs(bool supports_partial_prefix) const;
     };
@@ -102,6 +102,7 @@ public:
 
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
+    virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;

@@ -31,6 +31,10 @@ create table test_04004_hash_no_schema engine = S3(s3_conn, filename='test_04004
 -- Test 5: Error when combining {_schema_hash} with hive partition strategy
 create table test_04004_hash_hive (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet, partition_strategy='hive') partition by a; -- { serverError BAD_ARGUMENTS }
 
+-- Test 6: Truncate should work with {_schema_hash}
+truncate table test_04004_hash_write;
+select count() from test_04004_hash_write;
+
 drop table test_04004_hash_write;
 drop table test_04004_hash_write2;
 drop table test_04004_hash_partitioned;

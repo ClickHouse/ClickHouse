@@ -167,6 +167,7 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
     auto path = getRawPath();
     boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+    setRawPath(path);
     setPaths({path});
 }
 
@@ -178,7 +179,7 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().hasGlobs(),
+        getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
@@ -220,7 +221,7 @@ bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
     return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePartitionWildcard() const
+bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
 {
     if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
         return hasGlobs();
