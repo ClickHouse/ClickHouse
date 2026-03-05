@@ -130,7 +130,7 @@ public:
 
 private:
     RawContainerClient client;
-    fs::path blob_prefix;
+    String blob_prefix;
 };
 
 using ContainerClient = ContainerClientWrapper;

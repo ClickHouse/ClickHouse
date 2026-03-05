@@ -220,14 +220,14 @@ void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factor
     AggregateFunctionProperties default_properties_for_respect_nulls
         = {.returns_default_when_only_null = false, .is_order_dependent = true, .is_window_function = true};
 
-    factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, default_properties_for_respect_nulls});
+    factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, {}, default_properties_for_respect_nulls});
     factory.registerAlias("anyRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("firstValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("anyValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
 
-    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, default_properties_for_respect_nulls});
+    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, {}, default_properties_for_respect_nulls});
     factory.registerAlias("anyLastRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("lastValueRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);

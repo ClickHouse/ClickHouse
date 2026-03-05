@@ -1,6 +1,6 @@
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 
 #include <base/interpolate.h>
 

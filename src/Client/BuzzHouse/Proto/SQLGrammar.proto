@@ -1719,37 +1719,38 @@ enum SQLTableFunc {
     TFmergeTreeAnalyzeIndexesUUID = 41;
     TFmergeTreeIndex = 42;
     TFmergeTreeProjection = 43;
-    TFmongodb = 44;
-    TFmysql = 45;
-    TFnull = 46;
-    TFnumbers = 47;
-    TFodbc = 48;
-    TFpaimon = 49;
-    TFpaimonAzure = 50;
-    TFpaimonAzureCluster = 51;
-    TFpaimonCluster = 52;
-    TFpaimonLocal = 53;
-    TFpaimonS3 = 54;
-    TFpaimonS3Cluster = 55;
-    TFpostgresql = 56;
-    TFprimes = 57;
-    TFprometheusQuery = 58;
-    TFprometheusQueryRange = 59;
-    TFredis = 60;
-    TFremote = 61;
-    TFremoteSecure = 62;
-    TFs3 = 63;
-    TFs3Cluster = 64;
-    TFsqlite = 65;
-    TFtimeSeriesData = 66;
-    TFtimeSeriesMetrics = 67;
-    TFtimeSeriesSelector = 68;
-    TFtimeSeriesTags = 69;
-    TFurl = 70;
-    TFurlCluster = 71;
-    TFvalues = 72;
-    TFview = 73;
-    TFytsaurus = 74;
+    TFmergeTreeTextIndex = 44;
+    TFmongodb = 45;
+    TFmysql = 46;
+    TFnull = 47;
+    TFnumbers = 48;
+    TFodbc = 49;
+    TFpaimon = 50;
+    TFpaimonAzure = 51;
+    TFpaimonAzureCluster = 52;
+    TFpaimonCluster = 53;
+    TFpaimonLocal = 54;
+    TFpaimonS3 = 55;
+    TFpaimonS3Cluster = 56;
+    TFpostgresql = 57;
+    TFprimes = 58;
+    TFprometheusQuery = 59;
+    TFprometheusQueryRange = 60;
+    TFredis = 61;
+    TFremote = 62;
+    TFremoteSecure = 63;
+    TFs3 = 64;
+    TFs3Cluster = 65;
+    TFsqlite = 66;
+    TFtimeSeriesData = 67;
+    TFtimeSeriesMetrics = 68;
+    TFtimeSeriesSelector = 69;
+    TFtimeSeriesTags = 70;
+    TFurl = 71;
+    TFurlCluster = 72;
+    TFvalues = 73;
+    TFview = 74;
+    TFytsaurus = 75;
 }
 
 message Database {
@@ -2088,7 +2089,7 @@ message ExprWhenThen {
 
 message ExprExists {
     required bool not = 1;
-    required ExplainQuery select = 3;
+    required ExplainQuery select = 2;
 }
 
 message ExprLike {
@@ -2111,8 +2112,9 @@ message CondExpr {
 }
 
 message LambdaExpr {
-    repeated Column args = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    repeated Column args = 2;
+    required Expr expr = 3;
 }
 
 message SQLFuncArg {
@@ -2184,8 +2186,8 @@ message FrameSpecSubRightExpr {
 
 message ExprFrameSpec {
     enum RangeRows {
-        RANGE = 0;
-        ROWS = 1;
+        RANGE = 1;
+        ROWS = 2;
     }
     required RangeRows range_rows = 1;
     required FrameSpecSubLeftExpr left_expr = 2;
@@ -2326,7 +2328,7 @@ message Expr {
         LiteralValue lit_val = 1;
         ComplicatedExpr comp_expr = 2;
     }
-    optional FieldAccess field = 3;
+    repeated FieldAccess fields = 3;
 }
 
 message ExprColAlias {
@@ -2786,6 +2788,11 @@ message MergeTreeProjectionFunc {
     required Projection proj = 2;
 }
 
+message MergeTreeTextIndexFunc {
+    required ExprSchemaTable est = 1;
+    required Index idx = 2;
+}
+
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
@@ -2821,19 +2828,20 @@ message TableFunction {
         ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
-        MergeTreeIndexFunc mtindex = 11;
-        TableOrFunction loop = 12;
-        GenerateRandomFunc grandom = 13;
-        ValuesStatement values = 14;
-        ExprSchemaTable dictionary = 15;
-        URLFunc url = 16;
-        RedisFunc redis = 17;
-        MongoDBFunc mongodb = 18;
-        MergeTreeProjectionFunc mtproj = 19;
-        Expr nullf = 20;
-        ArrowFlightFunc flight = 21;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
-        SQLTableFuncCall func = 23;
+        TableOrFunction loop = 11;
+        GenerateRandomFunc grandom = 12;
+        ValuesStatement values = 13;
+        ExprSchemaTable dictionary = 14;
+        URLFunc url = 15;
+        RedisFunc redis = 16;
+        MongoDBFunc mongodb = 17;
+        Expr nullf = 18;
+        ArrowFlightFunc flight = 19;
+        MergeTreeIndexFunc mtindex = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        MergeTreeTextIndexFunc mttxtidx = 22;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
+        SQLTableFuncCall func = 24;
     }
 }
 
@@ -3258,6 +3266,7 @@ enum CompressionCodec {
     /// COMP_ZSTD_QAT = 14;
     /// COMP_DEFLATE_QPL = 15;
     /// COMP_SZ3 = 16;
+    COMP_ALP = 17;
 }
 
 message IndexKeyVal {
@@ -3291,12 +3300,13 @@ message ColumnDef {
 enum IndexType {
     IDX_set = 1;
     IDX_minmax = 2;
-    IDX_bloom_filter = 3;
-    IDX_vector_similarity = 4;
-    IDX_ngrambf_v1 = 5;
-    IDX_tokenbf_v1 = 6;
-    IDX_text = 7;
-    IDX_basic = 8;
+    reserved 3;
+    IDX_bloom_filter = 4;
+    IDX_vector_similarity = 5;
+    IDX_ngrambf_v1 = 6;
+    IDX_tokenbf_v1 = 7;
+    IDX_text = 8;
+    IDX_basic = 9;
 }
 
 message IndexDef {
@@ -3678,16 +3688,12 @@ message DeduplicateExpr {
     }
 }
 
-message OptimizeDryRun {
-    repeated PartitionExpr parts = 1;
-}
-
 message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
     optional SinglePartitionExpr single_partition = 3;
     optional bool use_force = 4;
-    optional OptimizeDryRun dry_run = 5;
+    repeated PartitionExpr dry_run_parts = 5;
     optional bool final = 6;
     optional DeduplicateExpr dedup = 7;
     optional bool cleanup = 8;
@@ -4046,16 +4052,32 @@ message Detach {
     optional SettingValues setting_values = 6;
 }
 
-message SyncReplica {
-    enum SyncPolicy {
-        STRICT = 1;
-        LIGHTWEIGHT = 2;
-        PULL = 3;
-    }
-    required ExprSchemaTable est = 1;
-    required SyncPolicy policy = 2;
+message LightweightSyncReplica {
+    repeated string replicas = 1;
 }
 
+message SyncReplica {
+    required ExprSchemaTable est = 1;
+    oneof sync_oneof {
+        bool strict = 2;
+        LightweightSyncReplica lightweight = 3;
+        bool pull = 4;
+    }
+}
+
+message DropReplica {
+    required string replica = 1;
+    oneof drop_oneof {
+        ExprSchemaTable est = 2;
+        Database database = 3;
+    }
+}
+
+message DropDatabaseReplica {
+    required string replica = 1;
+    optional string shard = 2;
+    optional Database database = 3;
+}
 
 enum DeltaKernelTraceLevel {
     ERROR = 1;
@@ -4110,45 +4132,50 @@ message SystemCommand {
         ExprSchemaTable load_pk = 40;
         bool unload_pks = 41;
         ExprSchemaTable unload_pk = 42;
-        bool refresh_views = 43;
-        ExprSchemaTable refresh_view = 44;
-        bool stop_views = 45;
-        ExprSchemaTable stop_view = 46;
-        bool start_views = 47;
-        ExprSchemaTable start_view = 48;
-        ExprSchemaTable cancel_view = 49;
-        ExprSchemaTable wait_view = 50;
-        ExprSchemaTable prewarm_cache = 51;
-        ExprSchemaTable prewarm_primary_index_cache = 52;
-        bool drop_connections_cache = 53;
-        bool drop_primary_index_cache = 54;
-        bool drop_index_mark_cache = 55;
-        bool drop_index_uncompressed_cache = 56;
-        bool drop_mmap_cache = 57;
-        bool drop_page_cache = 58;
-        bool drop_schema_cache = 59;
-        bool drop_s3_client_cache = 60;
-        bool flush_async_insert_queue = 61;
-        bool sync_filesystem_cache = 62;
-        bool drop_vector_similarity_index_cache = 63;
-        ExprSchemaTable reload_dictionary = 64;
-        ExprSchemaTable flush_distributed = 65;
-        ExprSchemaTable stop_distributed_sends = 66;
-        ExprSchemaTable start_distributed_sends = 67;
-        bool drop_query_condition_cache = 68;
-        string enable_failpoint = 69;
-        string disable_failpoint = 70;
-        bool iceberg_metadata_cache = 71;
-        bool reconnect_keeper = 72;
-        bool drop_text_index_dictionary_cache = 73;
-        bool drop_text_index_header_cache = 74;
-        bool drop_text_index_postings_cache = 75;
-        bool drop_text_index_caches = 76;
-        bool reset_ddl_worker = 77;
-        bool drop_parquet_metadata_cache = 78;
-        string wait_failpoint = 79;
-        string notify_failpoint = 80;
-        DeltaKernelTraceLevel reload_delta_kernel_tracing = 81;
+        ExprSchemaTable refresh_view = 43;
+        bool stop_views = 44;
+        ExprSchemaTable stop_view = 45;
+        bool start_views = 46;
+        ExprSchemaTable start_view = 47;
+        ExprSchemaTable cancel_view = 48;
+        ExprSchemaTable wait_view = 49;
+        ExprSchemaTable prewarm_cache = 50;
+        ExprSchemaTable prewarm_primary_index_cache = 51;
+        bool drop_connections_cache = 52;
+        bool drop_primary_index_cache = 53;
+        bool drop_index_mark_cache = 54;
+        bool drop_index_uncompressed_cache = 55;
+        bool drop_mmap_cache = 56;
+        bool drop_page_cache = 57;
+        bool drop_schema_cache = 58;
+        bool drop_s3_client_cache = 59;
+        bool flush_async_insert_queue = 60;
+        bool sync_filesystem_cache = 61;
+        bool drop_vector_similarity_index_cache = 62;
+        ExprSchemaTable reload_dictionary = 63;
+        ExprSchemaTable flush_distributed = 64;
+        ExprSchemaTable stop_distributed_sends = 65;
+        ExprSchemaTable start_distributed_sends = 66;
+        bool drop_query_condition_cache = 67;
+        string enable_failpoint = 68;
+        string disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
+        bool reconnect_keeper = 71;
+        bool drop_text_index_tokens_cache = 72;
+        bool drop_text_index_header_cache = 73;
+        bool drop_text_index_postings_cache = 74;
+        bool drop_text_index_caches = 75;
+        bool reset_ddl_worker = 76;
+        bool drop_parquet_metadata_cache = 77;
+        string wait_failpoint = 78;
+        string notify_failpoint = 79;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
+        Database restore_database_replica = 81;
+        ExprSchemaTable stop_replicated_view = 82;
+        ExprSchemaTable start_replicated_view = 83;
+        uint32 unfreeze = 84;
+        DropReplica drop_replica = 85;
+        DropDatabaseReplica drop_database_replica = 86;
     }
 }
 

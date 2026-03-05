@@ -120,6 +120,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
          {"0", "1"},
          false)},
+    {"distributed_index_analysis_min_indexes_bytes_to_activate", bytesRangeSetting},
     {"distributed_index_analysis_min_indexes_size_to_activate",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
@@ -144,6 +145,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_vertical_merge_algorithm", trueOrFalseSetting},
     {"enforce_index_structure_match_on_partition_manipulation", trueOrFalseSetting},
     {"escape_index_filenames", trueOrFalseSetting},
+    {"escape_variant_subcolumn_filenames", trueOrFalseSetting},
     {"exclude_deleted_rows_for_part_size_in_merge", trueOrFalseSetting},
     {"exclude_materialize_skip_indexes_on_merge",
      CHSetting(
@@ -208,6 +210,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"max_part_loading_threads", threadSetting},
     {"max_part_removal_threads", threadSetting},
     {"max_parts_in_total", highRangeSetting},
+    {"max_projections",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 25)); },
+         {"0", "1", "5", "25"},
+         false)},
     {"max_parts_to_merge_at_once",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
@@ -215,12 +222,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"max_replicated_merges_in_queue",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); },
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
     {"max_replicated_mutations_in_queue",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); },
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
     {"max_suspicious_broken_parts", highRangeSetting},
@@ -261,6 +268,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_selector_window_size", rowsRangeSetting},
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"min_age_to_force_merge_on_partition_only", trueOrFalseSetting},
+    {"min_age_to_force_merge_seconds",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 60)); },
+         {"0", "1", "5", "10"},
+         false)},
     {"min_bytes_for_compact_part", bytesRangeSetting},
     {"min_bytes_for_full_part_storage", bytesRangeSetting},
     {"min_bytes_for_wide_part",
@@ -317,6 +329,25 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"non_replicated_deduplication_window", rowsRangeSetting},
     /// ClickHouse cloud setting
     {"notify_newest_block_number", trueOrFalseSetting},
+    {"number_of_free_entries_in_pool_to_execute_mutation",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 30)); }, {}, false)},
+    {"number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 30)); }, {}, false)},
+    {"number_of_free_entries_in_pool_to_lower_max_size_of_merge",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 20)); }, {}, false)},
+    {"number_of_mutations_to_delay",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 10, 1000)); },
+         {},
+         false)},
+    {"number_of_mutations_to_throw",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 20, 2000)); },
+         {},
+         false)},
     {"object_serialization_version",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -378,6 +409,14 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"replicated_deduplication_window",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+    {"replicated_deduplication_window_seconds",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3600)); }, {}, false)},
+    {"replicated_deduplication_window_seconds_for_async_inserts",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 86400)); },
+         {},
+         false)},
     {"replicated_max_mutations_in_one_entry",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); },
@@ -482,6 +521,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'basic'", "'allow_sparse'"},
          false)},
     {"table_disk", trueOrFalseSetting},
+    {"table_readonly", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_async_block_ids_cache", trueOrFalseSetting},
@@ -498,6 +538,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"vertical_merge_algorithm_min_rows_to_activate", rowsRangeSetting},
     {"vertical_merge_optimize_lightweight_delete", trueOrFalseSetting},
+    {"vertical_merge_optimize_ttl_delete", trueOrFalseSetting},
     {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
     {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
     {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},
@@ -691,7 +732,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     {
         codecsEscpated.insert("'" + codec + "'");
     }
-    const auto & compressSetting = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return generateNextCodecString(rg); }, codecsEscpated, false);
+    const auto & compressSetting
+        = CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + generateNextCodecString(rg) + "'"; }, codecsEscpated, false);
 
     mergeTreeTableSettings.insert({{"default_compression_codec", compressSetting}});
     mergeTreeTableSettings.insert({{"marks_compression_codec", compressSetting}});
@@ -747,6 +789,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 {"'path'", "'partition'"},
                 false)},
            {"commit_on_select", trueOrFalseSettingNoOracle},
+           {"deduplication_v2", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
            {"enable_logging_to_queue_log", trueOrFalseSetting},
            {"list_objects_batch_size",
@@ -759,8 +802,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
            {"metadata_cache_size_bytes", CHSetting(bytesRange, {}, false)},
            {"metadata_cache_size_elements", CHSetting(rowsRange, {}, false)},
-           {"min_insert_block_size_rows_for_materialized_views", CHSetting(bytesRange, {}, false)},
-           {"min_insert_block_size_bytes_for_materialized_views", CHSetting(rowsRange, {}, false)},
+           {"min_insert_block_size_rows_for_materialized_views", CHSetting(rowsRange, {}, false)},
+           {"min_insert_block_size_bytes_for_materialized_views", CHSetting(bytesRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
            {"partitioning_mode",
             CHSetting(

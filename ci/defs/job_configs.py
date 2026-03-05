@@ -528,12 +528,12 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
+            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
+            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
@@ -587,7 +587,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -596,7 +596,7 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_msan, sequential, {batch}/{total_batches}",
+                parameter=f"amd_msan, WasmEdge, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
@@ -1116,6 +1116,21 @@ class JobConfigs:
         run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
     )
+    docs_job_mintlify = Job.Config(
+        name=JobNames.DOCS_MINTLIFY,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/docs_job_mintlify.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./docs/docs",
+            ],
+            exclude_paths=[
+                "./docs/en/",
+                "./changelogs/"
+            ],
+        ),
+        run_in_docker="clickhouse/docs-builder"
+    )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
@@ -1175,6 +1190,20 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
     )
+    sqllogic_test_master_job = Job.Config(
+        name=JobNames.SQL_LOGIC_TEST,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/sqllogic_test.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqllogic_test.py",
+                "./tests/sqllogic/",
+            ],
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
+    )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
@@ -1226,8 +1255,8 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
-    llvm_coverage_merge_job = Job.Config(
-        name=JobNames.LLVM_COVERAGE_MERGE,
+    llvm_coverage_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_MEDIUM,
         run_in_docker="clickhouse/test-base",
         requires=[

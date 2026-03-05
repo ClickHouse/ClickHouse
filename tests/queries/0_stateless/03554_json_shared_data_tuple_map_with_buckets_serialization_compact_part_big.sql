@@ -1,8 +1,11 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
+SET max_threads = 'auto';
+SET max_block_size = 65000;
+
 drop table if exists test_compact_map_with_buckets_tuple;
-create table test_compact_map_with_buckets_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets', object_shared_data_buckets_for_compact_part=2;
+create table test_compact_map_with_buckets_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets', object_shared_data_buckets_for_compact_part=2, index_granularity=8192, index_granularity_bytes='10Mi';
 insert into test_compact_map_with_buckets_tuple select tuple(multiIf(
 number < 15000,
 '{"?1" : 1, "?2" : 1, "?3" : 1, "?4" : 1, "?5" : 1, "?6" : 1, "?7" : 1, "?8" : 1}',

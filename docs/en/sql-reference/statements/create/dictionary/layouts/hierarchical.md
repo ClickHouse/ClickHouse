@@ -12,7 +12,7 @@ import TabItem from '@theme/TabItem';
 
 ## Hierarchical dictionaries {#hierarchical-dictionaries}
 
-ClickHouse supports hierarchical dictionaries with a [numeric key](../keys-and-fields.md#numeric-key).
+ClickHouse supports hierarchical dictionaries with a [numeric key](../attributes.md#numeric-key).
 
 Look at the following hierarchical structure:
 
@@ -44,7 +44,7 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../../../functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](/sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
 
 For our example, the structure of the dictionary can be the following:
 

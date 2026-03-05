@@ -152,11 +152,6 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    // This function is used primarily for datalake storages to check if we need to update metadata
-    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
-    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
-    virtual bool needsUpdateForSchemaConsistency() const { return false; }
-
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
@@ -183,7 +178,9 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
+    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
+    virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
@@ -202,8 +199,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+    virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     virtual void create(
         ObjectStoragePtr object_storage,
