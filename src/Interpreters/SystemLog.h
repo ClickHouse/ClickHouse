@@ -14,6 +14,7 @@
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
+    M(UserQueryLog,          user_query_log,       "Contains information about executed queries, for example, start time, duration of processing, error messages for the current user.") \
     M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
     M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
     M(BackgroundSchedulePoolLog, background_schedule_pool_log, "Contains history of background schedule pool task executions.") \
@@ -149,7 +150,7 @@ class SystemLogs
 {
 public:
     SystemLogs() = default;
-    SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
+    SystemLogs(ContextMutablePtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
     void flush(const std::vector<std::pair<String, String>> & names);
@@ -181,7 +182,7 @@ struct SystemLogSettings
 };
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext
+class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithMutableContext
 {
 public:
     using Self = SystemLog;
@@ -195,7 +196,7 @@ public:
       *   where N - is a minimal number from 1, for that table with corresponding name doesn't exist yet;
       *   and new table get created - as if previous table was not exist.
       */
-    SystemLog(ContextPtr context_,
+    SystemLog(ContextMutablePtr context_,
               const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
@@ -211,14 +212,18 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() { return table_id; }
+    virtual bool isView() const {
+        return false;
+    }
+
+    const StorageID & getTableID() const { return table_id; }
 
 protected:
     LoggerPtr log;
 
     using Base::queue;
 
-    StoragePtr getStorage() const;
+    virtual StoragePtr getStorage() const;
 
     /// Some tables can override settings for internal queries
     virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;

@@ -33,6 +33,7 @@
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/UserQueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
@@ -107,7 +108,7 @@ constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
 std::shared_ptr<TSystemLog> createSystemLog(
-    ContextPtr context,
+    ContextMutablePtr context,
     const String & default_database_name,
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
@@ -289,7 +290,7 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 }
 
 
-SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
+SystemLogs::SystemLogs(ContextMutablePtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
@@ -520,11 +521,11 @@ void SystemLogs::handleCrash()
 
 template <typename LogElement>
 SystemLog<LogElement>::SystemLog(
-    ContextPtr context_,
+    ContextMutablePtr context_,
     const SystemLogSettings & settings_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
     : Base(settings_.queue_settings, queue_)
-    , WithContext(context_)
+    , WithMutableContext(context_)
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
@@ -694,6 +695,10 @@ void SystemLog<LogElement>::prepareTable()
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();
+    if (isView()) {
+        return;
+    }
+
     if (table)
     {
         if (old_create_query.empty())

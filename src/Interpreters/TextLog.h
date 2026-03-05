@@ -52,7 +52,7 @@ class TextLog : public SystemLog<TextLogElement>
 public:
     using Queue = SystemLogQueue<TextLogElement>;
 
-    explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
+    explicit TextLog(ContextMutablePtr context_, const SystemLogSettings & settings);
 
     static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
     {
