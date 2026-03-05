@@ -436,8 +436,7 @@ void convertToDecimalBatch(
     ReturnType * __restrict nullmap)
 {
     using FromFieldType = typename FromDataType::FieldType;
-    using ToFieldType = typename ToDataType::FieldType;
-    using ToNativeType = typename ToFieldType::NativeType;
+    using ToNativeType = typename ToDataType::FieldType::NativeType;
 
     static constexpr bool has_nullmap = !std::is_same_v<ReturnType, void>;
 
@@ -474,14 +473,25 @@ void convertToDecimalBatch(
     }
     else
     {
-        // For integer types, use the batch decimal conversion
-        // Convert scale_from=0 to scale_to=scale (always scaling up)
-        const ToNativeType multiplier = DecimalUtils::scaleMultiplier<ToNativeType>(scale);
+        /// For integer types, widen to match convertToDecimalImpl which delegates to
+        /// convertDecimalsImpl. The intermediate type must be at least as wide as both:
+        ///   1. The source intermediate: big ints → Int256, UInt64 → Int128, else → Int64
+        ///   2. The target ToNativeType (e.g. Int128 for Decimal128)
+        /// convertDecimalsImpl picks MaxNativeType = max(sizeof(From), sizeof(To)).
+        using FromIntermediate = std::conditional_t<is_big_int_v<FromFieldType>, Int256,
+                                 std::conditional_t<std::is_same_v<FromFieldType, UInt64>, Int128, Int64>>;
+        using WideType = std::conditional_t<(sizeof(FromIntermediate) > sizeof(ToNativeType)),
+                                            FromIntermediate, ToNativeType>;
+
+        const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
 
         for (size_t i = 0; i < size; ++i)
         {
-            ToNativeType converted_value;
-            bool overflow = common::mulOverflow(static_cast<ToNativeType>(from[i]), multiplier, converted_value);
+            WideType converted_value;
+            bool overflow = common::mulOverflow(static_cast<WideType>(from[i]), multiplier, converted_value);
+
+            overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
+                     || converted_value > std::numeric_limits<ToNativeType>::max();
 
             if constexpr (has_nullmap)
             {

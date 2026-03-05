@@ -1950,18 +1950,14 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt8>
-                || std::is_same_v<FromDataType, DataTypeUInt16>
-                || std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>)
+        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
