@@ -34,6 +34,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
@@ -58,6 +59,8 @@ namespace ProfileEvents
     extern const Event ObjectStorageGlobFilteredObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
     extern const Event ObjectStorageReadObjects;
+    extern const Event ObjectStorageClusterProcessedTasks;
+    extern const Event ObjectStorageClusterWaitingMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -82,6 +85,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool input_format_parquet_use_native_reader_v3;
+    extern const SettingsBool allow_experimental_iceberg_read_optimization;
 }
 
 namespace ErrorCodes
@@ -399,6 +403,16 @@ Chunk StorageObjectStorageSource::generate()
                 },
                 read_context);
 
+            /// Not empty when allow_experimental_iceberg_read_optimization=true
+            /// and some columns were removed from read list as columns with constant values.
+            /// Restore data for these columns.
+            for (const auto & constant_column : reader.constant_columns_with_values)
+            {
+                chunk.addColumn(constant_column.first,
+                    constant_column.second.name_and_type.type->createColumnConst(
+                        chunk.getNumRows(), constant_column.second.value));
+            }
+
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
@@ -545,11 +559,34 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    bool not_a_path = false;
+
     do
     {
+        not_a_path = false;
         object_info = file_iterator->next(processor);
 
-        if (!object_info || object_info->getPath().empty())
+        if (!object_info)
+            return {};
+
+        if (object_info->relative_path_with_metadata.getCommand().isValid())
+        {
+            auto retry_after_us = object_info->relative_path_with_metadata.getCommand().getRetryAfterUs();
+            if (retry_after_us.has_value())
+            {
+                not_a_path = true;
+                /// TODO: Make asyncronous waiting without sleep in thread
+                /// Now this sleep is on executor node in worker thread
+                /// Does not block query initiator
+                auto wait_time = std::min(Poco::Timestamp::TimeDiff(100000ul), retry_after_us.value());
+                ProfileEvents::increment(ProfileEvents::ObjectStorageClusterWaitingMicroseconds, wait_time);
+                sleepForMicroseconds(wait_time);
+                continue;
+            }
+            object_info->relative_path_with_metadata.setFileMetaInfo(object_info->relative_path_with_metadata.getCommand().getFileMetaInfo());
+        }
+
+        if (object_info->getPath().empty())
             return {};
 
         if (!object_info->getObjectMetadata())
@@ -568,16 +605,28 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             else
                 object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
-    } while (query_settings.skip_empty_files
-             && object_info->getObjectMetadata()->size_bytes == 0
-             && object_info->getObjectMetadata()->is_size_known);
+    }
+    while (not_a_path
+           || (query_settings.skip_empty_files
+               && object_info->getObjectMetadata()->size_bytes == 0
+               && object_info->getObjectMetadata()->is_size_known));
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageClusterProcessedTasks);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
+    std::optional<Int64> rows_count_from_metadata;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
+        if (rows_count_from_metadata.has_value())
+        {
+            /// Must be non negative here
+            size_t value = rows_count_from_metadata.value();
+            return value;
+        }
+
         if (!schema_cache)
             return std::nullopt;
 
@@ -594,6 +643,128 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         };
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
+
+    /// List of columns with constant value in current file, and values
+    std::map<size_t, ConstColumnWithValue> constant_columns_with_values;
+    std::unordered_set<String> constant_columns;
+
+    NamesAndTypesList requested_columns_copy = read_from_format_info.requested_columns;
+
+    std::unordered_map<String, std::pair<size_t, NameAndTypePair>> requested_columns_list;
+    {
+        size_t column_index = 0;
+        for (const auto & column : requested_columns_copy)
+            requested_columns_list[column.getNameInStorage()] = std::make_pair(column_index++, column);
+    }
+
+    if (context_->getSettingsRef()[Setting::allow_experimental_iceberg_read_optimization])
+    {
+        auto file_meta_data = object_info->relative_path_with_metadata.getFileMetaInfo();
+        if (file_meta_data.has_value())
+        {
+            bool is_all_rows_count_equals = true;
+            for (const auto & column : file_meta_data.value()->columns_info)
+            {
+                if (is_all_rows_count_equals && column.second.rows_count.has_value())
+                {
+                    if (rows_count_from_metadata.has_value())
+                    {
+                        if (column.second.rows_count.value() != rows_count_from_metadata.value())
+                        {
+                            LOG_WARNING(log, "Inconsistent rows count for file {} in metadats, ignored", object_info->getPath());
+                            is_all_rows_count_equals = false;
+                            rows_count_from_metadata = std::nullopt;
+                        }
+                    }
+                    else if (column.second.rows_count.value() < 0)
+                    {
+                        LOG_WARNING(log, "Negative rows count for file {} in metadats, ignored", object_info->getPath());
+                        is_all_rows_count_equals = false;
+                        rows_count_from_metadata = std::nullopt;
+                    }
+                    else
+                        rows_count_from_metadata = column.second.rows_count;
+                }
+
+                if (column.second.hyperrectangle.has_value())
+                {
+                    auto column_name = column.first;
+
+                    auto i_column = requested_columns_list.find(column_name);
+                    if (i_column == requested_columns_list.end())
+                        continue;
+
+                    if (column.second.hyperrectangle.value().isPoint() &&
+                        (!column.second.nulls_count.has_value() || column.second.nulls_count.value() <= 0))
+                    {
+                        /// isPoint() method checks before that left==right
+                        constant_columns_with_values[i_column->second.first] =
+                            ConstColumnWithValue{
+                                i_column->second.second,
+                                column.second.hyperrectangle.value().left
+                            };
+                        constant_columns.insert(column_name);
+
+                        LOG_DEBUG(log, "In file {} constant column '{}' type '{}' with value '{}'",
+                            object_info->getPath(),
+                            column_name,
+                            i_column->second.second.type,
+                            column.second.hyperrectangle.value().left.dump());
+                    }
+                    else if (column.second.rows_count.has_value() && column.second.nulls_count.has_value()
+                            && column.second.rows_count.value() == column.second.nulls_count.value()
+                            && i_column->second.second.type->isNullable())
+                    {
+                        constant_columns_with_values[i_column->second.first] =
+                            ConstColumnWithValue{
+                                i_column->second.second,
+                                Field()
+                            };
+                        constant_columns.insert(column_name);
+
+                        LOG_DEBUG(log, "In file {} constant column '{}' type '{}' with value 'NULL'",
+                            object_info->getPath(),
+                            column_name,
+                            i_column->second.second.type);
+                    }
+                }
+            }
+            for (const auto & column : requested_columns_list)
+            {
+                const auto & column_name = column.first;
+
+                if (file_meta_data.value()->columns_info.contains(column_name))
+                    continue;
+
+                if (!column.second.second.type->isNullable())
+                    continue;
+
+                /// Column is nullable and absent in file
+                constant_columns_with_values[column.second.first] =
+                    ConstColumnWithValue{
+                        column.second.second,
+                        Field()
+                    };
+                constant_columns.insert(column_name);
+
+                LOG_DEBUG(log, "In file {} constant column '{}' type '{}' with value 'NULL'",
+                    object_info->getPath(),
+                    column_name,
+                    column.second.second.type);
+            }
+        }
+
+        if (!constant_columns.empty())
+        {
+            size_t original_columns = requested_columns_copy.size();
+            requested_columns_copy = requested_columns_copy.eraseNames(constant_columns);
+            if (requested_columns_copy.size() + constant_columns.size() != original_columns)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't remove constant columns for file {} correct, fallback to read. Founded constant columns: [{}]",
+                    object_info->getPath(), constant_columns);
+            if (requested_columns_copy.empty())
+                need_only_count = true;
+        }
+    }
 
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
@@ -612,6 +783,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
                               std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
+        if (!constant_columns.empty())
+            configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
     }
     else
     {
@@ -766,7 +939,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// from chunk read by IInputFormat.
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns_copy);
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
@@ -775,7 +948,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
     return ReaderHolder(
-        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
+        object_info,
+        std::move(read_buf),
+        std::move(source),
+        std::move(pipeline),
+        std::move(current_reader),
+        std::move(constant_columns_with_values));
 }
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
@@ -1242,12 +1420,14 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
     std::unique_ptr<ReadBuffer> read_buf_,
     std::shared_ptr<ISource> source_,
     std::unique_ptr<QueryPipeline> pipeline_,
-    std::unique_ptr<PullingPipelineExecutor> reader_)
+    std::unique_ptr<PullingPipelineExecutor> reader_,
+    std::map<size_t, ConstColumnWithValue> && constant_columns_with_values_)
     : object_info(std::move(object_info_))
     , read_buf(std::move(read_buf_))
     , source(std::move(source_))
     , pipeline(std::move(pipeline_))
     , reader(std::move(reader_))
+    , constant_columns_with_values(std::move(constant_columns_with_values_))
 {
 }
 
@@ -1261,6 +1441,7 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
     source = std::move(other.source);
     read_buf = std::move(other.read_buf);
     object_info = std::move(other.object_info);
+    constant_columns_with_values = std::move(other.constant_columns_with_values);
     return *this;
 }
 
@@ -1275,6 +1456,12 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     , is_archive(is_archive_)
     , object_storage(object_storage_)
 {
+    if (!getContext()->isSwarmModeEnabled())
+    {
+        LOG_DEBUG(getLogger("StorageObjectStorageSource"), "STOP SWARM MODE called, stop getting new tasks");
+        return;
+    }
+
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
         CurrentMetrics::StorageObjectStorageThreadsActive,
@@ -1310,6 +1497,12 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
+        if (!getContext()->isSwarmModeEnabled())
+        {
+            LOG_DEBUG(getLogger("StorageObjectStorageSource"), "STOP SWARM MODE called, stop getting new tasks");
+            return nullptr;
+        }
+
         auto task = callback();
         if (!task || task->isEmpty())
             return nullptr;

@@ -785,6 +785,20 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_MOVES:
             startStopAction(ActionLocks::PartsMove, true);
             break;
+        case Type::STOP_SWARM_MODE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SWARM);
+            if (getContext()->stopSwarmMode())
+                getContext()->unregisterInAutodiscoveryClusters();
+            break;
+        }
+        case Type::START_SWARM_MODE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SWARM);
+            if (getContext()->startSwarmMode())
+                getContext()->registerInAutodiscoveryClusters();
+            break;
+        }
         case Type::STOP_FETCHES:
             startStopAction(ActionLocks::PartsFetch, false);
             break;
@@ -2253,6 +2267,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_SWARM_MODE:
+        case Type::START_SWARM_MODE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SWARM);
             break;
         }
         case Type::STOP_PULLING_REPLICATION_LOG:
