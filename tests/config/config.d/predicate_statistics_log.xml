@@ -5,5 +5,5 @@
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </predicate_statistics_log>
-    <predicate_statistics_sample_rate>0</predicate_statistics_sample_rate>     
+    <predicate_statistics_sample_rate>0</predicate_statistics_sample_rate>
 </clickhouse>
