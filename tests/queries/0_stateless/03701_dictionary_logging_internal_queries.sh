@@ -129,16 +129,13 @@ SOURCE(CLICKHOUSE(
 LIFETIME(MIN 1 MAX 1)
 LAYOUT(FLAT())"
 
-# Force initial load
+# Force initial load, then wait for auto-reloads.
 $CLICKHOUSE_CLIENT --query "SELECT dictHas('${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict', toUInt64(0)) FORMAT Null"
-# Wait for auto-reloads
-sleep 4
+sleep 8
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, trace_log"
 
-# Verify that Real profiler samples in trace_log have query_id matching the
-# internal dictionary reload queries.
 $CLICKHOUSE_CLIENT --query "
 SELECT count() > 0
 FROM system.trace_log
