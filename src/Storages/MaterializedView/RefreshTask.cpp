@@ -168,6 +168,7 @@ OwnedRefreshTask RefreshTask::create(
     task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
         w->root_watch_active.store(false);
+        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
