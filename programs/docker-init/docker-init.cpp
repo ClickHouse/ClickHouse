@@ -261,7 +261,8 @@ void recursiveChown(const std::string & path_str, uid_t uid, gid_t gid)
 }
 
 /// Create a directory (and all parents) and optionally chown it.
-/// When do_chown is false and running as non-root, delegates mkdir to `clickhouse su`.
+/// When do_chown is false, we are already running as the target user and create the
+/// directory directly with fs::create_directories (no external binary required).
 bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool do_chown)
 {
     if (dir.empty())
@@ -285,15 +286,14 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
         return true;
     }
 
-    /// Non-root: use `clickhouse su UID:GID mkdir -p DIR` so that NFS root-squash scenarios work.
-    int rc = runCommand({
-        g_clickhouse_binary, "su",
-        std::to_string(uid) + ":" + std::to_string(gid),
-        "mkdir", "-p", dir,
-    });
-    if (rc != 0)
+    /// Non-root: we are already running as UID:GID, so create the directory directly.
+    /// Do NOT delegate to `clickhouse su mkdir` here: the distroless image has no mkdir
+    /// binary, and since we're already the target user there is no need to switch identity.
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    if (ec)
     {
-        std::cerr << "docker-init: couldn't create directory: " << dir << "\n";
+        std::cerr << "docker-init: couldn't create directory " << dir << ": " << ec.message() << "\n";
         return false;
     }
     return true;
