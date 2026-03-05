@@ -131,6 +131,7 @@ struct WasmTimeRuntime::Impl
     {
         wasmtime::Config config;
         config.consume_fuel(true);
+        config.epoch_interruption(true);
         config.signals_based_traps(false);
         return config;
     }
@@ -153,17 +154,30 @@ void WasmTimeRuntime::setLogLevel(LogsLevel)
 class WasmTimeCompartment : public WasmCompartment
 {
 public:
-    explicit WasmTimeCompartment(wasmtime::Store && wasm_store, wasmtime::Instance && instance_, WasmModule::Config cfg_)
-        : store(std::move(wasm_store))
+    explicit WasmTimeCompartment(const wasmtime::Engine & engine_, wasmtime::Store && wasm_store, wasmtime::Instance && instance_, WasmModule::Config cfg_)
+        : engine(engine_)
+        , store(std::move(wasm_store))
         , instance(std::move(instance_))
         , cfg(std::move(cfg_))
     {
         store.context().set_data(this);
+        store.context().set_epoch_deadline(1);
+        store.epoch_deadline_callback(
+            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) -> wasmtime::Result<wasmtime::DeadlineKind>
+            {
+                epoch_deadline_delta += 1;
+                const auto & ctx_data = ctx.get_data();
+                const auto * compartment_ptr = ctx_data.has_value() ? std::any_cast<WasmTimeCompartment *>(ctx_data) : nullptr;
+                if (compartment_ptr && compartment_ptr->stop_requested.load())
+                    return wasmtime::Error("WASM execution was stopped by request");
+                return wasmtime::DeadlineKind::Continue;
+            }
+        );
     }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
 
-    uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override
+    std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override
     {
         auto memory_span = getMemory().data(store);
         if (ptr + size >= memory_span.size())
@@ -173,14 +187,13 @@ public:
                 "Cannot get memory at offset {} and size {} from wasm compartment memory with size {}",
                 ptr, size, memory_span.size());
         }
-        return &memory_span[ptr];
+        return memory_span.subspan(ptr, size);
     }
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override
     {
-        if (cfg.fuel_limit)
         {
-            auto result = store.context().set_fuel(cfg.fuel_limit);
+            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
             if (!result)
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
         }
@@ -213,6 +226,14 @@ public:
         {
             last_exception.reset();
 
+            stop_requested = false;
+            StopCallback stop_callback(stop_token, [this, function_name]
+            {
+                LOG_DEBUG(log, "Stop requested for function '{}'", function_name);
+                stop_requested = true;
+                engine.increment_epoch();
+            });
+
             ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmGuestExecuteMicroseconds);
             auto call_results = wasm_func.call(store, params_values);
 
@@ -241,8 +262,11 @@ public:
     }
 
 private:
+    const wasmtime::Engine & engine;
     wasmtime::Store store;
     wasmtime::Instance instance;
+
+    std::atomic_bool stop_requested{false};
 
     std::optional<Exception> last_exception;
 
@@ -371,11 +395,11 @@ public:
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
             store.limiter(cfg.memory_limit, -1, -1, -1, -1);
-        if (cfg.fuel_limit)
+
         {
-            auto result = store.context().set_fuel(cfg.fuel_limit);
+            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
             if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
+                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
 
         wasmtime::Linker linker(engine);
@@ -410,7 +434,7 @@ public:
         if (!instantination_result)
             throw Exception(ErrorCodes::WASM_ERROR, "Failed to instantiate wasm module: {}", instantination_result.err().message());
 
-        return std::make_unique<WasmTimeCompartment>(std::move(store), std::move(instantination_result.ok()), std::move(cfg));
+        return std::make_unique<WasmTimeCompartment>(engine, std::move(store), std::move(instantination_result.ok()), std::move(cfg));
     }
 
 
