@@ -300,4 +300,61 @@ size_t RedisRemoteCacheBackend::count()
     return static_cast<size_t>(conn->client->execute<Poco::Int64>(cmd));
 }
 
+// ---------------------------------------------------------------------------
+// tryAcquireLock
+// ---------------------------------------------------------------------------
+
+bool RedisRemoteCacheBackend::tryAcquireLock(const std::string & redis_key, std::chrono::milliseconds ttl)
+try
+{
+    auto conn = borrowConnection();
+
+    /// SET key value NX PX ttl_ms — atomic, returns "OK" on success or null on failure.
+    Poco::Redis::Command cmd("SET");
+    cmd << redis_key << "IN_PROGRESS" << "NX" << "PX" << std::to_string(ttl.count());
+
+    auto reply = conn->client->execute<Poco::Redis::BulkString>(cmd);
+    return !reply.isNull();
+}
+catch (...)
+{
+    LOG_WARNING(logger, "Failed to acquire lock for key {}: {}", redis_key, getCurrentExceptionMessage(false));
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// releaseLock
+// ---------------------------------------------------------------------------
+
+void RedisRemoteCacheBackend::releaseLock(const std::string & redis_key)
+try
+{
+    auto conn = borrowConnection();
+    Poco::Redis::Command cmd("DEL");
+    cmd << redis_key;
+    conn->client->execute<Poco::Int64>(cmd);
+}
+catch (...)
+{
+    LOG_WARNING(logger, "Failed to release lock for key {}: {}", redis_key, getCurrentExceptionMessage(false));
+}
+
+// ---------------------------------------------------------------------------
+// lockExists
+// ---------------------------------------------------------------------------
+
+bool RedisRemoteCacheBackend::lockExists(const std::string & redis_key)
+try
+{
+    auto conn = borrowConnection();
+    Poco::Redis::Command cmd("EXISTS");
+    cmd << redis_key;
+    return conn->client->execute<Poco::Int64>(cmd) > 0;
+}
+catch (...)
+{
+    LOG_WARNING(logger, "Failed to check lock existence for key {}: {}", redis_key, getCurrentExceptionMessage(false));
+    return false;
+}
+
 }

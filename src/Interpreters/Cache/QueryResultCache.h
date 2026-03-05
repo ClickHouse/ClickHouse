@@ -200,6 +200,11 @@ struct IQueryResultCacheStorage
     /// Return true if the cache already contains a non-stale entry for the given key.
     /// Used by the Writer constructor and finalizeWrite to avoid redundant writes.
     virtual bool hasNonStaleEntry(const QueryResultCache::Key & key) = 0;
+
+    /// Called when finalizeWrite decides not to write (query too fast, result too large, etc.).
+    /// Remote cache uses this to release the `IN_PROGRESS` lock acquired in `hasNonStaleEntry`.
+    /// Default: no-op (local cache has no lock to release).
+    virtual void cancelWrite(const QueryResultCache::Key & /*key*/) {}
 };
 
 /// Abstract interface for all query result cache implementations.

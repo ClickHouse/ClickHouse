@@ -394,3 +394,77 @@ def test_min_query_runs(started_cluster):
         """
     )
     assert result.strip() == "1", f"Expected cache hit on 3rd run, got: {result}"
+
+
+def test_lock_key_cleaned_up_after_write(started_cluster):
+    """After a successful write the `:lock` key must not remain in Redis."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    node1.query(
+        "SELECT 4242 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+
+    # All keys containing ":lock" should be gone.
+    lock_keys = [k for k in r.keys("*") if b":lock" in k]
+    assert lock_keys == [], f"Stale lock keys found after write: {lock_keys}"
+
+
+def test_lock_ttl_expiry_allows_progress(started_cluster):
+    """A stale `:lock` key (TTL expired) must not block subsequent queries."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # Manually plant a lock key with a very short TTL (500 ms).
+    # We use an arbitrary key that won't match any real query, so ClickHouse
+    # will never find a result and will degrade to executing the query itself.
+    r.set("stale_lock_test:lock", "IN_PROGRESS", px=500)
+
+    # Wait for the TTL to expire.
+    time.sleep(1)
+
+    # The lock should be gone now — query must proceed normally without hanging.
+    result = node2.query(
+        "SELECT 1111 SETTINGS use_query_cache = true",
+        timeout=10,
+    )
+    assert result.strip() == "1111", f"Query should return normally: {result}"
+
+
+def test_no_stampede_concurrent(started_cluster):
+    """Two concurrent nodes must produce only one cache entry (no stampede)."""
+    import threading
+
+    r = get_redis_client()
+    flush_redis(r)
+
+    # Use a sleep() inside the query to widen the race window so node2 starts
+    # while node1 is still computing and holds the lock.
+    query = "SELECT sleep(0.5), 9876 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+
+    results = {}
+
+    def run(node, name):
+        results[name] = node.query(query, timeout=30)
+
+    t1 = threading.Thread(target=run, args=(node1, "node1"))
+    t2 = threading.Thread(target=run, args=(node2, "node2"))
+
+    t1.start()
+    # Give node1 a 50 ms head start so it acquires the lock first.
+    time.sleep(0.05)
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    # Both threads must have returned a result.
+    assert "node1" in results and "node2" in results, "One of the threads did not finish"
+
+    # Exactly one cache entry should exist (the other node hit the cache or waited).
+    # Allow up to 2 keys in case the lock key lingers briefly, but at most 1 data key.
+    all_keys = r.keys("*")
+    data_keys = [k for k in all_keys if b":lock" not in k]
+    assert len(data_keys) == 1, (
+        f"Expected exactly 1 data cache entry, found {len(data_keys)}: {data_keys}"
+    )

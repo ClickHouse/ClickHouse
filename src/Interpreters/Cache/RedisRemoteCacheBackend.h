@@ -42,6 +42,16 @@ public:
 
     size_t count() override;
 
+    /// Atomic lock acquisition: `SET redis_key "IN_PROGRESS" NX PX ttl_ms`.
+    /// Returns true if the lock was acquired. Never throws (degrades gracefully).
+    bool tryAcquireLock(const std::string & redis_key, std::chrono::milliseconds ttl);
+
+    /// Release the lock: `DEL redis_key`. Best-effort, never throws.
+    void releaseLock(const std::string & redis_key);
+
+    /// Returns true if the lock key exists. Never throws (returns false on error).
+    bool lockExists(const std::string & redis_key);
+
 private:
     /// Borrow a Redis connection from the pool, creating it lazily if needed.
     RedisConnectionPtr borrowConnection();

@@ -41,11 +41,19 @@ static void registerRemoteQueryResultCache(QueryResultCacheFactory & factory)
         /// Limit how many entries dump() will fetch from Redis for system.query_cache.
         size_t max_entries_for_dump = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
 
+        /// Anti-stampede lock configuration.
+        size_t lock_ttl_ms = config.getUInt64("query_cache.redis.lock_ttl_ms", 30'000);
+        size_t lock_poll_interval_ms = config.getUInt64("query_cache.redis.lock_poll_interval_ms", 200);
+        size_t lock_max_wait_ms = config.getUInt64("query_cache.redis.lock_max_wait_ms", lock_ttl_ms);
+
         return std::make_shared<RemoteQueryResultCache>(
             std::move(redis_cfg),
             max_entry_size_in_bytes,
             max_entry_size_in_rows,
-            max_entries_for_dump);
+            max_entries_for_dump,
+            std::chrono::milliseconds(lock_ttl_ms),
+            std::chrono::milliseconds(lock_poll_interval_ms),
+            std::chrono::milliseconds(lock_max_wait_ms));
     });
 }
 

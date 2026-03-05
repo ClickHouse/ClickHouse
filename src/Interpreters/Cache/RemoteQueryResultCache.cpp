@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
+#include <thread>
+
 namespace DB
 {
 
@@ -10,11 +12,17 @@ RemoteQueryResultCache::RemoteQueryResultCache(
     RedisConfiguration redis_config,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
-    size_t max_entries_for_dump_)
+    size_t max_entries_for_dump_,
+    std::chrono::milliseconds lock_ttl_,
+    std::chrono::milliseconds lock_poll_interval_,
+    std::chrono::milliseconds lock_max_wait_)
     : backend(std::move(redis_config))
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , max_entries_for_dump(max_entries_for_dump_)
+    , lock_ttl(lock_ttl_)
+    , lock_poll_interval(lock_poll_interval_)
+    , lock_max_wait(lock_max_wait_)
 {
 }
 
@@ -74,6 +82,77 @@ QueryResultCacheWriter RemoteQueryResultCache::createWriter(
 }
 
 // ---------------------------------------------------------------------------
+// IQueryResultCacheStorage: hasNonStaleEntry
+// ---------------------------------------------------------------------------
+
+/// Build the lock key by appending `:lock` to the Redis data key.
+std::string RemoteQueryResultCache::lockKey(const std::string & redis_key)
+{
+    return redis_key + ":lock";
+}
+
+/// Poll Redis until a valid entry appears, or the lock disappears (holder crashed), or timeout.
+bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & redis_key)
+{
+    const auto deadline = std::chrono::steady_clock::now() + lock_max_wait;
+    const std::string lk = lockKey(redis_key);
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(lock_poll_interval);
+
+        auto result = backend.getWithKey(key);
+        if (result.has_value() && !QueryResultCache::IsStale()(result->first))
+        {
+            LOG_TRACE(logger, "Polled and found a valid cache entry for query {} (remote cache)", doubleQuoteString(key.query_string));
+            return true;
+        }
+
+        /// If the lock is gone (holder crashed or TTL expired), stop waiting and let this node
+        /// execute the query itself.
+        if (!backend.lockExists(lk))
+        {
+            LOG_TRACE(logger, "Lock for query {} disappeared before result was ready, degrading to execution", doubleQuoteString(key.query_string));
+            return false;
+        }
+    }
+
+    LOG_TRACE(logger, "Timed out waiting for cache result for query {}, degrading to execution", doubleQuoteString(key.query_string));
+    return false;
+}
+
+bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key)
+{
+    const std::string redis_key = key.encodeToRedisKey();
+
+    /// Step 1: check if a real result already exists.
+    auto result = backend.getWithKey(key);
+    if (result.has_value() && !QueryResultCache::IsStale()(result->first))
+        return true;
+
+    /// Step 2: check if this node already holds the lock for this key (re-entrant call from
+    /// finalizeWrite's second hasNonStaleEntry check). If so, let the writer proceed to write.
+    {
+        std::lock_guard lock(mutex);
+        if (held_locks.count(redis_key))
+            return false;
+    }
+
+    /// Step 3: try to acquire the lock atomically (SET NX PX).
+    if (backend.tryAcquireLock(lockKey(redis_key), lock_ttl))
+    {
+        std::lock_guard lock(mutex);
+        held_locks.insert(redis_key);
+        LOG_TRACE(logger, "Acquired IN_PROGRESS lock for query {} (remote cache)", doubleQuoteString(key.query_string));
+        return false; /// This node becomes the writer.
+    }
+
+    /// Step 4: another node holds the lock — poll for the result.
+    LOG_TRACE(logger, "Another node is computing the result for query {}, waiting... (remote cache)", doubleQuoteString(key.query_string));
+    return pollForResult(key, redis_key);
+}
+
+// ---------------------------------------------------------------------------
 // IQueryResultCacheStorage: setEntry
 // ---------------------------------------------------------------------------
 
@@ -93,18 +172,26 @@ void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> en
     const auto ttl = std::chrono::duration_cast<std::chrono::milliseconds>(key.expires_at - now);
 
     backend.set(key, *entry, ttl);
+
+    /// Release the IN_PROGRESS lock now that the real result is in Redis.
+    const std::string redis_key = key.encodeToRedisKey();
+    backend.releaseLock(lockKey(redis_key));
+    {
+        std::lock_guard lock(mutex);
+        held_locks.erase(redis_key);
+    }
 }
 
 // ---------------------------------------------------------------------------
-// IQueryResultCacheStorage: hasNonStaleEntry
+// IQueryResultCacheStorage: cancelWrite
 // ---------------------------------------------------------------------------
 
-bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key)
+void RemoteQueryResultCache::cancelWrite(const Key & key)
 {
-    /// Redis TTL ensures keys do not outlive their expiry, but we also check our own
-    /// IsStale predicate for consistency.
-    auto result = backend.getWithKey(key);
-    return result.has_value() && !QueryResultCache::IsStale()(result->first);
+    const std::string redis_key = key.encodeToRedisKey();
+    backend.releaseLock(lockKey(redis_key));
+    std::lock_guard lock(mutex);
+    held_locks.erase(redis_key);
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +207,7 @@ void RemoteQueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+    held_locks.clear();
 }
 
 // ---------------------------------------------------------------------------

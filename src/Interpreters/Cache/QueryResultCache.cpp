@@ -705,6 +705,7 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         LOG_TRACE(logger, "Skipped insert because the query is not expensive enough, query runtime: {} msec (minimum query runtime: {} msec), query: {}",
                 query_runtime.count(), min_query_runtime.count(), doubleQuoteString(key.query_string));
+        storage.cancelWrite(key);
         return;
     }
 
@@ -712,6 +713,7 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
+        storage.cancelWrite(key);
         return;
     }
 
@@ -796,6 +798,7 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         LOG_TRACE(logger, "Skipped insert because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
                 formatReadableSizeWithBinarySuffix(new_entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), new_entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
+        storage.cancelWrite(key);
         return;
     }
 
