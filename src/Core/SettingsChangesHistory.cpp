@@ -41,11 +41,21 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.3",
         {
+            {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
+            {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"query_plan_optimize_join_lazy_indexing", true, true, "Added new setting to use query plan for lazy join indexing optimisation"},
             {"query_plan_max_limit_for_join_lazy_indexing", 10000, 10000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimisation. If zero, there is no limit"},
+            {"webassembly_udf_max_fuel", 100'000, 100'000, "New setting to limit CPU instructions (fuel) per WebAssembly UDF instance execution."},
+            {"webassembly_udf_max_memory", 128_MiB, 128_MiB, "New setting to limit memory per WebAssembly UDF instance."},
+            {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
+            {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
+            {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -55,7 +65,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
             {"optimize_dry_run_check_part", true, true, "New setting"},
@@ -1072,7 +1081,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-
+            {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1082,7 +1093,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

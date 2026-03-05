@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -2250,7 +2251,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
-        if (!isFunctionReallyMonotonic(*func, *key_column_type))
+        if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
             return false;
 
         key_column_type = func->getResultType();
@@ -2601,6 +2602,212 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 }
 
 
+/** This helper rewrites comparisons of the form "integer_key <op> Float64_literal" into semantically equivalent
+  * integer-key predicates so that pruning can stay exact.
+  *
+  * Typical rewrites are:
+  *   integral_col < 100000.5   => integral_col <= 100000
+  *   integral_col > 100000.5   => integral_col >= 100001
+  *   integral_col = 100000.5   => ALWAYS_FALSE
+  *   integral_col != 100000.5  => ALWAYS_TRUE
+  *
+  * Additionally, if the literal is outside the representable range of the integer key, we can fold the predicate to a constant:
+  *   UInt8_col < -0.5          => ALWAYS_FALSE
+  *   UInt8_col >= -0.5         => ALWAYS_TRUE
+  *   UInt8_col < 256.0         => ALWAYS_TRUE
+  *   UInt8_col >= 256.0        => ALWAYS_FALSE
+  *
+  * Returns true when we rewrote const_value/const_type/func_name, or set out.function to ALWAYS_TRUE/FALSE.
+  * Returns false when this comparison is not handled by this helper
+  * (for example, non-integer key, non-Float64 literal, NULL/NaN literal, or unsupported operator).
+  */
+static bool tryRewriteFloatLiteralForIntKeyComparison(
+    const DataTypePtr & key_type, Field & const_value, DataTypePtr & const_type, std::string & func_name, KeyCondition::RPNElement & out)
+{
+    if (const_value.isNull() || const_value.isNaN())
+        return false;
+
+    /// `isNativeInteger` types: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64.
+    if (!isNativeInteger(key_type) || const_value.getType() != Field::Types::Float64)
+        return false;
+
+    const Float64 float_val = const_value.safeGet<Float64>();
+
+    const bool is_unsigned = key_type->isValueRepresentedByUnsignedInteger();
+    const size_t type_size = key_type->getSizeOfValueInMemory();
+    const bool is_supported_operator
+        = (func_name == "less" || func_name == "lessOrEquals" || func_name == "greater" || func_name == "greaterOrEquals"
+           || func_name == "equals" || func_name == "notEquals");
+
+    if (!is_supported_operator)
+        return false;
+
+    const auto set_integer_constant = [&](Float64 value)
+    {
+        if (is_unsigned)
+        {
+            const_value = static_cast<UInt64>(value);
+            const_type = std::make_shared<DataTypeUInt64>();
+        }
+        else
+        {
+            const_value = static_cast<Int64>(value);
+            const_type = std::make_shared<DataTypeInt64>();
+        }
+    };
+
+    /// We first classify whether the literal lies outside the representable key domain.
+    bool above_max = false;
+    bool below_min = false;
+    if (is_unsigned)
+    {
+        /// Unsigned keys are always non-negative, so any negative literal is below the domain minimum.
+        /// For example, key_type = UInt32 and literal = -0.5 means below_min = true.
+        below_min = accurate::lessOp(float_val, UInt64{0});
+        switch (type_size)
+        {
+            case sizeof(UInt8):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<UInt8>::max());
+                break;
+            case sizeof(UInt16):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<UInt16>::max());
+                break;
+            case sizeof(UInt32):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<UInt32>::max());
+                break;
+            case sizeof(UInt64):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<UInt64>::max());
+                break;
+            default:
+                UNREACHABLE();
+        }
+    }
+    else
+    {
+        /// For signed key types (Int8/16/32/64), we compare the Float64 literal against that type's min/max.
+        /// For example, key_type = Int16 and literal = -40000.0 means below_min = true.
+        switch (type_size)
+        {
+            case sizeof(Int8):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<Int8>::max());
+                below_min = accurate::lessOp(float_val, std::numeric_limits<Int8>::min());
+                break;
+            case sizeof(Int16):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<Int16>::max());
+                below_min = accurate::lessOp(float_val, std::numeric_limits<Int16>::min());
+                break;
+            case sizeof(Int32):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<Int32>::max());
+                below_min = accurate::lessOp(float_val, std::numeric_limits<Int32>::min());
+                break;
+            case sizeof(Int64):
+                above_max = accurate::greaterOp(float_val, std::numeric_limits<Int64>::max());
+                below_min = accurate::lessOp(float_val, std::numeric_limits<Int64>::min());
+                break;
+            default:
+                UNREACHABLE();
+        }
+    }
+
+    if (above_max)
+    {
+        /// The literal is above the key domain.
+        /// For example, key_type = Int8 (key domain is [-128, 127]) and literal = 200.5.
+        /// If the literal is above the key domain, we can fold the predicate to a constant.
+        /// For example, Int8 key with literal 200.5 gives ALWAYS_TRUE for "<" and ALWAYS_FALSE for ">=".
+        /// key <= literal; key < literal; key != literal
+        /// Every key value is less than the literal, so the predicate is always true.
+        if (func_name == "less" || func_name == "lessOrEquals" || func_name == "notEquals")
+        {
+            out.function = KeyCondition::RPNElement::ALWAYS_TRUE;
+            return true;
+        }
+
+        /// key >= literal; key > literal; key = literal
+        /// Every key value is less than the literal, so the predicate is always false.
+        if (func_name == "greater" || func_name == "greaterOrEquals" || func_name == "equals")
+        {
+            out.function = KeyCondition::RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+
+        UNREACHABLE();
+    }
+
+    if (below_min)
+    {
+        /// The literal is below the key domain.
+        /// For example, key_type = UInt16 (key domain is [0, 65535]) and literal = -0.5.
+        /// If the literal is below the key domain, we can fold the predicate to a constant.
+        /// For example, UInt8 key with literal -1.5 gives ALWAYS_TRUE for ">=" and ALWAYS_FALSE for "<=".
+        /// key >= literal; key > literal; key != literal
+        /// Every key value is greater than the literal, so the predicate is always true.
+        if (func_name == "greater" || func_name == "greaterOrEquals" || func_name == "notEquals")
+        {
+            out.function = KeyCondition::RPNElement::ALWAYS_TRUE;
+            return true;
+        }
+
+        /// key <= literal; key < literal; key = literal
+        /// Every key value is greater than the literal, so the predicate is always false.
+        if (func_name == "less" || func_name == "lessOrEquals" || func_name == "equals")
+        {
+            out.function = KeyCondition::RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+
+        UNREACHABLE();
+    }
+
+    const Float64 floored = std::floor(float_val);
+    const bool is_exact = (float_val == floored);
+
+    if (is_exact)
+    {
+        /// When the parsed Float64 value is already an integer, it can be represented directly in integer form
+        /// with no semantic change for integer-key comparison.
+        /// For example, key_type = Int64 and parsed literal value = 100000.0 keeps the operator and only rewrites literal type.
+        set_integer_constant(floored);
+        /// We intentionally keep the operator unchanged in this branch.
+        return true;
+    }
+
+    /// Non-integer literals have no exact integer equality match, and strict/non-strict bounds can be normalized.
+    /// For example, key_type = Int64 and literal = 100000.5 cannot satisfy equality for any integer key.
+    if (func_name == "equals")
+    {
+        out.function = KeyCondition::RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
+    if (func_name == "notEquals")
+    {
+        out.function = KeyCondition::RPNElement::ALWAYS_TRUE;
+        return true;
+    }
+
+    if (func_name == "less" || func_name == "lessOrEquals")
+    {
+        /// For upper-bound predicates, floor(x) is the greatest integer that can still satisfy the predicate.
+        /// For example, Int64 key and literal 100000.5 rewrites both "<" and "<=" to "<= 100000".
+        func_name = "lessOrEquals";
+        set_integer_constant(floored);
+        return true;
+    }
+
+    if (func_name == "greater" || func_name == "greaterOrEquals")
+    {
+        /// For lower-bound predicates, ceil(x) is the smallest integer that can still satisfy the predicate.
+        /// For example, Int64 key and literal 100000.5 rewrites both ">" and ">=" to ">= 100001".
+        const Float64 ceiled = std::ceil(float_val);
+        func_name = "greaterOrEquals";
+        set_integer_constant(ceiled);
+        return true;
+    }
+
+    UNREACHABLE();
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -2789,6 +2996,21 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             bool condition_is_relaxed = false;
 
+            /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
+            /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
+            /// the left and right mark bounds before comparing with `const` to decide whether the mark can be skipped.
+            /// Monotonicity is required because `checkInRange` does not inspect every value in the mark.
+            /// It only inspects the left and right bounds and decides from those bounds whether the mark
+            /// can satisfy the predicate. This is correct only when the function is monotonic on that range,
+            /// because then all intermediate values stay between the transformed bounds (up to direction).
+            /// If the function is not monotonic, intermediate values can behave differently from both bounds,
+            /// and pruning based only on bounds can drop rows that actually match.
+            /// For example, suppose the sorting key is `x`, the current mark covers values from `-2` to `3`,
+            /// and the predicate is `x*x < 1`. At the two bounds, `x*x` is `4` and `9`, which do not satisfy
+            /// the predicate, but inside the same mark at `x = 0`, `x*x` is `0`, which does satisfy it.
+            /// So if we looked only at the bounds, we would incorrectly skip this mark.
+            /// If `single_point` is true (`left mark == right mark`), `f` can be any deterministic function, not necessarily
+            /// monotonic, because we evaluate only one value. In that case, monotonicity direction does not matter.
             if (isKeyPossiblyWrappedByMonotonicFunctions(
                     key_arg,
                     info,
@@ -2796,7 +3018,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     argument_num_of_space_filling_curve,
                     key_expr_type,
                     chain,
-                    single_point && func_name == "equals"))
+                    single_point))
             {
             }
             else if (
@@ -2849,10 +3071,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else
                 key_expr_type_not_null = key_expr_type;
 
-            /// Native integers and DateTime are accurately compared without cast.
+            /// Native integers and DateTime/DateTime64 are accurately compared without cast.
             bool cast_not_needed =
-                (isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                && (isNativeInteger(const_type) || isDateTime(const_type));
+                (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
+                && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
@@ -2865,35 +3087,51 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 }
                 else
                 {
-                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
-                    if (!common_type)
-                        return false;
+                    /// When comparing an integer key column against a float constant,
+                    /// convert the float to exact integer bounds. This is an exact equivalence
+                    /// because no integer exists between floor(x) and ceil(x) for non-integer x.
+                    /// For example, `id < 100000.5` can be safely rewritten to `id <= 100000` for integer id column.
+                    const bool float_literal_was_rewritten_for_int_key = tryRewriteFloatLiteralForIntKeyComparison(
+                        key_expr_type_not_null, const_value, const_type, func_name, out);
+                    if (float_literal_was_rewritten_for_int_key
+                        && (out.function == RPNElement::ALWAYS_TRUE || out.function == RPNElement::ALWAYS_FALSE))
+                        return true;
 
-                    if (!const_type->equals(*common_type))
+                    /// If float literal rewrite handled this predicate, const_value/const_type/func_name
+                    /// have already been adjusted to integer equivalents, so the cast path can be skipped.
+                    /// Otherwise, proceed with original supertype/cast logic.
+                    if (!float_literal_was_rewritten_for_int_key)
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
+                        DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
+                        if (!common_type)
                             return false;
 
-                        const_value = converted;
+                        if (!const_type->equals(*common_type))
+                        {
+                            // Replace direct call that throws exception with try version
+                            Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                            if (converted.isNull())
+                                return false;
 
-                        /// Need to set condition_is_relaxed unless we're doing exact conversion
+                            const_value = converted;
+
+                            /// Need to set condition_is_relaxed unless we're doing exact conversion
+                            if (!key_expr_type_not_null->equals(*common_type))
+                                condition_is_relaxed = true;
+                        }
                         if (!key_expr_type_not_null->equals(*common_type))
-                            condition_is_relaxed = true;
-                    }
-                    if (!key_expr_type_not_null->equals(*common_type))
-                    {
-                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
-                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
-                            : common_type;
+                        {
+                            auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                                ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                                : common_type;
 
-                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
-                        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
-                            return false;
-                        chain.push_back(func_cast);
+                            /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+                            if (!single_point && !func_cast->hasInformationAboutMonotonicity())
+                                return false;
+                            chain.push_back(func_cast);
+                        }
                     }
                 }
             }

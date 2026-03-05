@@ -269,6 +269,7 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
 
 void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 {
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::consume");
     if (num_blocks_processed > 0)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
@@ -1178,6 +1179,7 @@ void ReplicatedMergeTreeSink::onStart()
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onStart");
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onStart");
     /** If write is with quorum, then we check that the required number of replicas is now alive,
     *  and also that for all previous parts for which quorum is required, this quorum is reached.
@@ -1193,6 +1195,7 @@ void ReplicatedMergeTreeSink::onFinish()
         return;
 
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
     finishDelayed(zookeeper);
 }
 

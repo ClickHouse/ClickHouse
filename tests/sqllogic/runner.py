@@ -12,7 +12,7 @@ from functools import reduce
 
 from deepdiff import DeepDiff  # pylint:disable=import-error; for style check
 
-from connection import Engines, default_clickhouse_odbc_conn_str, setup_connection
+from connection import Engines, default_clickhouse_native_conn_args, setup_connection
 from test_runner import RequestType, Status, TestRunner
 
 LEVEL_NAMES = [  # pylint:disable-next=protected-access
@@ -209,8 +209,8 @@ def mode_check_statements(parser):
 
         reports["verify-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,
@@ -268,8 +268,8 @@ def mode_check_complete(parser):
 
         reports["complete-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,
@@ -402,7 +402,7 @@ def mode_self_test(parser):
         )
         os.makedirs(out_dir_clickhouse_complete, exist_ok=True)
         with setup_connection(
-            Engines.ODBC, default_clickhouse_odbc_conn_str()
+            Engines.NATIVE, default_clickhouse_native_conn_args()
         ) as clickhouse:
             runner = TestRunner(clickhouse)
             runner.run_all_tests_from_dir(self_test_dir)
@@ -415,7 +415,7 @@ def mode_self_test(parser):
         )
         os.makedirs(out_dir_clickhouse_vs_clickhouse, exist_ok=True)
         with setup_connection(
-            Engines.ODBC, default_clickhouse_odbc_conn_str()
+            Engines.NATIVE, default_clickhouse_native_conn_args()
         ) as clickhouse:
             runner = TestRunner(clickhouse)
             runner.with_verify_mode()
@@ -431,8 +431,8 @@ def mode_self_test(parser):
 
         reports["sqlite-vs-clickhouse"] = run_all_tests_in_parallel(
             setup_kwargs=as_kwargs(
-                engine=Engines.ODBC,
-                conn_str=default_clickhouse_odbc_conn_str(),
+                engine=Engines.NATIVE,
+                conn_str=default_clickhouse_native_conn_args(),
             ),
             runner_kwargs=as_kwargs(
                 verify_mode=True,

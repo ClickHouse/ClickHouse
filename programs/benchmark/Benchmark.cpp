@@ -14,6 +14,7 @@
 #include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Client/ClientBaseHelpers.h>
 #include <base/defines.h>
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -171,6 +172,12 @@ public:
                 connection_arguments.password.emplace(overrides.password.value());
             if (overrides.database.has_value() && !connection_arguments.database.has_value())
                 connection_arguments.database.emplace(overrides.database.value());
+
+            if (connection_arguments.hosts.has_value())
+            {
+                if (isCloudEndpoint(connection_arguments.hosts->front()))
+                    connection_arguments.secure.emplace(true);
+            }
         }
 
         if (connection_arguments.accept_invalid_certificate.value_or(false))
@@ -914,11 +921,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: clickhouse benchmark [options] < queries.txt\n";
-            std::cout << "Usage: clickhouse benchmark [options] --query \"query text\"\n\n";
-            std::cout << "clickhouse-benchmark connects to ClickHouse server, repeatedly sends "
-                         "specified queries and produces reports query statistics. "
-                         "Multiple queries can be used if passed in TSV format.\n\n";
+            std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             if (options.contains("verbose"))
                 std::cout << options_description << "\n";
             else
