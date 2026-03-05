@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeCleanupThread.h>
+#include <Common/Logger_fwd.h>
 
 namespace zkutil
 {
@@ -46,8 +47,14 @@ private:
     };
     using NodeCTimeAndVersionCache = std::map<String, NodeCacheEntry>;
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks
-    size_t clearOldBlocks(
-        const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats);
+    static size_t clearOldBlocks(
+        const String & zookeeper_path,
+        const String & blocks_dir_name,
+        zkutil::ZooKeeper & zookeeper,
+        UInt64 window_seconds,
+        UInt64 window_size,
+        NodeCTimeAndVersionCache & cached_block_stats,
+        LoggerPtr log_);
 
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica. Returns the number of removed mutations
     size_t clearOldMutations();
@@ -58,11 +65,13 @@ private:
 
     struct NodeWithStat;
     /// Returns list of blocks (with their stat) sorted by ctime in descending order.
-    void getBlocksSortedByTime(
+    static void getBlocksSortedByTime(
+        const String & zookeeper_path,
         const String & blocks_dir_name,
         zkutil::ZooKeeper & zookeeper,
         std::vector<NodeWithStat> & timed_blocks,
-        NodeCTimeAndVersionCache & cached_block_stats);
+        NodeCTimeAndVersionCache & cached_block_stats,
+        LoggerPtr log_);
 
     /// TODO Removing old quorum/failed_parts
 };

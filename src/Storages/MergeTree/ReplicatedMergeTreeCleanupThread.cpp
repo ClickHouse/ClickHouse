@@ -60,16 +60,25 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     {
         cleaned_logs = clearOldLogs();
 
-        size_t deduplication_blocks = clearOldBlocks("deduplication_hashes", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
-                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_stats_for_insert_deduplication_hashes);
+        auto zookeeper = storage.getZooKeeper();
 
-        size_t normal_blocks = clearOldBlocks("blocks", (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
-                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window], cached_block_stats_for_sync_inserts);
+        size_t deduplication_blocks = clearOldBlocks(storage.zookeeper_path, "deduplication_hashes", *zookeeper,
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window],
+            cached_stats_for_insert_deduplication_hashes,
+            log);
 
-        size_t async_blocks = clearOldBlocks("async_blocks",
-                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds_for_async_inserts],
-                                   (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts],
-                                   cached_block_stats_for_async_inserts);
+        size_t normal_blocks = clearOldBlocks(storage.zookeeper_path, "blocks", *zookeeper,
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds],
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window],
+            cached_block_stats_for_sync_inserts,
+            log);
+
+        size_t async_blocks = clearOldBlocks(storage.zookeeper_path, "async_blocks", *zookeeper,
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds_for_async_inserts],
+            (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts],
+            cached_block_stats_for_async_inserts,
+            log);
 
         /// Many async blocks are transformed into one ordinary block
         Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
@@ -348,12 +357,17 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
     }
 };
 
-size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats)
+size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(
+    const String & zookeeper_path,
+    const String & blocks_dir_name,
+    zkutil::ZooKeeper & zookeeper,
+    UInt64 window_seconds,
+    UInt64 window_size,
+    NodeCTimeAndVersionCache & cached_block_stats,
+    LoggerPtr log_)
 {
-    auto zookeeper = storage.getZooKeeper();
-
     std::vector<NodeWithStat> timed_blocks;
-    getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks, cached_block_stats);
+    getBlocksSortedByTime(zookeeper_path, blocks_dir_name, zookeeper, timed_blocks, cached_block_stats, log_);
 
     if (timed_blocks.empty())
         return 0;
@@ -378,15 +392,15 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         return 0;
 
     auto last_outdated_block = timed_blocks.end() - 1;
-    LOG_TRACE(log, "Will clear {} old blocks from {} (ctime {}) to {} (ctime {})", num_nodes_to_delete,
+    LOG_TRACE(log_, "Will clear {} old blocks from {} (ctime {}) to {} (ctime {})", num_nodes_to_delete,
               first_outdated_block->node, first_outdated_block->ctime,
               last_outdated_block->node, last_outdated_block->ctime);
 
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
-        String path = storage.zookeeper_path + "/" + blocks_dir_name + "/" + it->node;
-        try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path, it->version));
+        String path = zookeeper_path + "/" + blocks_dir_name + "/" + it->node;
+        try_remove_futures.emplace_back(path, zookeeper.asyncTryRemove(path, it->version));
     }
 
     for (auto & pair : try_remove_futures)
@@ -396,7 +410,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         if (rc == Coordination::Error::ZNOTEMPTY)
         {
             /// Can happen if there are leftover block nodes with children created by previous server versions.
-            zookeeper->removeRecursive(path);
+            zookeeper.removeRecursive(path);
             cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc == Coordination::Error::ZOK || rc == Coordination::Error::ZNONODE || rc == Coordination::Error::ZBADVERSION)
@@ -407,24 +421,30 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         }
         else
         {
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, rc);
+            LOG_WARNING(log_, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, rc);
         }
         first_outdated_block++;
     }
 
-    LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
+    LOG_TRACE(log_, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
     return num_nodes_to_delete;
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks, NodeCTimeAndVersionCache & cached_block_stats)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
+    const String & zookeeper_path,
+    const String & blocks_dir_name,
+    zkutil::ZooKeeper & zookeeper,
+    std::vector<NodeWithStat> & timed_blocks,
+    NodeCTimeAndVersionCache & cached_block_stats,
+    LoggerPtr log_)
 {
     timed_blocks.clear();
 
     Strings blocks;
     Coordination::Stat stat;
-    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/" + blocks_dir_name, blocks, &stat))
-        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/{} doesn't exist", storage.zookeeper_path, blocks_dir_name);
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(zookeeper_path + "/" + blocks_dir_name, blocks, &stat))
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/{} doesn't exist", zookeeper_path, blocks_dir_name);
 
     /// Seems like this code is obsolete, because we delete blocks from cache
     /// when they are deleted from zookeeper. But we don't know about all (maybe future) places in code
@@ -443,7 +463,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking {} {} ({} are not cached){}, path is {}", stat.numChildren, blocks_dir_name, not_cached_blocks, " to clear old ones from ZooKeeper.", storage.zookeeper_path + "/" + blocks_dir_name);
+        LOG_TRACE(log_, "Checking {} {} ({} are not cached) to clear old ones from ZooKeeper., path is {}/{}", stat.numChildren, blocks_dir_name, not_cached_blocks, zookeeper_path, blocks_dir_name);
     }
 
     std::vector<std::string> exists_paths;
@@ -453,7 +473,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & bloc
         if (it == cached_block_stats.end())
         {
             /// New block. Fetch its stat asynchronously.
-            exists_paths.emplace_back(storage.zookeeper_path + "/" + blocks_dir_name + "/" + block);
+            exists_paths.emplace_back(zookeeper_path + "/" + blocks_dir_name + "/" + block);
         }
         else
         {
