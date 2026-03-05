@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
+#include <map>
 #include <unordered_map>
 #include <memory>
 #include <set>
