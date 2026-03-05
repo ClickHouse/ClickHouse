@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace Setting
@@ -93,7 +94,20 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
     auto & context = scope.context;
-    auto cancel_callback = context->hasQueryContext()? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
+    auto raw_cancel_callback = context->hasQueryContext()? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
+
+    /// Wrap the cancel callback to check return value and throw exception if cancelled
+    std::function<bool()> cancel_callback;
+    if (raw_cancel_callback)
+    {
+        cancel_callback = [raw_cancel_callback]()
+        {
+            if (raw_cancel_callback())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+            return false;
+        };
+    }
+
     const UInt64 interactive_delay_ms = std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
     Block scalar_block;
