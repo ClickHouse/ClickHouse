@@ -7524,6 +7524,14 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
+    DECLARE(String, input_format_geojson_geometry_collection_handling, "throw", R"(
+Controls what happens when a `GeometryCollection` geometry type is encountered while reading `GeoJSON` input. `GeometryCollection` cannot be represented in ClickHouse's `Geometry` type.
+
+Possible values:
+- `'throw'` (default) — throw an exception.
+- `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
+)", 0) \
+    \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs

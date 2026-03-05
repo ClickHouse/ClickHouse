@@ -1,0 +1,10 @@
+1	(13.405,52.52)	Berlin
+2	(2.3522,48.8566)	Paris
+	Polygon
+1	None
+0
+Point
+id	String					
+geometry	Geometry					
+properties	JSON					
+1

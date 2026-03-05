@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3588 
+personal_ws-1.1 en 3593
 AArch
 ABIs
 ACLs
@@ -362,6 +362,7 @@ FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
 FixedStrings
+FeatureCollection
 FlameGraph
 Flink
 FlyQL
@@ -378,9 +379,11 @@ Gbit
 Gcc
 GenerateRandom
 GeoCoord
+GeoJSON
 Geobases
 Geohash
 Geoid
+GeometryCollection
 GetBaseCell
 GetDestinationIndexFromUnidirectionalEdge
 GetFaces
@@ -716,6 +719,7 @@ Monotonicity
 MsgPack
 MsgPackUUIDRepresentation
 MultiLineString
+MultiPoint
 MultiPolygon
 MultiRead
 Multiline
@@ -2055,6 +2059,7 @@ geobases
 geocode
 geocoding
 geohash
+geojson
 geohashDecode
 geohashEncode
 geohashes
