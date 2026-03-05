@@ -401,12 +401,25 @@ void writeConsolidatedManifestFile(
         partition_columns.push_back(fields_from_partition_spec->getObject(i)->getValue<String>(f_name));
     }
 
-    // Collect all unique data files and statistics by reading manifest files directly
-    std::unordered_set<String> all_data_file_paths;
-    DataFileStatistics consolidated_statistics(schemas->getObject(static_cast<UInt32>(current_schema_id))->getArray(Iceberg::f_fields));
+    // Collect data files grouped by partition key
+    // Map: partition_key_string -> { partition_values (Row), file paths, statistics }
+    struct PartitionData
+    {
+        Row partition_values;
+        std::vector<String> file_paths;
+        DataFileStatistics statistics;
 
-    // Track unique partitions
-    std::unordered_set<String> unique_partitions;
+        explicit PartitionData(Poco::JSON::Array::Ptr schema)
+            : statistics(schema)
+        {}
+    };
+
+    auto schema_fields = schemas->getObject(static_cast<UInt32>(current_schema_id))->getArray(Iceberg::f_fields);
+
+    // Ordered map so partition manifest files are written in a deterministic order
+    std::map<String, PartitionData> partitions_map;
+
+    size_t total_data_files = 0;
 
     for (const auto & snapshot : snapshots_info)
     {
@@ -416,24 +429,24 @@ void writeConsolidatedManifestFile(
             auto files_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
-            auto data_files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
-
-            for (const auto & data_file : data_files)
+            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                all_data_file_paths.insert(data_file->file_path);
-
-                // Track partitions for counting
-                std::string partition_key;
+                // Build a string key that uniquely identifies this partition
+                String partition_key;
                 for (const auto & val : data_file->parsed_entry->partition_key_value)
-                {
                     partition_key += val.dump() + "|";
-                }
-                unique_partitions.insert(partition_key);
 
-                // Update statistics with data file info
-                // Note: This is a simplified approach. In the original code, statistics are updated
-                // during data processing. Here we rely on the data file metadata.
-                // If more accurate statistics are needed, they should be read from manifest metadata.
+                if (!partitions_map.contains(partition_key))
+                    partitions_map.emplace(partition_key, PartitionData(schema_fields));
+
+                auto & pd = partitions_map.at(partition_key);
+                pd.partition_values = data_file->parsed_entry->partition_key_value;
+                // Avoid duplicates across snapshots
+                if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->file_path) == pd.file_paths.end())
+                {
+                    pd.file_paths.push_back(data_file->file_path);
+                    ++total_data_files;
+                }
             }
         }
     }
@@ -447,7 +460,7 @@ void writeConsolidatedManifestFile(
         write_format);
     generator.setVersion(metadata_version + 1);
 
-    // Get the latest snapshot for metadata
+    // Get summary totals from history for the new snapshot
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_name = generator.generateMetadataName();
 
@@ -455,7 +468,6 @@ void writeConsolidatedManifestFile(
     Int64 total_added_records = 0;
     Int64 total_added_files_size = 0;
     Int64 parent_snapshot_id = 0;
-    std::optional<Int64> latest_timestamp = std::nullopt;
 
     for (const auto & history_record : snapshots_info)
     {
@@ -472,46 +484,56 @@ void writeConsolidatedManifestFile(
         total_added_files,
         total_added_records,
         total_added_files_size,
-        unique_partitions.size(), // num_partitions
+        static_cast<Int64>(partitions_map.size()), // one partition per unique partition value
         0, // added_delete_files
         0, // num_deleted_rows
         std::nullopt,
-        latest_timestamp);
+        std::nullopt);
 
-    // Create single consolidated manifest file
-    auto consolidated_manifest_path = generator.generateManifestEntryName();
-    LOG_INFO(log, "Creating consolidated manifest file: {}", consolidated_manifest_path.path_in_storage);
+    // Write one manifest file per partition
+    auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes();
 
-    auto buffer_manifest = object_storage->writeObject(
-        StoredObject(consolidated_manifest_path.path_in_storage),
-        WriteMode::Rewrite,
-        std::nullopt,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getWriteSettings());
+    std::vector<String> consolidated_manifest_paths;
+    Int64 total_manifest_file_size = 0;
 
-    // Use empty partition values (or could use first partition if needed)
-    Row partition_values;
+    for (auto & [partition_key, pd] : partitions_map)
+    {
+        auto manifest_path = generator.generateManifestEntryName();
+        LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
+                 partition_key, manifest_path.path_in_storage, pd.file_paths.size());
 
-    generateManifestFile(
-        metadata_object,
-        partition_columns,
-        partition_values,
-        ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
-        std::vector<String>(all_data_file_paths.begin(), all_data_file_paths.end()),
-        consolidated_statistics,
-        sample_block_,
-        new_snapshot.snapshot,
-        write_format,
-        partition_spec,
-        partition_spec_id,
-        *buffer_manifest,
-        Iceberg::FileContentType::DATA);
+        auto buffer_manifest = object_storage->writeObject(
+            StoredObject(manifest_path.path_in_storage),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
 
-    Int64 manifest_file_size = buffer_manifest->count();
-    buffer_manifest->finalize();
+        generateManifestFile(
+            metadata_object,
+            partition_columns,
+            pd.partition_values,
+            partition_types,
+            pd.file_paths,
+            pd.statistics,
+            sample_block_,
+            new_snapshot.snapshot,
+            write_format,
+            partition_spec,
+            partition_spec_id,
+            *buffer_manifest,
+            Iceberg::FileContentType::DATA);
 
-    // Create manifest list with single manifest entry
-    LOG_INFO(log, "Creating manifest list: {}", new_snapshot.storage_metadata_path);
+        total_manifest_file_size += buffer_manifest->count();
+        buffer_manifest->finalize();
+
+        consolidated_manifest_paths.push_back(manifest_path.path_in_metadata);
+    }
+
+    // Create manifest list pointing to all per-partition manifest files
+    LOG_INFO(log, "Creating manifest list with {} partition manifest(s): {}",
+             consolidated_manifest_paths.size(), new_snapshot.storage_metadata_path);
+
     auto buffer_manifest_list = object_storage->writeObject(
         StoredObject(new_snapshot.storage_metadata_path),
         WriteMode::Rewrite,
@@ -524,9 +546,9 @@ void writeConsolidatedManifestFile(
         metadata_object,
         object_storage,
         context,
-        {consolidated_manifest_path.path_in_metadata},
+        consolidated_manifest_paths,
         new_snapshot.snapshot,
-        manifest_file_size,
+        total_manifest_file_size,
         *buffer_manifest_list,
         Iceberg::FileContentType::DATA,
         false);
@@ -569,7 +591,8 @@ void writeConsolidatedManifestFile(
         buffer_version_hint->finalize();
     }
 
-    LOG_INFO(log, "Successfully created consolidated manifest with {} data files", all_data_file_paths.size());
+    LOG_INFO(log, "Successfully created {} partition manifest file(s) covering {} data files",
+             consolidated_manifest_paths.size(), total_data_files);
 }
 
 void writeMetadataFiles(
