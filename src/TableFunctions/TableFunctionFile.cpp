@@ -107,6 +107,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
 
+        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
         Strings paths;
         std::optional<StorageFile::ArchiveInfo> archive_info;
         if (path_to_archive.empty())
