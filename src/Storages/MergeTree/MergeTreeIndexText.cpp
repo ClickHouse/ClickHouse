@@ -551,6 +551,7 @@ DictionarySparseIndexPtr MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeInd
 {
     const auto load_sparse_index = [&]
     {
+        header_stream.seekToStart();
         auto index = TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer());
         return std::make_shared<DictionarySparseIndex>(std::move(index));
     };

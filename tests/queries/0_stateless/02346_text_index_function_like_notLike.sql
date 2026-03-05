@@ -101,6 +101,50 @@ SELECT groupArray(id) FROM tab WHERE message NOT LIKE '%foo%' AND message NOT LI
 
 DROP TABLE tab;
 
+SELECT 'Test results are same with/without the optimization combined with hasToken, hasAnyTokens, hasAllTokens';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, message) VALUES
+    (1, 'abc def foo'),
+    (2, 'abc def bar'),
+    (3, 'abc baz foo'),
+    (4, 'abc baz bar'),
+    (5, 'xyz');
+
+SET use_text_index_like_optimization = 0;
+
+SELECT '-- without optimization';
+
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message NOT LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']) AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'abc']) AND message LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'abc']) AND message NOT LIKE '%baz%';
+
+SET use_text_index_like_optimization = 1;
+
+SELECT '-- with optimization';
+
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasToken(message, 'foo') AND message NOT LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']) AND message LIKE '%abc%';
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'abc']) AND message LIKE '%def%';
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['foo', 'abc']) AND message NOT LIKE '%baz%';
+
+DROP TABLE tab;
+
 SELECT 'Text index analysis';
 
 SET use_text_index_like_optimization = 1;

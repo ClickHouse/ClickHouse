@@ -24,6 +24,21 @@ Test results are same with/without the like optimization with preprocessor
 [1,3]
 [2,4,5]
 [2,4]
+Test results are same with/without the like optimization combined with hasToken, hasAnyTokens, hasAllTokens
+-- without optimization
+[1,3]
+[1]
+[3]
+[1,2,3,4]
+[1]
+[1]
+-- with optimization
+[1,3]
+[1]
+[3]
+[1,2,3,4]
+[1]
+[1]
 Text index analysis
 -- Text index for ILIKE function should choose none for non-existent token
 Description: text GRANULARITY 100000000
