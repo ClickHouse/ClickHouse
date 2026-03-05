@@ -119,11 +119,13 @@ DataLakeMetadataPtr PaimonMetadata::create(
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
         String keeper_path = data_lake_settings[DataLakeStorageSetting::paimon_keeper_path].value;
-        String replica_path = keeper_path + "/replicas/" + data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
-        if (keeper_path.empty() || replica_path.empty())
+        String replica_name = data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
+        if (keeper_path.empty() || replica_name.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "To use Paimon incremental read both paimon_keeper_path and paimon_replica_name must be specified");
+
+        String replica_path = keeper_path + "/replicas/" + replica_name;
 
         auto keeper = local_context->getZooKeeper();
         auto stream_log = getLogger("PaimonStreamState");
@@ -445,7 +447,7 @@ ObjectIterator PaimonMetadata::iterate(
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
         data_files = collectIncrementalDataFiles(state, partition_pruner, max_consume_snapshots, last_consumed_snapshot_id);
 
-        if (!data_files.empty() && last_consumed_snapshot_id)
+        if (last_consumed_snapshot_id)
             stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
     }
     else
@@ -614,8 +616,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         LOG_INFO(log, "No committed snapshot found, performing initial full read (base+delta) for snapshot_id={}",
                  state->snapshot_id);
         data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, false);
-        if (!data_files.empty())
-            last_consumed_snapshot_id = state->snapshot_id;
+        last_consumed_snapshot_id = state->snapshot_id;
     }
     else if (*committed_snapshot_id >= state->snapshot_id)
     {
@@ -638,8 +639,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
             return {};
 
         data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, false);
-        if (!data_files.empty())
-            last_consumed_snapshot_id = snapshots.back()->snapshot_id;
+        last_consumed_snapshot_id = snapshots.back()->snapshot_id;
     }
 
     return data_files;
