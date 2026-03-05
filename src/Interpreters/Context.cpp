@@ -518,6 +518,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
@@ -2220,6 +2221,18 @@ void Context::setMergeWorkload(const String & value)
 {
     std::lock_guard lock(shared->mutex);
     shared->merge_workload = value;
+}
+
+String Context::getLicenseFile() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->license_file;
+}
+
+void Context::setLicenseFile(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->license_file = value;
 }
 
 String Context::getMutationWorkload() const
