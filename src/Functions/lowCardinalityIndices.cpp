@@ -13,11 +13,6 @@ namespace DB
 namespace
 {
 
-bool isLowCardinalityType(const IDataType & arg)
-{
-    return typeid_cast<const DataTypeLowCardinality *>(&arg) != nullptr;
-}
-
 class FunctionLowCardinalityIndices: public IFunction
 {
 public:

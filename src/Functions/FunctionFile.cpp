@@ -59,7 +59,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"path", &isStringOrFixedString, nullptr, "String"}
+            {"path", &isString, nullptr, "String"}
         };
         FunctionArgumentDescriptors optional_args{
             {"default", &isStringOrFixedStringOrNull, nullptr, "String or Null"}

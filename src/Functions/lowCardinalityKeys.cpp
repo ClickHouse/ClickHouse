@@ -11,11 +11,6 @@ namespace DB
 namespace
 {
 
-bool isLowCardinalityType(const IDataType & arg)
-{
-    return typeid_cast<const DataTypeLowCardinality *>(&arg) != nullptr;
-}
-
 class FunctionLowCardinalityKeys: public IFunction
 {
 public:
