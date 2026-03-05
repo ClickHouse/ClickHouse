@@ -331,17 +331,15 @@ private:
         auto ready_connections = hedged_factory->getManyConnections(PoolMode::GET_MANY);
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable, hedged_factory->getFailedPoolsCount());
 
-        /// Map connections back to replica indices via address.
+        /// Map connections back to replica indices via host:port.
+        auto host_port = [](const auto & c) { return c.getHost() + ":" + std::to_string(c.getPort()); };
+
         std::unordered_map<std::string, size_t> address_to_replica;
         for (size_t i = 0; i < remote_replicas; ++i)
-        {
-            auto & pool = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool);
-            address_to_replica[pool.getDescription()] = i;
-        }
+            address_to_replica[host_port(dynamic_cast<ConnectionPool &>(*remote_pools[i].pool))] = i;
         for (auto * conn : ready_connections)
         {
-            auto key = conn->getDescription(/*with_extra=*/ false);
-            if (auto it = address_to_replica.find(key); it != address_to_replica.end())
+            if (auto it = address_to_replica.find(host_port(*conn)); it != address_to_replica.end())
                 connections[it->second] = conn;
         }
 
