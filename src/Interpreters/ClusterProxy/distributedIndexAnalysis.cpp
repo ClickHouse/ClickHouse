@@ -93,9 +93,10 @@ size_t partReplica(const std::string & part_name, size_t replicas_count)
 
 using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
 
-size_t findLocalReplica(const std::vector<ShuffledPool> & pools, const Cluster::Addresses & local_addresses)
+/// Find and remove the local replica from the pools.
+/// Returns its original ShuffledPool (with `index` preserving the original position).
+ShuffledPool extractLocalReplica(std::vector<ShuffledPool> & pools, const Cluster::Addresses & local_addresses)
 {
-    std::optional<size_t> local_replica_index;
     for (size_t i = 0, s = pools.size(); i < s; ++i)
     {
         const auto & pool = dynamic_cast<ConnectionPool &>(*pools[i].pool);
@@ -107,14 +108,12 @@ size_t findLocalReplica(const std::vector<ShuffledPool> & pools, const Cluster::
         });
         if (found != local_addresses.end())
         {
-            local_replica_index = i;
-            break;
+            auto local = std::move(pools[i]);
+            pools.erase(pools.begin() + i);
+            return local;
         }
     }
-    if (!local_replica_index)
-        throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Local replica in cluster_for_parallel_replicas");
-
-    return local_replica_index.value();
+    throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Local replica in cluster_for_parallel_replicas");
 }
 
 /// Preserve replicas order as in cluster definition.
@@ -241,25 +240,24 @@ public:
     {
         auto cluster = context->getClusterForParallelReplicas();
         const auto & shard = cluster->getShardsInfo().at(0);
-        shuffled_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
-        local_replica_index = findLocalReplica(shuffled_pools, shard.local_addresses);
+        remote_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
+        auto local_pool = extractLocalReplica(remote_pools, shard.local_addresses);
+        local_address = dynamic_cast<ConnectionPool &>(*local_pool.pool).getAddress();
+        local_original_index = local_pool.index;
         total_replicas = shard.getAllNodeCount();
+        remote_replicas = remote_pools.size();
         max_active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
 
-        /// Build a pool that excludes the local replica, for hedged connections.
-        const auto * local_pool = shuffled_pools[local_replica_index].pool.get();
-        ConnectionPoolPtrs remote_pools;
-        remote_pools.reserve(total_replicas - 1);
-        for (const auto & pool : shard.per_replica_pools)
-        {
-            if (pool && pool.get() != local_pool)
-                remote_pools.push_back(pool);
-        }
-        remote_pool = std::make_shared<ConnectionPoolWithFailover>(std::move(remote_pools), LoadBalancing::NEAREST_HOSTNAME);
+        /// remote_pools now contains only remote replicas.
+        ConnectionPoolPtrs failover_pools;
+        failover_pools.reserve(remote_replicas);
+        for (const auto & pool : remote_pools)
+            failover_pools.push_back(pool.pool);
+        remote_pool = std::make_shared<ConnectionPoolWithFailover>(std::move(failover_pools), LoadBalancing::NEAREST_HOSTNAME);
 
-        replica_addresses.resize(total_replicas);
-        for (size_t i = 0; i < shuffled_pools.size(); ++i)
-            replica_addresses[i] = dynamic_cast<ConnectionPool &>(*shuffled_pools[i].pool).getAddress();
+        replica_addresses.resize(remote_replicas);
+        for (size_t i = 0; i < remote_replicas; ++i)
+            replica_addresses[i] = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool).getAddress();
 
         execution_context = Context::createCopy(context);
         external_tables = execution_context->getExternalTables();
@@ -275,31 +273,36 @@ public:
     DistributedIndexAnalysisPartsRanges run()
     {
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-        auto connections_by_replica = establishConnections(timeouts);
+        auto connections = establishConnections(timeouts);
 
-        auto active_replica_indexes = selectActiveReplicas(connections_by_replica);
+        auto active_remote_indexes = selectActiveRemoteReplicas(connections);
 
-        auto [replicas_parts, replicas_marks, replicas_rows] = distributePartsToReplicas(active_replica_indexes);
+        auto [local_parts, local_marks, local_rows, remote_parts, remote_marks, remote_rows] = distributePartsToReplicas(active_remote_indexes);
 
-        DistributedIndexAnalysisPartsRanges res(total_replicas);
-        for (const auto i : active_replica_indexes)
+        /// Remote results indexed by remote_pools index.
+        DistributedIndexAnalysisPartsRanges res(remote_replicas);
+        for (const auto i : active_remote_indexes)
             res[i].first = replica_addresses[i];
 
-        auto [local_thread, local_exception] = executeLocalAnalysis(replicas_parts, replicas_marks, replicas_rows, res);
-        executeRemoteAnalysis(active_replica_indexes, connections_by_replica, replicas_parts, replicas_marks, replicas_rows, res);
+        /// Local result stored separately.
+        std::pair<std::string, IndexAnalysisPartsRanges> local_result{local_address, {}};
+
+        auto [local_thread, local_exception] = executeLocalAnalysis(local_parts, local_marks, local_rows, local_result);
+        executeRemoteAnalysis(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
 
         if (local_thread.joinable())
             local_thread.join();
         if (*local_exception)
             std::rethrow_exception(*local_exception);
 
-        resolveMissingParts(res);
+        resolveMissingParts(local_result, res);
 
+        res.push_back(std::move(local_result));
         return res;
     }
 
 private:
-    /// Returns connections_by_replica[total_replicas], nullptr for unavailable.
+    /// Returns connections[remote_replicas], nullptr for unavailable.
     std::vector<Connection *> establishConnections(const ConnectionTimeouts & timeouts)
     {
         if (use_hedged_requests)
@@ -310,7 +313,7 @@ private:
 #if defined(OS_LINUX)
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts & timeouts)
     {
-        std::vector<Connection *> connections_by_replica(total_replicas, nullptr);
+        std::vector<Connection *> connections(remote_replicas, nullptr);
 
         hedged_factory.emplace(
             remote_pool,
@@ -330,21 +333,19 @@ private:
 
         /// Map connections back to replica indices via address.
         std::unordered_map<std::string, size_t> address_to_replica;
-        for (size_t i = 0; i < shuffled_pools.size(); ++i)
+        for (size_t i = 0; i < remote_replicas; ++i)
         {
-            if (i == local_replica_index)
-                continue;
-            auto & pool = dynamic_cast<ConnectionPool &>(*shuffled_pools[i].pool);
+            auto & pool = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool);
             address_to_replica[pool.getDescription()] = i;
         }
         for (auto * conn : ready_connections)
         {
             auto key = conn->getDescription(/*with_extra=*/ false);
             if (auto it = address_to_replica.find(key); it != address_to_replica.end())
-                connections_by_replica[it->second] = conn;
+                connections[it->second] = conn;
         }
 
-        return connections_by_replica;
+        return connections;
     }
 #else
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts &)
@@ -360,82 +361,94 @@ private:
                 CurrentMetrics::DistributedIndexAnalysisThreads,
                 CurrentMetrics::DistributedIndexAnalysisThreadsActive,
                 CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
-                total_replicas);
+                remote_replicas);
         return *sync_thread_pool;
     }
 
     std::vector<Connection *> establishConnectionsSync(const ConnectionTimeouts & timeouts)
     {
-        std::vector<Connection *> connections_by_replica(total_replicas, nullptr);
-        connection_entries.resize(total_replicas);
+        std::vector<Connection *> connections(remote_replicas, nullptr);
+        connection_entries.resize(remote_replicas);
 
         {
             ThreadPoolCallbackRunnerLocal<void> connect_runner(getThreadPool(), DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
-            for (size_t i = 0; i < total_replicas; ++i)
+            for (size_t i = 0; i < remote_replicas; ++i)
             {
-                if (i == local_replica_index)
-                    continue;
                 connect_runner.enqueueAndKeepTrack([this, i, &timeouts]()
                 {
                     try
                     {
                         /// NOTE: does not apply connections_with_failover_max_tries
-                        connection_entries[i] = shuffled_pools[i].pool->get(timeouts, settings);
+                        connection_entries[i] = remote_pools[i].pool->get(timeouts, settings);
                     }
                     catch (...)
                     {
                         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
                         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
-                        const auto & address = dynamic_cast<ConnectionPool &>(*shuffled_pools[i].pool).getAddress();
-                        tryLogCurrentException(logger, fmt::format("Cannot connect to {} (index {}). It will not participate in distributed index analysis", address, i), LogsLevel::warning);
+                        tryLogCurrentException(logger, fmt::format("Cannot connect to {}. It will not participate in distributed index analysis", replica_addresses[i]), LogsLevel::warning);
                     }
                 }, Priority{});
             }
             connect_runner.waitForAllToFinishAndRethrowFirstError();
         }
 
-        for (size_t i = 0; i < total_replicas; ++i)
+        for (size_t i = 0; i < remote_replicas; ++i)
         {
             if (!connection_entries[i].isNull())
-                connections_by_replica[i] = &*connection_entries[i];
+                connections[i] = &*connection_entries[i];
         }
 
-        return connections_by_replica;
+        return connections;
     }
 
-    std::vector<size_t> selectActiveReplicas(const std::vector<Connection *> & connections_by_replica) const
+    std::vector<size_t> selectActiveRemoteReplicas(const std::vector<Connection *> & connections) const
     {
-        std::vector<size_t> active_replica_indexes;
-        active_replica_indexes.reserve(max_active_replicas);
-        active_replica_indexes.push_back(local_replica_index);
-        for (size_t i = 0; i < total_replicas && active_replica_indexes.size() < max_active_replicas; ++i)
+        std::vector<size_t> active_remote_indexes;
+        /// Reserve max_active_replicas - 1 because local always participates.
+        active_remote_indexes.reserve(max_active_replicas - 1);
+        for (size_t i = 0; i < remote_replicas && active_remote_indexes.size() + 1 < max_active_replicas; ++i)
         {
-            if (i != local_replica_index && connections_by_replica[i] != nullptr)
-                active_replica_indexes.push_back(i);
+            if (connections[i] != nullptr)
+                active_remote_indexes.push_back(i);
         }
-        /// Sort because local_replica_index may not be the smallest.
-        std::sort(active_replica_indexes.begin(), active_replica_indexes.end());
 
-        LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, local replica index: {}, active replicas: {} ({}))",
+        LOG_DEBUG(logger, "Distributed index analysis for {} (total replicas: {}, remote active: {} remote ({}))",
                   storage_id.getNameForLogs(),
-                  total_replicas, local_replica_index, active_replica_indexes.size(), fmt::join(active_replica_indexes, ", "));
+                  total_replicas, active_remote_indexes.size(), fmt::join(active_remote_indexes, ", "));
 
-        return active_replica_indexes;
+        return active_remote_indexes;
     }
 
     struct DistributedParts
     {
-        std::vector<std::vector<std::string_view>> replicas_parts;
-        std::vector<size_t> replicas_marks;
-        std::vector<size_t> replicas_rows;
+        std::vector<std::string_view> local_parts;
+        size_t local_marks = 0;
+        size_t local_rows = 0;
+        std::vector<std::vector<std::string_view>> remote_parts;
+        std::vector<size_t> remote_marks;
+        std::vector<size_t> remote_rows;
     };
 
-    DistributedParts distributePartsToReplicas(const std::vector<size_t> & active_replica_indexes) const
+    DistributedParts distributePartsToReplicas(const std::vector<size_t> & active_remote_indexes) const
     {
         DistributedParts result;
-        result.replicas_parts.resize(total_replicas);
-        result.replicas_marks.resize(total_replicas, 0);
-        result.replicas_rows.resize(total_replicas, 0);
+        result.remote_parts.resize(remote_replicas);
+        result.remote_marks.resize(remote_replicas, 0);
+        result.remote_rows.resize(remote_replicas, 0);
+
+        /// Build a sorted list of original replica indices (from ShuffledPool::index)
+        /// so that part distribution is deterministic regardless of which node is the initiator.
+        std::vector<size_t> active_original_indexes;
+        active_original_indexes.reserve(active_remote_indexes.size() + 1);
+        active_original_indexes.push_back(local_original_index);
+        for (const auto i : active_remote_indexes)
+            active_original_indexes.push_back(remote_pools[i].index);
+        std::sort(active_original_indexes.begin(), active_original_indexes.end());
+
+        /// Reverse map: original index → remote_pools index (or local).
+        std::unordered_map<size_t, size_t> original_to_remote;
+        for (const auto i : active_remote_indexes)
+            original_to_remote[remote_pools[i].index] = i;
 
         for (const auto & part_ranges : parts_with_ranges)
         {
@@ -443,12 +456,21 @@ private:
             chassert(part_ranges.exact_ranges.empty());
 
             const auto & part_name = part_ranges.data_part->name;
-            const auto hash_index = partReplica(part_name, active_replica_indexes.size());
-            const auto replica_index = active_replica_indexes[hash_index];
-            result.replicas_parts[replica_index].push_back(part_name);
-
-            result.replicas_marks[replica_index] += part_ranges.getMarksCount();
-            result.replicas_rows[replica_index] += part_ranges.getRowsCount();
+            const auto hash_slot = partReplica(part_name, active_original_indexes.size());
+            const auto original_index = active_original_indexes[hash_slot];
+            if (original_index == local_original_index)
+            {
+                result.local_parts.push_back(part_name);
+                result.local_marks += part_ranges.getMarksCount();
+                result.local_rows += part_ranges.getRowsCount();
+            }
+            else
+            {
+                const auto remote_index = original_to_remote[original_index];
+                result.remote_parts[remote_index].push_back(part_name);
+                result.remote_marks[remote_index] += part_ranges.getMarksCount();
+                result.remote_rows[remote_index] += part_ranges.getRowsCount();
+            }
         }
 
         return result;
@@ -461,29 +483,27 @@ private:
     };
 
     LocalAnalysisResult executeLocalAnalysis(
-        const std::vector<std::vector<std::string_view>> & replicas_parts,
-        const std::vector<size_t> & replicas_marks,
-        const std::vector<size_t> & replicas_rows,
-        DistributedIndexAnalysisPartsRanges & res)
+        const std::vector<std::string_view> & local_parts,
+        size_t local_marks,
+        size_t local_rows,
+        std::pair<std::string, IndexAnalysisPartsRanges> & local_result)
     {
         LocalAnalysisResult result;
-        const auto & local_parts = replicas_parts[local_replica_index];
         if (!local_parts.empty())
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
             auto exception_ptr = result.exception;
-            result.thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), &local_parts, &replicas_marks, &replicas_rows, &res, exception_ptr]()
+            result.thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
                 try
                 {
-                    LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}",
-                        local_parts.size(), replicas_marks[local_replica_index], replicas_rows[local_replica_index],
-                        replica_addresses[local_replica_index], local_replica_index, local_parts);
+                    LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {}: {}",
+                        local_parts.size(), local_marks, local_rows, local_address, local_parts);
                     auto parts_ranges = local_index_analysis_callback(local_parts);
-                    LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}",
-                        parts_ranges.size(), replica_addresses[local_replica_index], local_replica_index, parts_ranges);
-                    res[local_replica_index].second = std::move(parts_ranges);
+                    LOG_TRACE(logger, "Received {} parts from local replica {}: {}",
+                        parts_ranges.size(), local_address, parts_ranges);
+                    local_result.second = std::move(parts_ranges);
                 }
                 catch (...)
                 {
@@ -495,32 +515,32 @@ private:
     }
 
     void executeRemoteAnalysis(
-        const std::vector<size_t> & active_replica_indexes,
-        const std::vector<Connection *> & connections_by_replica,
-        const std::vector<std::vector<std::string_view>> & replicas_parts,
-        const std::vector<size_t> & replicas_marks,
-        const std::vector<size_t> & replicas_rows,
+        const std::vector<size_t> & active_remote_indexes,
+        const std::vector<Connection *> & connections,
+        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<size_t> & remote_marks,
+        const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
     {
         if (use_async_reading)
-            executeRemoteAnalysisAsync(active_replica_indexes, connections_by_replica, replicas_parts, replicas_marks, replicas_rows, res);
+            executeRemoteAnalysisAsync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
         else
-            executeRemoteAnalysisSync(active_replica_indexes, connections_by_replica, replicas_parts, replicas_marks, replicas_rows, res);
+            executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
     }
 
 #if defined(OS_LINUX)
     void executeRemoteAnalysisAsync(
-        const std::vector<size_t> & active_replica_indexes,
-        const std::vector<Connection *> & connections_by_replica,
-        const std::vector<std::vector<std::string_view>> & replicas_parts,
-        const std::vector<size_t> & replicas_marks,
-        const std::vector<size_t> & replicas_rows,
+        const std::vector<size_t> & active_remote_indexes,
+        const std::vector<Connection *> & connections,
+        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<size_t> & remote_marks,
+        const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
     {
         struct ReplicaReader
         {
             std::shared_ptr<RemoteQueryExecutor> executor;
-            size_t replica_index;
+            size_t remote_index;
             bool query_sent = false;
         };
 
@@ -529,21 +549,19 @@ private:
         std::vector<ReplicaReader> readers;
         std::unordered_map<int, size_t> fd_to_reader;
 
-        for (const auto i : active_replica_indexes)
+        for (const auto i : active_remote_indexes)
         {
-            if (i == local_replica_index)
-                continue;
-            auto * connection = connections_by_replica[i];
-            if (!connection || replicas_parts[i].empty())
+            auto * connection = connections[i];
+            if (!connection || remote_parts[i].empty())
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, replicas_parts[i]);
+            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
             auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, Scalars{}, external_tables);
             executor->setLogger(logger);
 
-            LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}",
-                replicas_parts[i].size(), replicas_marks[i], replicas_rows[i], replica_addresses[i], i, replicas_parts[i]);
+            LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
+                remote_parts[i].size(), remote_marks[i], remote_rows[i], replica_addresses[i], remote_parts[i]);
 
             size_t reader_index = readers.size();
             readers.push_back({std::move(executor), i});
@@ -563,7 +581,7 @@ private:
         auto process_reader = [&](size_t reader_index)
         {
             auto & reader = readers[reader_index];
-            const auto i = reader.replica_index;
+            const auto i = reader.remote_index;
             try
             {
                 while (!reader.query_sent)
@@ -601,19 +619,19 @@ private:
                     break;
                 }
 
-                LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", res[i].second.size(), replica_addresses[i], i, res[i].second);
+                LOG_TRACE(logger, "Received {} parts from {}: {}", res[i].second.size(), replica_addresses[i], res[i].second);
             }
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
                     throw;
                 ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
-                tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_addresses[i], i), LogsLevel::warning);
+                tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", replica_addresses[i]), LogsLevel::warning);
             }
             catch (...)
             {
                 ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
-                tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_addresses[i], i), LogsLevel::warning);
+                tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", replica_addresses[i]), LogsLevel::warning);
             }
         };
 
@@ -653,31 +671,29 @@ private:
 #endif
 
     void executeRemoteAnalysisSync(
-        const std::vector<size_t> & active_replica_indexes,
-        const std::vector<Connection *> & connections_by_replica,
-        const std::vector<std::vector<std::string_view>> & replicas_parts,
-        const std::vector<size_t> & replicas_marks,
-        const std::vector<size_t> & replicas_rows,
+        const std::vector<size_t> & active_remote_indexes,
+        const std::vector<Connection *> & connections,
+        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<size_t> & remote_marks,
+        const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
     {
         ThreadPoolCallbackRunnerLocal<void> runner(getThreadPool(), DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
-        for (const auto i : active_replica_indexes)
+        for (const auto i : active_remote_indexes)
         {
-            if (i == local_replica_index)
-                continue;
-            auto * connection = connections_by_replica[i];
-            if (!connection || replicas_parts[i].empty())
+            auto * connection = connections[i];
+            if (!connection || remote_parts[i].empty())
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            runner.enqueueAndKeepTrack([this, i, connection, &replicas_parts, &replicas_marks, &replicas_rows, &res]()
+            runner.enqueueAndKeepTrack([this, i, connection, &remote_parts, &remote_marks, &remote_rows, &res]()
             {
                 try
                 {
-                    LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}",
-                        replicas_parts[i].size(), replicas_marks[i], replicas_rows[i], replica_addresses[i], i, replicas_parts[i]);
-                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replicas_parts[i], *connection);
-                    LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_addresses[i], i, parts_ranges);
+                    LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
+                        remote_parts[i].size(), remote_marks[i], remote_rows[i], replica_addresses[i], remote_parts[i]);
+                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, remote_parts[i], *connection);
+                    LOG_TRACE(logger, "Received {} parts from {}: {}", parts_ranges.size(), replica_addresses[i], parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }
                 catch (const Exception & e)
@@ -685,22 +701,26 @@ private:
                     if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
                         throw;
                     ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
-                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_addresses[i], i), LogsLevel::warning);
+                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", replica_addresses[i]), LogsLevel::warning);
                 }
                 catch (...)
                 {
                     ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
-                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_addresses[i], i), LogsLevel::warning);
+                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", replica_addresses[i]), LogsLevel::warning);
                 }
             }, Priority{});
         }
         runner.waitForAllToFinishAndRethrowFirstError();
     }
 
-    void resolveMissingParts(DistributedIndexAnalysisPartsRanges & res) const
+    void resolveMissingParts(
+        std::pair<std::string, IndexAnalysisPartsRanges> & local_result,
+        const DistributedIndexAnalysisPartsRanges & remote_results) const
     {
         std::unordered_set<std::string_view> resolved_parts;
-        for (const auto & [_, parts_ranges] : res)
+        for (const auto & [part, _] : local_result.second)
+            resolved_parts.insert(part);
+        for (const auto & [_, parts_ranges] : remote_results)
         {
             for (const auto & [part, replica_ranges] : parts_ranges)
                 resolved_parts.insert(part);
@@ -722,12 +742,10 @@ private:
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisMissingParts);
 
-            const auto & local_replica_address = replica_addresses[local_replica_index];
-            LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
+            LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {}: {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_address, missing_parts);
             auto parts_ranges = local_index_analysis_callback(missing_parts);
-            LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
-            res[local_replica_index].first = local_replica_address;
-            res[local_replica_index].second.insert_range(std::move(parts_ranges));
+            LOG_TRACE(logger, "Received {} missing parts from local replica {}: {}", parts_ranges.size(), local_address, parts_ranges);
+            local_result.second.insert_range(std::move(parts_ranges));
         }
     }
 
@@ -742,10 +760,15 @@ private:
     bool use_hedged_requests = false;
     bool use_async_reading = false;
     size_t total_replicas;
-    size_t local_replica_index;
+    size_t remote_replicas;
     size_t max_active_replicas;
+
+    std::string local_address;
+    size_t local_original_index; /// Position among all replicas (for consistent hash distribution).
+    /// Combined pool with failover logic, used by `HedgedConnectionsFactory` for async connections.
     ConnectionPoolWithFailoverPtr remote_pool;
-    std::vector<ShuffledPool> shuffled_pools;
+    /// Individual per-replica pools (local extracted), used by sync connections via `pool->get`, sorted by replica index.
+    std::vector<ShuffledPool> remote_pools;
     std::vector<std::string> replica_addresses;
 
     std::optional<std::string> filter_query;
