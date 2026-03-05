@@ -334,7 +334,7 @@ namespace
 {
 
 /// Hash the JSON path string and append a predicate entry for bloom filter index.
-static void fillJSONPathBloomPredicate(
+void fillJSONPathBloomPredicate(
     const JSONSubcolumnIndexInfo & json_info,
     const Block & header,
     MergeTreeIndexConditionBloomFilter::RPNElement & out)
