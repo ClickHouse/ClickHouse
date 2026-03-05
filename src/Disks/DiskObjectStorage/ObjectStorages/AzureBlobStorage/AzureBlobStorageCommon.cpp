@@ -519,7 +519,8 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, "", container_name, prefix, "", "", container_already_exists, endpoint_contains_account_name};
+    /// Here we are passing empty account_key even when account_name is present in the endpoint, because here we are only processing endpoint and account_key is not provided.
+    return {storage_url, account_name, /* account_key */"", container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
