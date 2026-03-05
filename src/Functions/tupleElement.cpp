@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -16,8 +17,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/castColumn.h>
 #include <memory>
-
 
 namespace DB
 {
@@ -106,7 +107,7 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
@@ -217,7 +218,7 @@ public:
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
                     res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
                 }
-                else if (element_type->canBeInsideNullable())
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
                 {
                     res = ColumnNullable::create(res, null_map_column);
                 }
@@ -281,7 +282,7 @@ public:
                     input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            res = input_type_as_object->getSubcolumn(subcolumn_name, input_col->getPtr());
+            res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
         }
         else
         {
@@ -374,6 +375,46 @@ private:
             nested_type = std::make_shared<DataTypeArray>(nested_type);
 
         return nested_type;
+    }
+
+    ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
+    {
+        /// tupleElement(json, path) is a bit different from `json.name` subcolumn.
+        /// We want to support a chain of tupleElement functions over json: tupleElement(tupleElement(json, path1), path2)
+        /// to be able to read nested paths in expressions, like '{"a" : {"b" : 42}}'::JSON.a.b.
+        /// So single tupleElement(json, path1) cannot just return subcolumn json.name, otherwise we will try to
+        /// call tupleElement(..., path2) on extracted JSON subcolumn containing literal with path1.
+        /// Instead, tupleElement(json, path1) returns a Dynamic column that is a combinarion of subcolumns json.path1 and json.^path1,
+        /// so for rows with a literal at requested path we will return a literal and for rows with nested object we will
+        /// return this nested object as JSON column, so nested tupleElement(..., path2) can be applied to it.
+        auto literal_subcolumn_type = object_type.getSubcolumnType(element_name);
+        auto literal_subcolumn = object_type.getSubcolumn(element_name, object_column);
+        /// The only exception is when requested path had type hint, in this case we consider that this path is present in all rows
+        /// and we should return it as a literal subcolumn with the hint type.
+        if (object_type.getTypedPaths().contains(element_name))
+            return literal_subcolumn;
+
+        auto sub_object_subcolumn_name = "^`" + element_name + "`";
+        auto sub_object_subcolumn_type = object_type.getSubcolumnType(sub_object_subcolumn_name);
+        auto sub_object_subcolumn = object_type.getSubcolumn(sub_object_subcolumn_name, object_column);
+
+        /// If there is no nested sub-object at this path, just return literal subcolumn.
+        if (sub_object_subcolumn->getNumberOfDefaultRows() == sub_object_subcolumn->size())
+            return literal_subcolumn;
+
+        auto casted_sub_object_subcolumn = castColumn({sub_object_subcolumn, sub_object_subcolumn_type, ""}, literal_subcolumn_type);
+        auto result = literal_subcolumn_type->createColumn();
+        for (size_t i = 0; i != object_column->size(); ++i)
+        {
+            if (!literal_subcolumn->isDefaultAt(i))
+                result->insertFrom(*literal_subcolumn, i);
+            else if (!sub_object_subcolumn->isDefaultAt(i))
+                result->insertFrom(*casted_sub_object_subcolumn, i);
+            else
+                result->insertDefault();
+        }
+
+        return result;
     }
 };
 

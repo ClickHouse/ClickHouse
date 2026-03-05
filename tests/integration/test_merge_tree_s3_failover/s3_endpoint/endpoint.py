@@ -11,12 +11,15 @@ mutex = Lock()
 
 
 @route("/fail_request/<_request_number>")
-def fail_request(_request_number):
+@route("/fail_request/<_request_number>/<_method>")
+def fail_request(_request_number, _method=None):
     request_number = int(_request_number)
     if request_number > 0:
         cache["request_number"] = request_number
+        cache["fail_method"] = _method.upper() if _method else None
     else:
         cache.pop("request_number", None)
+        cache.pop("fail_method", None)
     return "OK"
 
 
@@ -50,11 +53,15 @@ def server(_bucket, _path):
 
     mutex.acquire()
     try:
-        if cache.get("request_number", None):
+        fail_method = cache.get("fail_method", None)
+        if cache.get("request_number", None) and (
+            fail_method is None or request.method == fail_method
+        ):
             request_number = cache.pop("request_number") - 1
             if request_number > 0:
                 cache["request_number"] = request_number
             else:
+                cache.pop("fail_method", None)
                 response.status = 500
                 response.content_type = "text/xml"
                 return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ExpectedError</Code><Message>Expected Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'

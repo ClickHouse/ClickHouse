@@ -193,7 +193,7 @@ private:
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static size_t joinRightColumnsWithAddtitionalFilter(
+    static size_t joinRightColumnsWithAdditionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,

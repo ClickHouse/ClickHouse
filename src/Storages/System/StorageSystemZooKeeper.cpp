@@ -150,6 +150,7 @@ public:
 
     void consume(Chunk & chunk) override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::consume");
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         ColumnPtr name_column = block.getByName("name").column;
@@ -200,6 +201,7 @@ public:
 
     void onFinish() override
     {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::onFinish");
         for (auto & [zookeeper_name, cache] : caches)
         {
             Coordination::Requests requests;
@@ -600,6 +602,7 @@ void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 
 Chunk SystemZooKeeperSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemZooKeeperSource::generate");
     if (name.empty())
     {
         chassert(0); // In fact, it must always have a default value.

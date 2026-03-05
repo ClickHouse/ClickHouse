@@ -126,9 +126,9 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
 
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
-            column_nullable->getExtremesNullLast(min_val, max_val);
+            column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
         else
-            elem.column->getExtremes(min_val, max_val);
+            elem.column->getExtremes(min_val, max_val, 0, elem.column->size());
 
         set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -270,9 +270,9 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
             if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
-                column_nullable->getExtremesNullLast(field_min, field_max);
+                column_nullable->getExtremesNullLast(field_min, field_max, 0, filtered_column->size());
             else
-                filtered_column->getExtremes(field_min, field_max);
+                filtered_column->getExtremes(field_min, field_max, 0, filtered_column->size());
 
             if (set_hyperrectangle.size() <= i)
             {
@@ -772,15 +772,15 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].safeGet<size_t>();
+    size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    if (index.arguments.size() != 1)
+    if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
-    if (index.arguments[0].getType() != Field::Types::UInt64)
+    if (getFieldFromIndexArgumentAST(index.arguments->children[0]).getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer");
 }
 

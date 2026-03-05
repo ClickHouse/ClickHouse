@@ -567,6 +567,15 @@ void ActionsDAG::addOrReplaceInOutputs(const Node & node)
         outputs.push_back(&node);
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getNodesPointers() const
+{
+    NodeRawConstPtrs result;
+    result.reserve(nodes.size());
+    for (const auto & node : nodes)
+        result.push_back(&node);
+    return result;
+}
+
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
 {
     NamesAndTypesList result;
@@ -923,6 +932,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+            if (!key.column)
+                break;
+
+            /// arrayJoin changes the number of rows, which would break partial evaluation
+            /// where other columns maintain input_rows_count. Skip it for non-header evaluation.
+            if (input_rows_count > 0)
+                break;
+
             key.column = key.column->convertToFullColumnIfConst();
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
@@ -1258,7 +1275,13 @@ ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const No
                         {
                             bool should_rename = new_input->result_name != rename->result_name;
                             const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
-                            mapped_input = &dag.addInput(input_name, new_input->result_type);
+                            /// Use the projection node's type for the INPUT since the actual data
+                            /// comes from the projection and has projection types. Using the query
+                            /// node's type would create a mismatch between the header and the data.
+                            /// For example, removeTrivialWrappers may strip materialize() from the
+                            /// query, causing a match with a projection column that has different
+                            /// LowCardinality wrapping.
+                            mapped_input = &dag.addInput(input_name, rename->result_type);
                             if (should_rename)
                                 mapped_input = &dag.addAlias(*mapped_input, new_input->result_name);
                         }
@@ -1711,6 +1734,26 @@ const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool mat
 {
     const auto & func = materializeNodeWithoutRename(node, materialize_sparse);
     return addAlias(func, node.result_name);
+}
+
+void ActionsDAG::removeTrivialWrappers()
+{
+    auto is_trivial_wrapper = [](const Node * node)
+    {
+        return node->type == ActionType::FUNCTION && node->children.size() == 1
+            && (node->function_base->getName() == "materialize" || node->function_base->getName() == "identity");
+    };
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            while (is_trivial_wrapper(child))
+                child = child->children[0];
+
+    for (auto *& output : outputs)
+        while (is_trivial_wrapper(output))
+            output = output->children[0];
+
+    removeUnusedActions();
 }
 
 ActionsDAG ActionsDAG::makeConvertingActions(
@@ -2451,7 +2494,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         if (input->column)
             continue;
 
-        auto constant_column = input->result_type->createColumnConst(0, input->result_type->getDefault());
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
         input_node_name_to_default_input_column.emplace(input->result_name, std::move(constant_column_with_type_and_name));
     }
@@ -2470,13 +2513,15 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         return false;
     }
 
+    if (!filter_with_default_value_inputs)
+        return false;
+
     const auto * filter_with_default_value_inputs_filter_node = filter_with_default_value_inputs->getOutputs()[0];
     if (!filter_with_default_value_inputs_filter_node->column || !isColumnConst(*filter_with_default_value_inputs_filter_node->column))
         return false;
 
     const auto & constant_type = filter_with_default_value_inputs_filter_node->result_type;
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+    if (!constant_type->canBeUsedInBooleanContext())
         return false;
 
     Field value;
@@ -3789,12 +3834,18 @@ static MutableColumnPtr deserializeConstant(
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
-        registry.sets[hash].push_back(column_set.get());
 
         if (!is_constant)
+        {
+            registry.sets[hash].push_back(column_set.get());
             return column_set;
+        }
 
-        return ColumnConst::create(std::move(column_set), 0);
+        auto column_const = ColumnConst::create(std::move(column_set), 0);
+        /// After move, get the pointer from ColumnConst
+        const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
+        registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
+        return column_const;
     }
 
     if (WhichDataType(type).isFunction())

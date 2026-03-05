@@ -90,6 +90,7 @@ REGISTER_FUNCTION(getMaxTableName)
             └─────────────────────────────────────────────┘
             )"
         }},
+        .introduced_in = {25, 1},
         .category = FunctionDocumentation::Category::Other
     });
 }

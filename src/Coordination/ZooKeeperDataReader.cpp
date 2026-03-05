@@ -560,6 +560,12 @@ void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_
 {
     ReadBufferFromFile reader(log_path);
 
+    if (reader.eof())
+    {
+        LOG_WARNING(log, "Log file {} is empty, skipping", log_path);
+        return;
+    }
+
     LOG_INFO(log, "Deserializing log {}", log_path);
     deserializeLogMagic(reader);
     LOG_INFO(log, "Header looks OK");

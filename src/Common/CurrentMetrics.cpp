@@ -7,6 +7,7 @@
 /// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
+    M(ASTFuzzerAccumulatedFragments, "Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.") \
     M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
@@ -125,6 +126,7 @@
     M(ObjectStorageQueueShutdownThreadsScheduled, "Number of queued or active jobs in object storage queue shutdown pool.") \
     M(ObjectStorageQueueMetadataCacheSizeBytes, "Size in bytes of ObjectStorageQueue metadata cache.") \
     M(ObjectStorageQueueMetadataCacheSizeElements, "Size in elements of ObjectStorageQueue metadata cache.") \
+    M(DeltaLakeSnapshotCacheSizeElements, "Size in elements of DeltaLake snapshot cache.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
@@ -318,8 +320,6 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
-    M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
     M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
@@ -330,8 +330,8 @@
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
-    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
-    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexTokensCacheBytes, "Size of the text index tokens cache in bytes") \
+    M(TextIndexTokensCacheCells, "Number of entries in the text index tokens cache") \
     M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
@@ -389,6 +389,14 @@
     M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
     M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
+    M(SharedMergeTreeMaxActiveReplicas, "The maximum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMaxInactiveReplicas, "The maximum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMaxReplicas, "The maximum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMaxActiveReplicas and SharedMergeTreeMaxInactiveReplicas") \
+    M(SharedMergeTreeMinActiveReplicas, "The minimum number of active replicas registered in Keeper") \
+    M(SharedMergeTreeMinInactiveReplicas, "The minimum number of inactive replicas registered in Keeper") \
+    M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
+    M(SharedMergeTreeMinPartitions, "The minimum number of partitions registered in Keeper across all SharedMergeTree tables") \
+    M(SharedMergeTreeMaxPartitions, "The maximum number of partitions registered in Keeper across all SharedMergeTree tables") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \

@@ -79,7 +79,7 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
         /// between GROUP BY and ORDER BY projection definition.
         ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple")
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
             order_by = func->arguments;
         else
         {

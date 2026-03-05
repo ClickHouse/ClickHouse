@@ -22,7 +22,7 @@ def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_versio
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     query_id = get_uuid_str()
-    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_experimental_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 4000000, "query_id": query_id, "max_insert_threads": 32})
+    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number from system.numbers_mt LIMIT 4000000", settings={"allow_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 4000000, "query_id": query_id, "max_insert_threads": 32})
     instance.query("SYSTEM FLUSH LOGS")
     assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == '4000000\n'
     assert instance.query(f"SELECT sum(x) FROM {TABLE_NAME}") == str(sum(range(4000000))) + '\n'

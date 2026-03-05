@@ -6,19 +6,6 @@
 namespace DB
 {
 
-namespace
-{
-    struct Impl
-    {
-        static constexpr auto name = "formatReadableSize";
-
-        static void format(double value, DB::WriteBuffer & out)
-        {
-            formatReadableSizeWithBinarySuffix(value, out);
-        }
-    };
-}
-
 REGISTER_FUNCTION(FormatReadableSize)
 {
     FunctionDocumentation::Description description = R"(
@@ -54,8 +41,8 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionFormatReadable<Impl>>(documentation);
-    factory.registerAlias("FORMAT_BYTES", Impl::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("formatReadableSize", [](ContextPtr){ return FunctionFormatReadable::create("formatReadableSize", formatReadableSizeWithBinarySuffix); }, documentation);
+    factory.registerAlias("FORMAT_BYTES", "formatReadableSize", FunctionFactory::Case::Insensitive);
 }
 
 }

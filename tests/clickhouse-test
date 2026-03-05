@@ -1115,21 +1115,24 @@ def auto_statistics_generator():
 
 
 def randomize_external_sort_group_by():
+    """Returns a dict of 4 settings for external sort/group by.
+    The Bytes-vs-Ratio choice is made per call (not per process),
+    so each test run gets an independent choice."""
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
         return {
-            "max_bytes_before_external_sort": generator,
-            "max_bytes_before_external_group_by": generator,
-            "max_bytes_ratio_before_external_sort": lambda: 0,
-            "max_bytes_ratio_before_external_group_by": lambda: 0,
+            "max_bytes_before_external_sort": generator(),
+            "max_bytes_before_external_group_by": generator(),
+            "max_bytes_ratio_before_external_sort": 0,
+            "max_bytes_ratio_before_external_group_by": 0,
         }
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
     return {
-        "max_bytes_before_external_sort": lambda: 0,
-        "max_bytes_before_external_group_by": lambda: 0,
-        "max_bytes_ratio_before_external_sort": lambda: round(generator(), 2),
-        "max_bytes_ratio_before_external_group_by": lambda: round(generator(), 2),
+        "max_bytes_before_external_sort": 0,
+        "max_bytes_before_external_group_by": 0,
+        "max_bytes_ratio_before_external_sort": round(generator(), 2),
+        "max_bytes_ratio_before_external_group_by": round(generator(), 2),
     }
 
 
@@ -1280,6 +1283,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "optimize_syntax_fuse_functions": lambda: random.randint(0, 1),
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
@@ -1296,7 +1300,6 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
-        **randomize_external_sort_group_by(),
     }
 
     dependent_settings = {
@@ -1327,6 +1330,8 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
+        # Bytes-vs-Ratio choice is made per test, not per process
+        random_settings.update(randomize_external_sort_group_by())
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
@@ -1429,7 +1434,7 @@ def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
-def _coerce_value(v: str):
+def str_to_numeric(v: str):
     vl = v.lower()
     if vl in ("true", "false"):
         return vl == "true"
@@ -1439,6 +1444,12 @@ def _coerce_value(v: str):
         return int(v)
     except ValueError:
         return v
+
+
+def str_to_bool(v):
+    if isinstance(v, str):
+        return bool(str_to_numeric(v))
+    return bool(v)
 
 
 def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
@@ -1462,7 +1473,7 @@ def parse_settings_cli_blob(blob: str) -> Dict[str, object]:
             out[key] = True
             i += 1
             continue
-        out[key] = _coerce_value(tokens[i + 1])
+        out[key] = str_to_numeric(tokens[i + 1])
         i += 2
     return out
 
@@ -2045,14 +2056,12 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        # Ingore no-{build} tags in stress-tests job
+        # Ignore no-{build} tags in stress-tests job
         if tags and not args.stress_tests:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
-                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
-                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
+                if "no-" + build_flag in tags:
                     return FailureReason.BUILD
-            if "no-sanitizers" in tags and not (args.flaky_check and args.test_runs > 1):
+            if "no-sanitizers" in tags:
                 if any(
                     flag in args.build_flags
                     for flag in BuildFlags.SANITIZERS
@@ -3868,6 +3877,14 @@ def do_run_tests(
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
+                # Wait for processes to exit, then force-kill stragglers
+                for p in processes:
+                    p.join(timeout=10)
+                    if p.is_alive():
+                        print(f"Force killing process {p.name} (pid {p.pid})")
+                        p.kill()
+                for p in processes:
+                    p.join(timeout=5)
                 break
 
             for p in processes[:]:
@@ -4941,19 +4958,19 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
+        default=str_to_bool(os.environ.get("REPLACE_RMT_WITH_SMT", False)),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
+        default=str_to_bool(os.environ.get("REPLACE_MT_WITH_SMT", False)),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-log-memory-with-mergetree",
         action="store_true",
-        default=os.environ.get("REPLACE_LOG_MEM_WITH_MT", False),
+        default=str_to_bool(os.environ.get("REPLACE_LOG_MEM_WITH_MT", False)),
         help="Replace *Log and Memory engines with MergeTree",
     )
     parser.add_argument(
@@ -4965,7 +4982,7 @@ def parse_args():
     parser.add_argument(
         "--shared-catalog",
         action="store_true",
-        default=os.environ.get("USE_SHARED_CATALOG", "0") == "1",
+        default=str_to_bool(os.environ.get("USE_SHARED_CATALOG", False)),
         help="Run tests with Shared Catalog",
     )
     parser.add_argument(

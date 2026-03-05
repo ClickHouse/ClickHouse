@@ -1,9 +1,10 @@
 #pragma once
 
+#include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
+#include <Common/CacheLine.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/thread_local_rng.h>
-#include <IO/BufferWithOwnMemory.h>
 
 /// "Userspace page cache"
 /// A cache for contents of remote files.
@@ -95,7 +96,7 @@ class PageCache
 private:
     using Base = CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-    class alignas(std::hardware_destructive_interference_size) Shard : public Base
+    class alignas(CH_CACHE_LINE_SIZE) Shard : public Base
     {
     public:
         using Base::Base;
@@ -122,6 +123,8 @@ public:
     /// If detached_if_missing = true, and the key is not present in the cache, the returned chunk
     /// will be just a standalone PageCacheCell not connected to the cache.
     MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
+
+    MappedPtr get(const PageCacheKey & key, bool inject_eviction);
 
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 

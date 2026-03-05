@@ -115,7 +115,20 @@ public:
 
 REGISTER_FUNCTION(S2ToGeo)
 {
-    factory.registerFunction<FunctionS2ToGeo>();
+    FunctionDocumentation::Description description = R"(
+Returns coordinates (longitude, latitude) corresponding to the provided S2 point index. This is the inverse of [`geoToS2`](/sql-reference/functions/geo/s2#geotos2).
+    )";
+    FunctionDocumentation::Syntax syntax = "s2ToGeo(s2index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2index", "The S2 cell identifier.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (lon, lat) of Float64 values representing the longitude and latitude.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2ToGeo(4704772434919038107)", "(37.79506681471008,55.7129059052841)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2ToGeo>(documentation);
 }
 
 
