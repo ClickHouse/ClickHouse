@@ -1521,6 +1521,10 @@ namespace ErrorCodes
     DECLARE(Bool, vertical_merge_optimize_lightweight_delete, true, R"(
     If true, lightweight delete is optimized on vertical merge.
     )", 0) \
+    DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
+    If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
+    the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
+    )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed mutations.
     )", 0) \
