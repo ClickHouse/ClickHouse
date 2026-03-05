@@ -9,6 +9,7 @@ doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -426,6 +427,16 @@ These codecs are designed to make compression more effective by exploiting speci
 #### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+
+#### ALP {#alp}
+
+<ExperimentalBadge/>
+
+`ALP()` — Adaptive lossless compression for floating-point data based on decimal scaling. ALP attempts to represent each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Values that cannot be represented exactly are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, currency). Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
 
 #### FPC {#fpc}
 
