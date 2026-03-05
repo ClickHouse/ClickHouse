@@ -446,6 +446,27 @@ ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
 
+-- EXPLAIN topn_aggregation_max_limit gate:
+-- large LIMIT should disable Mode 2 by default.
+SELECT '-- EXPLAIN topn max-limit gate: default (should NOT optimize)';
+EXPLAIN PLAN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5000
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1;
+
+-- Raising topn_aggregation_max_limit should re-enable Mode 2 for the same query.
+SELECT '-- EXPLAIN topn max-limit gate: override (should optimize)';
+EXPLAIN PLAN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5000
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1, topn_aggregation_max_limit = 10000;
+
 -- EXPLAIN: verify threshold pruning and __topKFilter prewhere on MergeTree table
 -- requires use_top_k_dynamic_filtering = 1 since it defaults to off
 SELECT '-- EXPLAIN threshold pruning with prewhere';

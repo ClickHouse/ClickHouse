@@ -77,6 +77,8 @@ private:
     size_t state_align = 1;
 
     /// --- Per-group state (grows during consume) ---
+    /// Keep a wrapper instead of raw AggregateDataPtr so we can extend per-group
+    /// metadata later (for example cached order value or flags) without refactors.
     struct GroupState { AggregateDataPtr state = nullptr; };
 
     ArenaPtr arena;
@@ -98,6 +100,11 @@ private:
     size_t order_agg_arg_col_idx = 0;
     MutableColumnPtr boundary_column;
     bool threshold_active = false;
+    /// Adaptive threshold refresh cadence:
+    /// start with per-chunk refresh for fast convergence, then back off as
+    /// more chunks are processed to reduce repeated materialize+partial-sort cost.
+    size_t mode2_chunks_seen = 0;
+    size_t chunks_since_last_threshold_refresh = 0;
 
     /// --- Consume / generate per mode ---
     void consumeMode1(Chunk & chunk);
@@ -125,6 +132,7 @@ private:
 
     /// --- Helpers: threshold ---
     void refreshThresholdFromStates();
+    void maybeRefreshThreshold();
     bool isBelowThreshold(const IColumn & col, size_t row) const;
 };
 
@@ -170,6 +178,8 @@ private:
     size_t state_align = 1;
 
     /// --- Per-group state ---
+    /// Keep a wrapper instead of raw AggregateDataPtr so we can extend per-group
+    /// metadata later (for example cached order value or flags) without refactors.
     struct GroupState { AggregateDataPtr state = nullptr; };
 
     ArenaPtr arena;

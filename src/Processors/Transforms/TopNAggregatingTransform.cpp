@@ -278,6 +278,48 @@ void TopNAggregatingTransform::refreshThresholdFromStates()
     }
 }
 
+void TopNAggregatingTransform::maybeRefreshThreshold()
+{
+    if (!enable_threshold_pruning)
+        return;
+
+    const size_t groups = group_states.size();
+    if (groups < limit || groups > limit * 10000)
+        return;
+
+    /// First usable threshold should be published immediately once we have >= K groups.
+    if (!threshold_active)
+    {
+        refreshThresholdFromStates();
+        chunks_since_last_threshold_refresh = 0;
+        return;
+    }
+
+    /// Start frequent, then gradually reduce refresh frequency as more chunks arrive.
+    size_t refresh_period_chunks = 1;
+    if (mode2_chunks_seen >= 32)
+        refresh_period_chunks = 2;
+    if (mode2_chunks_seen >= 128)
+        refresh_period_chunks = 4;
+    if (mode2_chunks_seen >= 512)
+        refresh_period_chunks = 8;
+    if (mode2_chunks_seen >= 2048)
+        refresh_period_chunks = 16;
+
+    /// When groups >> K, boundary updates are typically less sensitive per chunk.
+    const size_t group_to_limit_ratio = groups / std::max<size_t>(1, limit);
+    if (group_to_limit_ratio >= 100)
+        refresh_period_chunks = std::max<size_t>(refresh_period_chunks, 16);
+    if (group_to_limit_ratio >= 1000)
+        refresh_period_chunks = std::max<size_t>(refresh_period_chunks, 32);
+
+    if (chunks_since_last_threshold_refresh < refresh_period_chunks)
+        return;
+
+    refreshThresholdFromStates();
+    chunks_since_last_threshold_refresh = 0;
+}
+
 bool TopNAggregatingTransform::isBelowThreshold(const IColumn & col, size_t row) const
 {
     if (!threshold_active)
@@ -354,6 +396,9 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
     if (num_rows == 0)
         return;
 
+    ++mode2_chunks_seen;
+    ++chunks_since_last_threshold_refresh;
+
     if (mode2_accumulated_keys.empty())
     {
         for (size_t k = 0; k < key_names.size(); ++k)
@@ -398,12 +443,7 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
         }
     }
 
-    /// Refresh threshold from actual group-level aggregates. The threshold is the
-    /// K-th best aggregate value seen so far -- a safe lower bound that cannot
-    /// over-prune. Capped at limit*10000 groups to keep per-chunk cost bounded.
-    if (enable_threshold_pruning && group_states.size() >= limit
-        && group_states.size() <= limit * 10000)
-        refreshThresholdFromStates();
+    maybeRefreshThreshold();
 }
 
 

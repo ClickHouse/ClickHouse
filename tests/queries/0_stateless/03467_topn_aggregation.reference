@@ -244,6 +244,21 @@ Expression (Project names)
     TopNAggregating
       Expression ((Before GROUP BY + Change column names to column identifiers))
         ReadFromMergeTree (default.t_topn_unsorted)
+-- EXPLAIN topn max-limit gate: default (should NOT optimize)
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_topn_unsorted)
+-- EXPLAIN topn max-limit gate: override (should optimize)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    TopNAggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        Expression
+          ReadFromMergeTree (default.t_topn_unsorted)
 -- EXPLAIN threshold pruning with prewhere
 Expression (Project names)
 Actions: INPUT : 0 -> max(__table1.start_time) DateTime : 0

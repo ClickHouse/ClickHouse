@@ -80,6 +80,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool topn_aggregation;
     UInt64 topn_aggregation_pruning_level;
+    UInt64 topn_aggregation_max_limit;
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;

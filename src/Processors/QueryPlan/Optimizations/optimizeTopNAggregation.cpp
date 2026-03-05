@@ -255,11 +255,15 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     ///   level 1 — + in-transform threshold pruning (skip rows below K-th aggregate)
     ///   level 2 — + dynamic __topKFilter prewhere (requires use_top_k_dynamic_filtering;
     ///              falls back to level 1 behavior when that setting is off)
+    /// Mode 2 also uses a conservative LIMIT gate because performance degrades when
+    /// K is large relative to group cardinality. For large LIMIT, fallback to the
+    /// standard Aggregator + Sorting pipeline is usually better.
     /// Mode 2 requires at least level 1 to avoid the known direct-compute regression.
     bool mode2_eligible = false;
     UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
+    bool mode2_limit_ok = limit_value <= optimization_settings.topn_aggregation_max_limit;
 
-    if (!sorted_input && pruning_level >= 1
+    if (!sorted_input && mode2_limit_ok && pruning_level >= 1
         && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
     {
         String order_arg_name = resolveOriginalArgName(
