@@ -39,8 +39,8 @@ enum class ThreadName : uint8_t;
 struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
-        : task(std::move(task_))
-        , storage_id(task->getStorageID())
+        : storage_id(task_->getStorageID())
+        , task(std::move(task_))
         , metric(metric_)
         , events(events_)
     {
@@ -82,10 +82,10 @@ struct TaskRuntimeData
             task.reset();
     }
 
-    ExecutableTaskPtr task;
     /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
     /// even after resetTask() has nullified the task pointer.
     StorageID storage_id;
+    ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
     TaskProfileEvents events;
     /// Guarded by MergeTreeBackgroundExecutor<>::mutex
