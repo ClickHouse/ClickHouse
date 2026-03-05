@@ -1,7 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/Combinators/IAggregateFunctionCombinator.h>
-#include <Common/ContainersWithMemoryTracking.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string>
 

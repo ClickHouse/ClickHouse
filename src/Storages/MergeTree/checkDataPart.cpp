@@ -17,6 +17,7 @@
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
@@ -422,7 +423,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 auto remote_paths = data_part_storage.getRemotePaths(file_name);
                 for (const auto & remote_path : remote_paths)
-                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                    cache.removePathIfExists(remote_path, FileCache::getCommonOrigin().user_id);
             }
         }
 

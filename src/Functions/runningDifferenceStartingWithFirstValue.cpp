@@ -7,7 +7,7 @@ namespace DB
 
 REGISTER_FUNCTION(RunningDifferenceStartingWithFirstValue)
 {
-    FunctionDocumentation::Description description_runningDifferenceStartingWithFirstValue = R"(
+    FunctionDocumentation::Description description = R"(
 Calculates the difference between consecutive row values in a data block, but unlike [`runningDifference`](#runningDifference), it returns the actual value of the first row instead of `0`.
 
 :::warning Deprecated
@@ -18,10 +18,10 @@ It is advised to use [window functions](/sql-reference/window-functions) instead
 You can use setting `allow_deprecated_error_prone_window_functions` to allow usage of this function.
 :::
 )";
-    FunctionDocumentation::Syntax syntax_runningDifferenceStartingWithFirstValue = "runningDifferenceStartingWithFirstValue(x)";
-    FunctionDocumentation::Arguments arguments_runningDifferenceStartingWithFirstValue = {{"x", "Column for which to calculate the running difference.", {"Any"}}};
-    FunctionDocumentation::ReturnedValue returned_value_runningDifferenceStartingWithFirstValue = {"Returns the difference between consecutive values, with the first row's value for the first row.", {"Any"}};
-    FunctionDocumentation::Examples examples_runningDifferenceStartingWithFirstValue = {{"Usage example",
+    FunctionDocumentation::Syntax syntax = "runningDifferenceStartingWithFirstValue(x)";
+    FunctionDocumentation::Arguments arguments = {{"x", "Column for which to calculate the running difference.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between consecutive values, with the first row's value for the first row.", {"Any"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 SELECT
     number,
@@ -39,11 +39,11 @@ FROM numbers(5);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_runningDifferenceStartingWithFirstValue = {1, 1};
-    FunctionDocumentation::Category category_runningDifferenceStartingWithFirstValue = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_runningDifferenceStartingWithFirstValue = {description_runningDifferenceStartingWithFirstValue, syntax_runningDifferenceStartingWithFirstValue, arguments_runningDifferenceStartingWithFirstValue, {}, returned_value_runningDifferenceStartingWithFirstValue, examples_runningDifferenceStartingWithFirstValue, introduced_in_runningDifferenceStartingWithFirstValue, category_runningDifferenceStartingWithFirstValue};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionRunningDifferenceImpl<false>>(documentation_runningDifferenceStartingWithFirstValue);
+    factory.registerFunction<FunctionRunningDifferenceImpl<false>>(documentation);
 }
 
 }

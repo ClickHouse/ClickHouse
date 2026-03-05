@@ -1,6 +1,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Core/Block.h>
+#include <Functions/IFunction.h>
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -33,6 +34,17 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     if (updater)
         updater->recordOutputChunk(chunk, block);
+}
+
+void ExpressionTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    const auto & nodes = expression->getNodes();
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
 }
 
 ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActionsPtr expression_)

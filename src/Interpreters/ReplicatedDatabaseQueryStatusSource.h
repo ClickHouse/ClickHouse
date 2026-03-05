@@ -11,7 +11,12 @@ class ReplicatedDatabaseQueryStatusSource final : public DistributedQueryStatusS
 {
 public:
     ReplicatedDatabaseQueryStatusSource(
-        const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait);
+        const String & zookeeper_name_,
+        const String & zk_node_path,
+        const String & zk_replicas_path,
+        ContextPtr context_,
+        const Strings & hosts_to_wait,
+        DDLGuardPtr && database_guard_);
 
     String getName() const override { return "ReplicatedDatabaseQueryStatus"; }
 
@@ -26,6 +31,8 @@ protected:
 
 private:
     static Block getSampleBlock();
+    /// A kind of read lock for the database which prevents dropping the database (and its metadata from zk that we use for getting the query status)
+    DDLGuardPtr database_guard;
 
 
 };

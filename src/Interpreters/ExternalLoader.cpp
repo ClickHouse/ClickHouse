@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int DEADLOCK_AVOIDED;
     extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
@@ -819,6 +820,14 @@ private:
 
     Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
+        /// Detect circular dependencies: if this thread is already loading the requested object
+        /// (e.g. a dictionary depends on a Merge table that depends back on the same dictionary),
+        /// waiting would deadlock because we are the ones who are supposed to finish loading it.
+        if (objects_being_loaded_by_current_thread().contains(name))
+            throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                "Circular dependency detected: {} '{}' is being loaded by the current thread"
+                " and loading it again would cause a deadlock", type_name, name);
+
         std::optional<size_t> min_id;
         Info * info = nullptr;
         auto pred = [&]
@@ -968,6 +977,14 @@ private:
         info.loading_end_time = std::chrono::system_clock::now();
     }
 
+    /// Returns a thread-local set of object names currently being loaded by the current thread.
+    /// Used to detect circular dependencies that would cause a deadlock.
+    static std::unordered_set<String> & objects_being_loaded_by_current_thread()
+    {
+        thread_local std::unordered_set<String> names;
+        return names;
+    }
+
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
@@ -995,6 +1012,11 @@ private:
             auto previous_version_as_base_for_loading = info->object;
             if (forced_to_reload)
                 previous_version_as_base_for_loading = nullptr; /// Need complete reloading, cannot use the previous version.
+
+            /// Track that this thread is loading this object to detect circular dependencies.
+            auto & loading_set = objects_being_loaded_by_current_thread();
+            loading_set.insert(name);
+            SCOPE_EXIT({ loading_set.erase(name); });
 
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);

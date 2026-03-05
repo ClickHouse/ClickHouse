@@ -1,10 +1,19 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-
-#include <Common/TransactionID.h>
 #include <Storages/MergeTree/MergeList.h>
+
+#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
+
+MergeTreeData::MutableDataPartsVector MergeProjectionPartsTask::extractTemporaryParts()
+{
+    MergeTreeData::MutableDataPartsVector tmp_parts_to_remove;
+    for (auto && [level, parts] : std::exchange(level_parts, {}))
+        tmp_parts_to_remove.append_range(std::move(parts));
+
+    return tmp_parts_to_remove;
+}
 
 bool MergeProjectionPartsTask::executeStep()
 {
@@ -53,8 +62,7 @@ bool MergeProjectionPartsTask::executeStep()
         // Generate a unique part name
         ++block_num;
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        MergeTreeData::DataPartsVector const_selected_parts(
-            std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
+        MergeTreeData::DataPartsVector const_selected_parts(selected_parts.begin(), selected_parts.end());
         projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};

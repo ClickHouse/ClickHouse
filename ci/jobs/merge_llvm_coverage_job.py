@@ -1,6 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
+
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -16,7 +17,10 @@ if __name__ == "__main__":
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
 
-    Utils.compress_gz(f"{temp_dir}/llvm_coverage_html_report",f"{temp_dir}/llvm_coverage_html_report.tar.gz")
+    Utils.compress_gz(
+        f"{temp_dir}/llvm_coverage_html_report",
+        f"{temp_dir}/llvm_coverage_html_report.tar.gz",
+    )
 
     files_to_attach = []
     assets_to_attach = []

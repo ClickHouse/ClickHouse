@@ -7,8 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB

@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <absl/container/inlined_vector.h>

@@ -256,16 +256,16 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-# Randomize concurrent_threads_scheduler (default is fair_round_robin)
+# Randomize concurrent_threads_scheduler (default is max_min_fair)
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<clickhouse><concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler></clickhouse>" \
+    sudo echo "<clickhouse><concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 

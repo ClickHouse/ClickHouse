@@ -208,16 +208,25 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         additional_names.insert(word);
             }
 
+            /// Add lowercased versions of all additional names for case-insensitive matching.
+            std::unordered_set<std::string> additional_names_lowercase;
+            for (const auto & name : additional_names)
+                additional_names_lowercase.insert(Poco::toLower(name));
+
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().has(what)
+                if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
-                    || additional_names.contains(what);
+                    || additional_names.contains(what))
+                    return true;
+
+                /// Case-insensitive fallback for additional names (storage names, data types, settings, etc.)
+                return additional_names_lowercase.contains(Poco::toLower(what));
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);

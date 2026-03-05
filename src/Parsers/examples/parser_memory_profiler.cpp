@@ -74,10 +74,15 @@
 #include <sstream>
 #include <string>
 #include <cstdlib>
+#include <filesystem>
 #include <unistd.h>
 #include <atomic>
 
+#include <boost/program_options.hpp>
+
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Processors/Sources/JemallocProfileSource.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -195,22 +200,7 @@ std::string readQuery()
     );
 }
 
-void printUsage(const char * prog_name)
-{
-    std::cerr << "Usage: " << prog_name << " [--profile <prefix>]\n";
-    std::cerr << "  Reads SQL query from stdin until EOF and prints memory stats.\n";
-    std::cerr << "\nOptions:\n";
-    std::cerr << "  --profile <prefix>  Dump jemalloc heap profiles to <prefix>*.heap\n";
-    std::cerr << "\nOutput format (tab-separated):\n";
-    std::cerr << "  query_length  allocated_before  allocated_after  allocated_diff\n";
-    std::cerr << "\nExamples:\n";
-    std::cerr << "  # Memory stats only:\n";
-    std::cerr << "  echo 'SELECT 1;' | " << prog_name << "\n";
-    std::cerr << "\n  # With heap profiling (macOS - use JE_MALLOC_CONF):\n";
-    std::cerr << "  JE_MALLOC_CONF=prof:true,prof_active:true " << prog_name << " --profile /tmp/p_ <<< 'SELECT 1;'\n";
-    std::cerr << "\n  # With heap profiling (Linux - use MALLOC_CONF):\n";
-    std::cerr << "  MALLOC_CONF=prof:true " << prog_name << " --profile /tmp/p_ <<< 'SELECT 1;'\n";
-}
+namespace po = boost::program_options;
 
 void printProfilingStatus()
 {
@@ -250,28 +240,68 @@ try
 {
     using namespace DB;
 
-    std::string profile_prefix;
-    bool enable_profiling = false;
+    po::options_description desc("Measure memory allocations during SQL parsing.\n"
+                                 "Reads query from stdin, prints tab-separated: query_length before after diff\n\n"
+                                 "Options");
+    desc.add_options()
+        ("help,h", "Show help")
+        ("profile", po::value<std::string>(), "Dump jemalloc heap profiles with this prefix")
+        ("symbolize", "Symbolize heap profiles (requires --profile)")
+        ("symbolize-batch", po::value<std::vector<std::string>>()->multitoken(),
+         "Batch-symbolize .heap files (shared cache via global LRU)")
+    ;
 
-    for (int i = 1; i < argc; ++i)
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    if (vm.contains("help"))
     {
-        std::string arg = argv[i];
-        if (arg == "--profile" && i + 1 < argc)
+        std::cerr << desc << "\n";
+        return 0;
+    }
+
+    /// Handle batch symbolization mode: global LRU cache is shared across calls
+    if (vm.contains("symbolize-batch"))
+    {
+        auto batch_files = vm["symbolize-batch"].as<std::vector<std::string>>();
+        if (batch_files.empty())
         {
-            profile_prefix = argv[++i];
-            enable_profiling = true;
-        }
-        else if (arg == "--help" || arg == "-h")
-        {
-            printUsage(argv[0]);
-            return 0;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << arg << "\n";
-            printUsage(argv[0]);
+            std::cerr << "Error: --symbolize-batch requires at least one .heap file\n";
             return 1;
         }
+
+        for (const auto & file : batch_files)
+        {
+            if (!std::filesystem::exists(file))
+            {
+                std::cerr << "Error: heap file not found: " << file << "\n";
+                return 1;
+            }
+        }
+
+        std::cerr << "Batch symbolizing " << batch_files.size() << " heap files...\n";
+        for (const auto & file : batch_files)
+        {
+            std::string output = file + ".sym";
+            symbolizeJemallocHeapProfile(file, output);
+            std::cerr << "Symbolized: " << file << " -> " << output << "\n";
+        }
+        std::cerr << "Done.\n";
+        return 0;
+    }
+
+    std::string profile_prefix;
+    bool enable_profiling = vm.contains("profile");
+    bool enable_symbolize = vm.contains("symbolize");
+
+    if (enable_profiling)
+        profile_prefix = vm["profile"].as<std::string>();
+
+    if (enable_symbolize && !enable_profiling)
+    {
+        std::cerr << "Error: --symbolize requires --profile\n";
+        return 1;
     }
 
     std::string query = readQuery();
@@ -305,6 +335,10 @@ try
                 return 1;
             }
         }
+
+        /// Enable per-thread profiling (ClickHouse jemalloc defaults to prof_thread_active_init:false)
+        bool thread_active = true;
+        mallctl("thread.prof.active", nullptr, nullptr, &thread_active, sizeof(thread_active));
 
         /// Reset profiler and dump initial state
         resetProfiler();
@@ -345,6 +379,16 @@ try
     {
         std::cerr << "Profile before: " << profile_before_path << "\n";
         std::cerr << "Profile after:  " << profile_after_path << "\n";
+
+        if (enable_symbolize)
+        {
+            std::string sym_before = profile_before_path + ".sym";
+            std::string sym_after = profile_after_path + ".sym";
+            symbolizeJemallocHeapProfile(profile_before_path, sym_before);
+            symbolizeJemallocHeapProfile(profile_after_path, sym_after);
+            std::cerr << "Symbolized before: " << sym_before << "\n";
+            std::cerr << "Symbolized after:  " << sym_after << "\n";
+        }
     }
 
     return 0;

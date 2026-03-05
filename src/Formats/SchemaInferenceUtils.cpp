@@ -470,15 +470,16 @@ namespace
         updateTypeIndexes(data_types, type_indexes);
     }
 
-    /// If we have both Nullable and non Nullable types, make all types Nullable
-    void transformNullableTypes(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    /// If we have both Nullable and non Nullable types, make all types Nullable.
+    /// Nullable(Tuple(...)) is controlled by schema_inference_allow_nullable_tuple_type.
+    void transformNullableTypes(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings)
     {
         if (!type_indexes.contains(TypeIndex::Nullable))
             return;
 
         for (auto & type : data_types)
         {
-            if (type->canBeInsideNullable())
+            if (canBeInsideNullableBySchemaSettings(type, settings))
                 type = makeNullable(type);
         }
 
@@ -737,7 +738,7 @@ namespace
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
         {
             /// Make types Nullable if needed.
-            transformNullableTypes(data_types, type_indexes);
+            transformNullableTypes(data_types, type_indexes, settings);
 
             /// If we have type Nothing, it means that we had empty Array/Map while inference.
             /// If there is at least one non Nothing type, change all Nothing types to it.
@@ -770,7 +771,7 @@ namespace
                 transformVariant(data_types, type_indexes);
         };
 
-        transformTypesRecursively(types, transform_simple_types, transform_complex_types);
+        transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings);
     }
 
     template <bool is_json>
@@ -1397,6 +1398,14 @@ namespace
     }
 }
 
+bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)
+{
+    if (isTuple(type) && !settings.schema_inference_allow_nullable_tuple_type)
+        return false;
+
+    return type->canBeInsideNullable();
+}
+
 bool checkIfTypesAreEqual(const DataTypes & types)
 {
     if (types.empty())
@@ -1703,10 +1712,13 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
             nested_types.push_back(nested_type);
         }
 
+        DataTypePtr tuple_res;
         if (tuple_type->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+        else
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types));
 
-        return std::make_shared<DataTypeTuple>(std::move(nested_types));
+        return (make_nullable && settings.schema_inference_allow_nullable_tuple_type) ? makeNullableSafe(tuple_res) : tuple_res;
     }
 
     if (which.isMap())

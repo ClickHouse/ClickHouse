@@ -117,7 +117,20 @@ public:
 
 REGISTER_FUNCTION(S2GetNeighbors)
 {
-    factory.registerFunction<FunctionS2GetNeighbors>();
+    FunctionDocumentation::Description description = R"(
+Returns the S2 neighbor indices corresponding to the provided S2 cell index. Each cell in the S2 system is a quadrilateral bounded by four geodesics. Each cell has exactly 4 neighbors.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2GetNeighbors(s2index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2index", "The S2 cell identifier.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of 4 neighbor S2 cell identifiers.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099698741248, 5765131099950653440, 5765131100074868736, 5765131100088901632]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2GetNeighbors>(documentation);
 }
 
 

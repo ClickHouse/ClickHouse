@@ -3,9 +3,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <cstddef>
 #include <optional>
@@ -13,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -60,7 +60,6 @@ fs::path normalizeDirectoryPath(const fs::path & path)
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
     ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
@@ -118,6 +117,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         }
     }
 
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
@@ -149,6 +149,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
             }
 
+            /// Passing by reference:
+            /// log: Created before runner, so it will be destroyed after
+            /// settings: Same as log
+            /// remove_layout: Same
+            /// remote_layout_mutex: Same
+            /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
+            /// Thus the order of destruction of the variables is not important
             runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
@@ -387,6 +394,15 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
     operations.finalize();
 }
 
+TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
+{
+    if (!std::holds_alternative<NoCommitOptions>(options))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata storage from disk supports only tryCommit without options");
+
+    commit(NoCommitOptions{});
+    return true;
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
@@ -456,16 +472,16 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         metadata_storage.metrics));
 }
 
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkMetadata(const std::string & path)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
         path,
+        if_exists,
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
-
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+        metadata_storage.metrics,
+        removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
@@ -482,7 +498,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         metadata_storage.metrics));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
     if (!normalizePath(path).empty())
         if (uncommitted_fs_tree->existsDirectory(path).first)
@@ -493,7 +509,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
@@ -516,7 +533,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
@@ -528,17 +546,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
-}
-
-const IMetadataStorage & MetadataStorageFromPlainRewritableObjectStorageTransaction::getStorageForNonTransactionalReads() const
-{
-    return metadata_storage;
-}
-
-std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    return metadata_storage.getStorageObjectsIfExist(path);
+        metadata_storage.metrics,
+        removed_objects));
 }
 
 ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
@@ -559,6 +568,11 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
         return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
+}
+
+StoredObjects MetadataStorageFromPlainRewritableObjectStorageTransaction::getSubmittedForRemovalBlobs()
+{
+    return removed_objects;
 }
 
 }

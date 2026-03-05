@@ -56,17 +56,19 @@ public:
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::Offsets & offsets = offsets_col->getData();
-        offsets.reserve(num_rows);
+        if (num_rows == 0)
+            return ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
 
+        offsets.reserve(num_rows);
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto array_size = col_num->getInt(i);
-            auto element_size = col_value->byteSizeAt(i);
 
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
 
+            auto element_size = col_value->byteSizeAt(i);
             Int64 estimated_size = 0;
             if (unlikely(common::mulOverflow(array_size, element_size, estimated_size)))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());

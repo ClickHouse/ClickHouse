@@ -8,7 +8,7 @@ set -e
 
 # Firstly write parts with use_const_adaptive_granularity=0 and then enable it and check that index_granularity_bytes_in_memory_allocated=25 (sizeof constant granularity)
 
-$CLICKHOUSE_CLIENT --enable_full_text_index=1 -nm -q "
+$CLICKHOUSE_CLIENT -nm -q "
 drop table if exists test_materialize;
 create table test_materialize
 (

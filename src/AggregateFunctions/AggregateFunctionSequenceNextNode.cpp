@@ -3,19 +3,19 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Common/ArenaAllocator.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -548,7 +548,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {}, properties });
 }
 
 }

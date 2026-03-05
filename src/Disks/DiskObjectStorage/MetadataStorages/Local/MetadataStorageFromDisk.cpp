@@ -2,19 +2,24 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <Common/logger_useful.h>
 
+#include <limits>
+#include <ranges>
 #include <memory>
 #include <shared_mutex>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_)
     : disk(disk_)
@@ -69,7 +74,6 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 {
     return disk->iterateDirectory(path);
 }
-
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
@@ -128,7 +132,6 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
 
-/// It supports writing with Append because `createTransaction` creates `MetadataStorageFromDiskTransaction` which has `supportAddingBlobToMetadata`
 bool MetadataStorageFromDisk::supportWritingWithAppend() const
 {
     return true;
@@ -144,9 +147,34 @@ uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) con
     return readMetadata(path)->ref_count;
 }
 
-const IMetadataStorage & MetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const
+IMetadataStorage::BlobsToRemove MetadataStorageFromDisk::getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count)
 {
-    return metadata_storage;
+    std::lock_guard guard(removed_objects_mutex);
+
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
+
+    BlobsToRemove blobs_to_remove;
+    for (const auto & blob : objects_to_remove | std::views::take(max_count))
+        blobs_to_remove[blob] = {cluster->getLocalLocation()};
+
+    return blobs_to_remove;
+}
+
+int64_t MetadataStorageFromDisk::recordAsRemoved(const StoredObjects & blobs)
+{
+    std::lock_guard guard(removed_objects_mutex);
+
+    int64_t recorded_count = 0;
+    for (const auto & removed_blob : blobs)
+        recorded_count += objects_to_remove.erase(removed_blob);
+
+    return recorded_count;
+}
+
+MetadataStorageFromDiskTransaction::MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_)
+    : metadata_storage(metadata_storage_)
+{
 }
 
 void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVariant & options)
@@ -160,6 +188,20 @@ void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVa
     }
 
     operations.finalize();
+
+    {
+        std::lock_guard guard(metadata_storage.removed_objects_mutex);
+        metadata_storage.objects_to_remove.insert_range(objects_to_remove);
+    }
+}
+
+TransactionCommitOutcomeVariant MetadataStorageFromDiskTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
+{
+    if (!std::holds_alternative<NoCommitOptions>(options))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata storage from disk supports only tryCommit without options");
+
+    commit(NoCommitOptions{});
+    return true;
 }
 
 void MetadataStorageFromDiskTransaction::writeStringToFile(
@@ -186,22 +228,14 @@ void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
     operations.addOperation(std::make_unique<ChmodOperation>(path, mode, *metadata_storage.getDisk()));
 }
 
-void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path)
+void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
 {
-    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, if_exists, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
 }
 
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
+void MetadataStorageFromDiskTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
-    auto op = std::make_unique<UnlinkFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
-    auto outcome = op->getOutcome();
-    operations.addOperation(std::move(op));
-    return outcome;
-}
-
-void MetadataStorageFromDiskTransaction::removeRecursive(const std::string & path)
-{
-    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
 }
 
 void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
@@ -236,7 +270,7 @@ void MetadataStorageFromDiskTransaction::moveDirectory(const std::string & path_
 
 void MetadataStorageFromDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
 }
 
 void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
@@ -246,7 +280,7 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, objects, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<RewriteFileOperation>(path, objects, metadata_storage.compatible_key_prefix, *metadata_storage.disk, objects_to_remove));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const StoredObject & object)
@@ -254,25 +288,19 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
 }
 
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)
+void MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)
 {
-    auto op = std::make_unique<TruncateMetadataFileOperation>(src_path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk());
-    auto outcome = op->getOutcome();
-    operations.addOperation(std::move(op));
-    return outcome;
-}
-
-std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
-
-    return std::nullopt;
+    operations.addOperation(std::make_unique<TruncateMetadataFileOperation>(src_path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
 }
 
 ObjectStorageKey MetadataStorageFromDiskTransaction::generateObjectKeyForPath(const std::string & /*path*/)
 {
     return metadata_storage.key_generator->generate();
+}
+
+StoredObjects MetadataStorageFromDiskTransaction::getSubmittedForRemovalBlobs()
+{
+    return objects_to_remove;
 }
 
 }
