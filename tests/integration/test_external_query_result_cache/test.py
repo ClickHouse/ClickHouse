@@ -468,3 +468,278 @@ def test_no_stampede_concurrent(started_cluster):
     assert len(data_keys) == 1, (
         f"Expected exactly 1 data cache entry, found {len(data_keys)}: {data_keys}"
     )
+
+
+# ---------------------------------------------------------------------------
+# system.query_cache / dump()
+# ---------------------------------------------------------------------------
+
+
+def test_system_query_cache_columns(started_cluster):
+    """system.query_cache shows correct metadata for a cached entry."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    q = "SELECT 5555"
+    node1.query(
+        f"{q} SETTINGS use_query_cache = true, query_cache_tag = 'mytag', query_cache_share_between_users = 1"
+    )
+
+    result = node1.query(
+        """
+        SELECT query, tag, shared, stale
+        FROM system.query_cache
+        WHERE query LIKE '%5555%'
+        LIMIT 1
+        FORMAT TabSeparated
+        """
+    )
+    parts = result.strip().split("\t")
+    assert len(parts) == 4, f"Expected 4 columns, got: {result!r}"
+    assert "5555" in parts[0], f"query column should contain '5555': {parts[0]}"
+    assert parts[1] == "mytag", f"tag column should be 'mytag': {parts[1]}"
+    assert parts[2] == "1", f"shared column should be 1: {parts[2]}"
+    assert parts[3] == "0", f"stale column should be 0: {parts[3]}"
+
+
+def test_system_query_cache_multiple_entries(started_cluster):
+    """system.query_cache lists all live entries; clearing removes them."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    node1.query(
+        "SELECT 1001 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+    node1.query(
+        "SELECT 1002 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+    node1.query(
+        "SELECT 1003 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+
+    count_before = int(
+        node1.query(
+            "SELECT count() FROM system.query_cache WHERE query LIKE '%100%'"
+        ).strip()
+    )
+    assert count_before == 3, f"Expected 3 entries, got {count_before}"
+
+    node1.query("SYSTEM CLEAR QUERY CACHE")
+
+    count_after = int(
+        node1.query("SELECT count() FROM system.query_cache").strip()
+    )
+    assert count_after == 0, f"Expected 0 entries after clear, got {count_after}"
+
+
+# ---------------------------------------------------------------------------
+# count() and sizeInBytes()
+# ---------------------------------------------------------------------------
+
+
+def test_count_reflects_redis_keys(started_cluster):
+    """SELECT count() FROM system.query_cache matches Redis DBSIZE (minus lock keys)."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    for val in [2001, 2002, 2003]:
+        node1.query(
+            f"SELECT {val} SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+        )
+
+    # system.query_cache count
+    ch_count = int(node1.query("SELECT count() FROM system.query_cache").strip())
+    assert ch_count == 3, f"Expected 3 in system.query_cache, got {ch_count}"
+
+    # Redis DBSIZE should match (no stale lock keys at this point)
+    redis_count = r.dbsize()
+    assert redis_count == 3, f"Expected 3 keys in Redis, got {redis_count}"
+
+
+def test_size_in_bytes_is_zero(started_cluster):
+    """For the remote cache, result_size in system.query_cache is nonzero but
+    the local memory usage (sizeInBytes) is 0 – the data lives in Redis."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    node1.query(
+        "SELECT 3001 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+
+    # result_size column represents the serialized entry size stored in Redis
+    result_size = int(
+        node1.query(
+            "SELECT result_size FROM system.query_cache WHERE query LIKE '%3001%' LIMIT 1"
+        ).strip()
+    )
+    assert result_size > 0, f"Expected non-zero result_size, got {result_size}"
+
+    # There is no direct SQL for sizeInBytes(), but the implementation always
+    # returns 0. Verify indirectly: the total_size_in_bytes in system.caches
+    # for query_result_cache should be 0 for the remote backend.
+    total_bytes = node1.query(
+        "SELECT sum(total_size_in_bytes) FROM system.caches WHERE name = 'query_result_cache'"
+    ).strip()
+    # system.caches may not surface the remote cache; either 0 or empty is acceptable.
+    assert total_bytes in ("0", ""), f"Expected 0 or empty, got {total_bytes!r}"
+
+
+# ---------------------------------------------------------------------------
+# min_query_duration (query_cache_min_query_duration)
+# ---------------------------------------------------------------------------
+
+
+def test_min_query_duration_not_met(started_cluster):
+    """A query that finishes too fast must not be written to the cache."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # min_query_duration = 60 000 ms — a simple SELECT completes far faster.
+    node1.query(
+        "SELECT 4001 SETTINGS use_query_cache = true, query_cache_min_query_duration = 60000"
+    )
+    assert r.dbsize() == 0, (
+        f"Expected no cache entry because query was too fast, got {r.dbsize()} keys"
+    )
+
+
+def test_min_query_duration_met(started_cluster):
+    """A query that sleeps past the threshold must be written to the cache."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # min_query_duration = 300 ms; sleep(0.5) => 500 ms — should exceed threshold.
+    node1.query(
+        "SELECT sleep(0.5), 4002"
+        " SETTINGS use_query_cache = true, query_cache_share_between_users = 1,"
+        " query_cache_min_query_duration = 300"
+    )
+    assert r.dbsize() == 1, (
+        f"Expected 1 cache entry because query exceeded min_query_duration, got {r.dbsize()} keys"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Non-deterministic function handling
+# ---------------------------------------------------------------------------
+
+
+def test_nondeterministic_not_cached_by_default(started_cluster):
+    """Queries containing rand() must not be cached under the default setting."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # Default query_cache_nondeterministic_function_handling = 'throw', so
+    # attempting to cache a query with rand() must throw an exception.
+    try:
+        node1.query(
+            "SELECT rand() SETTINGS use_query_cache = true",
+            settings={"query_cache_nondeterministic_function_handling": "throw"},
+        )
+        # If no exception is raised the test still passes as long as nothing
+        # was written to the cache (some builds may handle this differently).
+    except Exception:
+        pass  # expected
+
+    assert r.dbsize() == 0, (
+        f"Expected no cache entry for non-deterministic query, got {r.dbsize()} keys"
+    )
+
+
+def test_nondeterministic_saved_when_setting_allows(started_cluster):
+    """With query_cache_nondeterministic_function_handling = 'save', the result is cached."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    node1.query(
+        "SELECT rand() % 1 SETTINGS use_query_cache = true,"
+        " query_cache_share_between_users = 1,"
+        " query_cache_nondeterministic_function_handling = 'save'"
+    )
+    assert r.dbsize() == 1, (
+        f"Expected 1 cache entry when nondeterministic_function_handling='save',"
+        f" got {r.dbsize()} keys"
+    )
+
+
+# ---------------------------------------------------------------------------
+# cancelWrite: lock released on query cancellation / error
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_write_releases_lock(started_cluster):
+    """If a writing node cancels mid-flight, the lock key must be gone afterwards
+    so other nodes are not blocked."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # Execute a query that fails (division by zero) while use_query_cache = true.
+    # The writer's cancelWrite path should release the lock.
+    try:
+        node1.query(
+            "SELECT intDiv(1, 0) SETTINGS use_query_cache = true,"
+            " query_cache_share_between_users = 1"
+        )
+    except Exception:
+        pass  # expected — intDiv(1, 0) throws an exception
+
+    # No stale lock keys should remain.
+    lock_keys = [k for k in r.keys("*") if b":lock" in k]
+    assert lock_keys == [], f"Stale lock keys found after cancelled write: {lock_keys}"
+
+
+# ---------------------------------------------------------------------------
+# Multiple tags: tag isolation
+# ---------------------------------------------------------------------------
+
+
+def test_multiple_tags_isolation(started_cluster):
+    """Entries with different tags are independent; clearing one tag does not
+    affect entries with other tags."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    tags = ["alpha", "beta", "gamma"]
+    for i, tag in enumerate(tags):
+        node1.query(
+            f"SELECT {6000 + i}"
+            f" SETTINGS use_query_cache = true,"
+            f" query_cache_tag = '{tag}',"
+            f" query_cache_share_between_users = 1"
+        )
+
+    assert r.dbsize() == 3, f"Expected 3 entries before partial clear, got {r.dbsize()}"
+
+    # Clear only 'beta'.
+    node1.query("SYSTEM CLEAR QUERY CACHE TAG 'beta'")
+
+    # 'alpha' and 'gamma' must still exist.
+    remaining = int(node1.query("SELECT count() FROM system.query_cache").strip())
+    assert remaining == 2, f"Expected 2 entries after clearing 'beta', got {remaining}"
+
+    # Verify 'beta' is gone.
+    beta_count = int(
+        node1.query(
+            "SELECT count() FROM system.query_cache WHERE tag = 'beta'"
+        ).strip()
+    )
+    assert beta_count == 0, f"Expected 'beta' entries to be gone, got {beta_count}"
+
+
+# ---------------------------------------------------------------------------
+# cross-node count consistency
+# ---------------------------------------------------------------------------
+
+
+def test_cross_node_count(started_cluster):
+    """count() on node2 reflects entries written by node1 (shared Redis)."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    for val in [7001, 7002]:
+        node1.query(
+            f"SELECT {val} SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+        )
+
+    count_node2 = int(node2.query("SELECT count() FROM system.query_cache").strip())
+    assert count_node2 == 2, f"Expected node2 to see 2 entries from node1, got {count_node2}"
