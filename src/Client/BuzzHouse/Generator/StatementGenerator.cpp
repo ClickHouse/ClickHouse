@@ -105,9 +105,9 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.15}, /// DictExpr
               {0.01, 0.15}, /// JoinExpr
               {0.01, 0.15}, /// StarExpr
-              {0.01, 0.05}, /// LitAggrState
-              {0.01, 0.05}, /// LitReinterpret
-              {0.01, 0.05} /// LitAccurateCast
+              {0.01, 0.02}, /// LitAggrState
+              {0.01, 0.02}, /// LitReinterpret
+              {0.01, 0.02} /// LitAccurateCast
           }},
           "SQL expressions"))
     , predGen(ProbabilityGenerator(
