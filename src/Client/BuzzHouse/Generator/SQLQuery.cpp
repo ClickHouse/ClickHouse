@@ -2137,17 +2137,25 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
     lim->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextBool()));
 }
 
-void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, OffsetStatement * off)
+void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, const bool has_limit, OffsetStatement * off)
 {
     off->set_comma(rg.nextBool());
     generateLimitExpr(rg, off->mutable_row_count());
-    if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
+    /// FETCH is only valid in the SQL-standard OFFSET ... FETCH form, which requires no LIMIT clause.
+    /// When paired with LIMIT n OFFSET m the parser never sets offset_clause_has_sql_standard_row_or_rows,
+    /// so FETCH would not be consumed and any trailing ROWS/FETCH token causes a parse error.
+    if (!has_limit && has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
         FetchStatement * fst = off->mutable_fetch();
 
         generateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
         fst->set_first(rg.nextBool());
+    }
+    if (!off->has_fetch() && rg.nextSmallNumber() < 4)
+    {
+        /// Generate standalone OFFSET n ROW/ROWS (without FETCH) to exercise that syntax variant.
+        off->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
     }
     if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
@@ -2449,7 +2457,7 @@ void StatementGenerator::generateSelect(
         }
         if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
         {
-            generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
+            generateOffset(rg, ssc->has_orderby(), ssc->has_limit(), ssc->mutable_offset());
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
