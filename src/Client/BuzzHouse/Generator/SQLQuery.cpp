@@ -19,6 +19,7 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     const bool prev_allow_subqueries = this->allow_subqueries;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_engine_udf = this->allow_engine_udf;
+    const PeerQuery prev_peer_query = this->peer_query;
 
     /// Backup everything
     for (const auto & [key, val] : this->levels)
@@ -99,11 +100,13 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     this->allow_subqueries = prev_allow_subqueries;
     this->enforce_final = prev_enforce_final;
     this->allow_engine_udf = prev_allow_engine_udf;
+    this->peer_query = prev_peer_query;
 
     /// Don't let superfluous entries stay
     this->staged_databases.clear();
     this->staged_tables.clear();
     this->staged_views.clear();
+    this->staged_dictionaries.clear();
     this->staged_functions.clear();
 }
 
@@ -715,7 +718,9 @@ bool StatementGenerator::joinedTableOrFunction(
 
     queryGen.setEnabled(queryMask);
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
-    const auto nopt = (this->chain_views && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
+    const bool chain_views_now = this->chain_views;
+    this->chain_views = false;
+    const auto nopt = (chain_views_now && queryMask[static_cast<size_t>(QueryOp::View)] && rg.nextBool())
         ? QueryOp::View
         : static_cast<QueryOp>(queryGen.nextOp()); /// drifts over time
 
@@ -2480,7 +2485,7 @@ void StatementGenerator::generateTopSelect(
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
-        const std::filesystem::path & qfile = fc.client_file_path / "file.data";
+        const std::filesystem::path qfile = std::filesystem::temp_directory_path() / "file.data";
 
         sif->set_path(qfile.generic_string());
         if (fc.truncate_output)

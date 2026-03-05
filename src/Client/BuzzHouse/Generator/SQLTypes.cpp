@@ -131,7 +131,7 @@ String BoolType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
 {
     if (rg.nextSmallNumber() < 8)
     {
-        const static DB::Strings & comp = {"<", "<=", ">", ">=", "=", "=", "=", "<>", "<>"};
+        const static DB::Strings comp = {"<", "<=", ">", ">=", "=", "=", "=", "<>", "<>"};
         String buf = "(number % ";
 
         buf += std::to_string(rg.randomInt<uint32_t>(1, 10));

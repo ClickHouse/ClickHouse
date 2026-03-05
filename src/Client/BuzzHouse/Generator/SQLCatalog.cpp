@@ -746,7 +746,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> & formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
 
         file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
@@ -996,11 +996,13 @@ void SQLFunction::setName(Function * f) const
 
 const String & ColumnPathChain::getBottomName() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].cname;
 }
 
 SQLType * ColumnPathChain::getBottomType() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].tp;
 }
 

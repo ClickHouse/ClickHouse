@@ -505,7 +505,7 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
 {
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-    static const auto & searchFuncs
+    static const std::vector<SQLFunc> searchFuncs
         = {SQLFunc::FUNCendsWith,
            SQLFunc::FUNChas,
            SQLFunc::FUNChasToken,

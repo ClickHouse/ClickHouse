@@ -177,8 +177,11 @@ void QueryOracle::generateRoundtripOracleQueries(
             roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
             break;
         case 2:
-            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal
-            roundtrip_pred = fmt::format("reverse{0}(reverse({1})) = {1}", rg.nextBool() ? "UTF8" : "", val);
+            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            {
+                const String rev = rg.nextBool() ? "UTF8" : "";
+                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+            }
             break;
         case 3:
             /// URL encode/decode — exercises URL percent-encoding

@@ -95,7 +95,7 @@ public:
     bool allow_aggregates = true;
     bool allow_window_funcs = true;
     bool group_by_all = false;
-    uint32_t level;
+    uint32_t level = 0;
     uint32_t cte_counter = 0;
     uint32_t window_counter = 0;
     std::vector<GroupCol> gcols;
@@ -857,7 +857,8 @@ public:
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
-        return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
+        const bool b_is_deterministic = b.is_deterministic;
+        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.is_deterministic || !b_is_deterministic); };
     }
 
     template <TableRequirement req>

@@ -534,6 +534,10 @@ void StatementGenerator::generateNextTTL(
                     {
                         addTableRelation(rg, true, "", t.value());
                     }
+                    if (!this->levels.contains(this->current_level))
+                    {
+                        this->levels[this->current_level] = QueryLevel(this->current_level);
+                    }
                     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
                     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
                     this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
@@ -1080,7 +1084,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(
                 *te->add_params() = item;
             }
         }
-        if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4)
+        if (te->has_engine() && (b.teng == SummingMergeTree || b.teng == CoalescingMergeTree) && rg.nextSmallNumber() < 4
+            && !entries.empty())
         {
             /// Optional list of columns to be summed
             ColumnPathList * clist = te->add_params()->mutable_col_list();
@@ -1821,7 +1826,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
+            static const DB::Strings tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);
@@ -1895,21 +1900,21 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                static const DB::Strings & post_codecs = {"none", "bitpacking"};
+                static const DB::Strings post_codecs = {"none", "bitpacking"};
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
         }
         break;
         case IndexType::IDX_vector_similarity: {
-            static const std::vector<uint32_t> & dimensionVals = {1, 1, 1, 2, 2, 2, 4, 8, 32, 64, 128};
+            static const std::vector<uint32_t> dimensionVals = {1, 1, 1, 2, 2, 2, 4, 8, 32, 64, 128};
 
             idef->add_params()->set_sval("hnsw");
             idef->add_params()->set_sval(rg.nextBool() ? "cosineDistance" : "L2Distance");
             idef->add_params()->set_ival(rg.pickRandomly(dimensionVals));
             if (rg.nextBool())
             {
-                static const DB::Strings & QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8", "b1"};
+                static const DB::Strings QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8", "b1"};
 
                 idef->add_params()->set_sval(rg.pickRandomly(QuantitizationVals));
                 idef->add_params()->set_ival(rg.randomInt<uint32_t>(0, 4194304));
@@ -1966,12 +1971,12 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
         {
             this->levels[this->current_level] = QueryLevel(this->current_level);
         }
-        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 10;
+        this->levels[this->current_level].allow_window_funcs = false;
         if (!t.cols.empty())
         {
             addTableRelation(rg, true, "", t);
         }
-        this->allow_subqueries = rg.nextSmallNumber() < 10;
+        this->allow_subqueries = false;
         generateSelect(
             rg, true, false, ncols, allow_groupby | allow_orderby | allow_global_aggregate, std::nullopt, psdef->mutable_select());
         this->allow_subqueries = prev_allow_subqueries;
@@ -2805,7 +2810,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     {
         /// Lifetime properties
         DictionaryLifetime * life = cd->mutable_lifetime();
-        static const std::vector<uint32_t> & lifeValues = {0, 1, 2, 10, 30, 60, 120};
+        static const std::vector<uint32_t> lifeValues = {0, 1, 2, 10, 30, 60, 120};
 
         life->set_min(rg.pickRandomly(lifeValues));
         if (rg.nextBool())
