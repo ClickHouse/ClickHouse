@@ -51,11 +51,18 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DB::Setting
@@ -221,6 +228,11 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     request.SetDatabaseName(db_name);
     if (limit != 0)
         request.SetMaxResults(static_cast<int>(limit));
+
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database during catalog HTTP request");
+    });
 
     std::string next_token;
     do

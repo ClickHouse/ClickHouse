@@ -199,6 +199,10 @@ def test_check_database(started_cluster):
             f"CHECK DATABASE test_hms_check_db"
         )
 
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
+
         node.query("DROP DATABASE IF EXISTS test_hms_check_db")
     except Exception as e:
         if "compiled without USE_HIVE" in str(e) or "compiled without USE_AVRO" in str(e):

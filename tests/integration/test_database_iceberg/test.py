@@ -343,6 +343,10 @@ def test_check_database(started_cluster):
         f"CHECK DATABASE {CATALOG_NAME}"
     )
 
+    node.query(
+        f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+    )
+
 
 def test_many_namespaces(started_cluster):
     node = started_cluster.instances["node1"]

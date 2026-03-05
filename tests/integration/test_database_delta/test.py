@@ -249,6 +249,9 @@ def test_check_database_unity(started_cluster):
         f"CHECK DATABASE {db_name}"
     )
 
+    node1.query(
+        f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+    )
 
 def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")

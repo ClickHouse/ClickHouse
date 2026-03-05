@@ -53,7 +53,7 @@ namespace DB::ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
-namespace FailPoints
+namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
 }
@@ -223,6 +223,11 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database during catalog HTTP request");
+    });
+
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (auth_header.has_value())
@@ -273,10 +278,6 @@ OneLakeCatalog::OneLakeCatalog(
 
 AccessToken RestCatalog::retrieveAccessToken() const
 {
-    fiu_do_on(FailPoints::check_database_datalake_negative, {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database during catalog HTTP request");
-    });
-
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
     /// TODO:
