@@ -367,8 +367,7 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql";
     std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
-    std::filesystem::path fuzz_client_out = client_file_path / "fuzz.data";
-    std::filesystem::path fuzz_server_out = server_file_path / "fuzz.data";
+    std::filesystem::path fuzzer_out_file = std::filesystem::temp_directory_path() / "out.data";
     std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()
