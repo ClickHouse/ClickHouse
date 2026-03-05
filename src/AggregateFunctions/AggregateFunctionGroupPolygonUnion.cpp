@@ -60,7 +60,7 @@ SELECT wkt(groupPolygonUnion(geom)) AS result FROM test_polygons;
 │ MULTIPOLYGON(((5 10,5 15,15 15,15 5,10 5,10 0,0 0,0 10,5 10))) │
 └────────────────────────────────────────────────────────────────┘
                )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation
         = {description, syntax, arguments, doc_parameters, returned_value, examples, introduced_in, category};
@@ -88,7 +88,7 @@ SELECT wkt(groupPolygonUnion(geom)) AS result FROM test_polygons;
 
              return std::make_shared<AggregateFunctionGroupPolygonUnion<CartesianPoint>>(argument_types, correct_geometry);
          },
-         {},
+         AggregateFunctionProperties{},
          documentation});
 
     factory.registerAlias("ST_Union", "groupPolygonUnion", AggregateFunctionFactory::Case::Insensitive);

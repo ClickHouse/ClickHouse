@@ -95,7 +95,7 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
 │ POLYGON((0 0,0 10,10 10,10 0,0 0)) │
 └────────────────────────────────────┘
                )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation
         = {description, syntax, arguments, doc_parameters, returned_value, examples, introduced_in, category};
@@ -123,7 +123,7 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
 
              return std::make_shared<AggregateFunctionGroupConvexHull<CartesianPoint>>(argument_types, correct_geometry);
          },
-         {},
+         AggregateFunctionProperties{},
          documentation});
 
     factory.registerAlias("ST_ConvexHull", "groupConvexHull", AggregateFunctionFactory::Case::Insensitive);
