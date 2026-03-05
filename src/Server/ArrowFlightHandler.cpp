@@ -65,7 +65,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int UNKNOWN_SETTING;
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_USER;
 }
 
 namespace
@@ -214,7 +213,7 @@ namespace
         token_expiration_list_t token_expiration_list;
         std::unordered_map<std::string, token_expiration_list_t::iterator> token_expiration_list_index;
         std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials;
-        
+
         Poco::Util::AbstractConfiguration & config;
     };
 

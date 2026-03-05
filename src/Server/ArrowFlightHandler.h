@@ -3,15 +3,6 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <Server/IServer.h>
-#include <Interpreters/Context.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Session.h>
-#include <Common/Base64.h>
-
-#include <string>
-
 #include <Common/ThreadPool.h>
 #include <Server/GRPCServer.h>
 #include <arrow/flight/server.h>
