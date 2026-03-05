@@ -89,6 +89,15 @@ void QueryGraph::buildColumnEquivalences()
         if (!lhs_rel || !rhs_rel)
             continue;
 
+        /// Skip predicates involving outer-joined relations: when a LEFT/RIGHT/FULL JOIN
+        /// doesn't match, the outer side produces NULLs, so the equality doesn't hold
+        /// for all rows and the transitive equivalence would be invalid.
+        auto lhs_it = join_kinds.find(*lhs_rel);
+        auto rhs_it = join_kinds.find(*rhs_rel);
+        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
+            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
+            continue;
+
         column_equivalences.add(
             RelColumn{*lhs_rel, lhs_node->result_name},
             RelColumn{*rhs_rel, rhs_node->result_name});

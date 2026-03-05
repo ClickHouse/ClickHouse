@@ -865,6 +865,7 @@ static void cleanupJoinPredicates(
         /// Phase 1: Remove redundant predicates.
         auto & expressions = entry->join_operator.expression;
         size_t removed = 0;
+        bool is_inner = isInner(entry->join_operator.kind);
 
         std::erase_if(expressions, [&](const JoinActionRef & predicate)
         {
@@ -885,7 +886,11 @@ static void cleanupJoinPredicates(
                 return true;
             }
 
-            equiv.add(*lhs_endpoint, *rhs_endpoint);
+            /// Only propagate equivalences from inner joins to the parent;
+            /// outer join equality holds only for matching rows
+            /// and would be invalid for NULL-padded non-matching rows.
+            if (is_inner)
+                equiv.add(*lhs_endpoint, *rhs_endpoint);
             return false;
         });
 
