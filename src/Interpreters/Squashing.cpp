@@ -118,6 +118,8 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkI
 
 void Squashing::add(Chunk && input_chunk)
 {
+    if (!input_chunk || input_chunk.getNumRows() == 0)
+        return ;
     pending.pushBack(std::move(input_chunk));
 }
 
