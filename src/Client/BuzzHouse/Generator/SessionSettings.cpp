@@ -1285,7 +1285,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_statistics_cache", trueOrFalseSetting},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
-    {"use_text_index_dictionary_cache", trueOrFalseSetting},
+    {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
