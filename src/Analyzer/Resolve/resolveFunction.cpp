@@ -430,7 +430,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, use_storage_snapshot_without_data).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -722,6 +722,33 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 node = std::move(tme_const_node);
                 return {std::move(res)};
             }
+        }
+    }
+
+    /// When ignore_in_subqueries is set, skip resolving the second argument
+    /// of IN functions if it is a subquery.  The subquery may reference tables
+    /// that do not exist (e.g. when `validate_mutation_query = 0`).  The result
+    /// type of IN is always UInt8 regardless of the subquery contents.
+    if (ignore_in_subqueries && is_special_function_in)
+    {
+        auto & in_args = function_node_ptr->getArguments().getNodes();
+        auto second_arg_type = in_args.size() == 2 ? in_args[1]->getNodeType() : QueryTreeNodeType::LIST;
+
+        if (second_arg_type == QueryTreeNodeType::QUERY || second_arg_type == QueryTreeNodeType::UNION)
+        {
+            resolveExpressionNode(in_args[0], scope, false, false);
+
+            auto result_projection_name = calculateFunctionProjectionName(node, parameters_projection_names,
+                {in_args[0]->formatASTForErrorMessage(), in_args[1]->formatASTForErrorMessage()});
+
+            ColumnsWithTypeAndName argument_columns;
+            argument_columns.push_back({nullptr, in_args[0]->getResultType(), "left"});
+            argument_columns.push_back({nullptr, std::make_shared<DataTypeSet>(), "right"});
+
+            auto function_resolver = FunctionFactory::instance().get(function_name, scope.context);
+            function_node_ptr->resolveAsFunction(function_resolver->build(argument_columns));
+
+            return {result_projection_name};
         }
     }
 

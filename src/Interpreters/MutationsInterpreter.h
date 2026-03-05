@@ -2,6 +2,7 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
@@ -11,6 +12,7 @@
 namespace DB
 {
 
+class ActionsChain;
 class Context;
 class QueryPlan;
 
@@ -198,6 +200,7 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -219,7 +222,10 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        explicit Stage(ContextPtr context_);
+        ~Stage();
+        Stage(Stage &&) noexcept;
+        Stage & operator=(Stage &&) noexcept;
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -228,12 +234,19 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// --- Old analyzer path (populated when analyzer is not enabled) ---
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
+
+        /// --- New analyzer path (populated when analyzer is enabled) ---
+        std::unique_ptr<ActionsChain> new_actions_chain;
+        PreparedSetsPtr new_prepared_sets;
+
+        /// --- Common ---
         Names filter_column_names;
 
         bool affects_all_columns = false;

@@ -69,11 +69,13 @@ public:
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool use_snapshot_without_data = false);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool use_snapshot_without_data = false);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
