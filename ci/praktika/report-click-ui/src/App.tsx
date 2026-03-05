@@ -1218,7 +1218,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 headers={headers}
                 rows={rows}
                 loading={loading}
-                responsiveMode="scroll"
+                disableMobileListView={true}
               />
             </div>
           )}
