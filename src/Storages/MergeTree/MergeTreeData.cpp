@@ -6919,7 +6919,11 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 {
     PartitionIds partition_ids;
     if (partitions)
+    {
+        if (partitions->empty())
+            return; // explicitly restore nothing
         partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
+    }
 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
