@@ -482,6 +482,8 @@ bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
 
+    have_error = false;
+    error_code = 0;
     if (!processQueryText(full_query))
     {
         have_error = true;
@@ -927,6 +929,11 @@ bool Client::buzzHouse()
     }
     if (!no_timeout)
     {
+        /// Don't let the last query's error code become the exit code
+        have_error = false;
+        error_code = 0;
+        server_exception.reset();
+        client_exception.reset();
         LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
     }
     if (!no_eof)
