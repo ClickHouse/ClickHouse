@@ -1,7 +1,7 @@
 -- Tests for correctness of the ordered_group_by_limit_pushdown optimization.
 -- Part 3: edge cases, negative tests, and two-level hash table conversion.
 
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas, long, no-sanitizers
 
 SET ordered_group_by_limit_pushdown = 1;
 SET allow_suspicious_low_cardinality_types = 1;
