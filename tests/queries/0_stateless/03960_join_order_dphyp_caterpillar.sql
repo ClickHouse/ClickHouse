@@ -1,3 +1,5 @@
+-- Tags: long, no-debug, no-sanitizers, no-sanitize-coverage
+
 -- Test: Caterpillar graph - DPhyp is O(K) while DPsize is O(2^K)
 --
 -- Topology: S1 - S2 - ... - SK   (spine chain)
