@@ -44,13 +44,21 @@ public:
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Block * block_ptr)
+    void reinit(const Block * block_ptr, const ScatteredBlock::Selector & selector)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
             assert(flags[block_ptr].size() <= block_ptr->rows());
             need_flags = true;
             flags[block_ptr] = std::vector<std::atomic_bool>(block_ptr->rows());
+
+            /// Mark all rows outside of selector as used.
+            /// We should not emit them in RIGHT/FULL JOIN result,
+            /// since they belongs to another shard, which will handle flags for these rows
+            for (auto & flag : flags[columns])
+                flag.store(true);
+            for (size_t index : selector)
+                flags[block_ptr][index].store(false);
         }
     }
 
