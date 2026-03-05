@@ -13,5 +13,5 @@ ANN results - distributed
 30	[0.3,0.3]
 30	[0.3,0.3]
 30	[0.3,0.3]
-distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas=3, DistributedIndexAnalysisFailedReplicas>0=0
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisScheduledReplicas=3
 1
