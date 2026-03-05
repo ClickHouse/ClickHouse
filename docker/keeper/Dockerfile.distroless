@@ -120,13 +120,13 @@ RUN mkdir -p \
         /output/var/lib/clickhouse \
         /output/var/log/clickhouse-keeper \
     && chmod 1777 /output/tmp \
-    && printf \
+    && printf '%b' \
         'root:x:0:0:root:/root:/sbin/nologin\n' \
         'nobody:x:65534:65534:nobody:/nonexistent:/sbin/nologin\n' \
         'nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin\n' \
         'clickhouse:x:101:101:ClickHouse:/var/lib/clickhouse:/sbin/nologin\n' \
         > /output/etc/passwd \
-    && printf \
+    && printf '%b' \
         'root:x:0:\n' \
         'nobody:x:65534:\n' \
         'nonroot:x:65532:\n' \
