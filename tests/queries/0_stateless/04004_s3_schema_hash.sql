@@ -25,6 +25,12 @@ create table test_04004_hash_partitioned (a UInt64, b String) engine = S3(s3_con
 insert into test_04004_hash_partitioned values (1, 'foo'), (2, 'bar'), (3, 'baz');
 select a, b from s3(s3_conn, filename='test_04004/*/*/data.parquet', format=Parquet) order by a;
 
+-- Test 4: Error when using {_schema_hash} without specifying columns
+create table test_04004_hash_no_schema engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet); -- { serverError BAD_ARGUMENTS }
+
+-- Test 5: Error when combining {_schema_hash} with hive partition strategy
+create table test_04004_hash_hive (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet, partition_strategy='hive') partition by a; -- { serverError BAD_ARGUMENTS }
+
 drop table test_04004_hash_write;
 drop table test_04004_hash_write2;
 drop table test_04004_hash_partitioned;

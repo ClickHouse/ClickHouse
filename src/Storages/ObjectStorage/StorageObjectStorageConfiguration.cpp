@@ -163,7 +163,8 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
     schema_hash = hash;
     boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
 
-    chassert(getPaths().size() == 1);
+    if (getPaths().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
     auto path = getRawPath();
     boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
     setPaths({path});
