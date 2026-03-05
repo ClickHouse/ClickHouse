@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-NEW_DB_NAME="${CLICKHOUSE_DATABASE}_03913_DATALKE"
+NEW_DB_NAME="${CLICKHOUSE_DATABASE}_03913_DATALAKE"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
 $CLICKHOUSE_CLIENT -q "
