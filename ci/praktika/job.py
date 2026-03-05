@@ -1,8 +1,10 @@
 import copy
 import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -265,5 +267,10 @@ class Job:
             if self.timeout_shell_cleanup:
                 return
             if self.run_in_docker:
-                # the container name is always the same (praktika) for every image
-                self.timeout_shell_cleanup = "docker rm -f praktika"
+                container_name = (
+                    "praktika_"
+                    + hashlib.sha1(
+                        Path(os.getcwd()).resolve().as_posix().encode()
+                    ).hexdigest()[:12]
+                )
+                self.timeout_shell_cleanup = f"docker rm -f {container_name}"
