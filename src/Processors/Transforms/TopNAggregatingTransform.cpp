@@ -6,15 +6,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Port.h>
 
-#include <algorithm>
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 Block buildIntermediateHeader(const Block & input_header, const Names & key_names, const AggregateDescriptions & aggregates)
 {
@@ -76,11 +69,6 @@ TopNAggregatingTransform::TopNAggregatingTransform(
         state_align = std::max(state_align, aggregates[i].function->alignOfData());
     }
 
-    if (enable_threshold_pruning && !sorted_input)
-    {
-        auto result_type = aggregates[order_by_agg_index].function->getResultType();
-        boundary_column = result_type->createColumn();
-    }
 }
 
 TopNAggregatingTransform::~TopNAggregatingTransform()
@@ -118,12 +106,13 @@ void TopNAggregatingTransform::initColumnIndices(const Block & input_header_)
     }
 }
 
-UInt128 TopNAggregatingTransform::hashGroupKey(const Columns & columns, size_t row) const
+SerializedKeyHolder TopNAggregatingTransform::serializeGroupKey(const Columns & columns, size_t row) const
 {
-    SipHash hash;
+    const char * begin = nullptr;
+    std::string_view key;
     for (size_t idx : key_column_indices)
-        columns[idx]->updateHashWithValue(row, hash);
-    return hash.get128();
+        key = columns[idx]->serializeValueIntoArena(row, *arena, begin, nullptr);
+    return SerializedKeyHolder{std::string_view(begin, key.data() + key.size() - begin), *arena};
 }
 
 void TopNAggregatingTransform::createAggregateStates(AggregateDataPtr place) const
@@ -190,13 +179,16 @@ void TopNAggregatingTransform::consumeMode1(Chunk & chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        UInt128 hash = hashGroupKey(columns, row);
+        auto key_holder = serializeGroupKey(columns, row);
 
-        auto it = group_indices.find(hash);
-        if (it != group_indices.end())
+        decltype(group_indices)::LookupResult it;
+        bool inserted = false;
+        group_indices.emplace(key_holder, it, inserted);
+
+        if (!inserted)
             continue;
 
-        group_indices[hash] = num_groups;
+        it->getMapped() = num_groups;
 
         for (size_t k = 0; k < key_names.size(); ++k)
             result_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
@@ -232,27 +224,10 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
     if (num_rows == 0)
         return;
 
-    if (enable_threshold_pruning && threshold_tracker && num_rows >= limit)
-    {
-        const size_t arg_col_idx = agg_arg_columns[order_by_agg_index][0];
-        const auto & arg_col = *columns[arg_col_idx];
-
-        auto direction = (sort_direction < 0)
-            ? IColumn::PermutationSortDirection::Descending
-            : IColumn::PermutationSortDirection::Ascending;
-
-        IColumn::Permutation perm;
-        arg_col.getPermutation(
-            direction, IColumn::PermutationSortStability::Unstable,
-            limit, /*nan_direction_hint=*/1, perm);
-
-        boundary_column->popBack(boundary_column->size());
-        boundary_column->insertFrom(arg_col, perm[limit - 1]);
-
-        Field val;
-        boundary_column->get(0, val);
-        threshold_tracker->testAndSet(val);
-    }
+    /// Threshold is updated only from group-level aggregates in generateMode2Partial,
+    /// not from raw row values here. Row-level K-th values can be stricter than the
+    /// true group-level K-th aggregate, which would incorrectly filter rows needed
+    /// by groups that belong in the final top K.
 
     if (mode2_accumulated_keys.empty())
     {
@@ -272,11 +247,11 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        UInt128 hash = hashGroupKey(columns, row);
+        auto key_holder = serializeGroupKey(columns, row);
 
         decltype(group_indices)::LookupResult it;
         bool inserted = false;
-        group_indices.emplace(hash, it, inserted);
+        group_indices.emplace(key_holder, it, inserted);
 
         if (inserted)
         {
@@ -403,7 +378,11 @@ Chunk TopNAggregatingTransform::generateMode2Partial()
         direction, IColumn::PermutationSortStability::Unstable,
         output_limit, nulls_dir, perm);
 
-    if (threshold_tracker && output_limit == limit)
+    /// Feed back the local K-th aggregate to the shared threshold tracker.
+    /// This is safe: a partial's K-th group aggregate is always <= the global K-th
+    /// (because each group's local max <= global max, so the partial's top-K ranking
+    /// cannot exceed the global ranking).
+    if (enable_threshold_pruning && threshold_tracker && output_limit == limit)
     {
         Field val;
         order_col->get(perm[output_limit - 1], val);
@@ -526,14 +505,15 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        SipHash hash;
+        const char * begin = nullptr;
+        std::string_view key;
         for (size_t idx : key_column_indices)
-            columns[idx]->updateHashWithValue(row, hash);
-        UInt128 h = hash.get128();
+            key = columns[idx]->serializeValueIntoArena(row, *arena, begin, nullptr);
+        SerializedKeyHolder key_holder{std::string_view(begin, key.data() + key.size() - begin), *arena};
 
         decltype(group_indices)::LookupResult it;
         bool inserted = false;
-        group_indices.emplace(h, it, inserted);
+        group_indices.emplace(key_holder, it, inserted);
 
         if (inserted)
         {

@@ -7,8 +7,8 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/PODArray.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -73,8 +73,10 @@ private:
     size_t num_groups = 0;
     bool generated = false;
 
-    /// Hash map: group key hash → index in group_states / mode2_accumulated_keys.
-    HashMap<UInt128, size_t, UInt128TrivialHash> group_indices;
+    /// Group key → index in group_states / mode2_accumulated_keys.
+    /// Uses serialized key bytes (via IColumn::serializeValueIntoArena) for
+    /// collision-safe exact key comparison, with arena rollback for non-new keys.
+    HashMapWithSavedHash<std::string_view, size_t> group_indices;
 
     struct GroupState
     {
@@ -91,10 +93,11 @@ private:
     std::vector<ColumnRawPtrs> agg_arg_column_ptrs;
 
     /// Mode 2: accumulated key columns (one row per group).
+    /// Note: Mode 2 memory is O(number of unique groups) because all groups are
+    /// aggregated before partial-sort selects the top K.  In-stream group eviction
+    /// is not implemented; the dynamic __topKFilter prewhere is the primary
+    /// mechanism for reducing the volume of data that reaches the transform.
     MutableColumns mode2_accumulated_keys;
-
-    /// Dynamic-filter boundary column for TopKThresholdTracker.
-    MutableColumnPtr boundary_column;
 
     void initColumnIndices(const Block & input_header_);
     void consumeMode1(Chunk & chunk);
@@ -103,7 +106,9 @@ private:
     Chunk generateMode2();
     Chunk generateMode2Partial();
 
-    UInt128 hashGroupKey(const Columns & columns, size_t row) const;
+    /// Serialize key columns for a row into the arena. Returns a SerializedKeyHolder
+    /// that supports automatic rollback on discard (when the key already exists).
+    SerializedKeyHolder serializeGroupKey(const Columns & columns, size_t row) const;
 
     void createAggregateStates(AggregateDataPtr place) const;
     void destroyAggregateStates(AggregateDataPtr place) const;
@@ -147,7 +152,7 @@ private:
     ColumnNumbers key_column_indices;
     ColumnNumbers agg_column_indices;
 
-    HashMap<UInt128, size_t, UInt128TrivialHash> group_indices;
+    HashMapWithSavedHash<std::string_view, size_t> group_indices;
 
     struct GroupState
     {

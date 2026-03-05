@@ -28,7 +28,8 @@ static Block buildOutputHeader(const Block & input_header, const Names & key_nam
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
@@ -36,7 +37,8 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }};
+        }
+    };
 }
 
 TopNAggregatingStep::TopNAggregatingStep(

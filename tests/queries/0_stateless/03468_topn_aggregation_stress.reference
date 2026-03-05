@@ -1,0 +1,14 @@
+-- composite key: diff count
+0
+-- composite key: top 20 diff count
+0
+-- skewed ties: top 10 all have val=9999
+10	9999	9999
+-- skewed ties: top 60 correct structure
+50	10	190
+-- skewed ties: top 60 reference structure
+50	10	190
+-- parallel stress: max DESC diff count
+0
+-- parallel stress: min ASC diff count
+0

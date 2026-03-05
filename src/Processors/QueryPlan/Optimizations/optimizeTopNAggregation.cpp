@@ -85,13 +85,6 @@ static String resolveOriginalArgName(const String & arg_name, QueryPlan::Node * 
     return resolved;
 }
 
-static String unqualifyColumnName(const String & name)
-{
-    if (const auto pos = name.rfind('.'); pos != String::npos)
-        return name.substr(pos + 1);
-    return name;
-}
-
 /**
  * Fuse GROUP BY ... ORDER BY aggregate LIMIT K into a single TopNAggregatingStep.
  *
@@ -249,28 +242,14 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    bool group_by_matches_sorting_prefix = false;
-    if (read_from_mt)
-    {
-        const auto & sorting_key_columns = read_from_mt->getStorageMetadata()->getSortingKeyColumns();
-        if (!sorting_key_columns.empty() && params.keys.size() <= sorting_key_columns.size())
-        {
-            group_by_matches_sorting_prefix = true;
-            for (size_t i = 0; i < params.keys.size(); ++i)
-            {
-                if (unqualifyColumnName(params.keys[i]) != sorting_key_columns[i])
-                {
-                    group_by_matches_sorting_prefix = false;
-                    break;
-                }
-            }
-        }
-    }
-
     /// Mode 2 (unsorted input): only apply when we can push a __topKFilter prewhere
     /// into ReadFromMergeTree so the storage layer can skip entire granules.
-    if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo()
-        && !group_by_matches_sorting_prefix)
+    /// Note: when GROUP BY keys match the sorting prefix, the standard Aggregator
+    /// can use aggregation-in-order. However, if Mode 1 is inapplicable (the ORDER BY
+    /// aggregate argument is not the first sorting key column), Mode 2 with threshold
+    /// pruning can still be beneficial.  We do NOT gate on group_by_matches_sorting_prefix
+    /// here; if Mode 1 already set sorted_input=true, the !sorted_input guard suffices.
+    if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
     {
         String order_arg_name = resolveOriginalArgName(
             order_agg.argument_names.back(),
@@ -331,6 +310,12 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     /// Without sorted input or threshold pruning, fall through to the standard pipeline.
+    /// Mode 2 is intentionally not applied as a generic unsorted fallback (even though
+    /// the spec describes it) because without a __topKFilter prewhere the standard
+    /// Aggregator pipeline is faster: its type-dispatched hash tables and two-level
+    /// parallel merge outperform the direct SipHash-serialized-key approach used here.
+    /// Applying Mode 2 to non-MergeTree sources or tables where prewhere cannot be
+    /// injected would regress query performance.
     if (!sorted_input && !enable_threshold_pruning)
         return;
 
