@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemDetachedTables.h>
+#include "StorageSystemDetachedTables.h"
 
 #include <Access/ContextAccess.h>
 #include <Core/NamesAndTypes.h>
@@ -32,7 +32,7 @@ class DetachedTablesBlockSource : public ISource
 public:
     DetachedTablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header_,
+        Block header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr detached_tables_,
@@ -47,7 +47,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
+            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
         }
     }
 
@@ -67,7 +67,7 @@ protected:
         size_t rows_count = 0;
         for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx);
+            database_name = databases->getDataAt(database_idx).toString();
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)
@@ -216,7 +216,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {

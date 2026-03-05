@@ -1,11 +1,10 @@
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/Utils.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromFileBase.h>
+
 
 namespace DB
 {
@@ -23,7 +22,7 @@ namespace ErrorCodes
 
 ReadBufferIterator::ReadBufferIterator(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ConfigurationPtr configuration_,
     const ObjectIterator & file_iterator_,
     const std::optional<FormatSettings> & format_settings_,
     SchemaCache & schema_cache_,
@@ -54,10 +53,12 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
     Strings sources;
     sources.reserve(read_keys.size());
     std::transform(
-        read_keys.begin(),
-        read_keys.end(),
+        read_keys.begin(), read_keys.end(),
         std::back_inserter(sources),
-        [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem); });
+        [&](const auto & elem)
+        {
+            return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem);
+        });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
 }
 
@@ -74,15 +75,12 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            if (!object_info->getObjectMetadata())
-            {
-                auto meta = object_storage->tryGetObjectMetadata(path, /*with_tags=*/ false);
-                if (meta)
-                    object_info->setObjectMetadata(*meta);
-            }
+            if (!object_info->metadata)
+                object_info->metadata = object_storage->tryGetObjectMetadata(path);
 
-            return object_info->getObjectMetadata() ? std::optional<time_t>(object_info->getObjectMetadata()->last_modified.epochTime())
-                                                    : std::nullopt;
+            return object_info->metadata
+                ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
+                : std::nullopt;
         };
 
         if (format)
@@ -140,8 +138,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto context = getContext();
 
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
-    auto impl
-        = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
+    auto impl = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, context, getLogger("ReadBufferIterator"));
 
     const auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
@@ -239,8 +236,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             prev_read_keys_size = read_keys.size();
         }
 
-        if (query_settings.skip_empty_files && current_object_info->getObjectMetadata()
-            && current_object_info->getObjectMetadata()->size_bytes == 0)
+        if (query_settings.skip_empty_files
+            && current_object_info->metadata && current_object_info->metadata->size_bytes == 0)
             continue;
 
         /// In union mode, check cached columns only for current key.
@@ -266,8 +263,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         else
         {
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-            read_buf = createReadBuffer(
-                current_object_info->relative_path_with_metadata, object_storage, getContext(), getLogger("ReadBufferIterator"));
+            read_buf = StorageObjectStorageSource::createReadBuffer(*current_object_info, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
 
         if (!query_settings.skip_empty_files || !read_buf->eof())

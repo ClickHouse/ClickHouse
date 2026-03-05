@@ -4,7 +4,6 @@ sidebar_label: 'Nested(Name1 Type1, Name2 Type2, ...)'
 sidebar_position: 57
 slug: /sql-reference/data-types/nested-data-structures/nested
 title: 'Nested'
-doc_type: 'guide'
 ---
 
 # Nested
@@ -13,16 +12,9 @@ doc_type: 'guide'
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
-:::tip[Avoid using dots in column names]
-Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions.
-
-Avoid using dots in column names if possible.
-Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
-:::
-
 Example:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -53,7 +45,7 @@ In most cases, when working with a nested data structure, its columns are specif
 
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -62,7 +54,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -81,7 +73,7 @@ It is easiest to think of a nested data structure as a set of multiple column ar
 
 The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -91,7 +83,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │

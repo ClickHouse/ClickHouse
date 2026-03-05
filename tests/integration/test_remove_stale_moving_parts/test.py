@@ -51,13 +51,12 @@ def exec(node, cmd, path):
             "bash",
             "-c",
             f"{cmd} {path}",
-        ],
-        nothrow=True,
+        ]
     )
 
 
 def wait_part_is_stuck(node, table_moving_path, moving_part):
-    num_tries = 10
+    num_tries = 5
     while q(node, "SELECT part_name FROM system.moves").strip() != moving_part:
         if num_tries == 0:
             raise Exception("Part has not started to move")
@@ -72,8 +71,7 @@ def wait_part_is_stuck(node, table_moving_path, moving_part):
 
 
 def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
-    ch1.query(f"DROP DATABASE IF EXISTS {DATABASE_NAME}")
-    ch1.query(f"CREATE DATABASE {DATABASE_NAME}")
+    ch1.query(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME}")
 
     q(
         ch1,

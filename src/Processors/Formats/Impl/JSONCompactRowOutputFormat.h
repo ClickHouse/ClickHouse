@@ -16,7 +16,7 @@ class JSONCompactRowOutputFormat final : public JSONRowOutputFormat
 public:
     JSONCompactRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header,
+        const Block & header,
         const FormatSettings & settings_,
         bool yield_strings_);
 

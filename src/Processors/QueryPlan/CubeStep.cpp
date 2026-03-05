@@ -1,10 +1,8 @@
-#include <Processors/QueryPlan/CubeStep.h>
-
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -27,8 +25,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_header_, std::make_shared<const Block>(generateOutputHeader(params_.getHeader(*input_header_, final_), params_.keys, use_nulls_)), getTraits())
+CubeStep::CubeStep(const Header & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+    : ITransformingStep(input_header_, generateOutputHeader(params_.getHeader(input_header_, final_), params_.keys, use_nulls_), getTraits())
     , keys_size(params_.keys_size)
     , params(std::move(params_))
     , final(final_)
@@ -36,9 +34,9 @@ CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params
 {
 }
 
-ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
+ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
-    ActionsDAG dag(header->getColumnsWithTypeAndName());
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
     auto & outputs = dag.getOutputs();
 
     if (use_nulls)
@@ -46,7 +44,7 @@ ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bo
         auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
         for (const auto & key : keys)
         {
-            const auto * node = dag.getOutputs()[header->getPositionByName(key)];
+            const auto * node = dag.getOutputs()[header.getPositionByName(key)];
             if (node->result_type->canBeInsideNullable())
             {
                 dag.addOrReplaceInOutputs(dag.addFunction(to_nullable, { node }, node->result_name));
@@ -54,7 +52,7 @@ ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bo
         }
     }
 
-    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, grouping_set_number), 1);
+    auto grouping_col = ColumnUInt64::create(1, grouping_set_number);
     const auto * grouping_node = &dag.addColumn(
         {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
@@ -69,7 +67,7 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](SharedHeader header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return addGroupingSetForTotals(header, params.keys, use_nulls, settings, (UInt64(1) << keys_size) - 1);
@@ -86,6 +84,6 @@ const Aggregator::Params & CubeStep::getParams() const
 
 void CubeStep::updateOutputHeader()
 {
-    output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
+    output_header = generateOutputHeader(params.getHeader(input_headers.front(), final), params.keys, use_nulls);
 }
 }

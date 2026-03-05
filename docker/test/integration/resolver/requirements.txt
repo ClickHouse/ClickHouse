@@ -1,0 +1,6 @@
+bottle==0.12.25
+packaging==24.1
+pip==23.2.1
+pipdeptree==2.23.0
+setuptools==69.0.3
+wheel==0.42.0

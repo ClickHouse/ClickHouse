@@ -5,8 +5,10 @@
 
 namespace DB
 {
-
-[[noreturn]] void throwNotImplementedForColumnUnique(const char * method);
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Sort of a dictionary
 class IColumnUnique : public IColumn
@@ -24,10 +26,8 @@ public:
     virtual bool nestedColumnIsNullable() const = 0;
     virtual void nestedToNullable() = 0;
     virtual void nestedRemoveNullable() = 0;
-    /// Returns an empty dictionary with nullable nested type and all required special values.
-    virtual MutableColumnPtr cloneEmptyNullable() const = 0;
 
-    /// Returns array with StringViewHash calculated for each row of getNestedNotNullableColumn() column.
+    /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
     /// Uses thread-safe cache.
     virtual const UInt64 * tryGetSavedHash() const = 0;
@@ -68,8 +68,7 @@ public:
     virtual size_t getNestedTypeDefaultValueIndex() const = 0;  /// removeNullable()->getDefault() value index
     virtual bool canContainNulls() const = 0;
 
-    virtual size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) = 0;
-    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) = 0;
+    virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
@@ -79,12 +78,12 @@ public:
 
     void insert(const Field &) override
     {
-        throwNotImplementedForColumnUnique("insert");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insert is not supported for ColumnUnique.");
     }
 
     bool tryInsert(const Field &) override
     {
-        throwNotImplementedForColumnUnique("tryInsert");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for ColumnUnique.");
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -93,120 +92,105 @@ public:
     void doInsertRangeFrom(const IColumn &, size_t, size_t) override
 #endif
     {
-        throwNotImplementedForColumnUnique("insertRangeFrom");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRangeFrom is not supported for ColumnUnique.");
     }
 
     void insertData(const char *, size_t) override
     {
-        throwNotImplementedForColumnUnique("insertData");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for ColumnUnique.");
     }
 
     void insertDefault() override
     {
-        throwNotImplementedForColumnUnique("insertDefault");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefault is not supported for ColumnUnique.");
     }
 
     void popBack(size_t) override
     {
-        throwNotImplementedForColumnUnique("popBack");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for ColumnUnique.");
     }
 
     void gather(ColumnGathererStream &) override
     {
-        throwNotImplementedForColumnUnique("gather");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for ColumnUnique.");
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
+    const char * deserializeAndInsertFromArena(const char *) override
     {
-        throwNotImplementedForColumnUnique("deserializeAndInsertFromArena");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for ColumnUnique.");
     }
 
     ColumnPtr index(const IColumn &, size_t) const override
     {
-        throwNotImplementedForColumnUnique("index");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method index is not supported for ColumnUnique.");
     }
 
     ColumnPtr cut(size_t, size_t) const override
     {
-        throwNotImplementedForColumnUnique("cut");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method cut is not supported for ColumnUnique.");
     }
 
     ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
     {
-        throwNotImplementedForColumnUnique("filter");
-    }
-
-    void filter(const IColumn::Filter &) override
-    {
-        throwNotImplementedForColumnUnique("in-place filter");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for ColumnUnique.");
     }
 
     void expand(const IColumn::Filter &, bool) override
     {
-        throwNotImplementedForColumnUnique("expand");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method expand is not supported for ColumnUnique.");
     }
 
     ColumnPtr permute(const IColumn::Permutation &, size_t) const override
     {
-        throwNotImplementedForColumnUnique("permute");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method permute is not supported for ColumnUnique.");
     }
 
     ColumnPtr replicate(const IColumn::Offsets &) const override
     {
-        throwNotImplementedForColumnUnique("replicate");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for ColumnUnique.");
     }
 
     void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
                     size_t, int, IColumn::Permutation &) const override
     {
-        throwNotImplementedForColumnUnique("getPermutation");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
     }
 
     void updatePermutation(PermutationSortDirection, PermutationSortStability,
                     size_t, int, Permutation &, EqualRanges &) const override
     {
-        throwNotImplementedForColumnUnique("updatePermutation");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
     {
-        throwNotImplementedForColumnUnique("scatter");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }
 
     WeakHash32 getWeakHash32() const override
     {
-        throwNotImplementedForColumnUnique("getWeakHash32");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for ColumnUnique.");
     }
 
     void updateHashFast(SipHash &) const override
     {
-        throwNotImplementedForColumnUnique("updateHashFast");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashFast is not supported for ColumnUnique.");
     }
 
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
-        throwNotImplementedForColumnUnique("compareColumn");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnUnique.");
     }
 
     bool hasEqualValues() const override
     {
-        throwNotImplementedForColumnUnique("hasEqualValues");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
-    ColumnPtr updateFrom(const IColumn::Patch &) const override
-    {
-        throwNotImplementedForColumnUnique("updateFrom");
-    }
-
-    void updateInplaceFrom(const IColumn::Patch &) override
-    {
-        throwNotImplementedForColumnUnique("updateInplaceFrom");
-    }
-
-    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to std::string_view, obtains its
+    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *
-     * The reverse index (std::string_view => UInt64) is built lazily, so there are two variants:
+     * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:
      * - On the function call it's present. Therefore we obtain the index in O(1).
      * - The reverse index is absent. We search for the index linearly.
      *
@@ -215,10 +199,10 @@ public:
      *
      * The most common example uses https://clickhouse.com/docs/sql-reference/data-types/lowcardinality/ columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
-     * region, so it can be easily represented as a @e std::string_view. So we pass that ref to this function and get its
+     * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
      */
-    virtual std::optional<UInt64> getOrFindValueIndex(std::string_view value) const = 0;
+    virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

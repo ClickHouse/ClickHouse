@@ -40,14 +40,14 @@ ALTER TABLE t_lightweight_mut_7 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2
 
 SELECT 3, sum(v) FROM t_lightweight_mut_7;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     query,
     ProfileEvents['ReadTasksWithAppliedMutationsOnFly'],
     ProfileEvents['MutationsAppliedOnFlyInAllReadTasks']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query ILIKE 'SELECT%FROM%t_lightweight_mut_7%' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query ILIKE 'SELECT%FROM%t_lightweight_mut_7%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_lightweight_mut_7;

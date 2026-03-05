@@ -4,7 +4,7 @@
 namespace DB
 {
 
-NestedElementsValidationTransform::NestedElementsValidationTransform(SharedHeader header) : ISimpleTransform(header, header, false)
+NestedElementsValidationTransform::NestedElementsValidationTransform(const Block & header) : ISimpleTransform(header, header, false)
 {
 }
 

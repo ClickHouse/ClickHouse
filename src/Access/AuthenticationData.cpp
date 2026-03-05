@@ -1,43 +1,36 @@
 #include <Access/AccessControl.h>
 #include <Access/AuthenticationData.h>
-#include <Access/Common/AuthenticationType.h>
-#include <Common/Base64.h>
 #include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Poco/LRUCache.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <boost/algorithm/hex.hpp>
+#include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
+#include <base/types.h>
+#include <base/hex.h>
+#include <boost/algorithm/hex.hpp>
 
+#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/rand.h>
-#    include <openssl/err.h>
-#    include <Common/Crypto/X509Certificate.h>
-#    include <Common/OpenSSLHelpers.h>
+#     include <openssl/crypto.h>
+#     include <openssl/rand.h>
+#     include <openssl/err.h>
 #endif
 
 #if USE_BCRYPT
 #     include <bcrypt.h>
 #endif
 
-namespace CurrentMetrics
-{
-    extern const Metric BcryptCacheBytes;
-    extern const Metric BcryptCacheSize;
-}
-
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
@@ -48,7 +41,6 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
 #if USE_SSL
@@ -58,19 +50,6 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     return hash;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
-#endif
-}
-
-AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password [[maybe_unused]], std::string_view salt [[maybe_unused]])
-{
-#if USE_SSL
-    std::vector<uint8_t> salt_digest;
-    for (auto elem : base64Decode(String(salt)))
-        salt_digest.push_back(elem);
-    auto salted_password = pbkdf2SHA256(password, salt_digest, 4096);
-    return salted_password;
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SCRAM SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
 }
 
@@ -98,7 +77,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data())); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
@@ -113,31 +92,12 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    /// Bcrypt takes a long time to compute, so we cache the results.
-    /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
-    /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
-    using SimpleCacheBase = DB::CacheBase<std::string, bool>;
-    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::BcryptCacheBytes, CurrentMetrics::BcryptCacheSize, /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
-
-    auto password_digest = encodeSHA256(password);
-    /// Both `password_digest` and `password_bcrypt` are fixed length, so we don't need a separator.
-    auto cache_key = fmt::format(
-        "{}{}",
-        std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
-        std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
-
-    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
-        {
-            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-            /// and it could not be decoded by the library
-            if (ret == -1)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
-
-            return std::make_shared<bool>(ret == 0);
-        });
-
-    return *result;
+    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+    /// and it could not be decoded by the library
+    if (ret == -1)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+    return (ret == 0);
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
@@ -149,9 +109,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
-#if USE_SSL
         && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
-#endif
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
@@ -161,41 +119,30 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 }
 
 
-void AuthenticationData::setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPassword(const String & password_, bool validate)
 {
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::stringToDigest(password_), validate);
             return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_), std::move(second_factor), validate);
-            return;
-
-        case AuthenticationType::SCRAM_SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::encodeSHA256(password_), validate);
             return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), std::move(second_factor), validate);
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
 
-        case AuthenticationType::NO_PASSWORD:
-            if (password_.empty())
-            {
-                otp_secret = std::move(second_factor);
-                return;
-            }
-            [[fallthrough]];
         case AuthenticationType::BCRYPT_PASSWORD:
+        case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
-        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -204,25 +151,23 @@ void AuthenticationData::setPassword(const String & password_, std::optional<One
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), std::move(second_factor), validate);
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), validate);
 }
 
 String AuthenticationData::getPassword() const
 {
-    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
-        return String(password_hash.data(), password_hash.data() + password_hash.size());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
+    return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
 
-void AuthenticationData::setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
@@ -236,7 +181,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash, std::optional<O
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
 
-    setPasswordHashBinary(digest, std::move(second_factor), validate);
+    setPasswordHashBinary(digest, validate);
 }
 
 
@@ -252,9 +197,8 @@ String AuthenticationData::getPasswordHashHex() const
 }
 
 
-void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate)
+void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validate)
 {
-    otp_secret = std::move(second_factor);
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -269,12 +213,6 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optiona
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
                                 "but must be exactly 32 bytes.", hash.size());
-            password_hash = hash;
-            return;
-        }
-
-        case AuthenticationType::SCRAM_SHA256_PASSWORD:
-        {
             password_hash = hash;
             return;
         }
@@ -325,7 +263,6 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optiona
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
-        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -336,7 +273,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optiona
 
 void AuthenticationData::setSalt(String salt_)
 {
-    if (type != AuthenticationType::SHA256_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
+    if (type != AuthenticationType::SHA256_PASSWORD)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
     salt = std::move(salt_);
 }
@@ -346,23 +283,21 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-#if USE_SSL
-void AuthenticationData::setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_)
+void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
 {
     if (ssl_certificate_subjects_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
     ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
 }
 
-void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_)
+void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
 {
     ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
-#endif
 
-boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
-    auto node = make_intrusive<ASTAuthenticationData>();
+    auto node = std::make_shared<ASTAuthenticationData>();
     auto auth_type = getType();
     node->type = auth_type;
 
@@ -371,42 +306,33 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPassword()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
-            break;
-        }
-        case AuthenticationType::SCRAM_SHA256_PASSWORD:
-        {
-            node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
-
-            if (!getSalt().empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
+                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
             break;
         }
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(make_intrusive<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
         {
-            node->children.push_back(make_intrusive<ASTLiteral>(getLDAPServerName()));
+            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
             break;
         }
         case AuthenticationType::JWT:
@@ -418,33 +344,29 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             const auto & realm = getKerberosRealm();
 
             if (!realm.empty())
-                node->children.push_back(make_intrusive<ASTLiteral>(realm));
+                node->children.push_back(std::make_shared<ASTLiteral>(realm));
 
             break;
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-#if USE_SSL
-            using X509Certificate::Subjects::Type::CN;
-            using X509Certificate::Subjects::Type::SAN;
+            using SSLCertificateSubjects::Type::CN;
+            using SSLCertificateSubjects::Type::SAN;
 
             const auto &subjects = getSSLCertificateSubjects();
-            X509Certificate::Subjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
+            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
-                node->children.push_back(make_intrusive<ASTLiteral>(name));
+                node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
-#endif
         }
         case AuthenticationType::SSH_KEY:
         {
 #if USE_SSH
             for (const auto & key : getSSHKeys())
-                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
+                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -453,14 +375,12 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::HTTP:
         {
-            node->children.push_back(make_intrusive<ASTLiteral>(getHTTPAuthenticationServerName()));
-            node->children.push_back(make_intrusive<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
             break;
         }
 
         case AuthenticationType::NO_PASSWORD:
-            break;
-        case AuthenticationType::NO_AUTHENTICATION:
             break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
@@ -472,7 +392,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         WriteBufferFromOwnString out;
         writeDateTimeText(valid_until, out);
 
-        node->valid_until = make_intrusive<ASTLiteral>(out.str());
+        node->valid_until = std::make_shared<ASTLiteral>(out.str());
     }
 
     return node;
@@ -492,12 +412,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
         AuthenticationData auth_data;
         auth_data.setValidUntil(valid_until);
-        return auth_data;
-    }
-
-    if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
-    {
-        AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
         return auth_data;
     }
 
@@ -568,28 +482,30 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
             int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor, /* second_factor */ {}, validate);
+            auth_data.setPasswordBcrypt(value, workfactor, validate);
             return auth_data;
         }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD)
         {
 #if USE_SSL
-            /// random generator FIPS compliant
+            ///random generator FIPS complaint
             uint8_t key[32];
             if (RAND_bytes(key, sizeof(key)) != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
+            {
+                char buf[512] = {0};
+                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
+            }
 
             String salt;
             salt.resize(sizeof(key) * 2);
-
             char * buf_pos = salt.data();
             for (uint8_t k : key)
             {
                 writeHexByteUppercase(k, buf_pos);
                 buf_pos += 2;
             }
-
             value.append(salt);
             auth_data.setSalt(salt);
 #else
@@ -598,37 +514,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        if (query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
-        {
-#if USE_SSL
-            /// random generator FIPS compliant
-            uint8_t key[32];
-            if (RAND_bytes(key, sizeof(key)) != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
-
-            String salt;
-            salt.resize(sizeof(key) * 2);
-
-            char * buf_pos = salt.data();
-            for (uint8_t k : key)
-            {
-                writeHexByteUppercase(k, buf_pos);
-                buf_pos += 2;
-            }
-
-            auth_data.setSalt(salt);
-            auto digest = Util::encodeScramSHA256(value, salt);
-            auth_data.setPasswordHashBinary(digest, /* second_factor */ {}, validate);
-
-            return auth_data;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
-#endif
-        }
-
-
-        auth_data.setPassword(value, /* second_factor */ {}, validate);
+        auth_data.setPassword(value, validate);
         return auth_data;
     }
 
@@ -641,18 +527,17 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), /* second_factor */ {}, validate);
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
             return auth_data;
         }
 
-        auth_data.setPasswordHashHex(value, /* second_factor */ {}, validate);
+        auth_data.setPasswordHashHex(value, validate);
 
-        if ((query.type == AuthenticationType::SHA256_PASSWORD || query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
-            && args_size == 2)
+
+        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {
             String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
             auth_data.setSalt(parsed_salt);
-            return auth_data;
         }
     }
     else if (query.type == AuthenticationType::LDAP)
@@ -670,13 +555,9 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-#if USE_SSL
-        auto ssl_cert_subject_type = X509Certificate::Subjects::parseSubjectType(*query.ssl_cert_subject_type);
+        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
             auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
-#endif
     }
     else if (query.type == AuthenticationType::HTTP)
     {

@@ -24,21 +24,16 @@ public:
 
     int main(const std::vector<String> & /*args*/) override;
 
-    bool tryToReconnect(uint32_t max_reconnection_attempts, uint32_t time_to_sleep_between) override;
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
-    bool processWithASTFuzzer(std::string_view full_query) override;
+    bool processWithFuzzing(const String & full_query) override;
     bool buzzHouse() override;
-    bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
-
-#if USE_JWT_CPP && USE_SSL
-    void login();
-#endif
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, bool permissive);
 
     void connect() override;
 
-    void processError(std::string_view query) const override;
+    void processError(const String & query) const override;
 
     String getName() const override { return "client"; }
 
@@ -70,15 +65,8 @@ private:
 
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
-    bool fuzzLoopReconnect();
 #endif
+    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
-
-    CurrentThread::QueryScope query_scope;
-
-#if USE_JWT_CPP && USE_SSL
-    std::shared_ptr<JWTProvider> jwt_provider;
-    bool login_was_auto_added = false;
-#endif
 };
 }

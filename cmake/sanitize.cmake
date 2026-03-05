@@ -20,11 +20,10 @@ if (SANITIZE)
 
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
         # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fPIC -fpie")
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fno-optimize-sibling-calls -fPIC -fpie")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
-        # NOTE: See also libcxxabi cmake rules
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
         set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
@@ -61,16 +60,6 @@ if (WITH_COVERAGE)
     set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
-
-# Use our bundled compiler-rt headers (sanitizer/ and xray/ interfaces) instead of the ones
-# from the compiler's resource directory. This avoids depending on the host compiler's headers:
-# for example, sanitizer builds need <sanitizer/asan_interface.h> etc., but XRay is disabled
-# for sanitizer builds, so those headers would otherwise come from the system compiler.
-#
-# The compiler searches -isystem paths before its implicit resource directory, so putting our
-# bundled path here ensures it takes precedence without disrupting #include_next chains (which
-# libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
-include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 

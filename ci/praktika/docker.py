@@ -1,5 +1,4 @@
 import dataclasses
-import os
 from typing import List
 
 from .utils import Shell, Utils
@@ -19,10 +18,8 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(
-        cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
-    ):
-        from .result import Result
+    def build(cls, config: "Docker.Config", digests, amd_only, arm_only, with_log):
+        from praktika.result import Result
 
         sw = Utils.Stopwatch()
         tag = digests[config.name]
@@ -59,14 +56,10 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build {tags_substr} {from_tag} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path} {'' if disable_push else ' --push'}"
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
             return Result.from_commands_run(
-                name=name,
-                command=command,
-                retry_errors=[
-                    "Error response from daemon: manifest unknown: manifest unknown",
-                ],
+                name=name, command=command, with_info=with_log
             )
         else:
             return Result(
@@ -82,7 +75,7 @@ class Docker:
         cls, config: "Docker.Config", digests, add_latest, with_log=False
     ):
 
-        from .result import Result
+        from praktika.result import Result
 
         tags = [digests[config.name]]
 
@@ -94,24 +87,23 @@ class Docker:
             else:
                 assert f"Not supported platform [{platform}]"
 
-        # Use imagetools create instead of manifest create/push: when images are
-        # built with --sbom=true --provenance=mode=max, buildx produces OCI image
-        # indices (not plain manifests), which docker manifest create cannot handle.
-        # imagetools create works correctly with both plain manifests and indices,
-        # preserving attestation manifests in the merged result.
-        src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
         commands = [
-            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
+            "docker manifest create --amend "
+            + " ".join(f"{config.name}:{t}" for t in tags)
         ]
+        commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
             commands.append(
-                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
+                "docker manifest create --amend "
+                + " ".join((f"{config.name}:{t}" for t in tags))
             )
+            commands.append(f"docker manifest push {config.name}:latest")
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
             command=commands,
+            with_info=with_log,
             fail_fast=True,
         )
 
@@ -140,43 +132,3 @@ class Docker:
             encoding="utf-8",
             verbose=True,
         )
-
-    @classmethod
-    def find_affected_docker_images(
-        cls, docker_configs: List["Docker.Config"], changed_files: List[str]
-    ) -> List[str]:
-        if not changed_files:
-            return []
-
-        # Normalize all changed file paths
-        normalized_files = [os.path.normpath(f) for f in changed_files]
-
-        # Map name → Docker.Config
-        name_to_config = {cfg.name: cfg for cfg in docker_configs}
-        affected = set()
-
-        def is_path_affected(path: str) -> bool:
-            normalized_path = os.path.normpath(path)
-            return any(
-                f.startswith(normalized_path + os.sep) or f == normalized_path
-                for f in normalized_files
-            )
-
-        def collect_affected(config):
-            if config.name in affected:
-                return
-            if is_path_affected(config.path):
-                affected.add(config.name)
-                return
-            for dep_name in config.depends_on:
-                dep = name_to_config.get(dep_name)
-                if dep:
-                    collect_affected(dep)
-                    if dep.name in affected:
-                        affected.add(config.name)
-                        return
-
-        for config in docker_configs:
-            collect_affected(config)
-
-        return sorted(affected)

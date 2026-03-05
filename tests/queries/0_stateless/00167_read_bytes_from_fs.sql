@@ -1,5 +1,4 @@
--- Tags: stateful, no-random-settings, no-parallel
--- no-parallel: Heavy query
+-- Tags: stateful, no-random-settings
 
 SET max_memory_usage = '10G';
 SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;
@@ -8,4 +7,4 @@ SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;
 -- Small additional reads still possible, so we compare with about 1.5Gb.
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] < 1500000000 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query = 'SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;' and current_database = currentDatabase() and type = 'QueryFinish';
+SELECT ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] < 1500000000 from system.query_log where query = 'SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;' and current_database = currentDatabase() and type = 'QueryFinish';

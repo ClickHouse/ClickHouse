@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <ctime>
+#include <cassert>
 #include <string>
 #include <type_traits>
 
@@ -62,7 +63,7 @@ class DateLUTImpl
 {
 private:
     friend class DateLUT;
-    explicit DateLUTImpl(std::string_view time_zone);
+    explicit DateLUTImpl(const std::string & time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
     DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
@@ -260,7 +261,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d) + daynum_offset_epoch);
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -283,7 +284,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        chassert(divisor > 0);
+        assert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -314,7 +315,7 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
-    static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
+    static auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
@@ -750,7 +751,7 @@ public:
     template <typename DateOrTime>
     UInt8 toISOWeek(DateOrTime v) const
     {
-        return static_cast<UInt8>(1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7);
+        return 1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7;
     }
 
     /*
@@ -824,9 +825,9 @@ public:
         }
 
         if ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4))
-            days = static_cast<UInt16>(day_number - (first_day_number + (7 - weekday)));
+            days = day_number - (first_day_number + (7 - weekday));
         else
-            days = static_cast<UInt16>(day_number - (first_day_number - weekday));
+            days = day_number - (first_day_number - weekday);
 
         if (week_year_mode && days >= 52 * 7)
         {
@@ -839,7 +840,7 @@ public:
             }
         }
 
-        yw.second = static_cast<UInt8>(days / 7 + 1);
+        yw.second = days / 7 + 1;
         return yw;
     }
 
@@ -874,7 +875,7 @@ public:
             if (toDayOfWeek(i) != 7)
                 this_day = ExtendedDayNum(i - toDayOfWeek(i));
         }
-        yw.second = static_cast<UInt8>((this_day - first_day) / 7 + 1);
+        yw.second = (this_day - first_day) / 7 + 1;
         return yw;
     }
 
@@ -890,7 +891,7 @@ public:
 
         const auto day_of_week = toDayOfWeek(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
+            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
             return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
@@ -908,7 +909,7 @@ public:
         const auto day_of_week = toDayOfWeek(v);
         v += 6;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
+            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
             return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
@@ -969,7 +970,7 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
@@ -980,7 +981,7 @@ public:
     }
 
     template <typename DateOrTime>
-    ALWAYS_INLINE Time toRelativeHourNum(DateOrTime v) const
+    Time toRelativeHourNum(DateOrTime v) const
     {
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
@@ -1017,7 +1018,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
 
-        UInt16 year = static_cast<UInt16>(static_cast<UInt64>(lut[i].year) / years * years);
+        UInt16 year = lut[i].year / years * years;
 
         /// For example, rounding down 1925 to 100 years will be 1900, but it's less than min supported year.
         if (unlikely(year < DATE_LUT_MIN_YEAR))
@@ -1061,7 +1062,7 @@ public:
         UInt64 days = weeks * 7;
         // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(static_cast<UInt16>(4 + (d - 4) / days * days));
+            return DayNum(4 + (d - 4) / days * days);
         else
             return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
@@ -1177,20 +1178,6 @@ public:
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
-    std::optional<LUTIndex> tryToMakeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
-    {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return std::nullopt;
-
-        auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
-        UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
-
-        if (index >= DATE_LUT_SIZE)
-            return std::nullopt;
-
-        return LUTIndex(index);
-    }
-
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
@@ -1198,18 +1185,6 @@ public:
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
-    }
-
-    std::optional<ExtendedDayNum> tryToMakeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
-    {
-        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return std::nullopt;
-
-        auto index = tryToMakeLUTIndex(year, month, day_of_month);
-        if (!index)
-            return std::nullopt;
-
-        return toDayNum(*index);
     }
 
     Time makeDate(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1228,30 +1203,6 @@ public:
             time_offset -= lut[index].amount_of_offset_change();
 
         return lut[index].date + time_offset;
-    }
-
-    std::optional<Time> tryToMakeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
-    {
-        auto index = tryToMakeLUTIndex(year, month, day_of_month);
-        if (!index)
-            return std::nullopt;
-
-        Time time_offset = hour * 3600 + minute * 60 + second;
-
-        if (time_offset >= lut[*index].time_at_offset_change())
-            time_offset -= lut[*index].amount_of_offset_change();
-
-        return lut[*index].date + time_offset;
-    }
-
-    Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const
-    {
-        Time time_offset = hour * 3600 + minute * 60 + second;
-
-        if (time_offset >= lut[1].time_at_offset_change())
-            time_offset -= lut[0].amount_of_offset_change();
-
-        return time_offset;
     }
 
     template <typename DateOrTime>
@@ -1273,12 +1224,12 @@ public:
 
     Time YYYYMMDDToDate(UInt32 num) const /// NOLINT
     {
-        return makeDate(static_cast<Int16>(num / 10000), static_cast<UInt8>(num / 100 % 100), static_cast<UInt8>(num % 100));
+        return makeDate(num / 10000, num / 100 % 100, num % 100);
     }
 
     ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const /// NOLINT
     {
-        return makeDayNum(static_cast<Int16>(num / 10000), static_cast<UInt8>(num / 100 % 100), static_cast<UInt8>(num % 100));
+        return makeDayNum(num / 10000, num / 100 % 100, num % 100);
     }
 
 
@@ -1291,8 +1242,7 @@ public:
 
     struct TimeComponents
     {
-        bool is_negative = false;
-        uint64_t hour;
+        uint8_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1344,31 +1294,6 @@ public:
         return res;
     }
 
-    TimeComponents toTimeComponents(Time t) const
-    {
-        TimeComponents res;
-
-        bool is_negative = false;
-
-        if (unlikely(t < 0))
-        {
-            is_negative = true;
-            t = -t;
-        }
-
-        // Cap at 3599999 seconds (999:59:59)
-        if (unlikely(t > 3599999))
-            t = 3599999;
-
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
-        res.hour = t / 3600;
-
-        res.is_negative = is_negative;
-
-        return res;
-    }
-
     template <typename DateOrTime>
     DateTimeComponents toDateTimeComponents(DateOrTime v) const
     {
@@ -1391,7 +1316,7 @@ public:
     Time YYYYMMDDhhmmssToTime(UInt64 num) const /// NOLINT
     {
         return makeDateTime(
-            static_cast<Int16>(num / 10000000000),
+            num / 10000000000,
             num / 100000000 % 100,
             num / 1000000 % 100,
             num / 10000 % 100,
@@ -1445,16 +1370,16 @@ public:
         {
             auto year = values.year + (month - 1) / 12;
             month = ((month - 1) % 12) + 1;
-            auto day_of_month = saturateDayOfMonth(static_cast<Int16>(year), static_cast<UInt8>(month), values.day_of_month);
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
-            return makeLUTIndex(static_cast<Int16>(year), static_cast<UInt8>(month), day_of_month);
+            return makeLUTIndex(year, month, day_of_month);
         }
 
         auto year = values.year - (12 - month) / 12;
         month = 12 - (-month % 12);
-        auto day_of_month = saturateDayOfMonth(static_cast<Int16>(year), static_cast<UInt8>(month), values.day_of_month);
+        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
-        return makeLUTIndex(static_cast<Int16>(year), static_cast<UInt8>(month), day_of_month);
+        return makeLUTIndex(year, month, day_of_month);
     }
 
     /// If resulting month has less days than source month, then saturation can happen.
@@ -1506,15 +1431,15 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        auto year = values.year + static_cast<Int16>(delta);
+        auto year = values.year + delta;
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 
         /// Saturation to 28 Feb can happen.
         if (unlikely(day_of_month == 29 && month == 2))
-            day_of_month = saturateDayOfMonth(static_cast<Int16>(year), month, day_of_month);
+            day_of_month = saturateDayOfMonth(year, month, day_of_month);
 
-        return makeLUTIndex(static_cast<Int16>(year), month, day_of_month);
+        return makeLUTIndex(year, month, day_of_month);
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.

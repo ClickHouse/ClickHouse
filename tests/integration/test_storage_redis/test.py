@@ -1,5 +1,4 @@
 ## sudo -H pip install redis
-import json
 import struct
 import sys
 
@@ -403,64 +402,3 @@ def test_hiding_credentials(started_cluster):
     message = node.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE {table_name}%'")
     assert "password" not in message
     assert f"Redis(\\'{address}\\', 0, \\'[HIDDEN]\\')" in message
-
-
-def test_direct_join(started_cluster):
-    address = get_address_for_ch()
-
-    # clean all
-    drop_table("test_direct_join")
-    drop_table("test_mt")
-
-    # create table
-    node.query(
-        f"""
-            CREATE TABLE test_direct_join(k Int) Engine=Redis('{address}', 1, 'clickhouse') PRIMARY KEY (k);
-            CREATE TABLE test_mt (k Int) ENGINE = MergeTree() ORDER BY tuple();
-            INSERT INTO TABLE test_direct_join VALUES (1);
-            INSERT INTO TABLE test_mt VALUES (1);
-        """
-    )
-
-    response = TSV.toMat(node.query("SELECT * FROM test_direct_join JOIN test_mt ON "
-                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
-    assert len(response) == 1
-    assert response[0] == ["1", "1"]
-
-    response = TSV.toMat(node.query("SELECT * FROM test_mt JOIN test_direct_join ON "
-                                    "test_direct_join.k = test_mt.k FORMAT TSV"))
-    assert len(response) == 1
-    assert response[0] == ["1", "1"]
-
-
-def test_get_keys(started_cluster):
-    """
-    Checks that ClickHouse reads by key instead of full scan if possible.
-    """
-    address = get_address_for_ch()
-
-    # clean all
-    drop_table("test_get_keys")
-
-    # create table
-    node.query(f"""
-               CREATE TABLE test_get_keys(k Int) Engine=Redis('{address}', 2, 'clickhouse') PRIMARY KEY (k);
-               INSERT INTO test_get_keys VALUES (1), (2), (3);
-               """)
-
-    def check_query(query, read_type, keys_count, rows_read):
-        plan = node.query(f'EXPLAIN actions=1 {query}')
-        assert 'ReadFromRedis' in plan
-        assert f'ReadType: {read_type}' in plan
-        if read_type == 'GetKeys':
-            assert f'Keys: {keys_count}' in plan
-
-        res = node.query(f'{query} FORMAT JSON')
-        assert json.loads(res)['statistics']['rows_read'] == rows_read, res
-
-    check_query("SELECT * FROM test_get_keys", "FullScan", 0, 3)
-    check_query("SELECT * FROM test_get_keys WHERE k = 1", "GetKeys", 1, 1)
-    check_query("SELECT * FROM test_get_keys WHERE k in (3, 5)", "GetKeys", 2, 1)
-
-    plan = node.query("EXPLAIN actions=1, optimize=0 SELECT * FROM test_get_keys")
-    assert 'ReadType: FullScan' in plan

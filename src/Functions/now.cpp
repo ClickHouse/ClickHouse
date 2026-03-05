@@ -1,12 +1,12 @@
 #include <ctime>
 #include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
-#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -94,8 +94,6 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool allowsOmittingParentheses() const override { return true; }
-
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
@@ -151,47 +149,7 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the current date and time at the moment of query analysis. The function is a constant expression.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-now([timezone])
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time.", {"DateTime"}};
-    FunctionDocumentation::Examples examples = {
-        {"Query without timezone", R"(
-SELECT now()
-        )",
-        R"(
-┌───────────────now()─┐
-│ 2020-10-17 07:42:09 │
-└─────────────────────┘
-        )"},
-        {"Query with specified timezone", R"(
-SELECT now('Asia/Istanbul')
-        )",
-        R"(
-┌─now('Asia/Istanbul')─┐
-│  2020-10-17 10:42:23 │
-└──────────────────────┘
-        )"},
-        {"SQL standard syntax without parentheses", R"(
-SELECT NOW, CURRENT_TIMESTAMP
-        )",
-        R"(
-┌─────────────────NOW─┬───CURRENT_TIMESTAMP─┐
-│ 2020-10-17 07:42:19 │ 2020-10-17 07:42:19 │
-└─────────────────────┴─────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

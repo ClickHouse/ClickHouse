@@ -5,7 +5,6 @@ sidebar_label: 'input'
 sidebar_position: 95
 slug: /sql-reference/table-functions/input
 title: 'input'
-doc_type: 'reference'
 ---
 
 # input Table Function
@@ -26,7 +25,7 @@ The main feature of this function is that when server receives data from client 
 according to the list of expressions in the `SELECT` clause and inserts into the target table. Temporary table
 with all transferred data is not created.
 
-## Examples {#examples}
+**Examples**
 
 - Let the `test` table has the following structure `(a String, b String)`
     and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
@@ -34,7 +33,7 @@ with all transferred data is not created.
 
 <!-- -->
 
-```bash
+``` bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
@@ -42,7 +41,7 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 
 <!-- -->
 
-```bash
+``` bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```

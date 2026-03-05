@@ -1,4 +1,4 @@
-#include <Interpreters/Cache/FileCacheKey.h>
+#include "FileCacheKey.h"
 
 #include <base/hex.h>
 #include <Common/Exception.h>

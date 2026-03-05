@@ -4,21 +4,17 @@
 
 #if USE_AVRO
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
+#include <Storages/KeyDescription.h>
 #include <Core/Field.h>
-#include <Core/Range.h>
 
 #include <cstdint>
-#include <memory>
-#include <optional>
-#include <unordered_map>
-#include <vector>
+#include <variant>
 
-#include <boost/noncopyable.hpp>
-
-namespace DB::Iceberg
+namespace Iceberg
 {
 
-class AvroForIcebergDeserializer;
+struct ManifestFileContentImpl;
 
 enum class ManifestEntryStatus : uint8_t
 {
@@ -30,119 +26,45 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETE = 1,
-    EQUALITY_DELETE = 2
+    POSITION_DELETES = 1,
+    EQUALITY_DELETES = 2,
 };
 
-
-enum class ManifestFileContentType
+struct DataFileEntry
 {
-    DATA = 0,
-    DELETE = 1
+    String file_name;
 };
 
-String FileContentTypeToString(FileContentType type);
-
-struct ColumnInfo
-{
-    std::optional<Int64> rows_count;
-    std::optional<Int64> bytes_size;
-    std::optional<Int64> nulls_count;
-};
-
-struct PartitionSpecsEntry
-{
-    Int32 source_id;
-    String transform_name;
-    String partition_name;
-};
-using PartitionSpecification = std::vector<PartitionSpecsEntry>;
-
-struct ManifestFileCacheableInfo
-{
-    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
-    size_t file_bytes_size;
-};
+using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
 
 /// Description of Data file in manifest file
-struct ParsedManifestFileEntry : boost::noncopyable
+struct ManifestFileEntry
 {
-    FileContentType content_type;
-    // It's the original string in the Iceberg metadata
-    String file_path_key;
-    Int64 row_number;
-
     ManifestEntryStatus status;
-    std::optional<Int64> parsed_sequence_number;
-    std::optional<Int64> parsed_snapshot_id;
+    Int64 added_sequence_number;
 
+    FileEntry file;
     DB::Row partition_key_value;
-    std::unordered_map<Int32, ColumnInfo> columns_infos;
-    std::unordered_map<Int32, std::pair<Field, Field>> value_bounds;
-
-    String file_format;
-    std::optional<String> lower_reference_data_file_path; // For position delete files only.
-    std::optional<String> upper_reference_data_file_path; // For position delete files only.
-    std::optional<std::vector<Int32>> equality_ids;
-
-    /// Data file is sorted with this sort_order_id (can be read from metadata.json)
-    std::optional<Int32> sort_order_id;
-
-    ParsedManifestFileEntry(
-        FileContentType content_type_,
-        String file_path_key_,
-        Int64 row_number_,
-        ManifestEntryStatus status_,
-        std::optional<Int64> written_sequence_number_,
-        std::optional<Int64> written_snapshot_id_,
-        DB::Row partition_key_value_,
-        std::unordered_map<Int32, ColumnInfo> columns_infos_,
-        std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
-        String file_format_,
-        std::optional<String> lower_reference_data_file_path_,
-        std::optional<String> upper_reference_data_file_path_,
-        std::optional<std::vector<Int32>> equality_ids_,
-        std::optional<Int32> sort_order_id_)
-        : content_type(content_type_)
-        , file_path_key(std::move(file_path_key_))
-        , row_number(row_number_)
-        , status(status_)
-        , parsed_sequence_number(written_sequence_number_)
-        , parsed_snapshot_id(written_snapshot_id_)
-        , partition_key_value(std::move(partition_key_value_))
-        , columns_infos(std::move(columns_infos_))
-        , value_bounds(std::move(value_bounds_))
-        , file_format(std::move(file_format_))
-        , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
-        , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
-        , equality_ids(std::move(equality_ids_))
-        , sort_order_id(sort_order_id_)
-    {
-    }
 };
 
-struct ProcessedManifestFileEntry
+class ManifestFileContent
 {
-    std::shared_ptr<const ParsedManifestFileEntry> parsed_entry;
-    std::shared_ptr<const PartitionSpecification> common_partition_specification;
+public:
+    explicit ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_);
 
-    /// Computed file path for Object Storage (resolved from parsed_entry->file_path_key)
-    String file_path;
+    const std::vector<ManifestFileEntry> & getFiles() const;
+    Int32 getSchemaId() const;
 
-    // Always zero in case of format version 1
-    Int64 sequence_number;
-    Int32 resolved_schema_id;
-
-    String dumpDeletesMatchingInfo() const;
+    bool hasPartitionKey() const;
+    const DB::KeyDescription & getPartitionKeyDescription() const;
+    const std::vector<Int32> & getPartitionKeyColumnIDs() const;
+private:
+    std::unique_ptr<ManifestFileContentImpl> impl;
 };
 
-using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
 
-bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
-bool operator<(const DB::Row & lhs, const DB::Row & rhs);
-
-std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
-
+using ManifestFilesStorage = std::map<String, ManifestFileContent>;
+using ManifestFileIterator = IteratorWrapper<ManifestFileContent>;
 }
 
 #endif

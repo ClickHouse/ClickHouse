@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
-#include <Processors/ISimpleTransform.h>
+#include <vector>
+
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <Processors/ISimpleTransform.h>
+#include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -16,12 +17,16 @@ class SettingsChanges;
 
 /// For simple key
 
-Block blockForIds(const DictionaryStructure & dict_struct, const VectorWithMemoryTracking<UInt64> & ids);
+Block blockForIds(
+    const DictionaryStructure & dict_struct,
+    const std::vector<UInt64> & ids);
 
 /// For composite key
 
 Block blockForKeys(
-    const DictionaryStructure & dict_struct, const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows);
+    const DictionaryStructure & dict_struct,
+    const Columns & key_columns,
+    const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
 SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
@@ -34,14 +39,14 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextP
 class TransformWithAdditionalColumns final : public ISimpleTransform
 {
 public:
-    TransformWithAdditionalColumns(SharedHeader block_to_add_, SharedHeader header);
+    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
 
     void transform(Chunk & chunk) override;
 
     String getName() const override;
 
 private:
-    SharedHeader block_to_add;
+    Block block_to_add;
     size_t current_range_index = 0;
 };
 

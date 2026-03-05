@@ -2,6 +2,7 @@
 
 #include <string>
 #include <type_traits>
+#include <base/StringRef.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -32,9 +33,9 @@ TEST(OperatorsManipTest, EscapingTest)
     std::string_view sv2 = s2;
     checkString(sv2, escape, "Hello \\\\world\\\\"); // NOLINT
 
-    std::string_view sr1 = s1;
+    StringRef sr1 = s1;
     checkString(sr1, escape, "Hello \\'world\\'");
-    std::string_view sr2 = s2;
+    StringRef sr2 = s2;
     checkString(sr2, escape, "Hello \\\\world\\\\"); // NOLINT
 }
 
@@ -48,7 +49,7 @@ TEST(OperatorsManipTest, QuouteTest)
     std::string_view sv1 = s1;
     checkString(sv1, quote, "'Hello \\'world\\''");
 
-    std::string_view sr1 = s1;
+    StringRef sr1 = s1;
     checkString(sr1, quote, "'Hello \\'world\\''");
 }
 
@@ -62,7 +63,7 @@ TEST(OperatorsManipTest, DoubleQuouteTest)
     std::string_view sv1 = s1;
     checkString(sv1, double_quote, "\"Hello 'world'\"");
 
-    std::string_view sr1 = s1;
+    StringRef sr1 = s1;
     checkString(sr1, double_quote, "\"Hello 'world'\"");
 }
 
@@ -76,6 +77,6 @@ TEST(OperatorsManipTest, binary)
     std::string_view sv1 = s1;
     checkString(sv1, binary, "\x5Hello");
 
-    std::string_view sr1 = s1;
+    StringRef sr1 = s1;
     checkString(sr1, binary, "\x5Hello");
 }

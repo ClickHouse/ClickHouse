@@ -8,7 +8,7 @@
 TEST(ThreadFuzzer, mutex)
 {
     /// Initialize ThreadFuzzer::started
-    DB::ThreadFuzzer::instance().setup();
+    DB::ThreadFuzzer::instance().isEffective();
 
     std::mutex mutex;
     std::atomic<size_t> elapsed_ns = 0;
@@ -16,7 +16,7 @@ TEST(ThreadFuzzer, mutex)
     auto func = [&]()
     {
         Stopwatch watch;
-        for (size_t i = 0; i < 1'000'000; ++i)
+        for (size_t i = 0; i < 1e6; ++i)
         {
             mutex.lock();
             mutex.unlock();
@@ -32,5 +32,5 @@ TEST(ThreadFuzzer, mutex)
     for (auto & thread : threads)
         thread->join();
 
-    std::cout << "elapsed: " << static_cast<double>(elapsed_ns) / 1e9 << "\n";
+    std::cout << "elapsed: " << elapsed_ns/1e9 << "\n";
 }

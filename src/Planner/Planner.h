@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Logger.h>
-
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -11,7 +9,6 @@
 namespace DB
 {
 
-class ActionsDAG;
 class QueryNode;
 
 class GlobalPlannerContext;
@@ -25,8 +22,7 @@ class Planner
 public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
-        SelectQueryOptions & select_query_options_,
-        const ActionsDAG * post_filter_ = nullptr);
+        SelectQueryOptions & select_query_options_);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
@@ -79,7 +75,6 @@ private:
 
     void buildPlanForQueryNode();
 
-    LoggerPtr log = getLogger("Planner");
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;

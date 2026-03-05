@@ -1,39 +1,10 @@
-import os
-import subprocess
 import uuid
-import time
-import logging
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-
-
-def _is_sanitizer_build():
-    """Detect sanitizer builds before starting the cluster, to avoid creating
-    containers that are slow to shut down under sanitizers."""
-    binary = os.environ.get(
-        "CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse"
-    )
-    try:
-        result = subprocess.run(
-            [
-                binary,
-                "local",
-                "--query",
-                "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return "-fsanitize=" in result.stdout
-    except Exception:
-        return False
-
-
-is_sanitizer = _is_sanitizer_build()
 
 
 @pytest.fixture(scope="module")
@@ -43,20 +14,12 @@ def started_cluster():
             "node1",
             main_configs=["configs/conf.xml"],
             with_minio=True,
-            mem_limit="20g",
-            cpu_limit=7,
         )
-        # Don't create node_smol in sanitizer builds: the ASan leak checker at
-        # exit is very slow with high max_server_memory_usage, causing Docker
-        # teardown to hang for minutes.
-        if not is_sanitizer:
-            cluster.add_instance(
-                "node_smol",
-                main_configs=["configs/conf.xml", "configs/smol.xml"],
-                with_minio=True,
-                mem_limit="20g",
-                cpu_limit=7,
-            )
+        cluster.add_instance(
+            "node_smol",
+            main_configs=["configs/conf.xml", "configs/smol.xml"],
+            with_minio=True,
+        )
         cluster.start()
 
         yield cluster
@@ -74,10 +37,11 @@ def test_basics(started_cluster):
     )
 
     # Check that page cache is initially ~empty.
+    node.query("system reload asynchronous metrics;")
     assert (
         int(
             node.query(
-                "select value from system.metrics where metric = 'PageCacheBytes'"
+                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
         < 4000000
@@ -89,7 +53,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs")
+    node.query("system flush logs; system reload asynchronous metrics;")
     # Don't check that number of hits is zero - it's usually not.
     assert (
         int(
@@ -102,7 +66,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.metrics where metric = 'PageCacheBytes'"
+                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
         > 4000000
@@ -129,7 +93,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, read_from_page_cache_if_exists_otherwise_bypass_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs")
+    node.query("system flush logs; system reload asynchronous metrics;")
     assert (
         int(
             node.query(
@@ -141,7 +105,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.metrics where metric = 'PageCacheBytes'"
+                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
         < 4000000
@@ -153,7 +117,7 @@ def test_basics(started_cluster):
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
         query_id=query_id,
     )
-    node.query("system flush logs")
+    node.query("system flush logs; system reload asynchronous metrics;")
     assert (
         int(
             node.query(
@@ -165,7 +129,7 @@ def test_basics(started_cluster):
     assert (
         int(
             node.query(
-                "select value from system.metrics where metric = 'PageCacheBytes'"
+                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
         > 4000000
@@ -189,74 +153,57 @@ def test_basics(started_cluster):
 
 
 def test_size_adjustment(started_cluster):
-    if is_sanitizer:
-        pytest.skip("sanitizer build has higher memory consumption; also it is slow")
-
     node = cluster.instances["node_smol"]
 
-    # Clean up from a possible previous failed run.
-    node.query("drop table if exists a;" "system drop page cache;")
+    if (
+        node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_address_sanitizer()
+    ):
+        pytest.skip("sanitizer build has higher memory consumption; also it is slow")
 
-    # A few GB, see configs/smol.xml
-    memory_limit = int(node.query("select value from system.server_settings where name='max_server_memory_usage'"))
-
-    try:
-        # Insert more data than max_server_memory_usage.
+    rss = int(
         node.query(
-            "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
-            "system stop merges a;"
-            f"insert into a select * from numbers({int(memory_limit * 1.1 // 8)});"
+            "select value from system.asynchronous_metrics where metric = 'MemoryResident'"
         )
+    )
+    # Check there's at least some free memory for page cache. If this fails, maybe server's memory
+    # usage bloated enough that max_server_memory_usage needs to be increased in this test
+    # (along with numbers in the next query below).
+    assert rss < 2.5e9
 
-        # Make sure asynchronous metrics update.
-        time.sleep(3)
-
-        def get_metrics():
-            tsv = node.query("select metric, toInt64(value) as value from system.asynchronous_metrics where metric in ('CGroupMemoryTotal', 'CGroupMemoryUsed', 'OSMemoryTotal', 'MemoryResident', 'PageCacheMaxBytes') UNION ALL select metric, value from system.metrics where metric in ('PageCacheBytes', 'PageCacheCells')")
-            pairs = map(lambda p: p.split('\t'), tsv.strip().split('\n'))
-            return {k: int(v) for [k, v] in pairs}
-
-        metrics = get_metrics()
-        logging.info(f"server metrics before reads: {metrics}")
-        memory_used = metrics['MemoryResident']
-        os_memory_limit = metrics['OSMemoryTotal']
-        if 'CGroupMemoryUsed' in metrics:
-            memory_used = max(memory_used, metrics['CGroupMemoryUsed'])
-        if 'CGroupMemoryTotal' in metrics:
-            os_memory_limit = min(os_memory_limit, metrics['CGroupMemoryTotal'])
-
-        # Check that the test is run with a high enough memory limit in cgroups.
-        assert os_memory_limit >= memory_limit
-
-        # Check there's at least some free memory for page cache. If this fails, maybe server's memory
-        # usage bloated enough that max_server_memory_usage needs to be increased in configs/smol.xml
-        memory_free = min(os_memory_limit, memory_limit) - memory_used
-        assert memory_free > 100e6
-
-        assert metrics['PageCacheMaxBytes'] > 60e6
-        assert metrics['PageCacheBytes'] < 10e6
-
-        # Read with cache enabled.
+    # Insert 3.2 GB of data, more than max_server_memory_usage (3.0 GB). Then read it with cache enabled.
+    node.query(
+        "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
+        "system stop merges a;"
+        "insert into a select * from numbers(400000000);"
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
+    )
+    node.query("system reload asynchronous metrics")
+    initial_cache_size = int(
         node.query(
-            "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
+            "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
         )
+    )
+    assert initial_cache_size > 50000000
 
-        metrics = get_metrics()
-        logging.info(f"server metrics after first read: {metrics}")
+    # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
+    err = node.query_and_get_error(
+        "select groupArray(number) from numbers(10000000000)"
+    )
+    assert "MEMORY_LIMIT_EXCEEDED" in err
 
-        assert metrics['PageCacheBytes'] > 50e6
+    # (There used to be a check here that system.query_log shows high enough memory usage for the previous
+    #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
 
-        # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
-        err = node.query_and_get_error(
-            "select groupArray(number) from numbers(10000000000)"
+    node.query("system reload asynchronous metrics;")
+    assert (
+        int(
+            node.query(
+                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
+            )
         )
-        assert "MEMORY_LIMIT_EXCEEDED" in err
+        < 50000000
+    )
 
-        # (There used to be a check here that system.query_log shows high enough memory usage for the previous
-        #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
-
-        metrics = get_metrics()
-        logging.info(f"server metrics after second read: {metrics}")
-        assert metrics['PageCacheBytes'] < 50e6
-    finally:
-        node.query("drop table if exists a;" "system drop page cache;")
+    node.query("drop table a;" "system drop page cache;")
