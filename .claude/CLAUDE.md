@@ -81,13 +81,14 @@ python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --perf-map 
 # Compare codegen between two builds
 python3 .claude/tools/analyze-assembly.py --before <old_binary> --after <new_binary> "<function_name>"
 
+# Analyze function at a specific address (useful for heavily-templated symbols)
+python3 .claude/tools/analyze-assembly.py <binary> 0x0dc7c780
+
 # Verbose mode to see tool commands
 python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" -v
 ```
 
-Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. The tool caches symbol tables by build-id for fast repeated queries.
-
-**IMPORTANT**: `--select N` does NOT imply `--search`. When using a regex pattern with `--select`, you MUST also pass `--search`, e.g. `--search --select 1`. Without `--search`, the pattern is treated as a literal exact match and will fail.
+Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. Hex addresses (e.g. `0x0dc7c780`) are resolved to the enclosing symbol automatically — useful when symbol names are too long for regex matching. The tool caches symbol tables by build-id for fast repeated queries.
 
 You can build multiple versions of ClickHouse inside `build_*` directories, such as `build`, `build_debug`, `build_asan`, etc.
 
