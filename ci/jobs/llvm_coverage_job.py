@@ -78,7 +78,7 @@ def collect_html_report_files(
     return files, assets
 
 
-def get_git_info() -> tuple[str, str, str, str, str, str]:
+def get_git_info() -> tuple[str, str, str, str, str, int]:
     # Get git info from Info singleton, if not present, get it from shell commands
     # merge_base_commit_sha, branch, base_branch, repo_name, pr_number
     info = Info()
@@ -101,9 +101,15 @@ def get_git_info() -> tuple[str, str, str, str, str, str]:
         info.git_branch
         or Shell.get_output("git branch --show-current", verbose=True).strip()
     )
-    base_branch = info.base_branch or Shell.get_output(
-        "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
-    ).strip().replace("origin/", "")
+    base_branch = info.base_branch or (
+        Shell.get_output(
+            "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
+        )
+        .strip()
+        .replace("origin/", "")
+        if info.pr_number > 0
+        else ""
+    )
     repo_name = (
         info.repo_name
         or Shell.get_output(
@@ -113,9 +119,12 @@ def get_git_info() -> tuple[str, str, str, str, str, str]:
     pr_number = (
         info.pr_number
         if info.pr_number > 0
-        else Shell.get_output(
-            "gh pr view --json number -q .number", verbose=True
-        ).strip()
+        else int(
+            Shell.get_output(
+                "gh pr view --json number -q .number", verbose=True
+            ).strip()
+            or 0
+        )
     )
     return (
         current_commit_sha,
@@ -143,7 +152,7 @@ if __name__ == "__main__":
     ) = get_git_info()
 
     prev_30_commits = []
-    if int(pr_number) > 0:
+    if pr_number > 0:
         # Get 30 commits starting from merge base commit and walking backwards.
         raw = Shell.get_output(
             f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base_commit_sha}&per_page=30' -q '.[].sha'",
@@ -246,7 +255,7 @@ if __name__ == "__main__":
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
             _s3_prefix = (
                 f"PRs/{pr_number}/{current_commit_sha}"
-                if int(pr_number) > 0
+                if pr_number > 0
                 else f"REFs/{branch}/{current_commit_sha}"
             )
             _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
@@ -308,7 +317,7 @@ if __name__ == "__main__":
     if not info.is_local_run:
         _s3_prefix = (
             f"PRs/{pr_number}/{current_commit_sha}"
-            if int(pr_number) > 0
+            if pr_number > 0
             else f"REFs/{branch}/{current_commit_sha}"
         )
         _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"

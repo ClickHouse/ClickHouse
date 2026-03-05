@@ -21,9 +21,7 @@ from pathlib import Path
 from shlex import quote
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Type, TypeVar, Union
-
-from ci.praktika.info import Info
+from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
 T = TypeVar("T", bound="Serializable")
 

@@ -171,30 +171,13 @@ MemoryTracker::~MemoryTracker()
     }
 }
 
-// This code should be covered
-int calculateBound()
-{
-    return std::max(128 * 1024, 0);
-}
-
-// This code should be not covered
-void reportNegativePeakBytes(size_t peak)
-{
-    LOG_ERROR(getLogger("MemoryTracker"), "Peak memory usage is negative: {}. This is a bug.", peak);
-}
-
 void MemoryTracker::logPeakMemoryUsage()
 {
     log_peak_memory_usage_in_destructor = false;
     const auto * description = description_ptr.load(std::memory_order_relaxed);
     auto peak_bytes = peak.load(std::memory_order::relaxed);
-    if (peak_bytes < calculateBound())
+    if (peak_bytes < 128 * 1024)
         return;
-    if (peak_bytes < 0)
-    {
-        reportNegativePeakBytes(peak_bytes);
-        return;
-    }
     LOG_DEBUG(
         getLogger("MemoryTracker"),
         "{}{} memory usage: {}.",

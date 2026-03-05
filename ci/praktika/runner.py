@@ -346,7 +346,7 @@ class Runner:
                 )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
-                gh_mount = '--volume ~/.config/gh:/ghconfig:ro -e GH_CONFIG_DIR=/ghconfig -e GH_TOKEN="$(gh auth token)"'
+                gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
             else:
                 gh_mount = ""
             # enable tty mode & interactive for docker if we have real tty
