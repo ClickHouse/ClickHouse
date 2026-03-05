@@ -1501,7 +1501,18 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```xml
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     ```
-    )", 0)
+    )", 0) \
+    DECLARE(Bool, allow_experimental_database_replicator, false, R"(
+    Enable experimental database replicator.
+
+    If enabled, metadata of all databases (exclude system databases) will be synced across nodes using ZooKeeper.
+
+    **Example**
+
+    ```xml
+    <allow_experimental_database_replicator>1</allow_experimental_database_replicator>
+    ```
+    )", EXPERIMENTAL)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
