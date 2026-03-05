@@ -49,7 +49,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -545,7 +545,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ColumnsCachePtr columns_cache TSA_GUARDED_BY(mutex);                      /// Cache of deserialized columns for MergeTree tables.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
+    mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
@@ -891,7 +891,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
-        ObjectStorageQueueFactory::instance().shutdown();
+        StreamingStorageRegistry::instance().shutdown();
 
         /// Stop all MergeTree background executors before shutting down databases.
         /// This ensures no background tasks (merges, mutations, moves, part cleanup)
@@ -1024,6 +1024,14 @@ struct ContextSharedPart : boost::noncopyable
         }
         if (delete_zookeeper)
             delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -1386,7 +1394,7 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const
+DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const
 {
     auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
     std::lock_guard lock(shard.mutex);
@@ -1394,12 +1402,13 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (exception && !storage.second)
-            exception->emplace(Exception(
-                ErrorCodes::UNKNOWN_TABLE,
-                "Table {} does not exist anymore - maybe it was dropped",
-                id.getNameForLogs()));
-        return storage;
+        if (storage.second)
+            return storage;
+
+        /// The table was cached but no longer exists by its UUID
+        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
+        /// Remove the stale entry and fall through to a fresh lookup by name.
+        shard.set.erase(it);
     }
 
     auto storage = storage_getter();
@@ -3720,14 +3729,17 @@ void Context::cancelAllBackupsAndRestores() const
         shared->backups_worker->cancelAll();
 }
 
-BackupsInMemoryHolder & Context::getBackupsInMemory()
+std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 {
+    std::lock_guard lock(mutex);
+    if (!backups_in_memory)
+        backups_in_memory = std::make_shared<BackupsInMemoryHolder>();
     return backups_in_memory;
 }
 
-const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
-    return backups_in_memory;
+    return const_cast<Context *>(this)->getBackupsInMemory();
 }
 
 
@@ -4123,41 +4135,42 @@ void Context::clearVectorSimilarityIndexCache() const
         shared->vector_similarity_index_cache->clear();
 }
 
-void Context::setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache has been already created.");
+    if (shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache has been already created.");
 
-    shared->text_index_dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+    shared->text_index_tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("text_index_dictionary_block_cache_size", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_dictionary_block_cache_max_entries", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES);
-    shared->text_index_dictionary_block_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->text_index_dictionary_block_cache->setMaxCount(max_entries);
+    size_t max_size_in_bytes = config.getUInt64("text_index_tokens_cache_size", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_tokens_cache_max_entries", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES);
+    shared->text_index_tokens_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_tokens_cache->setMaxCount(max_entries);
 }
 
-std::shared_ptr<TextIndexDictionaryBlockCache> Context::getTextIndexDictionaryBlockCache() const
+std::shared_ptr<TextIndexTokensCache> Context::getTextIndexTokensCache() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->text_index_dictionary_block_cache;
+    return shared->text_index_tokens_cache;
 }
 
-void Context::clearTextIndexDictionaryBlockCache() const
+void Context::clearTextIndexTokensCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    auto cache = getTextIndexTokensCache();
 
-    if (shared->text_index_dictionary_block_cache)
-        shared->text_index_dictionary_block_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -4415,9 +4428,17 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
-    shared->text_index_dictionary_block_cache->clear();
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
+    shared->text_index_tokens_cache->clear();
+
+    if (!shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
+    shared->text_index_header_cache->clear();
+
+    if (!shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
+    shared->text_index_postings_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
@@ -5051,6 +5072,14 @@ void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) 
     std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
 }
 #endif
+
+void Context::signalKeeperDispatcherShutdown() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->signalShutdown();
+#endif
+}
 
 void Context::shutdownKeeperDispatcher() const
 {
