@@ -1,8 +1,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Analyzer/QueryNode.h>
-#include <Functions/IFunction.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -103,7 +103,7 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
     if (sorting_key_set.contains(node->result_name))
         return true;
     if (node->type == ActionsDAG::ActionType::COLUMN)
-        return true;
+        return true; // constants are fine
     if (node->type == ActionsDAG::ActionType::INPUT)
         return false; // already checked result_name
     for (const auto * child : node->children)
