@@ -11,12 +11,6 @@ namespace DB::Iceberg
 {
 #if USE_AVRO
 
-bool shouldCompactManifests(
-    const IcebergHistory & snapshots_info,
-    const PersistentTableComponents & persistent_table_components,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context);
-
 void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
