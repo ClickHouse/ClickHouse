@@ -976,7 +976,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 e.addMessage("Previous exception: {}", message);
                 throw;
             }
-            throw;
+
+            /// Continue processing the remaining files from the iterator
+            /// instead of re-throwing and waiting for a reschedule.
+            /// The failed batch was already committed with proper handling
+            /// (good files reset for retry, bad files marked appropriately).
+            continue;
         }
 
         fiu_do_on(FailPoints::object_storage_queue_fail_after_insert, {
