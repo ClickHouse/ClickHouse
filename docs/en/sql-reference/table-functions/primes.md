@@ -61,7 +61,7 @@ SELECT * FROM primes(10);
 
 The first prime greater than 1e15.
 ```sql
-SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;
+SELECT prime FROM primes() WHERE prime > 1e15 LIMIT 1;
 ```
 
 ```response
@@ -74,7 +74,7 @@ Solve a modular constraint over primes in a very large range: find the first pri
 ```sql
 SELECT prime
 FROM primes()
-WHERE prime >= toUInt64(1e15)
+WHERE prime >= 1e15
   AND prime % 65537 = 1
 LIMIT 1;
 ```
@@ -111,9 +111,9 @@ LIMIT 7;
 ```sql
 SELECT sum(prime)
 FROM primes()
-WHERE prime BETWEEN toUInt64(1e6) AND toUInt64(1e6) + 100
-   OR prime BETWEEN toUInt64(1e12) AND toUInt64(1e12) + 100
-   OR prime BETWEEN toUInt64(1e15) AND toUInt64(1e15) + 100
+WHERE prime BETWEEN 1e6 AND 1e6 + 100
+   OR prime BETWEEN 1e12 AND 1e12 + 100
+   OR prime BETWEEN 1e15 AND 1e15 + 100
    OR prime IN (9999999967, 9999999971, 9999999973)
    OR prime = 1000000000000037;
 ```

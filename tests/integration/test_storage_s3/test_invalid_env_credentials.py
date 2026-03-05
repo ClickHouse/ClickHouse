@@ -96,10 +96,7 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/s3_no_sign_request.xml",
             ],
-            user_configs=[
-                "configs/users.xml",
-                "configs/sync_insert.xml",
-            ],
+            user_configs=["configs/users.xml"],
         )
 
         logging.info("Starting cluster...")
