@@ -45,4 +45,19 @@
 <!-- Prefix 2 of 3: ORDER BY UserID, RegionID for GROUP BY UserID, RegionID, CounterID -->
 <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
 
+<!-- No ORDER BY: GROUP BY ... LIMIT without ORDER BY.
+     The optimization uses all GROUP BY keys for the heap.
+     Any N groups are a valid result. -->
+<!-- Single column, high cardinality -->
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID LIMIT 10 FORMAT Null</query>
+
+<!-- Two columns, high cardinality -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID LIMIT 10 FORMAT Null</query>
+
+<!-- Three columns -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID LIMIT 10 FORMAT Null</query>
+
+<!-- String column, no ORDER BY -->
+<query>SELECT URL, count() FROM hits_100m_single GROUP BY URL LIMIT 10 FORMAT Null</query>
+
 </test>

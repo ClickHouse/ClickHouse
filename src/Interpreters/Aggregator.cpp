@@ -1399,9 +1399,10 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         const auto & all_key_cols = state.getKeyColumns();
         size_t heap_key_count = params.top_n_key_columns;
-        if (!method.top_n_heap.is_composite)
-            key_col = all_key_cols[0];
-        else
+        /// Always set key_col so that the static analyzer can prove it is non-null
+        /// in the non-composite branch below. In the composite branch it is unused.
+        key_col = all_key_cols[0];
+        if (method.top_n_heap.is_composite)
             heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
     }
 
