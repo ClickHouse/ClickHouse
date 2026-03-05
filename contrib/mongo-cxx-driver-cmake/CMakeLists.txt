@@ -12,12 +12,19 @@ include(GenerateExportHeader)
 
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/version.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/config.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/export.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/config/version.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/postlude.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v1/detail/prelude.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/element.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/builder/core.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/export.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/decimal128.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/document/element.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/document/value.cpp
@@ -31,6 +38,7 @@ set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/value.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp
 )
 
 set(BSONCXX_POLY_USE_IMPLS ON)
@@ -95,6 +103,9 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/conversions.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/mongoc.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/numeric_casting.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/config.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/export.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/config/version.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/postlude.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/detail/prelude.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/bulk_write.cpp
@@ -103,6 +114,9 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/client_encryption.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/client_session.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/collection.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/export.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/cursor.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/database.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/command_failed_event.cpp
@@ -119,6 +133,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_closed_event.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_description.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/events/topology_opening_event.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/authentication_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/bulk_write_exception.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/error_code.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/exception/exception.cpp
