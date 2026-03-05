@@ -46,7 +46,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
-            {"join_runtime_filter_build_saturation_threshold", 0.9, 0.9, "New setting to configure expected Bloom filter saturation probability to disable unproductive join filters"},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
+            {"join_runtime_filter_build_saturation_threshold", 1.0, 0.9, "New setting to configure expected Bloom filter saturation probability to disable unproductive join filters"},
+        });
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
