@@ -102,11 +102,12 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
         processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
-    /// Do not apply AST optimizations, because query
-    /// is already optimized and some optimizations
-    /// can be applied only for non-distributed tables
-    /// and we can produce query, inconsistent with remote plans.
-    auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
+    /// Since we're passing a pre-analyzed query tree (not AST), the interpreter won't run
+    /// query tree passes anyway. We must NOT set ignoreASTOptimizations() here because it
+    /// causes isASTLevelOptimizationAllowed() to return false in PlannerContext, which changes
+    /// how constant node names are generated (using source expression instead of _CAST wrapper),
+    /// leading to column name mismatches with the expected header.
+    auto select_query_options = SelectQueryOptions(processed_stage);
 
     /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
