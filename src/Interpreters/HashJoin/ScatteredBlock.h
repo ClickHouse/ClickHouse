@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
@@ -280,6 +281,31 @@ struct ScatteredBlock : private boost::noncopyable
         for (const auto pos : matched_rows)
             data[i++] = selector[pos];
         selector = Selector(std::move(new_selector));
+    }
+
+    /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`
+    void filterBySelectorLazily()
+    {
+        if (block.empty() || !wasScattered())
+            return;
+
+        if (selector.isContinuousRange())
+        {
+            filterBySelector();
+            return;
+        }
+
+        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
+        auto indexes_col = selector.getIndexes().getPtr();
+        auto columns = block.getColumns();
+        for (auto & col : columns)
+            if (const auto * replicated = typeid_cast<const ColumnReplicated *>(col.get()))
+                col = replicated->indexKeepUnusedRows(selector.getIndexes(), /*limit*/ 0);
+            else
+                col = ColumnReplicated::create(col, indexes_col);
+
+        block.setColumns(columns);
+        selector = Selector(block.rows());
     }
 
     /// Applies `selector` to the `block` in-place

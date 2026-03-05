@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
+            {"query_plan_optimize_join_lazy_indexing", true, true, "Added new setting to use query plan for lazy join indexing optimisation"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 10000, 10000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimisation. If zero, there is no limit"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

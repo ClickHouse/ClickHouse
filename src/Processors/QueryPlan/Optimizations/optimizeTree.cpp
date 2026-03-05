@@ -237,6 +237,8 @@ void optimizeTreeSecondPass(
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            if (optimization_settings.optimize_join_lazy_indexing)
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
         });
 
     /// If join runtime filters were added re-run push down optimizations

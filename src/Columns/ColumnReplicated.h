@@ -187,6 +187,9 @@ public:
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
 
+    ColumnPtr indexKeepUnusedRows(const IColumn & res_indexes, size_t limit) const;
+    ColumnPtr replicateKeepUnusedRows(const Offsets & offsets) const;
+
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }
 
