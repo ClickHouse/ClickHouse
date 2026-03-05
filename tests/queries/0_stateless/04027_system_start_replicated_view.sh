@@ -37,7 +37,7 @@ for _ in $(seq 1 60); do
     fi
     sleep 0.5
 done
-$CLICKHOUSE_CLIENT -q "select '<1: running>', status from ${db}.refreshes"
+$CLICKHOUSE_CLIENT -q "select '<1: running>', status != 'Disabled' from ${db}.refreshes"
 
 # Stop the view globally via Keeper.
 $CLICKHOUSE_CLIENT -q "system stop replicated view ${db}.rmv"
