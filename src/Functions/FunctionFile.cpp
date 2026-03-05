@@ -29,9 +29,9 @@ namespace ErrorCodes
 namespace
 {
 
-bool isStringOrFixedStringOrNull(const IDataType & type)
+bool isStringOrNull(const IDataType & type)
 {
-    return isStringOrFixedString(type) || type.onlyNull();
+    return isString(type) || type.onlyNull();
 }
 
 }
@@ -62,7 +62,7 @@ public:
             {"path", &isString, nullptr, "String"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"default", &isStringOrFixedStringOrNull, nullptr, "String or Null"}
+            {"default", &isStringOrNull, nullptr, "String or Null"}
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
