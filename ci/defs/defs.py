@@ -339,6 +339,7 @@ class JobNames:
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
     DOCS = "Docs check"
+    DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
