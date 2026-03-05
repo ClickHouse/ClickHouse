@@ -110,6 +110,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
+    /// For LEFT ANTI JOIN with multiple join keys, per-column NOT IN filters are incorrect.
+    /// For example, for ON t1.a = t2.aa AND t1.b = t2.bb, combining NOT_IN(t1.a, {t2.aa}) AND NOT_IN(t1.b, {t2.bb})
+    /// incorrectly drops rows like (a=0, b=2) where a=0 is in t2.aa but the full tuple (0, 2) has no match in t2.
+    /// A per-column NOT IN filter cannot check for exact tuple membership, so disable the optimization in this case.
+    if (check_left_does_not_contain && join_operator.expression.size() > 1)
+        return false;
+
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
