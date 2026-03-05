@@ -51,7 +51,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:
-///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are falsy)
+///   - NULL if the type is Dynamic or Nullable (always safe — comparisons with NULL are false)
 ///   - The type's default value if the type is non-Nullable (safe only if the comparison
 ///     value differs from the default)
 ///
