@@ -4,11 +4,17 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Port.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -44,7 +50,10 @@ size_t findOrderByAggIndex(const AggregateDescriptions & aggregates, const SortD
     for (size_t i = 0; i < aggregates.size(); ++i)
         if (aggregates[i].column_name == sort_col_name)
             return i;
-    return 0;
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "TopNAggregatingTransform: ORDER BY column '{}' not found among aggregate outputs",
+        sort_col_name);
 }
 
 /// Partial-sort and permute output columns, returning the first output_limit rows.
