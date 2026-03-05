@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -53,6 +54,7 @@ protected:
     Chunk generate() override;
 
 private:
+    /// --- Configuration (immutable after construction) ---
     Names key_names;
     AggregateDescriptions aggregates;
     SortDescription sort_description;
@@ -61,64 +63,67 @@ private:
     bool partial;
     bool enable_threshold_pruning;
     TopKThresholdTrackerPtr threshold_tracker;
+    Block stored_input_header;
 
+    /// --- Column index mapping (computed once in constructor) ---
     ColumnNumbers key_column_indices;
     size_t order_by_agg_index = 0;
     int sort_direction = 0;
+    std::vector<ColumnNumbers> agg_arg_columns;
 
-    Block stored_input_header;
-
-    /// Mode 1 result columns (key + aggregate results, filled incrementally).
-    MutableColumns result_columns;
-    size_t num_groups = 0;
-    bool generated = false;
-
-    /// Group key → index in group_states / mode2_accumulated_keys.
-    /// Uses serialized key bytes (via IColumn::serializeValueIntoArena) for
-    /// collision-safe exact key comparison, with arena rollback for non-new keys.
-    HashMapWithSavedHash<std::string_view, size_t> group_indices;
-
-    struct GroupState
-    {
-        AggregateDataPtr state = nullptr;
-    };
-
-    ArenaPtr arena;
-    std::vector<GroupState> group_states;
+    /// --- Aggregate state layout (computed once in constructor) ---
+    std::vector<size_t> agg_state_offsets;
     size_t total_state_size = 0;
     size_t state_align = 1;
 
-    std::vector<ColumnNumbers> agg_arg_columns;
-    std::vector<size_t> agg_state_offsets;
-    std::vector<ColumnRawPtrs> agg_arg_column_ptrs;
+    /// --- Per-group state (grows during consume) ---
+    struct GroupState { AggregateDataPtr state = nullptr; };
+
+    ArenaPtr arena;
+    HashMapWithSavedHash<std::string_view, size_t> group_indices;
+    std::vector<GroupState> group_states;
+    size_t num_groups = 0;
+    bool generated = false;
+
+    /// Mode 1: result columns (key + aggregate results, filled incrementally).
+    MutableColumns result_columns;
 
     /// Mode 2: accumulated key columns (one row per group).
-    /// Note: Mode 2 memory is O(number of unique groups) because all groups are
-    /// aggregated before partial-sort selects the top K.  In-stream group eviction
-    /// is not implemented; the dynamic __topKFilter prewhere is the primary
-    /// mechanism for reducing the volume of data that reaches the transform.
+    /// Memory is O(number of unique groups) because all groups are aggregated
+    /// before partial-sort selects the top K.  The dynamic __topKFilter prewhere
+    /// is the primary mechanism for reducing data volume reaching the transform.
     MutableColumns mode2_accumulated_keys;
 
-    void initColumnIndices(const Block & input_header_);
+    /// --- In-transform threshold pruning (Mode 2, level >= 1) ---
+    size_t order_agg_arg_col_idx = 0;
+    MutableColumnPtr boundary_column;
+    bool threshold_active = false;
+
+    /// --- Consume / generate per mode ---
     void consumeMode1(Chunk & chunk);
     void consumeMode2(Chunk & chunk);
     Chunk generateMode1();
     Chunk generateMode2();
     Chunk generateMode2Partial();
 
-    /// Serialize key columns for a row into the arena. Returns a SerializedKeyHolder
-    /// that supports automatic rollback on discard (when the key already exists).
+    /// --- Helpers: column indices and key serialization ---
+    void initColumnIndices(const Block & input_header_);
     SerializedKeyHolder serializeGroupKey(const Columns & columns, size_t row) const;
 
+    /// Populates agg_arg_column_ptrs from the current chunk columns.
+    std::vector<ColumnRawPtrs> agg_arg_column_ptrs;
+    void prepareArgColumnPtrs(const Columns & columns);
+
+    /// --- Helpers: aggregate state lifecycle ---
     void createAggregateStates(AggregateDataPtr place) const;
     void destroyAggregateStates(AggregateDataPtr place) const;
     void addRowToAggregateStates(AggregateDataPtr place, size_t row);
     void insertResultsFromStates(AggregateDataPtr place, MutableColumns & output_columns);
 
-    /// In-transform threshold pruning (active when enable_threshold_pruning=true).
-    size_t order_agg_arg_col_idx = 0;
-    MutableColumnPtr boundary_column;
-    bool threshold_active = false;
+    /// --- Helpers: sort + permute + limit ---
+    IColumn::Permutation getSortPermutation(const IColumn & order_col, size_t output_limit) const;
+
+    /// --- Helpers: threshold ---
     void refreshThresholdFromStates();
     bool isBelowThreshold(const IColumn & col, size_t row) const;
 };
@@ -146,32 +151,30 @@ protected:
     Chunk generate() override;
 
 private:
+    /// --- Configuration ---
     Names key_names;
     AggregateDescriptions aggregates;
     SortDescription sort_description;
     size_t limit;
+    Block stored_header;
 
+    /// --- Column index mapping ---
+    ColumnNumbers key_column_indices;
+    ColumnNumbers agg_column_indices;
     size_t order_by_agg_index = 0;
     int sort_direction = 0;
 
-    Block stored_header;
-
-    ColumnNumbers key_column_indices;
-    ColumnNumbers agg_column_indices;
-
-    HashMapWithSavedHash<std::string_view, size_t> group_indices;
-
-    struct GroupState
-    {
-        AggregateDataPtr state = nullptr;
-    };
-
-    ArenaPtr arena;
-    std::vector<GroupState> group_states;
+    /// --- Aggregate state layout ---
+    std::vector<size_t> agg_state_offsets;
     size_t total_state_size = 0;
     size_t state_align = 1;
-    std::vector<size_t> agg_state_offsets;
 
+    /// --- Per-group state ---
+    struct GroupState { AggregateDataPtr state = nullptr; };
+
+    ArenaPtr arena;
+    HashMapWithSavedHash<std::string_view, size_t> group_indices;
+    std::vector<GroupState> group_states;
     MutableColumns accumulated_keys;
     size_t num_groups = 0;
     bool generated = false;
