@@ -1,5 +1,7 @@
 import glob
+import json as json_module
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -547,20 +549,38 @@ profiles:
 
         # Restart minio with a timeout to avoid hanging forever (see #97647).
         # If the restart hangs, kill minio and start it again.
+        # We use Popen with start_new_session=True so that on timeout we can
+        # kill the entire process group, avoiding orphaned child processes
+        # that would block communicate() indefinitely (see #98466).
         restart_timeout = 60
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
-            result = subprocess.run(
-                "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
-                shell=True,
+            proc = subprocess.Popen(
+                [
+                    "/mc",
+                    "admin",
+                    "service",
+                    "restart",
+                    "clickminio",
+                    "--wait",
+                    "--json",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=restart_timeout,
-                executable="/bin/bash",
+                start_new_session=True,
             )
-            status = result.stdout.strip()
-        except subprocess.TimeoutExpired:
+            try:
+                stdout, _ = proc.communicate(timeout=restart_timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.communicate()
+                raise
+            try:
+                status = json_module.loads(stdout).get("status", "")
+            except (json_module.JSONDecodeError, AttributeError):
+                status = stdout.strip()
+        except (subprocess.TimeoutExpired, OSError):
             print(
                 f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
             )
