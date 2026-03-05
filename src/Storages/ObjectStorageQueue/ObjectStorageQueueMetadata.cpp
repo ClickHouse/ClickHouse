@@ -304,8 +304,7 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
     /// One Keeper multi-read for all buckets to avoid O(buckets) round-trips.
     for (const auto & last : last_processed_paths)
     {
-        if (last.empty())
-            return std::nullopt;
+        chassert(!last.empty());
 
         /// Use the smallest processed key across buckets to avoid skipping unprocessed files.
         if (!min_path || last < *min_path)
