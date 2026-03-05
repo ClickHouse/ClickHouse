@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-fasttest
 
 DROP TABLE IF EXISTS t_topn;
 
