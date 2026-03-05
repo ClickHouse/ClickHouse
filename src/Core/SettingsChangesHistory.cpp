@@ -43,10 +43,17 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
+            {"use_text_index_tokens_cache", false, false, "New setting"},
             {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
             {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
+            {"webassembly_udf_max_fuel", 100'000, 100'000, "New setting to limit CPU instructions (fuel) per WebAssembly UDF instance execution."},
+            {"webassembly_udf_max_memory", 128_MiB, 128_MiB, "New setting to limit memory per WebAssembly UDF instance."},
+            {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
+            {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -56,7 +63,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
             {"optimize_dry_run_check_part", true, true, "New setting"},
@@ -1073,6 +1079,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
+            {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
         });

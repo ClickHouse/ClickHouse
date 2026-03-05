@@ -153,7 +153,8 @@ static struct InitFiu
     ONCE(local_object_storage_network_error_during_remove) \
     ONCE(parallel_replicas_check_read_mode_always)\
     REGULAR(lightweight_show_tables) \
-    REGULAR(storage_merge_tree_delay_truncate)
+    REGULAR(storage_merge_tree_delay_truncate) \
+    PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock)
 
 namespace FailPoints
 {
