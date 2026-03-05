@@ -705,7 +705,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// For recognized ClickHouse subcommand names (client, local, etc.) resolve the path
     /// via bin_dir so that multi-tool dispatch (by argv[0] basename) works correctly.
     /// For everything else (echo, date, bash, ...) let PATH resolution handle it.
-    if (!extra_args.empty() && extra_args[0].rfind("--", 0) != 0)
+    if (!extra_args.empty() && !extra_args[0].starts_with("--"))
     {
         static const std::array<std::string_view, 18> clickhouse_tools = {
             "clickhouse-client",
