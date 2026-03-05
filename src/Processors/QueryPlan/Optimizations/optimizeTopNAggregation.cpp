@@ -251,13 +251,16 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// TODO: Relax this gate after adding threshold/filter support for NULL ordering
     /// and collation-aware comparisons, so Mode 2 can handle broader ORDER BY types.
     /// The pruning_level setting controls which optimizations are layered on:
-    ///   level 0 — direct compute only (no threshold, no filter)
+    ///   level 0 — direct compute only (no threshold, no filter); slower than baseline
     ///   level 1 — + in-transform threshold pruning (skip rows below K-th aggregate)
-    ///   level 2 — + dynamic __topKFilter prewhere for storage-level granule skipping
+    ///   level 2 — + dynamic __topKFilter prewhere (requires use_top_k_dynamic_filtering;
+    ///              falls back to level 1 behavior when that setting is off)
+    /// Mode 2 requires at least level 1 to avoid the known direct-compute regression.
     bool mode2_eligible = false;
     UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
 
-    if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
+    if (!sorted_input && pruning_level >= 1
+        && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
     {
         String order_arg_name = resolveOriginalArgName(
             order_agg.argument_names.back(),
@@ -270,9 +273,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             if (arg_col.type->isValueRepresentedByNumber() && !arg_col.type->isNullable())
             {
                 mode2_eligible = true;
-
-                if (pruning_level >= 1)
-                    enable_threshold_pruning = true;
+                enable_threshold_pruning = true;
 
                 if (pruning_level >= 2 && optimization_settings.use_top_k_dynamic_filtering)
                 {

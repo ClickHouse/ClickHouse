@@ -232,10 +232,12 @@ trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
 -- EXPLAIN pruning level 0
 Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn_unsorted)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_topn_unsorted)
 -- EXPLAIN pruning level 1
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
