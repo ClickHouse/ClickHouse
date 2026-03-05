@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -281,37 +282,41 @@ NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) c
     return schema ? *schema : NamesAndTypesList{};
 }
 
-StorageInMemoryMetadata PaimonMetadata::getStorageSnapshotMetadata(ContextPtr /*local_context*/) const
+std::optional<DataLakeTableStateSnapshot> PaimonMetadata::getTableStateSnapshot(ContextPtr /*local_context*/) const
 {
     auto state = getCurrentState();
     if (!state)
-    {
-        /// No snapshots yet: still allow schema-based metadata (DESC, SHOW).
-        auto schema_info = table_client->getLatestTableSchemaInfo();
-        auto schema_json = table_client->getTableSchemaJSON(schema_info);
-        auto schema = persistent_components.schema_processor->getOrAddSchema(schema_info.first, schema_json);
-        auto columns = persistent_components.schema_processor->getClickHouseSchema(schema->id);
+        return std::nullopt;
 
-        StorageInMemoryMetadata result;
-        if (columns)
-            result.setColumns(ColumnsDescription{*columns});
-        return result;
+    return DataLakeTableStateSnapshot{*state};
+}
+
+std::unique_ptr<StorageInMemoryMetadata> PaimonMetadata::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot & snapshot, ContextPtr /*local_context*/) const
+{
+    const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&snapshot);
+    if (!paimon_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Paimon::TableStateSnapshot in DataLakeTableStateSnapshot");
+
+    if (!persistent_components.schema_processor->hasSchema(paimon_state->schema_id))
+    {
+        auto schema_info = table_client->getTableSchemaInfoById(static_cast<Int32>(paimon_state->schema_id));
+        auto schema_json = table_client->getTableSchemaJSON(schema_info);
+        persistent_components.schema_processor->addSchema(schema_json);
     }
 
-    /// Get column definitions from schema processor
-    auto columns = persistent_components.schema_processor->getClickHouseSchema(state->schema_id);
+    auto columns = persistent_components.schema_processor->getClickHouseSchema(paimon_state->schema_id);
     if (!columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get ClickHouse schema for schema_id={}", state->schema_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get ClickHouse schema for schema_id={}", paimon_state->schema_id);
 
-    StorageInMemoryMetadata result;
-    result.setColumns(ColumnsDescription{*columns});
-
-    /// Attach table state to metadata for snapshot isolation
-    /// The state will be used by iterate() to ensure consistent view
-    /// Note: This requires adding setDataLakeTableState to StorageInMemoryMetadata
-    /// For now, we store it in a custom field or use existing mechanism
-
+    auto result = std::make_unique<StorageInMemoryMetadata>();
+    result->setColumns(ColumnsDescription{*columns});
     return result;
+}
+
+bool PaimonMetadata::shouldReloadSchemaForConsistency(ContextPtr /*local_context*/) const
+{
+    return true;
 }
 
 bool PaimonMetadata::operator==(const IDataLakeMetadata & other) const
@@ -331,11 +336,16 @@ bool PaimonMetadata::operator==(const IDataLakeMetadata & other) const
     return *this_state == *other_state;
 }
 
-PaimonTableStatePtr PaimonMetadata::extractTableState(StorageMetadataPtr /*storage_metadata*/)
+PaimonTableStatePtr PaimonMetadata::extractTableState(StorageMetadataPtr storage_metadata)
 {
-    /// TODO: Extract PaimonTableState from storage_metadata.datalake_table_state
-    /// For now, return nullptr to fall back to current state
-    return nullptr;
+    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
+        return nullptr;
+
+    const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&*storage_metadata->datalake_table_state);
+    if (!paimon_state)
+        return nullptr;
+
+    return std::make_shared<PaimonTableState>(*paimon_state);
 }
 
 std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String & manifest_list_path) const

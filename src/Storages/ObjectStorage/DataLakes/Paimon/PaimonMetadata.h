@@ -11,7 +11,7 @@
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableState.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonPersistentComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
@@ -62,8 +62,16 @@ public:
     /// Get table schema from schema_processor (no heavy lock needed)
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
-    /// Return StorageInMemoryMetadata with table state snapshot for snapshot isolation
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    /// Return the current PaimonTableState as a DataLakeTableStateSnapshot
+    /// for snapshot isolation (pins the exact state for query execution).
+    std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
+
+    /// Build StorageInMemoryMetadata (columns, etc.) from a pinned PaimonTableState.
+    std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot & state, ContextPtr local_context) const override;
+
+    /// Paimon schema can change across snapshots, so always reload for consistency.
+    bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
     /// Simplified comparison: only compare snapshot_id
     bool operator==(const IDataLakeMetadata & other) const override;
