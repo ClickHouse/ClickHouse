@@ -115,9 +115,9 @@ private:
     std::atomic<bool> shutdown = false;
 
     std::shared_ptr<Stats> info;
-    bool print_to_stdout;
+    bool print_to_stdout = false;
     std::optional<std::filesystem::path> file_output;
-    bool output_file_with_timestamp;
+    bool output_file_with_timestamp = false;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;

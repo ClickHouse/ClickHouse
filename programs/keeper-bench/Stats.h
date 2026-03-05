@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 #include <AggregateFunctions/ReservoirSampler.h>
 
@@ -34,6 +35,8 @@ struct Stats
     void addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);
 
     void clear();
+
+    std::mutex mutex;
 
     void report(size_t concurrency);
     void writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp);

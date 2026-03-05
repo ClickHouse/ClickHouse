@@ -16,11 +16,13 @@ void Stats::StatsCollector::add(uint64_t microseconds, size_t requests_inc, size
 
 void Stats::addRead(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
+    std::lock_guard lock(mutex);
     read_collector.add(microseconds, requests_inc, bytes_inc);
 }
 
 void Stats::addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
+    std::lock_guard lock(mutex);
     write_collector.add(microseconds, requests_inc, bytes_inc);
 }
 

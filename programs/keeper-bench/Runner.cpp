@@ -1002,7 +1002,7 @@ void requestFromLogExecutor(
             {
                 auto end_time = std::chrono::steady_clock::now();
                 auto microseconds = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count());
-                size_t response_bytes = 0;
+                size_t response_bytes = response.bytesSize();
                 if (request->isReadRequest())
                     bench_info->addRead(microseconds, 1, request->bytesSize() + response_bytes);
                 else
