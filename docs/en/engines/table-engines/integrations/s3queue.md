@@ -437,13 +437,13 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 ## Introspection {#introspection}
 
-For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
+For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
 
-1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
+1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
 ```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE system.s3queue
+│ CREATE TABLE system.s3queue_metadata_cache
 (
     `database` String,
     `table` String,
@@ -465,7 +465,7 @@ Example:
 ```sql
 
 SELECT *
-FROM system.s3queue
+FROM system.s3queue_metadata_cache
 
 Row 1:
 ──────
@@ -479,7 +479,7 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
+2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
 
 The table has the following structure:
 

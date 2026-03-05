@@ -17,6 +17,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/ErrnoException.h>
 
 namespace fs = std::filesystem;
 

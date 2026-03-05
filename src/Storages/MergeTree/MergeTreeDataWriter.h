@@ -32,6 +32,13 @@ void buildScatterSelector(
 
 struct MergeTreeTemporaryPart
 {
+    /// temporary_directory_lock must be declared before part, because members are destroyed
+    /// in reverse declaration order. The part destructor removes the temporary directory on disk
+    /// (via removeIfNeeded), and this must happen while the lock is still held. Otherwise,
+    /// ReplicatedMergeTreeCleanupThread can race: it checks temporary_parts, finds the name
+    /// already unregistered, and removes the directory before the part destructor gets to it.
+    scope_guard temporary_directory_lock;
+
     MergeTreeData::MutableDataPartPtr part;
 
     struct Stream
@@ -41,7 +48,6 @@ struct MergeTreeTemporaryPart
     };
 
     std::vector<Stream> streams;
-    scope_guard temporary_directory_lock;
 
     void cancel();
     void finalize();

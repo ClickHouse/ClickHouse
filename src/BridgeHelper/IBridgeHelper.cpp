@@ -1,9 +1,10 @@
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ReadHelpers.h>
 #include <filesystem>
 #include <thread>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace fs = std::filesystem;
@@ -59,7 +60,7 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     /// Path to executable folder
     fs::path path(config.getString("application.dir", "/usr/bin"));
 
-    std::vector<std::string> cmd_args;
+    VectorWithMemoryTracking<std::string> cmd_args;
     path /= serviceFileName();
 
     cmd_args.push_back("--http-port");

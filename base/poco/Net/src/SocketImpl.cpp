@@ -52,19 +52,9 @@ namespace Poco {
 namespace Net {
 
 
-bool checkIsBrokenTimeout()
-{
-#if defined(POCO_BROKEN_TIMEOUTS)
-	return true;
-#endif
-	return false;
-}
-
-
 SocketImpl::SocketImpl():
 	_sockfd(POCO_INVALID_SOCKET),
 	_blocking(true),
-	_isBrokenTimeout(checkIsBrokenTimeout()),
 	_recvThrottlerBudget(0),
 	_sndThrottlerBudget(0)
 {
@@ -74,7 +64,6 @@ SocketImpl::SocketImpl():
 SocketImpl::SocketImpl(poco_socket_t sockfd):
 	_sockfd(sockfd),
 	_blocking(true),
-	_isBrokenTimeout(checkIsBrokenTimeout()),
 	_recvThrottlerBudget(0),
 	_sndThrottlerBudget(0)
 {
@@ -277,31 +266,53 @@ void SocketImpl::shutdown()
 }
 
 
+/// Socket I/O functions (sendBytes, receiveBytes, sendTo, receiveFrom) use poll()
+/// with manual timeout tracking before each syscall to handle EINTR correctly.
+///
+/// Problem: When a signal (e.g., from CPU profiler running every N seconds) interrupts
+/// a blocking send/recv, the syscall returns EINTR. Simply retrying the syscall would
+/// restart the kernel's SO_SNDTIMEO/SO_RCVTIMEO timer, making timeouts longer than N
+/// ineffective — the operation could block indefinitely.
+///
+/// Solution: We track elapsed time ourselves and use poll() with the remaining timeout
+/// before each syscall attempt. This ensures the total wait time respects the configured
+/// timeout regardless of how many EINTR interruptions occur.
 int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
     bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
 
 	throttleSend(length, blocking);
 
-	if (_isBrokenTimeout && blocking)
-	{
-		if (_sndTimeout.totalMicroseconds() != 0)
-		{
-			if (!poll(_sndTimeout, SELECT_WRITE))
-				throw TimeoutException();
-		}
-	}
-
+	Poco::Timespan remainingTime(_sndTimeout);
+	bool needPoll = blocking;
 	int rc;
+	int err = 0;
 	do
 	{
+		if (needPoll && remainingTime.totalMicroseconds() > 0)
+		{
+			if (!pollImpl(remainingTime, SELECT_WRITE))
+				throw TimeoutException();
+		}
+
 		if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+		/// The call should complete quickly since poll indicated the socket is ready.
+		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
+		Poco::Timestamp start;
 		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, flags);
+		if (rc < 0)
+			err = lastError();
+		if (blocking && rc < 0 && err == POCO_EINTR)
+		{
+			remainingTime -= Poco::Timestamp() - start;
+			if (remainingTime.totalMicroseconds() <= 0)
+				throw TimeoutException();
+			needPoll = true;
+		}
 	}
-	while (blocking && rc < 0 && lastError() == POCO_EINTR);
+	while (blocking && rc < 0 && err == POCO_EINTR);
 	if (rc < 0)
 	{
-		int err = lastError();
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
@@ -319,27 +330,39 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 {
 	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
-	if (_isBrokenTimeout && blocking)
-	{
-		if (_recvTimeout.totalMicroseconds() != 0)
-		{
-			if (!poll(_recvTimeout, SELECT_READ))
-				throw TimeoutException();
-		}
-	}
+	Poco::Timespan remainingTime(_recvTimeout);
+	bool needPoll = blocking;
 
 	throttleRecv(length, blocking);
 
 	int rc;
+	int err = 0;
 	do
 	{
+		if (needPoll && remainingTime.totalMicroseconds() > 0)
+		{
+			if (!pollImpl(remainingTime, SELECT_READ))
+				throw TimeoutException();
+		}
+
 		if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+		/// The call should complete quickly since poll indicated the socket is ready.
+		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
+		Poco::Timestamp start;
 		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, flags);
+		if (rc < 0)
+			err = lastError();
+		if (blocking && rc < 0 && err == POCO_EINTR)
+		{
+			remainingTime -= Poco::Timestamp() - start;
+			if (remainingTime.totalMicroseconds() <= 0)
+				throw TimeoutException();
+			needPoll = true;
+		}
 	}
-	while (blocking && rc < 0 && lastError() == POCO_EINTR);
+	while (blocking && rc < 0 && err == POCO_EINTR);
 	if (rc < 0)
 	{
-		int err = lastError();
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
@@ -358,14 +381,35 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 {
 	throttleSend(length, _blocking);
 
+	Poco::Timespan remainingTime(_sndTimeout);
+	bool needPoll = false;
 	int rc;
+	int err = 0;
 	do
 	{
+		if (needPoll && remainingTime.totalMicroseconds() > 0)
+		{
+			if (!pollImpl(remainingTime, SELECT_WRITE))
+				throw TimeoutException();
+		}
+
 		if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+		/// The call should complete quickly since poll indicated the socket is ready.
+		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
+		Poco::Timestamp start;
 		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, flags, address.addr(), address.length());
+		if (rc < 0)
+			err = lastError();
+		if (_blocking && rc < 0 && err == POCO_EINTR)
+		{
+			remainingTime -= Poco::Timestamp() - start;
+			if (remainingTime.totalMicroseconds() <= 0)
+				throw TimeoutException();
+			needPoll = true;
+		}
 	}
-	while (_blocking && rc < 0 && lastError() == POCO_EINTR);
-	if (rc < 0) error();
+	while (_blocking && rc < 0 && err == POCO_EINTR);
+	if (rc < 0) error(err);
 
 	useSendThrottlerBudget(rc);
 
@@ -375,14 +419,8 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 
 int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, int flags)
 {
-	if (_isBrokenTimeout)
-	{
-		if (_recvTimeout.totalMicroseconds() != 0)
-		{
-			if (!poll(_recvTimeout, SELECT_READ))
-				throw TimeoutException();
-		}
-	}
+	Poco::Timespan remainingTime(_recvTimeout);
+	bool needPoll = true;
 
 	throttleRecv(length, _blocking);
 
@@ -390,19 +428,37 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
 	poco_socklen_t saLen = sizeof(abuffer);
 	int rc;
+	int err = 0;
 	do
 	{
+		if (needPoll && remainingTime.totalMicroseconds() > 0)
+		{
+			if (!pollImpl(remainingTime, SELECT_READ))
+				throw TimeoutException();
+		}
+
 		if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
+		/// The call should complete quickly since poll indicated the socket is ready.
+		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
+		Poco::Timestamp start;
 		rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, flags, pSA, &saLen);
+		if (rc < 0)
+			err = lastError();
+		if (_blocking && rc < 0 && err == POCO_EINTR)
+		{
+			remainingTime -= Poco::Timestamp() - start;
+			if (remainingTime.totalMicroseconds() <= 0)
+				throw TimeoutException();
+			needPoll = true;
+		}
 	}
-	while (_blocking && rc < 0 && lastError() == POCO_EINTR);
+	while (_blocking && rc < 0 && err == POCO_EINTR);
 	if (rc >= 0)
 	{
 		address = SocketAddress(pSA, saLen);
 	}
 	else
 	{
-		int err = lastError();
 		if (err == POCO_EAGAIN && !_blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
@@ -566,13 +622,7 @@ void SocketImpl::setSendTimeout(const Poco::Timespan& timeout)
 
 Poco::Timespan SocketImpl::getSendTimeout()
 {
-	Timespan result;
-#if   !defined(POCO_BROKEN_TIMEOUTS)
-	getOption(SOL_SOCKET, SO_SNDTIMEO, result);
-#endif
-	if (_isBrokenTimeout)
-		result = _sndTimeout;
-	return result;
+	return _sndTimeout;
 }
 
 
@@ -585,13 +635,7 @@ void SocketImpl::setReceiveTimeout(const Poco::Timespan& timeout)
 
 Poco::Timespan SocketImpl::getReceiveTimeout()
 {
-	Timespan result;
-#if   !defined(POCO_BROKEN_TIMEOUTS)
-	getOption(SOL_SOCKET, SO_RCVTIMEO, result);
-#endif
-	if (_isBrokenTimeout)
-		result = _recvTimeout;
-	return result;
+	return _recvTimeout;
 }
 
 

@@ -346,12 +346,15 @@ ManifestFileContent::ManifestFileContent(
                     Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                     const Field & bound_value = column_number_and_bound[1];
 
+                    if (!value_for_bounds.contains(number))
+                    {
+                        value_for_bounds[number] = std::make_pair(Field{}, Field{});
+                    }
+
                     if (path == c_data_file_lower_bounds)
                         value_for_bounds[number].first = bound_value;
                     else
                         value_for_bounds[number].second = bound_value;
-
-                    column_ids_which_have_bounds.insert(number);
                 }
             }
         }
@@ -453,6 +456,7 @@ ManifestFileContent::ManifestFileContent(
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                 std::optional<String> lower_reference_data_file_path = std::nullopt;
                 std::optional<String> upper_reference_data_file_path = std::nullopt;
+                bool bounds_set_by_referenced_data_file = false;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
                     Field reference_file_path_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file);
@@ -460,14 +464,20 @@ ManifestFileContent::ManifestFileContent(
                     {
                         lower_reference_data_file_path = reference_file_path_field.safeGet<String>();
                         upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
+                        bounds_set_by_referenced_data_file = true;
                     }
                 }
-                else if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
-                         it != value_for_bounds.end())
+                if (!bounds_set_by_referenced_data_file)
                 {
-                    auto & [lower, upper] = it->second;
-                    lower_reference_data_file_path = lower.safeGet<String>();
-                    upper_reference_data_file_path = upper.safeGet<String>();
+                    if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
+                        it != value_for_bounds.end())
+                    {
+                        auto & [lower, upper] = it->second;
+                        if (!lower.isNull())
+                            lower_reference_data_file_path = lower.safeGet<String>();
+                        if (!upper.isNull())
+                            upper_reference_data_file_path = upper.safeGet<String>();
+                    }
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
                     std::make_shared<ManifestFileEntry>(
@@ -564,16 +574,6 @@ const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() con
     return *(partition_key_description);
 }
 
-bool ManifestFileContent::hasBoundsInfoInManifests() const
-{
-    return !column_ids_which_have_bounds.empty();
-}
-
-const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
-{
-    return column_ids_which_have_bounds;
-}
-
 bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
 {
     for (const auto & file : data_files_without_deleted)
@@ -595,9 +595,20 @@ size_t ManifestFileContent::getSizeInMemory() const
     size_t total_size = sizeof(ManifestFileContent);
     if (partition_key_description)
         total_size += sizeof(DB::KeyDescription);
-    total_size += column_ids_which_have_bounds.size() * sizeof(Int32);
     total_size += data_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
     total_size += position_deletes_files_without_deleted.capacity() * sizeof(ManifestFileEntry);
+    for (const auto & file : data_files_without_deleted)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : position_deletes_files_without_deleted)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
+    for (const auto & file : equality_deletes_files)
+    {
+        total_size += file->columns_infos.size() * sizeof(std::pair<const Int32, ColumnInfo>);
+    }
     return total_size;
 }
 

@@ -1364,7 +1364,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (use_compiled_functions)
                 {
                     const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                    callJITFunction(compiled_aggregate_functions.create_aggregate_states_function, aggregate_data);
                     if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
                     {
                         static constexpr bool skip_compiled_aggregate_functions = true;
@@ -1447,12 +1447,12 @@ void Aggregator::executeAggregateInstructions(
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
+            callJITFunction(add_into_aggregate_states_function_single_place, row_begin, row_end, columns_data.data(), places[key_start]);
         }
         else
         {
             auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
-            add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places);
+            callJITFunction(add_into_aggregate_states_function, row_begin, row_end, columns_data.data(), places);
         }
     }
 #endif
@@ -1518,7 +1518,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         }
 
         auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-        add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), res);
+        callJITFunction(add_into_aggregate_states_function_single_place, row_begin, row_end, columns_data.data(), res);
     }
 #endif
 
@@ -2390,7 +2390,7 @@ Block Aggregator::insertResultsIntoColumns(
             }
 
             auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
-            insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
+            callJITFunction(insert_aggregates_into_columns_function, 0, places.size(), columns_data.data(), places.data());
         }
 #endif
 
@@ -2749,7 +2749,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
     std::atomic<UInt32> next_bucket_to_merge = 0;
     std::vector<BlocksList> res(max_threads);
 
-    auto converter = [&](size_t thread_id)
+    auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
     {
         while (true)
         {
@@ -2773,6 +2773,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             if (use_thread_pool)
+                /// Passing converter as a reference is fine, it will outlive runner. Also it's arguments will outlive it too
+                /// Even if it didn't we capture all exceptions and wait for all tasks, so all of them will be deleted before arguments
+                /// will be destroyed
                 runner.enqueueAndKeepTrack([&converter, thread_id]() { return converter(thread_id); }, Priority{});
             else
                 converter(thread_id);
@@ -2972,7 +2975,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-        compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+        callJITFunction(compiled_functions.merge_aggregate_states_function, dst_places.data(), src_places.data(), dst_places.size());
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
@@ -3751,6 +3754,8 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
+                    /// merge_bucket is passed by reference and it also has references as arguments
+                    /// This is fine as runner has a narrower scope than those references and its destructor will be called first
                     runner.enqueueAndKeepTrack([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
             }

@@ -8,6 +8,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
@@ -63,6 +64,7 @@ class StorageMongoDB final : public IStorage
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static MongoDBConfiguration getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context);
 
     StorageMongoDB(
         const StorageID & table_id_,

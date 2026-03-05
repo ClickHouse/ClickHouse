@@ -27,7 +27,7 @@
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
+                <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
                     <readonly/>
                 </enable_analyzer>
@@ -53,7 +53,6 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_dynamic_type>1</allow_experimental_dynamic_type>
-            <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
             <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
             <allow_experimental_inverted_index>1</allow_experimental_inverted_index>
@@ -66,6 +65,7 @@
             <allow_experimental_live_view>1</allow_experimental_live_view>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
             <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
             <allow_experimental_statistics>1</allow_experimental_statistics>

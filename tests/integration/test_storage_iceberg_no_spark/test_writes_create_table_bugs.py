@@ -12,12 +12,12 @@ def test_writes_create_table_bugs(started_cluster_iceberg_no_spark):
     TABLE_NAME_1 = "test_writes_create_table_bugs_" + get_uuid_str()
     instance.query(
         f"CREATE TABLE {TABLE_NAME} (c0 Int) ENGINE = IcebergLocal('/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/', 'CSV') AS (SELECT 1 OFFSET 1 ROW);",
-        settings={"allow_experimental_insert_into_iceberg": 1}
+        settings={"allow_insert_into_iceberg": 1}
     )
 
     error = instance.query_and_get_error(
         f"CREATE TABLE {TABLE_NAME_1} (c0 Int) ENGINE = IcebergLocal('/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME_1}/', 'CSV') PARTITION BY (icebergTruncate(c0));",
-        settings={"allow_experimental_insert_into_iceberg": 1}
+        settings={"allow_insert_into_iceberg": 1}
     )
 
     assert "BAD_ARGUMENTS" in error

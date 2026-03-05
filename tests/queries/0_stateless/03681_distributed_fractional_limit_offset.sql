@@ -12,7 +12,7 @@ SELECT number from remote('127.0.0.{1,2,3}', numbers_mt(100)) ORDER BY number LI
 
 SET enable_analyzer=1;
 
-SELECT 'New Analyzer';
+SELECT 'Analyzer';
 
 SELECT number from remote('127.0.0.{1,2,3}', numbers_mt(100)) ORDER BY number LIMIT 0.01;
 
@@ -54,7 +54,7 @@ ORDER BY __table1.k DESC NULLS LAST
 LIMIT 0.9999, _CAST(100, 'UInt64');
 
 SET extremes = 0;
-SELECT 'New Analyzer - Distributed Table';
+SELECT 'Analyzer - Distributed Table';
 
 SET enable_analyzer = 1;
 SET extremes = 1;

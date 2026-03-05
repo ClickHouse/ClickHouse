@@ -28,14 +28,17 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename Name, bool toUTC>
     class UTCTimestampTransform : public IFunction
     {
     public:
-        static FunctionPtr create(ContextPtr) { return std::make_shared<UTCTimestampTransform>(); }
-        static constexpr auto name = Name::name;
+        UTCTimestampTransform(const char * name_, bool to_utc_) : function_name(name_), to_utc(to_utc_) {}
 
-        String getName() const override { return name; }
+        static FunctionPtr create(ContextPtr, const char * name, bool to_utc)
+        {
+            return std::make_shared<UTCTimestampTransform>(name, to_utc);
+        }
+
+        String getName() const override { return function_name; }
 
         size_t getNumberOfArguments() const override { return 2; }
 
@@ -51,10 +54,10 @@ namespace
                 {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
                 {"timezone", &isString, nullptr, "String"}
             };
-            validateFunctionArguments(name, arguments, mandatory_args);
+            validateFunctionArguments(function_name, arguments, mandatory_args);
 
             if (dynamic_cast<const TimezoneMixin *>(arguments[0].type.get())->hasExplicitTimeZone())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", name);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", function_name);
 
             DataTypePtr date_time_type;
             if (WhichDataType{arguments[0].type}.isDateTime())
@@ -70,12 +73,12 @@ namespace
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", function_name);
             const ColumnWithTypeAndName & arg1 = arguments[0];
             const ColumnWithTypeAndName & arg2 = arguments[1];
             const auto * time_zone_const_col = checkAndGetColumnConstData<ColumnString>(arg2.column.get());
             if (!time_zone_const_col)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), function_name);
             String time_zone_val{time_zone_const_col->getDataAt(0)};
             const DateLUTImpl & time_zone = DateLUT::instance(time_zone_val);
             if (WhichDataType(arg1.type).isDateTime())
@@ -106,7 +109,7 @@ namespace
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
                     UInt32 abs_offset = static_cast<UInt32>(std::abs(time_zone_offset));
 
-                    if constexpr (toUTC)
+                    if (to_utc)
                     {
                         // Convert from local time to UTC
                         // UTC = Local - Offset (for positive offsets like UTC+3)
@@ -143,7 +146,7 @@ namespace
                     Int64 micros = date_time_val.value % scale_multiplier;
                     auto time_zone_offset = time_zone.timezoneOffset(seconds);
                     Int64 time_val = seconds;
-                    if constexpr (toUTC)
+                    if (to_utc)
                         time_val -= time_zone_offset;
                     else
                         time_val += time_zone_offset;
@@ -152,23 +155,13 @@ namespace
                 }
                 return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", function_name);
         }
 
+    private:
+        const char * function_name;
+        bool to_utc;
     };
-
-    struct NameToUTCTimestamp
-    {
-        static constexpr auto name = "toUTCTimestamp";
-    };
-
-    struct NameFromUTCTimestamp
-    {
-        static constexpr auto name = "fromUTCTimestamp";
-    };
-
-    using ToUTCTimestampFunction = UTCTimestampTransform<NameToUTCTimestamp, true>;
-    using FromUTCTimestampFunction = UTCTimestampTransform<NameFromUTCTimestamp, false>;
 }
 
 REGISTER_FUNCTION(UTCTimestampTransform)
@@ -198,8 +191,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
     FunctionDocumentation::Category category_toUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, {}, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
 
-    factory.registerFunction<ToUTCTimestampFunction>(documentation_toUTCTimestamp);
-    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("toUTCTimestamp", [](ContextPtr){ return UTCTimestampTransform::create({}, "toUTCTimestamp", true); }, documentation_toUTCTimestamp);
+    factory.registerAlias("to_utc_timestamp", "toUTCTimestamp", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_fromUTCTimestamp = R"(
 Converts a date or date with time value from UTC timezone to a date or date with time value with the specified time zone. This function is mainly included for compatibility with Apache Spark and similar frameworks.
@@ -226,8 +219,8 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
     FunctionDocumentation::Category category_fromUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_fromUTCTimestamp = {description_fromUTCTimestamp, syntax_fromUTCTimestamp, arguments_fromUTCTimestamp, {}, returned_value_fromUTCTimestamp, examples_fromUTCTimestamp, introduced_in_fromUTCTimestamp, category_fromUTCTimestamp};
 
-    factory.registerFunction<FromUTCTimestampFunction>(documentation_fromUTCTimestamp);
-    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("fromUTCTimestamp", [](ContextPtr){ return UTCTimestampTransform::create({}, "fromUTCTimestamp", false); }, documentation_fromUTCTimestamp);
+    factory.registerAlias("from_utc_timestamp", "fromUTCTimestamp", FunctionFactory::Case::Insensitive);
 }
 
 }

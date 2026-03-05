@@ -130,7 +130,8 @@ class GH:
                 break
             if not res:
                 retry_count += 1
-                time.sleep(5)
+                delay = min(2 ** (retry_count + 1), 60)
+                time.sleep(delay)
 
         if not res:
             print(
@@ -513,6 +514,12 @@ class GH:
             repo = _Environment.get().REPOSITORY
         if labels is None:
             labels = []
+
+        # GitHub API limit for issue body is 65536 characters
+        max_body_length = 65536
+        if len(body) > max_body_length:
+            truncation_note = "\n\n... (truncated due to GitHub body size limit)"
+            body = body[: max_body_length - len(truncation_note)] + truncation_note
 
         temp_file_path = None
         try:

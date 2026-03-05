@@ -33,7 +33,7 @@ SELECT 'can still show the create statement';
 SHOW CREATE TABLE test1601_detach_permanently_atomic.test_name_reuse FORMAT Vertical;
 
 SELECT 'can not attach with bad uuid';
--- STD_EXCEPTION occured when running flaky test, the table directory's access right was removed. Refer `DatabaseCatalog::maybeRemoveDirectory`.
+-- STD_EXCEPTION occurred when running flaky test, the table directory's access right was removed. Refer `DatabaseCatalog::maybeRemoveDirectory`.
 ATTACH TABLE test1601_detach_permanently_atomic.test_name_reuse UUID '00000000-0000-0000-0000-000000001601'　(`number` UInt64　)　ENGINE = MergeTree　ORDER BY tuple()　SETTINGS index_granularity = 8192 ;  -- { serverError TABLE_ALREADY_EXISTS, STD_EXCEPTION }
 
 SELECT 'can attach with short syntax';

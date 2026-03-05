@@ -110,7 +110,7 @@ ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
 ///
 
 # nm does not work with LTO
-if ! grep -q -- '-flto' compile_commands.json
+if ! grep -q -- '-flto' "$INPUT_DIR/compile_commands.json"
 then
     # Find the best alternative of nm
     for name in llvm-nm-{30..18} llvm-nm nm
@@ -119,7 +119,7 @@ then
         [[ -n "${NM}" ]] && break
     done
 
-    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | find . -name '*.o' | xargs -P $(nproc) -I {} bash -c "
+    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | xargs -P $(nproc) -I {} bash -c "
       ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
     "
 

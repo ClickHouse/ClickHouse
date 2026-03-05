@@ -18,8 +18,8 @@ class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using Columns = std::vector<ColumnPtr>;
 
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class ActionsDAG;
 
@@ -44,6 +44,6 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot);
+    StorageSnapshotPtr storage_snapshot);
 
 }
