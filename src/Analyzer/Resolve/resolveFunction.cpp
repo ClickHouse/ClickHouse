@@ -1222,7 +1222,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
-            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name);
+            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
 

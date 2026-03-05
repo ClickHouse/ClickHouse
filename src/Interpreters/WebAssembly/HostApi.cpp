@@ -24,8 +24,8 @@ namespace
 
 void wasmExportLog(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
-    const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    LOG_TRACE(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(host_ptr), size));
+    auto data = compartment->getMemory(wasm_ptr, size);
+    LOG_TRACE(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(data.data()), data.size()));
 }
 
 Int64 wasmExportServerVer(WasmCompartment *)
@@ -35,17 +35,18 @@ Int64 wasmExportServerVer(WasmCompartment *)
 
 [[noreturn]] void wasmExportThrow(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
-    const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    std::string_view data(reinterpret_cast<const char *>(host_ptr), size);
-    throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly UDF terminated with error: {}", data);
+    auto data = compartment->getMemory(wasm_ptr, size);
+    std::string_view data_view(reinterpret_cast<const char *>(data.data()), data.size());
+    throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly UDF terminated with error: {}", data_view);
 }
 
 void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
-    auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    std::uniform_int_distribution<> dist(std::numeric_limits<UInt8>::min(), std::numeric_limits<UInt8>::max());
+    auto data = compartment->getMemory(wasm_ptr, size);
+    using ValueType = decltype(data)::value_type;
+    std::uniform_int_distribution<> dist(std::numeric_limits<ValueType>::min(), std::numeric_limits<ValueType>::max());
     for (WasmSizeT i = 0; i < size; ++i)
-        host_ptr[i] = static_cast<UInt8>(dist(thread_local_rng));
+        data[i] = static_cast<ValueType>(dist(thread_local_rng));
 }
 
 }
