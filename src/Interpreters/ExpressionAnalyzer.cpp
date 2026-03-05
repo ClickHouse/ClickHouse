@@ -93,6 +93,7 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace Setting
 {
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool enable_early_constant_folding;
@@ -245,8 +246,9 @@ NamesAndTypesList ExpressionAnalyzer::getColumnsAfterArrayJoin(ActionsDAG & acti
     getRootActionsNoMakeSet(array_join_expression_list, actions, false);
 
     auto array_join = addMultipleArrayJoinAction(actions, is_array_join_left);
+    bool array_join_use_nulls = is_array_join_left && getContext()->getSettingsRef()[Setting::array_join_use_nulls];
     auto sample_columns = actions.getResultColumns();
-    ArrayJoinAction::prepare(array_join.columns, sample_columns);
+    ArrayJoinAction::prepare(array_join.columns, sample_columns, array_join_use_nulls);
     actions = ActionsDAG(sample_columns);
 
     NamesAndTypesList new_columns_after_array_join;
@@ -964,7 +966,8 @@ std::optional<ArrayJoin> SelectQueryExpressionAnalyzer::appendArrayJoin(Expressi
     auto array_join = addMultipleArrayJoinAction(step.actions()->dag, is_array_join_left);
     before_array_join = chain.getLastActions();
 
-    chain.steps.push_back(std::make_unique<ExpressionActionsChainSteps::ArrayJoinStep>(array_join.columns, step.getResultColumns()));
+    bool array_join_use_nulls = is_array_join_left && getContext()->getSettingsRef()[Setting::array_join_use_nulls];
+    chain.steps.push_back(std::make_unique<ExpressionActionsChainSteps::ArrayJoinStep>(array_join.columns, step.getResultColumns(), array_join_use_nulls));
 
     chain.addStep();
 

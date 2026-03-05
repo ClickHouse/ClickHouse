@@ -1,6 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -1341,10 +1342,13 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
 {
     auto * array_join_column_inner_expression_function = array_join_column_inner_expression->as<FunctionNode>();
 
+    /// `removeNullable`: with `array_join_use_nulls` the LEFT ARRAY JOIN column is wrapped as
+    /// `Nullable(Tuple(...))`, so unwrap it before checking for the Nested tuple. Otherwise the
+    /// matcher (`*`) would skip the Nested expansion and leak the original table array columns.
     if (array_join_column_inner_expression_function
         && array_join_column_inner_expression_function->getFunctionName() == "nested"
         && array_join_column_inner_expression_function->getArguments().getNodes().size() > 1
-        && isTuple(array_join_column_expression_typed.getResultType()))
+        && isTuple(removeNullable(array_join_column_expression_typed.getResultType())))
     {
         const auto & nested_function_arguments = array_join_column_inner_expression_function->getArguments().getNodes();
         size_t nested_function_arguments_size = nested_function_arguments.size();
