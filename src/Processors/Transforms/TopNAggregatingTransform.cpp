@@ -299,7 +299,7 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (enable_threshold_pruning && isBelowThreshold(*order_arg_col, row))
+        if (order_arg_col && isBelowThreshold(*order_arg_col, row))
             continue;
 
         auto key_holder = serializeGroupKey(columns, row);
@@ -470,17 +470,11 @@ Chunk TopNAggregatingTransform::generateMode2Partial()
             col.insertFrom(group_states[perm[j]].state + agg_state_offsets[i]);
     }
 
-    /// States in top K are now owned by ColumnAggregateFunction columns.
-    /// Destroy remaining states that were not selected.
-    std::vector<bool> in_top_k(num_groups, false);
-    for (size_t j = 0; j < output_limit; ++j)
-        in_top_k[perm[j]] = true;
-
+    /// ColumnAggregateFunction::insertFrom merges (copies) each state into a
+    /// new column-owned state. Destroy ALL original states -- including the
+    /// top-K ones whose data has already been merged into the output columns.
     for (size_t g = 0; g < num_groups; ++g)
-    {
-        if (!in_top_k[g])
-            destroyAggregateStates(group_states[g].state);
-    }
+        destroyAggregateStates(group_states[g].state);
     group_states.clear();
 
     return Chunk(out_header.cloneWithColumns(std::move(output)).getColumns(), output_limit);
