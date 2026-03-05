@@ -13,6 +13,11 @@ class MergeTreeCleanupThread : public IMergeTreeCleanupThread
 public:
     explicit MergeTreeCleanupThread(StorageMergeTree & storage_);
 
+    /// Shadows IMergeTreeCleanupThread::start() to restart cleanup timers
+    /// before activating the background task. This ensures the thread waits
+    /// a full interval after the manual cleanup done in startup().
+    void start();
+
 private:
     StorageMergeTree & storage;
 

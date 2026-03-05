@@ -20,6 +20,13 @@ MergeTreeCleanupThread::MergeTreeCleanupThread(StorageMergeTree & storage_)
 {
 }
 
+void MergeTreeCleanupThread::start()
+{
+    time_after_previous_cleanup_parts.restart();
+    time_after_previous_cleanup_temporary_directories.restart();
+    IMergeTreeCleanupThread::start();
+}
+
 Float32 MergeTreeCleanupThread::iterate()
 {
     size_t cleaned_other = 0;
