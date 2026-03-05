@@ -747,13 +747,19 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
             emitCsgCmp(csg, extended_complement);
     });
 
-    BitSet extended_exclusion = exclusion | complement_neighborhood;
-    forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
+    /// Per the DPhyp paper, recurse with individual nodes in descending order,
+    /// incrementally building the exclusion set with already-processed nodes.
+    std::vector<size_t> neighbor_nodes;
+    for (size_t n : complement_neighborhood)
+        neighbor_nodes.push_back(n);
+    BitSet incremental_exclusion = exclusion;
+    for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
     {
-        BitSet extended_complement = complement | extension;
-        if (isConnectedInGraph(extended_complement))
-            enumerateCmpRec(csg, extended_complement, extended_exclusion);
-    });
+        BitSet single_node;
+        single_node.set(*it);
+        enumerateCmpRec(csg, complement | single_node, incremental_exclusion);
+        incremental_exclusion.set(*it);
+    }
 }
 
 /// Enumerate all complement partitions for `csg` and emit each valid CSG-CP pair.
@@ -793,14 +799,21 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
     });
 
     /// Recurse outward: for each individual neighbour node, grow complements that extend
-    /// beyond the direct neighbourhood. The exclusion covers the neighbourhood itself so
-    /// each complement is discovered exactly once regardless of iteration order.
-    BitSet extended_exclusion = exclusion | csg_neighborhood;
-    for (size_t v : csg_neighborhood)
+    /// beyond the direct neighbourhood. Per the DPhyp paper (Algorithm 4.4), we iterate
+    /// nodes in descending index order and incrementally add processed nodes to the exclusion.
+    /// Using the full neighbourhood as exclusion (as opposed to incremental) would prevent
+    /// recursive extensions from reaching other neighbourhood nodes as intermediate waypoints,
+    /// missing valid complements like {B,C,D} on a 4-cycle when CSG={A}.
+    std::vector<size_t> neighbor_nodes;
+    for (size_t n : csg_neighborhood)
+        neighbor_nodes.push_back(n);
+    BitSet incremental_exclusion = exclusion;
+    for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
     {
         BitSet single_node;
-        single_node.set(v);
-        enumerateCmpRec(csg, single_node, extended_exclusion);
+        single_node.set(*it);
+        enumerateCmpRec(csg, single_node, incremental_exclusion);
+        incremental_exclusion.set(*it);
     }
 }
 
