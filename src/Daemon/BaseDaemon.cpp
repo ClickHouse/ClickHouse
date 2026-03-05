@@ -290,10 +290,23 @@ void BaseDaemon::initialize(Application & self)
         struct rlimit rlim;
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
-        rlim.rlim_cur = pending_signals;
-        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+
+        /// Only adjust if the current soft limit is below the requested value.
+        if (rlim.rlim_cur < pending_signals)
         {
-            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+            rlim_t old_cur = rlim.rlim_cur;
+            rlim_t old_max = rlim.rlim_max;
+
+            /// Raise hard limit only if needed (requires CAP_SYS_RESOURCE).
+            /// (Note it is "unlimited" compatible, since it is rlim_t(-1))
+            rlim.rlim_max = std::max<rlim_t>(rlim.rlim_max, pending_signals);
+
+            rlim.rlim_cur = pending_signals;
+
+            if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+                std::cerr << "Cannot set RLIMIT_SIGPENDING (soft=" << old_cur << ", hard=" << old_max << ") to " << pending_signals << std::endl;
+            else
+                std::cerr << "Set RLIMIT_SIGPENDING from (soft=" << old_cur << ", hard=" << old_max << ") to " << pending_signals << std::endl;
         }
     }
 #endif
