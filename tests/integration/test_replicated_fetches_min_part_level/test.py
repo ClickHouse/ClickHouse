@@ -302,10 +302,11 @@ def test_permanent_skip_with_zero_timeout(started_cluster):
         )
 
         # With timeout=0, the part should remain blocked permanently.
-        # Wait a generous amount of time and confirm it's still not fetched.
-        time.sleep(5)
-        count = int(node2.query("SELECT count() FROM test_permanent_skip").strip())
-        assert count == 0, f"Expected 0 rows on node2 with zero timeout, got {count}"
+        # Poll over 5 seconds to verify the entry stays postponed and no rows appear.
+        for _ in range(10):
+            time.sleep(0.5)
+            count = int(node2.query("SELECT count() FROM test_permanent_skip").strip())
+            assert count == 0, f"Expected 0 rows on node2 with zero timeout, got {count}"
 
         # Confirm the queue entry is STILL postponed by our setting
         queue_count = int(

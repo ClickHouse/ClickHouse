@@ -543,7 +543,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, replicated_fetches_min_part_level_timeout_sec, 300, R"(
     Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
-    Use 0 to disable the timeout (parts below the minimum level are permanently skipped until merged).
+    Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
     Default: 300 (force fetch after 5 minutes).
     )", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(

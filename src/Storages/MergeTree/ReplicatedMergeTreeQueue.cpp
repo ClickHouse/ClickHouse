@@ -1677,17 +1677,30 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         return false;
     }
 
-    if ((entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+    if (entry.type == LogEntry::GET_PART
         && !entry.new_part_name.empty())
     {
-        const auto min_level = (*data.getSettings())[MergeTreeSetting::replicated_fetches_min_part_level];
+        const auto settings = data.getSettings();
+        const auto min_level = (*settings)[MergeTreeSetting::replicated_fetches_min_part_level];
         if (min_level > 0)
         {
             const auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
             if (part_info.level < min_level)
             {
-                const auto timeout_sec = (*data.getSettings())[MergeTreeSetting::replicated_fetches_min_part_level_timeout_sec];
-                if (timeout_sec > 0 && entry.create_time > 0)
+                const auto timeout_sec = (*settings)[MergeTreeSetting::replicated_fetches_min_part_level_timeout_sec];
+
+                /// timeout_sec == 0 means permanent block (no timeout override)
+                if (timeout_sec == 0)
+                {
+                    out_postpone_reason = fmt::format(
+                        "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
+                        entry.new_part_name, part_info.level, static_cast<UInt64>(min_level));
+                    return false;
+                }
+
+                /// timeout_sec > 0: block until timeout expires, then fall through to allow fetch.
+                /// If create_time is unknown (0), be safe and allow the fetch immediately.
+                if (entry.create_time > 0)
                 {
                     auto elapsed = time(nullptr) - entry.create_time;
                     if (elapsed < static_cast<time_t>(timeout_sec))
@@ -1696,17 +1709,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                         out_postpone_reason = fmt::format(
                             "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}"
                             " ({} seconds remaining until force fetch)",
-                            entry.new_part_name, part_info.level, min_level, remaining);
+                            entry.new_part_name, part_info.level, static_cast<UInt64>(min_level), remaining);
                         return false;
                     }
                 }
-                else
-                {
-                    out_postpone_reason = fmt::format(
-                        "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
-                        entry.new_part_name, part_info.level, min_level);
-                    return false;
-                }
+                /// timeout expired (or create_time unknown) — fall through and allow fetch
             }
         }
     }
