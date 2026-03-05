@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Port.h>
@@ -329,6 +330,22 @@ bool TopNAggregatingTransform::isBelowThreshold(const IColumn & col, size_t row)
     return (sort_direction < 0) ? (cmp < 0) : (cmp > 0);
 }
 
+ColumnPtr TopNAggregatingTransform::buildThresholdKeepMask(const ColumnPtr & column, size_t rows)
+{
+    if (!threshold_active)
+        return {};
+    PaddedPODArray<Int8> compare_results;
+    column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, 1);
+    if (compare_results.size() != rows)
+        return {};
+
+    auto mask = ColumnUInt8::create(rows);
+    auto & mask_data = mask->getData();
+    for (size_t i = 0; i < rows; ++i)
+        mask_data[i] = (compare_results[i] <= 0);
+    return mask;
+}
+
 
 /// ---- TopNAggregatingTransform: consume ----
 
@@ -410,10 +427,28 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 
     const IColumn * order_arg_col = enable_threshold_pruning
         ? columns[order_agg_arg_col_idx].get() : nullptr;
+    ColumnPtr threshold_keep_mask;
+    const PaddedPODArray<UInt8> * threshold_keep_data = nullptr;
+
+    if (order_arg_col)
+    {
+        threshold_keep_mask = buildThresholdKeepMask(columns[order_agg_arg_col_idx], num_rows);
+        if (threshold_keep_mask)
+        {
+            auto full_mask = threshold_keep_mask->convertToFullColumnIfConst();
+            if (const auto * mask_col = checkAndGetColumn<ColumnUInt8>(full_mask.get()))
+            {
+                threshold_keep_mask = std::move(full_mask);
+                threshold_keep_data = &mask_col->getData();
+            }
+        }
+    }
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (order_arg_col && isBelowThreshold(*order_arg_col, row))
+        if (threshold_keep_data && !(*threshold_keep_data)[row])
+            continue;
+        if (!threshold_keep_data && order_arg_col && isBelowThreshold(*order_arg_col, row))
             continue;
 
         auto key_holder = serializeGroupKey(columns, row);

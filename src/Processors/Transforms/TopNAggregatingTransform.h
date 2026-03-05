@@ -133,6 +133,7 @@ private:
     /// --- Helpers: threshold ---
     void refreshThresholdFromStates();
     void maybeRefreshThreshold();
+    ColumnPtr buildThresholdKeepMask(const ColumnPtr & column, size_t rows);
     bool isBelowThreshold(const IColumn & col, size_t row) const;
 };
 
