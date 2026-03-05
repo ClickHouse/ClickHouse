@@ -294,6 +294,8 @@ std::optional<DataLakeTableStateSnapshot> PaimonMetadata::getTableStateSnapshot(
 std::unique_ptr<StorageInMemoryMetadata> PaimonMetadata::buildStorageMetadataFromState(
     const DataLakeTableStateSnapshot & snapshot, ContextPtr /*local_context*/) const
 {
+    chassert(std::holds_alternative<Paimon::TableStateSnapshot>(snapshot));
+
     const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&snapshot);
     if (!paimon_state)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Paimon::TableStateSnapshot in DataLakeTableStateSnapshot");
@@ -311,6 +313,7 @@ std::unique_ptr<StorageInMemoryMetadata> PaimonMetadata::buildStorageMetadataFro
 
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(ColumnsDescription{*columns});
+    result->setDataLakeTableState(snapshot);
     return result;
 }
 
@@ -572,7 +575,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
 
             if (skip_compact && state->isCompact())
             {
-                LOG_DEBUG(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
+                LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
                 continue;
             }
 

@@ -317,7 +317,7 @@ def test_paimon_to_mergetree_via_refresh_mv(started_cluster):
         )
     )
 
-    # Create refreshable MV in APPEND mode with a 30 s refresh cycle.
+    # Create refreshable MV in APPEND mode with a 10 s refresh cycle.
     node.query(f"DROP VIEW IF EXISTS {CH_MV_NAME} SYNC;")
     node.query(
         "CREATE MATERIALIZED VIEW {mv} "
