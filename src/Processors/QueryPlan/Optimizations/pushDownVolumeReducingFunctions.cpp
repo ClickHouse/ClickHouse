@@ -250,16 +250,30 @@ size_t tryPushDownVolumeReducingFunctions(QueryPlan::Node * parent_node, QueryPl
     if (candidates.empty())
         return 0;
 
-    /// Check that no pushed function result name collides with existing grandchild output.
+    /// Check that no pushed function result name collides with existing grandchild output,
+    /// and that every source column actually exists in the grandchild output
+    /// (the child step might compute the source column itself rather than passing it through).
     const auto & grandchild_output = child_node->children.front()->step->getOutputHeader();
-    for (const auto & [source_name, cand] : candidates)
+    for (auto it = candidates.begin(); it != candidates.end(); )
     {
-        for (const auto & func : cand.functions)
+        if (!grandchild_output->has(it->first))
+        {
+            it = candidates.erase(it);
+            continue;
+        }
+        bool has_collision = false;
+        for (const auto & func : it->second.functions)
         {
             if (grandchild_output->has(func.output_node->result_name))
-                return 0;
+                has_collision = true;
         }
+        if (has_collision)
+            return 0;
+        ++it;
     }
+
+    if (candidates.empty())
+        return 0;
 
     /// --- 5. Build new ActionsDAG for the inserted ExpressionStep --------------------
 
@@ -276,7 +290,9 @@ size_t tryPushDownVolumeReducingFunctions(QueryPlan::Node * parent_node, QueryPl
     /// For each candidate, add the volume-reducing functions and remove the source column.
     for (const auto & [source_name, cand] : candidates)
     {
-        const auto * source_in_new_dag = new_dag_inputs[source_name];
+        auto it_input = new_dag_inputs.find(source_name);
+        chassert(it_input != new_dag_inputs.end());
+        const auto * source_in_new_dag = it_input->second;
 
         for (const auto & func : cand.functions)
         {
