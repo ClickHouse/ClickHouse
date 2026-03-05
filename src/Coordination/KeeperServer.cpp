@@ -20,6 +20,7 @@
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/msg_type.hxx>
 #include <libnuraft/ptr.hxx>
+#include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -41,6 +42,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
@@ -122,6 +124,14 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
     params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
+
+    String cipher_list_property = fmt::format("openSSL.{}.cipherList", key);
+    if (config.has(cipher_list_property))
+        params.cipherList = config.getString(cipher_list_property);
+
+    String dh_params_file_property = fmt::format("openSSL.{}.dhParamsFile", key);
+    if (config.has(dh_params_file_property))
+        params.dhParamsFile = config.getString(dh_params_file_property);
 
     std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
@@ -341,6 +351,55 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void setServingRequest(bool value)
     {
         serving_req_ = value;
+    }
+
+    /// Collect IDs of learner (non-voting) servers from the cluster config.
+    std::unordered_set<int32_t> getLearnerIds()
+    {
+        std::vector<nuraft::ptr<nuraft::srv_config>> configs;
+        get_srv_config_all(configs);
+        std::unordered_set<int32_t> learner_ids;
+        for (const auto & cfg : configs)
+            if (cfg->is_learner())
+                learner_ids.insert(cfg->get_id());
+        return learner_ids;
+    }
+
+    /// Returns alive (responding) learner and follower counters.
+    /// Follower counters include only voting peers; learners include all peers.
+    /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
+    KeeperServer::RespondingCounts getRespondingCounts()
+    {
+        auto peers = get_peer_info_all();
+        auto learner_ids = getLearnerIds();
+        auto params = get_current_params();
+        uint64_t expiry_us = static_cast<uint64_t>(params.heart_beat_interval_) * raft_server::raft_limits_.response_limit_ * 1000;
+        uint64_t stale_gap = params.stale_log_gap_;
+        uint64_t last_log = get_last_log_idx();
+
+        KeeperServer::RespondingCounts counts;
+        for (const auto & peer : peers)
+        {
+            if (peer.last_succ_resp_us_ > expiry_us)
+                continue;
+
+            ++counts.learners;
+
+            bool synced = last_log <= peer.last_log_idx_ + stale_gap;
+
+            if (learner_ids.contains(peer.id_))
+            {
+                if (synced)
+                    ++counts.synced_non_voting_followers;
+                continue;
+            }
+
+            ++counts.followers;
+            if (synced)
+                ++counts.synced_followers;
+        }
+
+        return counts;
     }
 
     using nuraft::raft_server::raft_server;
@@ -705,26 +764,9 @@ bool KeeperServer::isExceedingMemorySoftLimit() const
     return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
-/// TODO test whether taking failed peer in count
-uint64_t KeeperServer::getFollowerCount() const
+KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
 {
-    return raft_instance->get_peer_info_all().size();
-}
-
-uint64_t KeeperServer::getSyncedFollowerCount() const
-{
-    uint64_t last_log_idx = raft_instance->get_last_log_idx();
-    const auto followers = raft_instance->get_peer_info_all();
-
-    uint64_t stale_followers = 0;
-
-    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
-    for (const auto & fl : followers)
-    {
-        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
-            stale_followers++;
-    }
-    return followers.size() - stale_followers;
+    return raft_instance->getRespondingCounts();
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
@@ -1281,12 +1323,19 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
     result.is_follower = !result.is_leader && !result.is_observer;
     result.has_leader = result.is_leader || isLeaderAlive();
-    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
+    result.learner_count = 0;
+    result.follower_count = 0;
+    result.synced_follower_count = 0;
+    result.synced_non_voting_follower_count = 0;
     if (result.is_leader)
     {
-        result.follower_count = getFollowerCount();
-        result.synced_follower_count = getSyncedFollowerCount();
+        auto counts = getRespondingCounts();
+        result.learner_count = counts.learners;
+        result.follower_count = counts.followers;
+        result.synced_follower_count = counts.synced_followers;
+        result.synced_non_voting_follower_count = counts.synced_non_voting_followers;
     }
+    result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     return result;
 }
