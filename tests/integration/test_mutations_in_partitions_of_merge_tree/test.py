@@ -173,9 +173,10 @@ def test_alter_in_partition_merge_tree_invalid_valid_valid(started_cluster):
         node1.query(
             f"KILL MUTATION WHERE table = '{name}' AND mutation_id = 'mutation_3.txt'"
         )
-        node1.query_with_retry(f"SELECT x FROM {name} WHERE p = 1",
-                                  check_callback=lambda res: int(res) == 3)
-
+        node1.query_with_retry(
+            f"SELECT x FROM {name} WHERE p = 1",
+            check_callback=lambda res: int(res) == 3,
+        )
 
         assert node1.query(f"SELECT x FROM {name} ORDER BY p").splitlines() == [
             "3",
@@ -233,11 +234,12 @@ def test_alter_in_partition_merge_tree_updates_with_errors(started_cluster):
 
         data.append([100])
 
-        node1.query(
-            f"ALTER TABLE {name} UPDATE x = x IN PARTITION -1 WHERE 1 SETTINGS mutations_sync = 2"
+        node1.query_with_retry(
+            "SELECT count() FROM system.mutations "
+            f"WHERE database = currentDatabase() AND table = '{name}' "
+            "AND is_done = 0 AND latest_fail_reason = ''",
+            check_callback=lambda res: int(res) == 0,
         )
-
-        print(node1.query(f"SELECT * FROM system.mutations"))
 
         assert node1.query(f"SELECT sum(x) FROM {name}").splitlines() == [
             str(sum((y for x in data for y in x)))
