@@ -103,6 +103,7 @@ SELECT count() FROM (
 );
 
 SELECT 'nullable_key_aggregates';
+-- Use IS NOT DISTINCT FROM for the join condition because USING/= treats NULL != NULL.
 SELECT count() FROM (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d LIMIT 10
     SETTINGS ordered_group_by_limit_pushdown = 1
@@ -110,7 +111,7 @@ SELECT count() FROM (
 LEFT JOIN (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d
     SETTINGS ordered_group_by_limit_pushdown = 0
-) AS full USING (d)
+) AS full ON optimized.d IS NOT DISTINCT FROM full.d
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
 -- =====================
