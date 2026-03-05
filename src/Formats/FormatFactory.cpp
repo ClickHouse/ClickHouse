@@ -440,9 +440,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
-        && (!creators.random_access_input_creator || !creators.random_access_input_creator_with_metadata
-        || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+    if (format_filter_info
+        && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
+        && ((!creators.random_access_input_creator && !creators.random_access_input_creator_with_metadata)
+            || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
             format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
@@ -478,7 +479,7 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
-        && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator && creators.random_access_input_creator_with_metadata)
+        && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
         && !need_only_count;
 
     if (settings[Setting::max_memory_usage]
@@ -528,7 +529,7 @@ InputFormatPtr FormatFactory::getInputImpl(
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
-    // 2. Prefer to use metadata-aware creator if we have format metadata
+    // 2. Prefer to use metadata-aware creator if we have object metadata
     else if (creators.random_access_input_creator_with_metadata && metadata.has_value())
     {
         format = creators.random_access_input_creator_with_metadata(
