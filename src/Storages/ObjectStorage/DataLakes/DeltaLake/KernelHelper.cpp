@@ -67,14 +67,8 @@ public:
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
 
-        /// The delta-kernel-rs integration is currently under experimental flag,
-        /// because we wait for delta-kernel maintainers to provide ffi api
-        /// which will allow us to provide our own s3 client to delta-kernel.
-        /// For now it uses its own client, which would lake all the auth options
-        /// which our own client supports.
-
         /// Supported options
-        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
+        /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
         if (!secret_access_key.empty())
@@ -160,14 +154,8 @@ public:
             ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
 
-        /// The delta-kernel-rs integration is currently under experimental flag,
-        /// because we wait for delta-kernel maintainers to provide ffi api
-        /// which will allow us to provide our own s3 client to delta-kernel.
-        /// For now it uses its own client, which would lake all the auth options
-        /// which our own client supports.
-
         /// Supported options
-        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
+        /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
         if (!storage_account_name.empty())
             set_option("azure_storage_account_name", storage_account_name);
         if (!storage_account_key.empty())
@@ -177,11 +165,6 @@ public:
 
         set_option("azure_storage_endpoint", url);
         set_option("azure_container_name",container);
-
-        LOG_TRACE(
-            getLogger("KernelHelper"),
-            "Using endpoint url: {}",
-            url);
 
         return builder;
     }
