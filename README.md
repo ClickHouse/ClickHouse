@@ -47,19 +47,22 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
-* [Bangalore GDG + Deutsche Bank Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/313325219/) - February 28th, 2026
 * [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
 * [Tokyo Meetup - LibreChat Night](https://www.meetup.com/clickhouse-tokyo-user-group/events/313275265/) - March 9th, 2026
 * [Women+ in open source](https://luma.com/qcqlia4g) - March 9th, 2026 
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/313294062) - March 10th, 2026
 * [San Francisco Meetup](https://luma.com/6rnu6wzs) - March 11th, 2026
+* [SRE Days London Meetup](https://luma.com/sreday-2026-london-q1) - March 12, 2026
 * [Apache Iceberg™ Meetup Pittsburgh](https://luma.com/mqgwk79x) - March 12th, 2026
+* [Munich Meetup](https://www.meetup.com/clickhouse-meetup-munich/events/313487152/) - March 19th, 2026
 * [NY Meetup](https://luma.com/c7tprb51) - March 19th, 2026
+* [Milan Meetup](https://www.meetup.com/clickhouse-italy-user-group/events/313586581/) - March 26th, 2026
 * [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
 * [San Francisco Observability FireSide Chat](https://luma.com/v5d8u087) - March 31st, 2026
 
 Recent meetups
+* [Bangalore GDG + Deutsche Bank Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/313325219/) - February 28th, 2026
+* [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
 * [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
 * [Toronto Meetup](https://luma.com/8p8unbnw) - February 19th, 2026
 * [AI Night San Francisco](https://luma.com/j2ck1sbz)- February 11th, 2026

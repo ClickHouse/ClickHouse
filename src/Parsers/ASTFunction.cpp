@@ -356,7 +356,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
