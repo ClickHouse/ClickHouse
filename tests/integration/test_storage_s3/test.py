@@ -78,7 +78,6 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
-                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -89,20 +88,13 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=[
-                "configs/access.xml",
-                "configs/sync_insert.xml",
-            ],
+            user_configs=["configs/access.xml"],
         )
         cluster.add_instance(
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=[
-                "configs/s3_max_redirects.xml",
-                "configs/s3_retry.xml",
-                "configs/sync_insert.xml",
-            ],
+            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
         )
         cluster.add_instance(
             "s3_non_default",
@@ -116,7 +108,6 @@ def started_cluster():
                 "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
-            user_configs=["configs/sync_insert.xml"],
         )
         cluster.add_instance(
             "dummy2",
@@ -135,7 +126,6 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/s3_retry.xml",
                 "configs/process_archives_as_whole_with_cluster.xml",
-                "configs/sync_insert.xml",
             ],
         )
         cluster.add_instance(
@@ -157,7 +147,6 @@ def started_cluster():
                 "configs/access.xml",
                 "configs/users.xml",
                 "configs/s3_retry.xml",
-                "configs/sync_insert.xml",
             ],
         )
 

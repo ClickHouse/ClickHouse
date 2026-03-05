@@ -730,6 +730,14 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             bool all_useless = true;
             for (const auto & arg : arguments)
             {
+                /// For OR, skip constant false children — they are identity elements
+                /// of OR and don't affect filtering. Without this, the constant
+                /// check above returns false (not useless) for `getBool(0) == 0`,
+                /// which would incorrectly make the entire OR appear non-useless
+                /// even when no indexed columns are referenced.
+                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
+                    continue;
+
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
                 all_useless = all_useless && u;
             }
@@ -740,7 +748,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         return std::any_of(
             arguments.begin(),
             arguments.end(),
-            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, /*atomic=*/ true); });
     }
 
     auto column_name = tree_node.getColumnName();
