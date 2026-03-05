@@ -615,9 +615,15 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
-    return sizeof(*this)
+    size_t memory_usage_bytes = sizeof(*this)
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
-        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
+        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin())
+        + pattern_tokens.capacity() * sizeof(*pattern_tokens.begin());
+
+    for (const auto & [hash, tokens_vec] : pattern_tokens_per_query)
+        memory_usage_bytes += tokens_vec.capacity() * sizeof(*tokens_vec.begin());
+
+    return memory_usage_bytes;
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
