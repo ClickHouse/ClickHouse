@@ -314,7 +314,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     if (context->hasQueryContext())
         if (auto cancel_callback = context->getQueryContext()->getSubqueryCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     executor.execute();
 }
 
@@ -357,7 +357,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     if (context->hasQueryContext())
         if (auto cancel_callback = context->getQueryContext()->getSubqueryCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have

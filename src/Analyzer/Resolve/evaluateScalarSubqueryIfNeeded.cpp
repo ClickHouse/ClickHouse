@@ -94,7 +94,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
     auto cancel_callback = context->hasQueryContext()? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
-    const UInt64 interactive_delay_ms = context->getSettingsRef()[Setting::interactive_delay] / 1000;
+    const UInt64 interactive_delay_ms = std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
     Block scalar_block;
 

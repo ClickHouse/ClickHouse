@@ -211,7 +211,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             auto io = interpreter->execute();
             auto cancel_callback = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getSubqueryCancelCallback() : nullptr;
-            const UInt64 interactive_delay_ms = data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000;
+            const UInt64 interactive_delay_ms = std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000);
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
