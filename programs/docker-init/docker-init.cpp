@@ -698,13 +698,16 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     }
 
     /// --- Passthrough mode ---
-    /// If the first argument is a recognized client-side subcommand, exec it directly
-    /// without performing any server startup. This allows using the distroless image
-    /// as a client:
-    ///   docker run clickhouse/clickhouse-server:distroless clickhouse-client --host ... --query ...
-    if (!extra_args.empty())
+    /// If the first extra argument does not start with '--', treat it as a command to exec
+    /// directly without server startup. This mirrors entrypoint.sh:
+    ///   if [[ "$1" == "--"* ]]; then start server; fi; exec "$@"
+    ///
+    /// For recognized ClickHouse subcommand names (client, local, etc.) resolve the path
+    /// via bin_dir so that multi-tool dispatch (by argv[0] basename) works correctly.
+    /// For everything else (echo, date, bash, ...) let PATH resolution handle it.
+    if (!extra_args.empty() && extra_args[0].rfind("--", 0) != 0)
     {
-        static const std::array<std::string_view, 18> passthrough_commands = {
+        static const std::array<std::string_view, 18> clickhouse_tools = {
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-keeper-client",
@@ -724,23 +727,24 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
             "extract-from-config",
             "disks",
         };
-        if (std::find(passthrough_commands.begin(), passthrough_commands.end(), extra_args[0])
-            != passthrough_commands.end())
+
+        std::string cmd = extra_args[0];
+        if (std::find(clickhouse_tools.begin(), clickhouse_tools.end(), extra_args[0]) != clickhouse_tools.end())
         {
             /// Build the full path to the symlink (e.g. /usr/bin/clickhouse-client).
             /// The symlink points to the clickhouse binary; dispatching is done by argv[0].
             fs::path bin_dir = fs::path(g_clickhouse_binary).parent_path();
-            std::string cmd_path = (bin_dir / extra_args[0]).string();
-
-            std::vector<std::string> exec_cmd = {cmd_path};
-            for (std::size_t i = 1; i < extra_args.size(); ++i)
-                exec_cmd.push_back(extra_args[i]);
-
-            auto exec_argv = buildArgv(exec_cmd);
-            execvp(exec_argv[0], exec_argv.data());
-            std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
-            return 1;
+            cmd = (bin_dir / extra_args[0]).string();
         }
+
+        std::vector<std::string> exec_cmd = {cmd};
+        for (std::size_t i = 1; i < extra_args.size(); ++i)
+            exec_cmd.push_back(extra_args[i]);
+
+        auto exec_argv = buildArgv(exec_cmd);
+        execvp(exec_argv[0], exec_argv.data());
+        std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        return 1;
     }
 
     /// --- Resolve identity ---
