@@ -10,12 +10,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Meyers singleton — the factory is created on first access and
+/// lives until program termination.
 QueryResultCacheFactory & QueryResultCacheFactory::instance()
 {
     static QueryResultCacheFactory factory;
     return factory;
 }
 
+/// Register a named cache type. Throws if the name is already taken.
 void QueryResultCacheFactory::registerCache(const String & type_name, CreatorFn fn)
 {
     auto [_, inserted] = creators.emplace(type_name, std::move(fn));
@@ -23,6 +26,8 @@ void QueryResultCacheFactory::registerCache(const String & type_name, CreatorFn 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "QueryResultCacheFactory: cache type '{}' is already registered", type_name);
 }
 
+/// Look up a registered cache type by name and invoke its creator
+/// with the server configuration.
 std::shared_ptr<IQueryResultCache> QueryResultCacheFactory::create(
     const String & type_name,
     const Poco::Util::AbstractConfiguration & config) const

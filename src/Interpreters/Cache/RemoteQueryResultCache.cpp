@@ -26,10 +26,9 @@ RemoteQueryResultCache::RemoteQueryResultCache(
 {
 }
 
-// ---------------------------------------------------------------------------
-// createReader
-// ---------------------------------------------------------------------------
-
+/// Fetch the cached result from Redis, verify access rights and
+/// staleness, and wrap it in a reader. Returns an empty reader on
+/// miss or access/staleness failure.
 QueryResultCacheReader RemoteQueryResultCache::createReader(const Key & key)
 {
     auto result = backend.getWithKey(key);
@@ -53,8 +52,9 @@ QueryResultCacheReader RemoteQueryResultCache::createReader(const Key & key)
         return QueryResultCacheReader(key, nullptr);
     }
 
-    /// Staleness check — Redis TTL guarantees the key is not expired, but the stored
-    /// expires_at field is used here for consistency with the local cache path.
+    /// Staleness check — Redis TTL guarantees the key is not expired,
+    /// but the stored `expires_at` field is used here for consistency
+    /// with the local cache path.
     if (QueryResultCache::IsStale()(stored_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {} (remote cache)", doubleQuoteString(key.query_string));
@@ -64,10 +64,8 @@ QueryResultCacheReader RemoteQueryResultCache::createReader(const Key & key)
     return QueryResultCacheReader(stored_key, std::make_shared<Entry>(std::move(entry)));
 }
 
-// ---------------------------------------------------------------------------
-// createWriter
-// ---------------------------------------------------------------------------
-
+/// Per-user quotas are not tracked in the remote cache because Redis
+/// manages its own TTL-based eviction independently.
 QueryResultCacheWriter RemoteQueryResultCache::createWriter(
     const Key & key,
     std::chrono::milliseconds min_query_runtime,
@@ -76,14 +74,8 @@ QueryResultCacheWriter RemoteQueryResultCache::createWriter(
     size_t /*max_query_result_cache_size_in_bytes_quota*/,
     size_t /*max_query_result_cache_entries_quota*/)
 {
-    /// Per-user quotas are not tracked in the remote cache (Redis manages its own TTL/eviction).
-    /// Note: no mutex held here — max_entry_size_in_bytes/rows are immutable after construction.
     return QueryResultCacheWriter(*this, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
-
-// ---------------------------------------------------------------------------
-// IQueryResultCacheStorage: hasNonStaleEntry
-// ---------------------------------------------------------------------------
 
 /// Build the lock key by appending `:lock` to the Redis data key.
 std::string RemoteQueryResultCache::lockKey(const std::string & redis_key)
@@ -91,7 +83,8 @@ std::string RemoteQueryResultCache::lockKey(const std::string & redis_key)
     return redis_key + ":lock";
 }
 
-/// Poll Redis until a valid entry appears, or the lock disappears (holder crashed), or timeout.
+/// Poll Redis until a valid entry appears, the lock disappears
+/// (holder crashed), or timeout is reached.
 bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & redis_key)
 {
     const auto deadline = std::chrono::steady_clock::now() + lock_max_wait;
@@ -108,8 +101,8 @@ bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & 
             return true;
         }
 
-        /// If the lock is gone (holder crashed or TTL expired), stop waiting and let this node
-        /// execute the query itself.
+        /// If the lock is gone (holder crashed or TTL expired),
+        /// stop waiting and let this node execute the query itself.
         if (!backend.lockExists(lk))
         {
             LOG_TRACE(logger, "Lock for query {} disappeared before result was ready, degrading to execution", doubleQuoteString(key.query_string));
@@ -121,24 +114,28 @@ bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & 
     return false;
 }
 
+/// Anti-stampede protocol: if no result exists, try to acquire an
+/// `IN_PROGRESS` lock so only one node computes the result while
+/// others poll and wait.
 bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key)
 {
     const std::string redis_key = key.encodeToRedisKey();
 
-    /// Step 1: check if a real result already exists.
+    /// Check if a real result already exists.
     auto result = backend.getWithKey(key);
     if (result.has_value() && !QueryResultCache::IsStale()(result->first))
         return true;
 
-    /// Step 2: check if this node already holds the lock for this key (re-entrant call from
-    /// finalizeWrite's second hasNonStaleEntry check). If so, let the writer proceed to write.
+    /// Check if this node already holds the lock for this key
+    /// (re-entrant call from `finalizeWrite`). If so, let the
+    /// writer proceed to write.
     {
         std::lock_guard lock(mutex);
         if (held_locks.count(redis_key))
             return false;
     }
 
-    /// Step 3: try to acquire the lock atomically (SET NX PX).
+    /// Try to acquire the lock atomically (`SET NX PX`).
     if (backend.tryAcquireLock(lockKey(redis_key), lock_ttl))
     {
         std::lock_guard lock(mutex);
@@ -147,21 +144,19 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key)
         return false; /// This node becomes the writer.
     }
 
-    /// Step 4: another node holds the lock — poll for the result.
+    /// Another node holds the lock — poll for the result.
     LOG_TRACE(logger, "Another node is computing the result for query {}, waiting... (remote cache)", doubleQuoteString(key.query_string));
     return pollForResult(key, redis_key);
 }
 
-// ---------------------------------------------------------------------------
-// IQueryResultCacheStorage: setEntry
-// ---------------------------------------------------------------------------
-
+/// Write the cache entry to Redis with a TTL derived from the key's
+/// `expires_at` timestamp, then release the `IN_PROGRESS` lock.
 void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> entry)
 {
     if (!entry)
         return;
 
-    /// Compute remaining TTL. If the entry has already expired, do not write it.
+    /// Compute remaining TTL. Skip write if the entry already expired.
     const auto now = std::chrono::system_clock::now();
     if (key.expires_at <= now)
     {
@@ -173,7 +168,8 @@ void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> en
 
     backend.set(key, *entry, ttl);
 
-    /// Release the IN_PROGRESS lock now that the real result is in Redis.
+    /// Release the `IN_PROGRESS` lock now that the real result is in
+    /// Redis.
     const std::string redis_key = key.encodeToRedisKey();
     backend.releaseLock(lockKey(redis_key));
     {
@@ -182,10 +178,8 @@ void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> en
     }
 }
 
-// ---------------------------------------------------------------------------
-// IQueryResultCacheStorage: cancelWrite
-// ---------------------------------------------------------------------------
-
+/// Release the `IN_PROGRESS` lock when the writer decides not to
+/// store the result (e.g. query too fast, result too large).
 void RemoteQueryResultCache::cancelWrite(const Key & key)
 {
     const std::string redis_key = key.encodeToRedisKey();
@@ -194,10 +188,8 @@ void RemoteQueryResultCache::cancelWrite(const Key & key)
     held_locks.erase(redis_key);
 }
 
-// ---------------------------------------------------------------------------
-// clear
-// ---------------------------------------------------------------------------
-
+/// Clear all entries or entries matching a tag prefix, and reset
+/// local tracking state.
 void RemoteQueryResultCache::clear(const std::optional<String> & tag)
 {
     if (tag)
@@ -210,10 +202,6 @@ void RemoteQueryResultCache::clear(const std::optional<String> & tag)
     held_locks.clear();
 }
 
-// ---------------------------------------------------------------------------
-// sizeInBytes / count
-// ---------------------------------------------------------------------------
-
 size_t RemoteQueryResultCache::sizeInBytes() const
 {
     return 0; /// Data lives in Redis, not in local memory.
@@ -224,25 +212,21 @@ size_t RemoteQueryResultCache::count() const
     return backend.count();
 }
 
-// ---------------------------------------------------------------------------
-// recordQueryRun
-// ---------------------------------------------------------------------------
-
+/// Increment the node-local execution counter for the given query
+/// key. Clears the map when it grows too large to prevent unbounded
+/// memory growth from unique queries.
 size_t RemoteQueryResultCache::recordQueryRun(const Key & key)
 {
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
-    /// Protect against unbounded growth (DoS via unique queries).
     static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
 }
 
-// ---------------------------------------------------------------------------
-// dump
-// ---------------------------------------------------------------------------
-
+/// Fetch entries from Redis via SCAN and convert them to the
+/// `KeyMapped` format expected by `system.query_cache`.
 std::vector<QueryResultCache::Cache::KeyMapped> RemoteQueryResultCache::dump() const
 {
     auto pairs = backend.dump(max_entries_for_dump);
@@ -251,10 +235,7 @@ std::vector<QueryResultCache::Cache::KeyMapped> RemoteQueryResultCache::dump() c
     result.reserve(pairs.size());
     for (auto & [k, v] : pairs)
     {
-        QueryResultCache::Cache::KeyMapped km;
-        km.key = std::move(k);
-        km.mapped = std::make_shared<Entry>(std::move(v));
-        result.push_back(std::move(km));
+        result.push_back({std::move(k), std::make_shared<Entry>(std::move(v))});
     }
     return result;
 }

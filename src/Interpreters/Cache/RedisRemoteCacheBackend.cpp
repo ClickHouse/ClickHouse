@@ -17,29 +17,19 @@ namespace ErrorCodes
     extern const int EXTERNAL_QUERY_RESULT_CACHE_ERROR;
 }
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
-
 RedisRemoteCacheBackend::RedisRemoteCacheBackend(RedisConfiguration config_)
     : config(std::move(config_))
 {
     pool = std::make_shared<RedisPool>(config.pool_size);
 }
 
-// ---------------------------------------------------------------------------
-// Connection management
-// ---------------------------------------------------------------------------
-
 RedisConnectionPtr RedisRemoteCacheBackend::borrowConnection()
 {
     return getRedisConnection(pool, config);
 }
 
-// ---------------------------------------------------------------------------
-// Lua script loading
-// ---------------------------------------------------------------------------
-
+/// Load all Lua scripts into Redis if not yet loaded (or reload
+/// after a NOSCRIPT error indicates Redis was restarted).
 void RedisRemoteCacheBackend::ensureScriptsLoaded(Poco::Redis::Client & client)
 {
     std::lock_guard lock(scripts_mutex);
@@ -59,10 +49,8 @@ void RedisRemoteCacheBackend::ensureScriptsLoaded(Poco::Redis::Client & client)
     scripts_loaded    = true;
 }
 
-// ---------------------------------------------------------------------------
-// Serialization helpers
-// ---------------------------------------------------------------------------
-
+/// Concatenate the serialized key and entry into a single binary
+/// string suitable for storing as a Redis value.
 std::string RedisRemoteCacheBackend::serializeValue(
     const QueryResultCache::Key & key,
     const QueryResultCache::Entry & entry)
@@ -73,6 +61,8 @@ std::string RedisRemoteCacheBackend::serializeValue(
     return std::move(buf.str());
 }
 
+/// Reconstruct a Key + Entry pair from the binary Redis value
+/// produced by `serializeValue`.
 std::pair<QueryResultCache::Key, QueryResultCache::Entry>
 RedisRemoteCacheBackend::deserializeValue(const std::string & data)
 {
@@ -82,10 +72,8 @@ RedisRemoteCacheBackend::deserializeValue(const std::string & data)
     return {std::move(key), std::move(entry)};
 }
 
-// ---------------------------------------------------------------------------
-// getWithKey
-// ---------------------------------------------------------------------------
-
+/// Issue a `GET` command to Redis. Returns nullopt on miss or on
+/// any error (graceful degradation).
 std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
 RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & key)
 try
@@ -109,10 +97,9 @@ catch (...)
     return std::nullopt;
 }
 
-// ---------------------------------------------------------------------------
-// set
-// ---------------------------------------------------------------------------
-
+/// Use the `SET_SCRIPT` Lua script to atomically set the key only
+/// if it does not already exist, with a TTL in milliseconds.
+/// Retries once on NOSCRIPT (Redis restart).
 void RedisRemoteCacheBackend::set(
     const QueryResultCache::Key & key,
     const QueryResultCache::Entry & value,
@@ -131,8 +118,7 @@ try
 
     Poco::Redis::Command cmd("EVALSHA");
     cmd << sha_set;
-    /// numkeys = 1
-    cmd << "1";
+    cmd << "1"; /// numkeys
     cmd << redis_key;
     cmd << serialized;
     cmd << ttl_ms_str;
@@ -145,7 +131,7 @@ try
     {
         if (std::string(e.what()).starts_with("NOSCRIPT"))
         {
-            /// Redis was restarted and lost our scripts — reload and retry once.
+            /// Redis lost our scripts — reload and retry once.
             {
                 std::lock_guard lock(scripts_mutex);
                 scripts_loaded = false;
@@ -167,10 +153,7 @@ catch (...)
     /// Swallow — cache write failures must not interrupt the query.
 }
 
-// ---------------------------------------------------------------------------
-// remove
-// ---------------------------------------------------------------------------
-
+/// Delete a single entry by its encoded Redis key.
 void RedisRemoteCacheBackend::remove(const QueryResultCache::Key & key)
 try
 {
@@ -185,17 +168,14 @@ catch (...)
         "Failed to remove entry from external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
-// ---------------------------------------------------------------------------
-// clearByTag
-// ---------------------------------------------------------------------------
-
+/// Use the `CLEAR_BY_TAG_SCRIPT` Lua script to SCAN and delete
+/// all keys matching the `{tag}*` pattern.
 void RedisRemoteCacheBackend::clearByTag(const String & tag)
 try
 {
     auto conn = borrowConnection();
     ensureScriptsLoaded(*conn->client);
 
-    /// Pattern: {tag}* matches all keys with this tag prefix.
     const std::string pattern = tag + "*";
 
     Poco::Redis::Command cmd("EVALSHA");
@@ -237,10 +217,7 @@ catch (...)
         "Failed to clear external query result cache by tag '{}': {}", tag, getCurrentExceptionMessage(false));
 }
 
-// ---------------------------------------------------------------------------
-// clear
-// ---------------------------------------------------------------------------
-
+/// Issue `FLUSHDB ASYNC` to drop all keys in the selected database.
 void RedisRemoteCacheBackend::clear()
 try
 {
@@ -255,10 +232,9 @@ catch (...)
         "Failed to clear external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
-// ---------------------------------------------------------------------------
-// dump
-// ---------------------------------------------------------------------------
-
+/// Use the `DUMP_SCRIPT` Lua script to SCAN all keys and return
+/// up to `max_keys` key-value pairs. Lock keys (ending with
+/// `:lock`) and malformed entries are silently skipped.
 std::vector<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
 RedisRemoteCacheBackend::dump(size_t max_keys)
 {
@@ -295,7 +271,7 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
         }
     }
 
-    /// DUMP_SCRIPT returns a flat list: [key1, value1, key2, value2, ...]
+    /// The Lua script returns a flat list: [key1, val1, key2, val2, ...]
     std::vector<std::pair<QueryResultCache::Key, QueryResultCache::Entry>> result;
     result.reserve(raw.size() / 2);
 
@@ -313,7 +289,6 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
         }
         catch (...)
         {
-            /// Skip malformed entries — don't break the entire dump.
             LOG_WARNING(logger, "Skipping malformed cache entry during dump: {}", getCurrentExceptionMessage(false));
         }
     }
@@ -321,10 +296,7 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// count
-// ---------------------------------------------------------------------------
-
+/// Return the total number of keys in the selected Redis database.
 size_t RedisRemoteCacheBackend::count()
 {
     auto conn = borrowConnection();
@@ -332,16 +304,13 @@ size_t RedisRemoteCacheBackend::count()
     return static_cast<size_t>(conn->client->execute<Poco::Int64>(cmd));
 }
 
-// ---------------------------------------------------------------------------
-// tryAcquireLock
-// ---------------------------------------------------------------------------
-
+/// Atomically acquire a lock using `SET key "IN_PROGRESS" NX PX
+/// ttl_ms`. Returns true if the lock was acquired.
 bool RedisRemoteCacheBackend::tryAcquireLock(const std::string & redis_key, std::chrono::milliseconds ttl)
 try
 {
     auto conn = borrowConnection();
 
-    /// SET key value NX PX ttl_ms — atomic, returns "OK" on success or null on failure.
     Poco::Redis::Command cmd("SET");
     cmd << redis_key << "IN_PROGRESS" << "NX" << "PX" << std::to_string(ttl.count());
 
@@ -354,10 +323,7 @@ catch (...)
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// releaseLock
-// ---------------------------------------------------------------------------
-
+/// Best-effort lock release via `DEL`. Never throws.
 void RedisRemoteCacheBackend::releaseLock(const std::string & redis_key)
 try
 {
@@ -371,10 +337,7 @@ catch (...)
     LOG_WARNING(logger, "Failed to release lock for key {}: {}", redis_key, getCurrentExceptionMessage(false));
 }
 
-// ---------------------------------------------------------------------------
-// lockExists
-// ---------------------------------------------------------------------------
-
+/// Check lock existence via `EXISTS`. Returns false on error.
 bool RedisRemoteCacheBackend::lockExists(const std::string & redis_key)
 try
 {

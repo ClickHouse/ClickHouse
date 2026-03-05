@@ -10,6 +10,7 @@
 namespace DB
 {
 
+/// Register the default in-process LRU query result cache.
 static void registerLocalQueryResultCache(QueryResultCacheFactory & factory)
 {
     factory.registerCache("local", [](const Poco::Util::AbstractConfiguration & config)
@@ -22,6 +23,8 @@ static void registerLocalQueryResultCache(QueryResultCacheFactory & factory)
     });
 }
 
+/// Register the Redis-backed shared query result cache with
+/// anti-stampede lock configuration.
 static void registerRemoteQueryResultCache(QueryResultCacheFactory & factory)
 {
     factory.registerCache("redis", [](const Poco::Util::AbstractConfiguration & config)
