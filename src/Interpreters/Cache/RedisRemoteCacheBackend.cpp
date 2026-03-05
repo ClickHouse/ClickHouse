@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int EXTERNAL_QUERY_RESULT_CACHE_ERROR;
+}
+
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
@@ -167,11 +172,17 @@ catch (...)
 // ---------------------------------------------------------------------------
 
 void RedisRemoteCacheBackend::remove(const QueryResultCache::Key & key)
+try
 {
     auto conn = borrowConnection();
     Poco::Redis::Command cmd("DEL");
     cmd << key.encodeToRedisKey();
     conn->client->execute<Poco::Int64>(cmd);
+}
+catch (...)
+{
+    throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR,
+        "Failed to remove entry from external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +190,7 @@ void RedisRemoteCacheBackend::remove(const QueryResultCache::Key & key)
 // ---------------------------------------------------------------------------
 
 void RedisRemoteCacheBackend::clearByTag(const String & tag)
+try
 {
     auto conn = borrowConnection();
     ensureScriptsLoaded(*conn->client);
@@ -215,17 +227,32 @@ void RedisRemoteCacheBackend::clearByTag(const String & tag)
         }
     }
 }
+catch (const Exception &)
+{
+    throw;
+}
+catch (...)
+{
+    throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR,
+        "Failed to clear external query result cache by tag '{}': {}", tag, getCurrentExceptionMessage(false));
+}
 
 // ---------------------------------------------------------------------------
 // clear
 // ---------------------------------------------------------------------------
 
 void RedisRemoteCacheBackend::clear()
+try
 {
     auto conn = borrowConnection();
     Poco::Redis::Command cmd("FLUSHDB");
     cmd << "ASYNC";
     conn->client->execute<std::string>(cmd);
+}
+catch (...)
+{
+    throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR,
+        "Failed to clear external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +301,11 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
 
     for (size_t i = 0; i + 1 < raw.size(); i += 2)
     {
+        /// Skip stampede lock keys — they are not cache entries.
+        const std::string & redis_key = raw.get<Poco::Redis::BulkString>(i).value();
+        if (redis_key.ends_with(":lock"))
+            continue;
+
         const std::string & value_bytes = raw.get<Poco::Redis::BulkString>(i + 1).value();
         try
         {
