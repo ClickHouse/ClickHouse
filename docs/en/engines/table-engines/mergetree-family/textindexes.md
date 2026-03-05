@@ -115,8 +115,9 @@ ORDER BY key
 
 Text indexes can be defined on columns of these types:
 - [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md),
-- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md), and
-- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions).
+- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md),
+- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions), and
+- [JSON](/sql-reference/data-types/newjson.md) (via [JSONAllPaths](/sql-reference/functions/json-functions.md/#JSONAllPaths) function).
 
 Columns of type [Nullable(T)](/sql-reference/data-types/nullable.md) and [LowCardinality()](/sql-reference/data-types/lowcardinality.md) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -637,6 +638,37 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 -- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
+
+#### Indexing JSON columns {#text-index-example-json}
+
+Similar to `Map` columns, text indexes can be created on [JSON](/sql-reference/data-types/newjson.md) columns using [`JSONAllPaths`](/sql-reference/functions/json-functions.md/#JSONAllPaths).
+The index stores the set of JSON paths present in each granule and uses them to skip granules where a queried path is absent.
+
+```sql
+CREATE TABLE events
+(
+    id UInt64,
+    data JSON,
+    INDEX idx JSONAllPaths(data) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Queries that filter on JSON subcolumns will use the index:
+
+```sql
+-- Only scans granules where path 'user.name' exists
+SELECT * FROM events WHERE data.user.name = 'Alice';
+
+-- Skips all granules (path does not exist anywhere)
+SELECT * FROM events WHERE data.nonexistent = 1;
+
+-- IS NOT NULL skips granules where the path is absent
+SELECT * FROM events WHERE data.user.name IS NOT NULL;
+```
+
+See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for more details on supported operations and safety semantics.
 
 ## Performance Tuning {#performance-tuning}
 
