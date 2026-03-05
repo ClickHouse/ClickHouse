@@ -68,7 +68,6 @@ struct Hyperedge
 {
     BitSet left;
     BitSet right;
-    size_t edge_idx; /// index into QueryGraph::edges
 };
 
 struct QueryGraph

@@ -630,7 +630,7 @@ void JoinOrderOptimizer::buildHyperedges()
             continue;
 
         size_t hyperedge_id = hyperedges.size();
-        hyperedges.push_back({left_rels, right_rels, edge_idx});
+        hyperedges.push_back({left_rels, right_rels});
 
         for (auto node : left_rels)
             if (node < num_relations)
