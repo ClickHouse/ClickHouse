@@ -206,6 +206,42 @@ Expression (Project names)
 36	2
 29	3
 22	4
+-- Pruning level 0: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level 1: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level 2: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level reference
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- EXPLAIN pruning level 0
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    TopNAggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_topn_unsorted)
+-- EXPLAIN pruning level 1
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    TopNAggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_topn_unsorted)
 -- EXPLAIN threshold pruning with prewhere
 Expression (Project names)
 Actions: INPUT : 0 -> max(__table1.start_time) DateTime : 0

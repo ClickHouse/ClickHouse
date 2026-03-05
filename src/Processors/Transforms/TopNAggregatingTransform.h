@@ -114,6 +114,13 @@ private:
     void destroyAggregateStates(AggregateDataPtr place) const;
     void addRowToAggregateStates(AggregateDataPtr place, size_t row);
     void insertResultsFromStates(AggregateDataPtr place, MutableColumns & output_columns);
+
+    /// In-transform threshold pruning (active when enable_threshold_pruning=true).
+    size_t order_agg_arg_col_idx = 0;
+    MutableColumnPtr boundary_column;
+    bool threshold_active = false;
+    void refreshThresholdFromStates();
+    bool isBelowThreshold(const IColumn & col, size_t row) const;
 };
 
 /// Merges partial intermediate results from N parallel TopNAggregatingTransform

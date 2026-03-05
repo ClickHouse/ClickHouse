@@ -106,12 +106,15 @@ static String resolveOriginalArgName(const String & arg_name, QueryPlan::Node * 
  *     true (min/max only). Requests in-order reading for early termination.
  *   Mode 2 (threshold pruning): enabled only when the ORDER BY aggregate has
  *     output_ordered_by_sort_key=true, data is read from MergeTree without existing
- *     prewhere, and the aggregate argument is numeric + non-nullable. Pushes a
- *     __topKFilter prewhere to ReadFromMergeTree for granule-level skipping.
+ *     prewhere, and the aggregate argument is numeric + non-nullable. This is a
+ *     conservative correctness gate: threshold comparisons in TopKThresholdTracker
+ *     use plain direction-based ordering and do not model NULL ordering or string
+ *     collation semantics. Pushes a __topKFilter prewhere to ReadFromMergeTree for
+ *     granule-level skipping.
  *     Without prewhere, the standard Aggregator pipeline is faster due to its
  *     type-dispatched hashing (the custom SipHash-based approach cannot compete).
  */
-void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &)
+void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * limit_step = typeid_cast<LimitStep *>(node.step.get());
     if (!limit_step || limit_step->getLimit() == 0 || limit_step->withTies() || limit_step->getOffset() > 0)
@@ -242,13 +245,18 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    /// Mode 2 (unsorted input): only apply when we can push a __topKFilter prewhere
-    /// into ReadFromMergeTree so the storage layer can skip entire granules.
-    /// Note: when GROUP BY keys match the sorting prefix, the standard Aggregator
-    /// can use aggregation-in-order. However, if Mode 1 is inapplicable (the ORDER BY
-    /// aggregate argument is not the first sorting key column), Mode 2 with threshold
-    /// pruning can still be beneficial.  We do NOT gate on group_by_matches_sorting_prefix
-    /// here; if Mode 1 already set sorted_input=true, the !sorted_input guard suffices.
+    /// Mode 2 (unsorted input): activate when reading from MergeTree with a numeric,
+    /// non-nullable ORDER BY aggregate argument. This avoids mismatches between
+    /// threshold comparison semantics and SQL ordering semantics for NULL / collation.
+    /// TODO: Relax this gate after adding threshold/filter support for NULL ordering
+    /// and collation-aware comparisons, so Mode 2 can handle broader ORDER BY types.
+    /// The pruning_level setting controls which optimizations are layered on:
+    ///   level 0 — direct compute only (no threshold, no filter)
+    ///   level 1 — + in-transform threshold pruning (skip rows below K-th aggregate)
+    ///   level 2 — + dynamic __topKFilter prewhere for storage-level granule skipping
+    bool mode2_eligible = false;
+    UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
+
     if (!sorted_input && order_info.output_ordered_by_sort_key && read_from_mt && !read_from_mt->getPrewhereInfo())
     {
         String order_arg_name = resolveOriginalArgName(
@@ -261,62 +269,62 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto & arg_col = mt_header.getByName(order_arg_name);
             if (arg_col.type->isValueRepresentedByNumber() && !arg_col.type->isNullable())
             {
-                enable_threshold_pruning = true;
-                threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_direction);
+                mode2_eligible = true;
 
-                auto new_prewhere_info = std::make_shared<PrewhereInfo>();
-                NameAndTypePair arg_name_type(order_arg_name, arg_col.type);
-                new_prewhere_info->prewhere_actions = ActionsDAG({arg_name_type});
+                if (pruning_level >= 1)
+                    enable_threshold_pruning = true;
 
-                auto filter_function = createInternalFunctionTopKFilterResolver(threshold_tracker);
-                const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
-                    filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
-                new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
-                new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
-                new_prewhere_info->remove_prewhere_column = true;
-                new_prewhere_info->need_filter = true;
-
-                auto initial_header = read_from_mt->getOutputHeader();
-                read_from_mt->updatePrewhereInfo(new_prewhere_info);
-                auto updated_header = read_from_mt->getOutputHeader();
-
-                if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+                if (pruning_level >= 2 && optimization_settings.use_top_k_dynamic_filtering)
                 {
-                    auto * mt_node = agg_node->children[0];
-                    while (mt_node && !typeid_cast<ReadFromMergeTree *>(mt_node->step.get()))
-                    {
-                        if (mt_node->children.size() != 1)
-                            break;
-                        mt_node = mt_node->children[0];
-                    }
+                    threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_direction);
 
-                    if (mt_node && typeid_cast<ReadFromMergeTree *>(mt_node->step.get()))
-                    {
-                        auto dag = ActionsDAG::makeConvertingActions(
-                            updated_header->getColumnsWithTypeAndName(),
-                            initial_header->getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name, read_from_mt->getContext());
+                    auto new_prewhere_info = std::make_shared<PrewhereInfo>();
+                    NameAndTypePair arg_name_type(order_arg_name, arg_col.type);
+                    new_prewhere_info->prewhere_actions = ActionsDAG({arg_name_type});
 
-                        auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
-                        auto & converting_node = nodes.emplace_back();
-                        converting_node.step = std::move(converting_step);
-                        converting_node.children = mt_node->children;
-                        mt_node->children = {&converting_node};
-                        std::swap(mt_node->step, converting_node.step);
+                    auto filter_function = createInternalFunctionTopKFilterResolver(threshold_tracker);
+                    const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
+                        filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
+                    new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
+                    new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
+                    new_prewhere_info->remove_prewhere_column = true;
+                    new_prewhere_info->need_filter = true;
+
+                    auto initial_header = read_from_mt->getOutputHeader();
+                    read_from_mt->updatePrewhereInfo(new_prewhere_info);
+                    auto updated_header = read_from_mt->getOutputHeader();
+
+                    if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+                    {
+                        auto * mt_node = agg_node->children[0];
+                        while (mt_node && !typeid_cast<ReadFromMergeTree *>(mt_node->step.get()))
+                        {
+                            if (mt_node->children.size() != 1)
+                                break;
+                            mt_node = mt_node->children[0];
+                        }
+
+                        if (mt_node && typeid_cast<ReadFromMergeTree *>(mt_node->step.get()))
+                        {
+                            auto dag = ActionsDAG::makeConvertingActions(
+                                updated_header->getColumnsWithTypeAndName(),
+                                initial_header->getColumnsWithTypeAndName(),
+                                ActionsDAG::MatchColumnsMode::Name, read_from_mt->getContext());
+
+                            auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+                            auto & converting_node = nodes.emplace_back();
+                            converting_node.step = std::move(converting_step);
+                            converting_node.children = mt_node->children;
+                            mt_node->children = {&converting_node};
+                            std::swap(mt_node->step, converting_node.step);
+                        }
                     }
                 }
             }
         }
     }
 
-    /// Without sorted input or threshold pruning, fall through to the standard pipeline.
-    /// Mode 2 is intentionally not applied as a generic unsorted fallback (even though
-    /// the spec describes it) because without a __topKFilter prewhere the standard
-    /// Aggregator pipeline is faster: its type-dispatched hash tables and two-level
-    /// parallel merge outperform the direct SipHash-serialized-key approach used here.
-    /// Applying Mode 2 to non-MergeTree sources or tables where prewhere cannot be
-    /// injected would regress query performance.
-    if (!sorted_input && !enable_threshold_pruning)
+    if (!sorted_input && !mode2_eligible)
         return;
 
     auto topn_step = std::make_unique<TopNAggregatingStep>(

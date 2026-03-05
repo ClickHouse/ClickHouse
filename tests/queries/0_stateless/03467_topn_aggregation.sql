@@ -390,7 +390,64 @@ ORDER BY m ASC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
+-- Pruning level tests: verify correctness at each level on MergeTree table
+-- Level 0: direct compute only (no threshold, no filter)
+SELECT '-- Pruning level 0: max DESC';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 0;
+
+-- Level 1: in-transform threshold pruning (no dynamic filter)
+SELECT '-- Pruning level 1: max DESC';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
+-- Level 2: full (threshold + dynamic filter) -- requires use_top_k_dynamic_filtering
+SELECT '-- Pruning level 2: max DESC';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1;
+
+-- Reference (unoptimized)
+SELECT '-- Pruning level reference';
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+-- EXPLAIN at each level: verify plan differences
+SELECT '-- EXPLAIN pruning level 0';
+EXPLAIN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 0;
+
+SELECT '-- EXPLAIN pruning level 1';
+EXPLAIN
+SELECT trace_id, max(start_time) AS m
+FROM t_topn_unsorted
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
 -- EXPLAIN: verify threshold pruning and __topKFilter prewhere on MergeTree table
+-- requires use_top_k_dynamic_filtering = 1 since it defaults to off
 SELECT '-- EXPLAIN threshold pruning with prewhere';
 EXPLAIN actions=1
 SELECT trace_id, max(start_time) AS m
@@ -398,7 +455,7 @@ FROM t_topn_unsorted
 GROUP BY trace_id
 ORDER BY m DESC
 LIMIT 5
-SETTINGS optimize_topn_aggregation = 1;
+SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1;
 
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;

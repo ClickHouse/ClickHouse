@@ -69,6 +69,13 @@ TopNAggregatingTransform::TopNAggregatingTransform(
         state_align = std::max(state_align, aggregates[i].function->alignOfData());
     }
 
+    if (enable_threshold_pruning && !sorted_input)
+    {
+        const auto & order_arg_name = aggregates[order_by_agg_index].argument_names.back();
+        order_agg_arg_col_idx = input_header_.getPositionByName(order_arg_name);
+        auto result_type = aggregates[order_by_agg_index].function->getResultType();
+        boundary_column = result_type->createColumn();
+    }
 }
 
 TopNAggregatingTransform::~TopNAggregatingTransform()
@@ -141,6 +148,53 @@ void TopNAggregatingTransform::insertResultsFromStates(
     for (size_t i = 0; i < aggregates.size(); ++i)
         aggregates[i].function->insertResultInto(
             place + agg_state_offsets[i], *output_columns[num_keys + i], arena.get());
+}
+
+void TopNAggregatingTransform::refreshThresholdFromStates()
+{
+    size_t n = group_states.size();
+    if (n < limit)
+        return;
+
+    auto result_type = aggregates[order_by_agg_index].function->getResultType();
+    auto agg_col = result_type->createColumn();
+    size_t off = agg_state_offsets[order_by_agg_index];
+    for (size_t g = 0; g < n; ++g)
+        aggregates[order_by_agg_index].function->insertResultInto(
+            group_states[g].state + off, *agg_col, arena.get());
+
+    auto direction = (sort_direction < 0)
+        ? IColumn::PermutationSortDirection::Descending
+        : IColumn::PermutationSortDirection::Ascending;
+
+    IColumn::Permutation perm;
+    agg_col->getPermutation(direction, IColumn::PermutationSortStability::Unstable,
+                            limit, /*nan_direction_hint=*/1, perm);
+
+    size_t boundary_pos = std::min(limit, n) - 1;
+
+    boundary_column->popBack(boundary_column->size());
+    boundary_column->insertFrom(*agg_col, perm[boundary_pos]);
+    threshold_active = true;
+
+    if (threshold_tracker)
+    {
+        Field val;
+        boundary_column->get(0, val);
+        threshold_tracker->testAndSet(val);
+    }
+}
+
+bool TopNAggregatingTransform::isBelowThreshold(const IColumn & col, size_t row) const
+{
+    if (!threshold_active)
+        return false;
+
+    int cmp = col.compareAt(row, 0, *boundary_column, sort_direction);
+    if (sort_direction < 0)
+        return cmp < 0;
+    else
+        return cmp > 0;
 }
 
 void TopNAggregatingTransform::consume(Chunk chunk)
@@ -224,11 +278,6 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
     if (num_rows == 0)
         return;
 
-    /// Threshold is updated only from group-level aggregates in generateMode2Partial,
-    /// not from raw row values here. Row-level K-th values can be stricter than the
-    /// true group-level K-th aggregate, which would incorrectly filter rows needed
-    /// by groups that belong in the final top K.
-
     if (mode2_accumulated_keys.empty())
     {
         for (size_t k = 0; k < key_names.size(); ++k)
@@ -245,8 +294,14 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
             agg_arg_column_ptrs[i][j] = columns[arg_indices[j]].get();
     }
 
+    const IColumn * order_arg_col = enable_threshold_pruning
+        ? columns[order_agg_arg_col_idx].get() : nullptr;
+
     for (size_t row = 0; row < num_rows; ++row)
     {
+        if (enable_threshold_pruning && isBelowThreshold(*order_arg_col, row))
+            continue;
+
         auto key_holder = serializeGroupKey(columns, row);
 
         decltype(group_indices)::LookupResult it;
@@ -273,6 +328,13 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
             addRowToAggregateStates(group_states[it->getMapped()].state, row);
         }
     }
+
+    /// Refresh threshold from actual group-level aggregates. The threshold is the
+    /// K-th best aggregate value seen so far -- a safe lower bound that cannot
+    /// over-prune. Capped at limit*10000 groups to keep per-chunk cost bounded.
+    if (enable_threshold_pruning && group_states.size() >= limit
+        && group_states.size() <= limit * 10000)
+        refreshThresholdFromStates();
 }
 
 Chunk TopNAggregatingTransform::generate()

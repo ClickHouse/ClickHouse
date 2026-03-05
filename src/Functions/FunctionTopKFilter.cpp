@@ -35,6 +35,8 @@ public:
 
         if (threshold_tracker->getDirection() == -1) /// DESC
             comparator = "greaterOrEquals";
+        /// TODO: Add NULL-ordering and collation-aware threshold comparisons so
+        /// this filter can be safely used for nullable / non-numeric ORDER BY args.
         auto context = Context::getGlobalContextInstance();
         compare_function = FunctionFactory::instance().get(comparator, context);
         direction = threshold_tracker_->getDirection();

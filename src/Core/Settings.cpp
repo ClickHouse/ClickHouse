@@ -3827,6 +3827,12 @@ Possible values:
 - 0 — TopN aggregation optimization is disabled.
 - 1 — TopN aggregation optimization is enabled.
 )", 0) \
+    DECLARE(UInt64, topn_aggregation_pruning_level, 2, R"(
+Controls Mode 2 pruning optimizations when optimize_topn_aggregation is enabled.
+- 0 — Direct compute only: no in-transform threshold pruning or dynamic filter pushdown.
+- 1 — In-transform threshold pruning: rows below the current K-th aggregate value are skipped.
+- 2 — Full: in-transform threshold pruning plus dynamic __topKFilter prewhere for storage-level row skipping.
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \
