@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query_id="$CLICKHOUSE_TEST_UNIQUE_NAME" --query="SELECT (SELECT max(number) FROM system.numbers) + 1" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$CLICKHOUSE_TEST_UNIQUE_NAME" --query="SELECT (SELECT max(number) FROM system.numbers) + 1 SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0" >/dev/null 2>&1 &
 client_pid=$!
 
 for _ in {0..60}
@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t (col U
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_TEST_UNIQUE_NAME}_t VALUES (rand()), (rand()), (rand())"
 
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_in"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT max(rand()) FROM system.numbers)" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query="SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t WHERE col IN (SELECT max(rand()) FROM system.numbers) SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0" >/dev/null 2>&1 &
 client_pid=$!
 
 for _ in {0..60}
