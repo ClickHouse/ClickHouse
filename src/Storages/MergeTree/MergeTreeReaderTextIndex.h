@@ -25,7 +25,8 @@ public:
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
         NamesAndTypesList columns_,
-        bool can_skip_mark_);
+        bool can_skip_mark_,
+        String serialized_state_);
 
     size_t readRows(
         size_t from_mark,
@@ -67,6 +68,9 @@ private:
     MergeTreeIndexWithCondition index;
     MergeTreeIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
+
+    /// Preloaded analyzer state from distributed index analysis, avoids re-reading from disk.
+    String serialized_state;
 
     /// True if the reader is allowed to skip marks.
     /// Otherwise it only fills virtual columns.

@@ -1163,7 +1163,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
+    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getSkipIndexesExtraData().vector_search_results.has_value();
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
@@ -1182,8 +1182,8 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
     IColumn::Filter & filter = filter_data->getData();
 
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
-    const auto & offsets_and_distances = read_hints.vector_search_results.value();
+    const auto & skip_indexes_extra_data = merge_tree_reader->data_part_info_for_read->getSkipIndexesExtraData();
+    const auto & offsets_and_distances = skip_indexes_extra_data.vector_search_results.value();
     auto row_offsets_from_index = offsets_and_distances.rows;
     chassert(offsets_and_distances.distances.has_value());
     const auto distances_from_index = offsets_and_distances.distances.value();
@@ -1522,7 +1522,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
     /// to only output those rows from this reader to the next Sorting step.
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
+    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getSkipIndexesExtraData().vector_search_results.has_value();
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules(), false);
 

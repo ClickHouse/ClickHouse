@@ -15,8 +15,15 @@ struct RangesInDataParts;
 struct StorageID;
 class ActionsDAG;
 
-/// <part_name, ranges>
-using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
+struct IndexAnalysisPartResult
+{
+    MarkRanges ranges;
+    /// index_name -> serialized analyzer state (binary)
+    std::unordered_map<String, String> extra_data;
+};
+
+/// <part_name, result>
+using IndexAnalysisPartsRanges = std::unordered_map<std::string, IndexAnalysisPartResult>;
 /// <replica index, <replica address, parts ranges>>
 using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 

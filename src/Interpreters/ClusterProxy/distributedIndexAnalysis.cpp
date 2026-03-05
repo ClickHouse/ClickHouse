@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
@@ -135,6 +136,24 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
+std::unordered_map<String, String> getExtraDataFromMap(const IColumn & column, size_t row)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    const auto & map_offsets = column_map.getNestedColumn().getOffsets();
+    const auto & map_data = column_map.getNestedData();
+    const auto & keys = assert_cast<const ColumnString &>(map_data.getColumn(0));
+    const auto & values = assert_cast<const ColumnString &>(map_data.getColumn(1));
+
+    std::unordered_map<String, String> result;
+    size_t map_begin = map_offsets[row - 1];
+    size_t map_end = map_offsets[row];
+
+    for (size_t j = map_begin; j < map_end; ++j)
+        result[String(keys.getDataAt(j))] = String(values.getDataAt(j));
+
+    return result;
+}
+
 IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
                                                      const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
@@ -192,12 +211,16 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
         const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
         const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
         const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
+        const auto * col_extra_data = block.findByName("extra_data");
 
         for (size_t i = 0; i < col_part_name.size(); ++i)
         {
-            auto & ranges_dst = res[std::string(col_part_name.getDataAt(i))];
+            auto & part_result = res[std::string(col_part_name.getDataAt(i))];
             for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
-                ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
+                part_result.ranges.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
+
+            if (col_extra_data)
+                part_result.extra_data = getExtraDataFromMap(*col_extra_data->column, i);
         }
     }
 
@@ -305,7 +328,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
             {
                 LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
-                LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
+                LOG_TRACE(logger, "Received {} parts from local replica {} (index {})", parts_ranges.size(), replica_address, i);
                 res[i].second = std::move(parts_ranges);
             }, Priority{});
         }
@@ -318,7 +341,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool);
-                    LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
+                    LOG_TRACE(logger, "Received {} parts from {} (index {})", parts_ranges.size(), replica_address, i);
                     res[i].second = std::move(parts_ranges);
                 }
                 catch (const Exception & e)
@@ -367,7 +390,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
         LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
         auto parts_ranges = local_index_analysis_callback(missing_parts);
-        LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
+        LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {})", parts_ranges.size(), local_replica_address, local_replica_index);
         res[local_replica_index].first = local_replica_address;
         res[local_replica_index].second.insert_range(std::move(parts_ranges));
     }

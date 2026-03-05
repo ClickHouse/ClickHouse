@@ -572,16 +572,26 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    bool can_skip_mark,
+    String serialized_state);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
+    bool can_skip_mark,
+    const std::unordered_map<String, String> & serialized_index_data)
 {
     if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
+    {
+        String serialized_state;
+
+        auto it = serialized_index_data.find(index.index->index.name);
+        if (it != serialized_index_data.end())
+            serialized_state = it->second;
+
+        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark, std::move(serialized_state));
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }

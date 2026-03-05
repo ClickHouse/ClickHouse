@@ -170,9 +170,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
-    bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
+    bool is_vector_search = read_info->skip_indexes_extra_data.vector_search_results.has_value();
     if (is_vector_search)
-        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints, read_info->task_columns.columns);
+        new_readers.main->data_part_info_for_read->setSkipIndexesExtraData(read_info->skip_indexes_extra_data, read_info->task_columns.columns);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
@@ -186,7 +186,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                can_skip_marks));
+                can_skip_marks,
+                read_info->skip_indexes_extra_data.serialized_index_data));
         }
         else
         {
@@ -194,7 +195,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         }
 
         if (is_vector_search)
-            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
+            new_readers.prewhere.back()->data_part_info_for_read->setSkipIndexesExtraData(read_info->skip_indexes_extra_data, pre_columns_per_step);
     }
 
     auto create_patch_reader = [&](size_t part_idx)

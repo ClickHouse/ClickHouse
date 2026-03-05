@@ -68,7 +68,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             key_condition_rpn_template,
             part.data_part,
             ranges,
-            part.read_hints,
+            part.skip_indexes_extra_data,
             reader_settings,
             mark_cache.get(),
             uncompressed_cache.get(),

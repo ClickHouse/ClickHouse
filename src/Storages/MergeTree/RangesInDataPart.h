@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
+#include <unordered_map>
 
 namespace DB
 {
@@ -78,10 +79,12 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
 };
 
 /// A vehicle which transports additional information to optimize searches
-struct RangesInDataPartReadHints
+struct SkipIndexesExtraData
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// Preloaded skip index data from distributed analysis (index_name -> serialized state)
+    std::unordered_map<String, String> serialized_index_data;
 };
 
 struct RangesInDataPart
@@ -92,7 +95,7 @@ struct RangesInDataPart
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-    RangesInDataPartReadHints read_hints;
+    SkipIndexesExtraData skip_indexes_extra_data;
 
     /// The above "ranges" member is the selected ranges after index analysis.
     /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes

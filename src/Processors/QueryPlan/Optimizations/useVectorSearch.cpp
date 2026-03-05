@@ -380,8 +380,8 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             {
                 if (!part_with_ranges.ranges.empty())
                 {
-                    if (!part_with_ranges.read_hints.vector_search_results.has_value() ||
-                        !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
+                    if (!part_with_ranges.skip_indexes_extra_data.vector_search_results.has_value() ||
+                        !part_with_ranges.skip_indexes_extra_data.vector_search_results.value().distances.has_value())
                     {
                         optimize_plan = false;
                         break;

@@ -281,6 +281,8 @@ struct TextIndexSerialization
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);
 };
 
+using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
+
 class TextIndexAnalyzer
 {
 public:
@@ -297,23 +299,37 @@ public:
         void addMissingToken();
         void addLargePostings() { has_large_postings = true; }
         void addRowsRange(RowsRange token_rows_range);
-        void addPostings(PostingListPtr token_postings);
+        void addPostings(PostingListPtr postings_to_add);
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
+    /// Constructor from deserialized state.
+    TextIndexAnalyzer(
+        const MergeTreeIndexConditionText & condition_text,
+        TokenToPostingsInfosMap token_infos_,
+        TokenToPostingsMap token_postings_,
+        NameSet missing_tokens_);
+
     bool hasFailedQueries() const { return has_failed_queries; }
     const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
+    const TokenToPostingsMap & getTokenPostings() const { return token_postings; }
     const NameSet & getMissingTokens() const { return missing_tokens; }
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     bool isTokenNeeded(std::string_view token) const { return query_count_by_token.at(token) > 0; }
-    bool hasPostingsForToken(const String & token) const { return tokens_with_postings.contains(token); }
+    bool hasPostingsForToken(const String & token) const;
 
     void addMissingToken(std::string_view token);
     void addLargePostings(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, PostingListPtr postings);
+
+    /// Serializes the analyzer state (token_infos, token_postings, missing_tokens).
+    void serializeStateBinary(WriteBuffer & out) const;
+
+    /// Deserializes state from a buffer.
+    static TextIndexAnalyzer deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition);
 
 private:
     template <typename Operation>
@@ -324,8 +340,8 @@ private:
     std::unordered_map<std::string_view, std::vector<UInt128>> queries_by_token;
 
     NameSet missing_tokens;
-    NameSet tokens_with_postings;
     TokenToPostingsInfosMap token_infos;
+    TokenToPostingsMap token_postings;
     bool has_failed_queries = false;
 };
 
@@ -350,6 +366,11 @@ public:
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
+
+    /// Serializes the analyzer state into a binary string.
+    String serializeAnalyzerState() const;
+    /// Restores the analyzer from a serialized state.
+    void deserializeFromState(const String & state_data, const MergeTreeIndexConditionText & condition);
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }

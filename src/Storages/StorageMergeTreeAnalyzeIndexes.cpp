@@ -94,6 +94,15 @@ protected:
                 res_columns[res_index++]->insert(std::move(field));
             }
 
+            /// extra_data
+            if (columns_mask[src_index++])
+            {
+                Map map_field;
+                for (const auto & [key, value] : ranges_in_part.skip_indexes_extra_data.serialized_index_data)
+                    map_field.push_back(Tuple{key, value});
+                res_columns[res_index++]->insert(std::move(map_field));
+            }
+
             processed_parts.insert(ranges_in_part.data_part->name);
         }
 
@@ -107,6 +116,8 @@ protected:
             size_t res_index = 0;
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(part->name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insertDefault();
         }

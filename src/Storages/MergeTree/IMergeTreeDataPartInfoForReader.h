@@ -100,14 +100,14 @@ public:
 
     virtual size_t getRowCount() const = 0;
 
-    virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
+    virtual void setSkipIndexesExtraData(const SkipIndexesExtraData & /*extra_data_*/, const NamesAndTypesList & /*read_columns*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSkipIndexesExtraData not implemented for this reader");
     }
 
-    virtual const RangesInDataPartReadHints & getReadHints() const
+    virtual const SkipIndexesExtraData & getSkipIndexesExtraData() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSkipIndexesExtraData not implemented for this reader");
     }
 };
 

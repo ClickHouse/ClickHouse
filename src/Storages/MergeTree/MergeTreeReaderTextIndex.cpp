@@ -36,7 +36,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexWithCondition index_,
     NamesAndTypesList columns_,
-    bool can_skip_mark_)
+    bool can_skip_mark_,
+    String serialized_state_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         columns_,
@@ -48,6 +49,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , serialized_state(std::move(serialized_state_))
     , can_skip_mark(can_skip_mark_)
     , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
@@ -73,9 +75,14 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
             MergeTreeIndexReader::patchSettings(settings, substream.type));
     };
 
-    sparse_index_stream = make_stream(substreams[0]);
-    dictionary_stream = make_stream(substreams[1]);
-    small_postings_stream = make_stream(substreams[2]);
+    /// When preloaded state is available, we only need the postings stream for large postings.
+    /// Sparse index and dictionary streams are not needed since the analyzer is already built.
+    if (serialized_state.empty())
+    {
+        sparse_index_stream = make_stream(substreams[0]);
+        dictionary_stream = make_stream(substreams[1]);
+        small_postings_stream = make_stream(substreams[2]);
+    }
 
     auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
     chassert(index_format);
@@ -108,8 +115,11 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 
 void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
 {
-    sparse_index_stream->seekToStart();
-    sparse_index_stream->getDataBuffer()->prefetch(priority);
+    if (sparse_index_stream)
+    {
+        sparse_index_stream->seekToStart();
+        sparse_index_stream->getDataBuffer()->prefetch(priority);
+    }
     is_prefetched = true;
 }
 
@@ -124,6 +134,15 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
+    if (!serialized_state.empty())
+    {
+        granule = index.index->createIndexGranule();
+        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+        granule_text.deserializeFromState(serialized_state, condition_text);
+        return;
+    }
+
     if (!is_prefetched)
         sparse_index_stream->seekToStart();
 
@@ -575,9 +594,10 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
+    bool can_skip_mark,
+    String serialized_state)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark);
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark, std::move(serialized_state));
 }
 
 }

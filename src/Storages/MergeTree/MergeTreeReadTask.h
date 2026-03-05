@@ -120,7 +120,7 @@ struct MergeTreeReadTaskInfo
     /// Cache of the columns prefixes for this part.
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
-    RangesInDataPartReadHints read_hints;
+    SkipIndexesExtraData skip_indexes_extra_data;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

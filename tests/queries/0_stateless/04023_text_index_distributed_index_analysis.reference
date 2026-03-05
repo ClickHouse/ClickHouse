@@ -1,0 +1,33 @@
+-- { echo }
+
+-- Text index narrows ranges (only granules 0 and 25 contain 'needle')
+SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data, hasToken(text, 'needle'));
+all_1_1_0	[(0,1),(25,26)]
+-- Without predicate all granules are returned
+SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data);
+all_1_1_0	[(0,50)]
+-- Verify query correctness
+SELECT count() FROM text_idx_data WHERE hasToken(text, 'needle');
+2
+-- Token that does not exist: part present but empty ranges
+SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data, hasToken(text, 'nonexistent'));
+all_1_1_0	[]
+-- Combined PK + text index
+SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data, key < 10 AND hasToken(text, 'needle'));
+all_1_1_0	[(0,1)]
+-- extra_data contains serialized text index analyzer state (keyed by index name)
+SELECT part_name, mapKeys(extra_data), notEmpty(extra_data['idx']) FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data, hasToken(text, 'needle'));
+all_1_1_0	['idx']	1
+-- Without text index condition, extra_data is empty
+SELECT part_name, extra_data FROM mergeTreeAnalyzeIndexes(currentDatabase(), text_idx_data);
+all_1_1_0	{}
+-- { echo }
+
+-- Without distributed index analysis
+SELECT count() FROM text_idx_dist WHERE hasToken(text, 'needle') SETTINGS distributed_index_analysis = 0;
+10
+-- With distributed index analysis, result should be the same
+SELECT count() FROM text_idx_dist WHERE hasToken(text, 'needle') SETTINGS distributed_index_analysis = 1;
+10
+distributed_index_analysis=0, DistributedIndexAnalysisScheduledReplicas=0
+distributed_index_analysis=1, DistributedIndexAnalysisScheduledReplicas=2

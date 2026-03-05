@@ -2242,10 +2242,12 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
 
     /// Convert RangesInDataParts to IndexAnalysisPartsRanges
     IndexAnalysisPartsRanges res;
-    for (const auto & part_ranges : parts_ranges_res)
+    for (auto & part_ranges : parts_ranges_res)
     {
         const auto & part_name = part_ranges.data_part->name;
-        res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+        auto & part_result = res[part_name];
+        part_result.ranges.insert(part_result.ranges.end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+        part_result.extra_data.merge(part_ranges.skip_indexes_extra_data.serialized_index_data);
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
@@ -2253,7 +2255,7 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
     {
         if (processed_parts.contains(part_name))
             continue;
-        res.emplace(part_name, MarkRanges{});
+        res.emplace(part_name, IndexAnalysisPartResult{});
     }
 
     return res;
@@ -2446,8 +2448,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             if (final_second_pass)
             {
-                result.parts_with_ranges
-                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
+                result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
                 add_index_stat_row_for_pk_expand = true;
             }
         }
@@ -2474,15 +2475,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 for (auto & [replica_address, parts_on_replica] : distributed_index_analysis)
                 {
                     size_t replica_granules_received = 0;
-                    for (const auto & [_, marks] : parts_on_replica)
-                        replica_granules_received += marks.getNumberOfMarks();
+                    for (const auto & [_, part_result] : parts_on_replica)
+                        replica_granules_received += part_result.ranges.getNumberOfMarks();
 
                     size_t replica_granules_send = 0;
                     for (const auto & [part, _] : parts_on_replica)
                         replica_granules_send += parts_ranges_map.at(std::string(part))->getMarksCount();
 
                     size_t num_parts_send = parts_on_replica.size();
-                    std::erase_if(parts_on_replica, [&](const auto & ranges) { return ranges.second.empty(); });
+                    std::erase_if(parts_on_replica, [&](const auto & entry) { return entry.second.ranges.empty(); });
 
                     distributed_index_stats.emplace_back(DistributedIndexStat{
                         .address = replica_address,
@@ -2512,14 +2513,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             LOG_DEBUG(log, "Received parts ranges for {} parts via distributed index analysis", analyzed_parts_ranges.size());
 
             RangesInDataParts result_parts_ranges;
-            for (const auto & [part_name, ranges] : analyzed_parts_ranges)
+            for (auto & [part_name, part_result] : analyzed_parts_ranges)
             {
                 auto part_range_info = *parts_ranges_map.at(part_name);
                 chassert(part_range_info.ranges.size() == 1);
                 chassert(part_range_info.exact_ranges.empty());
 
-                part_range_info.ranges = ranges;
-                result_parts_ranges.push_back(part_range_info);
+                part_range_info.ranges = std::move(part_result.ranges);
+                part_range_info.skip_indexes_extra_data.serialized_index_data = std::move(part_result.extra_data);
+                result_parts_ranges.push_back(std::move(part_range_info));
             }
 
             /// Parts should be sorted by part_index_in_query for Query Condition Cache

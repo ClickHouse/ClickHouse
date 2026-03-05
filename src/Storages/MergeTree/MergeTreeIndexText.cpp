@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -9,6 +11,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include "IO/WriteHelpers.h"
 #include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -371,22 +374,22 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr postings_to_add)
 {
     if (is_failed)
         return;
 
     if (!postings)
     {
-        postings = *token_postings;
+        postings = *postings_to_add;
     }
     else if (query->search_mode == TextSearchMode::Any)
     {
-        *postings |= *token_postings;
+        *postings |= *postings_to_add;
     }
     else
     {
-        *postings &= *token_postings;
+        *postings &= *postings_to_add;
 
         if (postings->cardinality() == 0)
             markFailed();
@@ -449,8 +452,6 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
     });
 
     token_infos[token] = token_info;
-    if (token_info->embedded_postings)
-        tokens_with_postings.emplace(token);
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
@@ -460,7 +461,16 @@ void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr posti
         query_builder.addPostings(postings);
     });
 
-    tokens_with_postings.emplace(token);
+    token_postings[String(token)] = postings;
+}
+
+bool TextIndexAnalyzer::hasPostingsForToken(const String & token) const
+{
+    if (token_postings.contains(token))
+        return true;
+
+    auto it = token_infos.find(token);
+    return it != token_infos.end() && it->second->embedded_postings;
 }
 
 template <typename Operation>
@@ -487,6 +497,99 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
             }
         }
     }
+}
+
+void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out) const
+{
+    using enum PostingsSerialization::Flags;
+    static constexpr size_t posting_block_size = std::numeric_limits<size_t>::max();
+
+    PostingsSerialization postings_serialization(nullptr);
+    writeVarUInt(token_infos.size(), out);
+
+    for (const auto & [token, info] : token_infos)
+    {
+        writeStringBinary(token, out);
+        TextIndexSerialization::serializeTokenInfo(out, *info);
+
+        if (info->header & EmbeddedPostings)
+        {
+            chassert(info->embedded_postings);
+            postings_serialization.serialize(info->embedded_postings->roaring, info->header, out);
+        }
+
+        bool has_postings = false;
+
+        if (auto it = token_postings.find(token); it != token_postings.end())
+        {
+            has_postings = true;
+            postings_serialization.serialize(*it->second, *info, posting_block_size, out);
+        }
+
+        writePODBinary(has_postings, out);
+    }
+
+    writeVarUInt(missing_tokens.size(), out);
+
+    for (const auto & token : missing_tokens)
+        writeStringBinary(token, out);
+}
+
+TextIndexAnalyzer TextIndexAnalyzer::deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition)
+{
+    TextIndexAnalyzer analyzer(condition);
+    PostingsSerialization postings_serialization(nullptr);
+
+    size_t num_token_infos;
+    readVarUInt(num_token_infos, in);
+
+    for (size_t i = 0; i < num_token_infos; ++i)
+    {
+        String token;
+        readStringBinary(token, in);
+
+        auto info = TextIndexSerialization::deserializeTokenInfo(in, &postings_serialization);
+        auto info_ptr = std::make_shared<TokenPostingsInfo>(info);
+        analyzer.addTokenInfo(token, info_ptr);
+
+        bool has_postings;
+        readPODBinary(has_postings, in);
+
+        if (has_postings)
+        {
+            auto postings = postings_serialization.deserialize(in, info_ptr->header, info_ptr->cardinality);
+            analyzer.addPostings(token, postings);
+        }
+    }
+
+    size_t num_missing_tokens;
+    readVarUInt(num_missing_tokens, in);
+
+    for (size_t i = 0; i < num_missing_tokens; ++i)
+    {
+        String token;
+        readStringBinary(token, in);
+        analyzer.addMissingToken(token);
+    }
+
+    return analyzer;
+}
+
+String MergeTreeIndexGranuleText::serializeAnalyzerState() const
+{
+    if (!analyzer)
+        return {};
+
+    WriteBufferFromOwnString out;
+    analyzer->serializeStateBinary(out);
+    return out.str();
+}
+
+void MergeTreeIndexGranuleText::deserializeFromState(const String & state_data, const MergeTreeIndexConditionText & condition)
+{
+    ReadBufferFromString in(state_data);
+    analyzer = TextIndexAnalyzer::deserializeFromStateBinary(in, condition);
+    is_empty = false;
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)

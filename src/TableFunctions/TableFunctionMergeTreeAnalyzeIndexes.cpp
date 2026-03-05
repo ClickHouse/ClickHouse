@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -191,6 +192,9 @@ ColumnsDescription TableFunctionMergeTreeAnalyzeIndexes::getActualTableStructure
             std::make_shared<DataTypeUInt64>(), // begin
             std::make_shared<DataTypeUInt64>(), // end
         }))},
+        {"extra_data", std::make_shared<DataTypeMap>(
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeString>())},
     }));
 }
 
