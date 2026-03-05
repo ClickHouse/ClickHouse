@@ -30,7 +30,7 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto shared_lock
         = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    if (auto lock = storage.time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
             static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
         /// Both use relative_data_path which changes during rename, so we do it under share lock
@@ -38,7 +38,7 @@ Float32 MergeTreeCleanupThread::iterate()
             (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
     }
 
-    if (auto lock = storage.time_after_previous_cleanup_parts.compareAndRestartDeferred(
+    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
             static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
     {
         cleaned_parts += storage.clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */ true);

@@ -138,10 +138,6 @@ private:
     /// For block numbers.
     SimpleIncrement increment;
 
-    /// For clearOldParts
-    AtomicStopwatch time_after_previous_cleanup_parts;
-    /// For clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
