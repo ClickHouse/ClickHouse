@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Badge, Icon, Tooltip, Panel, useToast, Dropdown } from '@clickhouse/click-ui'
+import { ClickUIProvider, Container, Text, Table, Link, Popover, Button, Badge, Icon, Tooltip, Panel, useToast, Dropdown, Logo } from '@clickhouse/click-ui'
 import './App.css'
 
 interface TestResult {
@@ -811,7 +811,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
           )}
           {result.ext?.run_url && (
             <Link href={result.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', padding: '4px' }}>
-              <Icon name="github" size="md" />
+              <Logo name={theme === 'dark' ? 'github-dark' : 'github-light'} size="sm" />
             </Link>
           )}
           <div
@@ -1178,7 +1178,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                       <>
                         <Text>|</Text>
                         <Link href={data.ext.run_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
-                          <Icon name="github" size="sm" />
+                          <Logo name={theme === 'dark' ? 'github-dark' : 'github-light'} size="sm" />
                         </Link>
                       </>
                     )}
@@ -1248,7 +1248,7 @@ function AppContent({ theme, setTheme }: { theme: 'dark' | 'light', setTheme: (t
                 rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center' }}
               >
-                <Icon name="clickhouse" size="md" />
+                <Logo name={theme === 'dark' ? 'clickhouse-dark' : 'clickhouse-light'} size="md" />
               </Link>
             </div>
           </div>
