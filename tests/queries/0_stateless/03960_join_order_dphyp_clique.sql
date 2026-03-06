@@ -1,6 +1,6 @@
 -- Clique topology: 4 tables, all 6 pairs connected.
 -- emitCsgCmp must not emit duplicate (S,T) pairs despite every 2-node
--- subset having a direct edge.  isConnectedInGraph must accept all subsets.
+-- subset having a direct edge.
 -- count() = 3 because only rows where all four ids coincide survive.
 
 SET allow_experimental_analyzer = 1;

@@ -1,7 +1,7 @@
 -- Cycle topology: 4 tables forming a ring (A - B - C - D - A).
 -- Every 2-node set is a valid complement of another 2-node set.
 -- Tests that emitCsgCmp does not emit duplicate pairs and that
--- isConnectedInGraph correctly handles the extra edge closing the cycle.
+-- the extra edge closing the cycle is handled correctly.
 -- DPhyp and DPsize must return the same result hash.
 
 SET allow_experimental_analyzer = 1;

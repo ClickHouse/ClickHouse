@@ -110,7 +110,6 @@ private:
     /// DPhyp helpers
     void buildHyperedges();
     BitSet getNeighborhood(const BitSet & node_set) const;
-    bool isConnectedInGraph(const BitSet & node_set) const;
 
     void emitCsg(const BitSet & csg);
     void enumerateCsgRec(const BitSet & csg, const BitSet & exclusion);
@@ -678,40 +677,6 @@ BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
         }
     }
     return neighbors.andNot(node_set);
-}
-
-/// Returns true if all relations in `node_set` form a connected subgraph,
-/// i.e., every relation can be reached from every other via hyperedges restricted to `node_set`.
-bool JoinOrderOptimizer::isConnectedInGraph(const BitSet & node_set) const
-{
-    if (!node_set.any())
-        return true;
-
-    size_t start = *node_set.begin();
-    BitSet visited;
-    visited.set(start);
-    std::vector<size_t> queue = {start};
-
-    for (size_t queue_idx = 0; queue_idx < queue.size(); ++queue_idx)
-    {
-        size_t node = queue[queue_idx];
-        if (node >= node_to_edge_ids.size())
-            continue;
-        for (auto hyperedge_id : node_to_edge_ids[node])
-        {
-            BitSet reachable = (hyperedges[hyperedge_id].left | hyperedges[hyperedge_id].right) & node_set;
-            for (auto neighbor : reachable)
-            {
-                if (!visited.test(neighbor))
-                {
-                    visited.set(neighbor);
-                    queue.push_back(neighbor);
-                }
-            }
-        }
-    }
-
-    return visited == node_set;
 }
 
 /// Enumerate all non-empty subsets of `mask`, calling `func` for each.

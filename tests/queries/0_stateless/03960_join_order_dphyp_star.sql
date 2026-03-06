@@ -1,7 +1,8 @@
 -- Star topology: hub connected to 5 spokes.
 -- Exercises getNeighborhood on a high-degree center node.
--- Also exercises isConnectedInGraph: {S1, S2} is rejected as a CSG because
--- there is no direct predicate between S1 and S2.
+-- {S1, S2} is not a valid complement because there is no direct predicate
+-- between S1 and S2; DPhyp never generates it since single-node emission
+-- only extends through actual neighborhood edges.
 -- DPhyp and DPsize must return the same result hash.
 
 SET allow_experimental_analyzer = 1;
