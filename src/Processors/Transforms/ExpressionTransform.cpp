@@ -100,6 +100,8 @@ ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActions
 
 void ConvertingTransform::onConsume(Chunk chunk)
 {
+    /// TODO: batching could be implemented in similar way as in ExpressionTransform
+
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 

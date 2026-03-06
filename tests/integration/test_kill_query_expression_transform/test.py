@@ -11,7 +11,7 @@ node1 = cluster.add_instance(
     "node1",
 )
 
-
+# TODO: test may be renamed into more generic name and test several queries via parametrization without changing test's logic
 SELECT_SQL = """SELECT sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(number))))))))))))))))))))
 FROM numbers(350000000)
 FORMAT `Null`
