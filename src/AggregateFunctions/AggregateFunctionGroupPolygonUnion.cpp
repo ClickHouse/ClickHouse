@@ -88,8 +88,8 @@ SELECT wkt(groupPolygonUnion(geom)) AS result FROM test_polygons;
 
              return std::make_shared<AggregateFunctionGroupPolygonUnion<CartesianPoint>>(argument_types, correct_geometry);
          },
-         AggregateFunctionProperties{},
-         documentation});
+         documentation,
+         AggregateFunctionProperties{}});
 
     factory.registerAlias("ST_Union", "groupPolygonUnion", AggregateFunctionFactory::Case::Insensitive);
 }
