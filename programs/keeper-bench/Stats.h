@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <map>
 
 #include <AggregateFunctions/ReservoirSampler.h>
@@ -22,7 +21,7 @@ struct Stats
         Sampler sampler;
 
         /// requests/second, bytes/second
-        std::pair<double, double> getThroughput(size_t concurrency);
+        std::pair<double, double> getThroughput(size_t concurrency) const;
         double getPercentile(double percent);
 
         void add(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);

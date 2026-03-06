@@ -44,7 +44,7 @@ void Stats::clear()
     op_collectors.clear();
 }
 
-std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency)
+std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency) const
 {
     assert(requests != 0);
     double seconds = static_cast<double>(work_time) / 1'000'000.0 / static_cast<double>(concurrency);
