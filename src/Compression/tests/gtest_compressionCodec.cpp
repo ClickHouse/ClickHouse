@@ -22,6 +22,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <typeinfo>
 #include <vector>
 
@@ -1614,8 +1615,8 @@ INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
         ::testing::Values(
             generateSeq<Float64>(G([](auto) { return std::numeric_limits<Float64>::quiet_NaN(); })),
             generateSeq<Float32>(G([](auto) { return std::numeric_limits<Float32>::quiet_NaN(); })),
-            generateSeq<Float64>(G([](auto) { return M_PIf64; })),
-            generateSeq<Float32>(G([](auto) { return M_PIf32; }))
+            generateSeq<Float64>(G([](auto) { return std::numbers::pi_v<double>; })),
+            generateSeq<Float32>(G([](auto) { return std::numbers::pi_v<float>; }))
         )
     )
 );
