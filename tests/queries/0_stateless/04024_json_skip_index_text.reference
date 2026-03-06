@@ -23,18 +23,6 @@ text reversed equals
 Skip
 Parts: 1/2
 Granules: 1/4
-text notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
-text CAST notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
-text CAST notEquals default
-Skip
-Parts: 1/2
-Granules: 1/4
 text IN not supported
 text IS NOT NULL safe
 Skip

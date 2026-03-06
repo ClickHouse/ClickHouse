@@ -27,15 +27,6 @@ bloom_filter reversed CAST
 Skip
 Parts: 1/2
 Granules: 1/4
-bloom_filter notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
-bloom_filter CAST notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
-bloom_filter CAST notEquals default unsafe
 bloom_filter IN typed
 Skip
 Parts: 1/2

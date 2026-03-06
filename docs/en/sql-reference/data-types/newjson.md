@@ -1122,10 +1122,10 @@ This works similarly to creating skip indexes on [`Map`](/sql-reference/data-typ
 #### Supported index types {#json-indexes-jsonallpaths-supported-types}
 
 `JSONAllPaths` can be used with the following skip index types:
-- [`bloom_filter`](/engines/table-engines/mergetree-family/mergetree#bloom-filter) — supports `equals`, `notEquals`, `in`, `notIn`, and `IS NOT NULL`.
-- [`tokenbf_v1`](/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — supports `equals`, `notEquals`, and `IS NOT NULL`.
-- [`ngrambf_v1`](/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — supports `equals`, `notEquals`, and `IS NOT NULL`.
-- [`text`](/engines/table-engines/mergetree-family/textindexes) (inverted index) — supports `equals`, `notEquals`, and `IS NOT NULL`.
+- [`bloom_filter`](/engines/table-engines/mergetree-family/mergetree#bloom-filter) — supports `equals`, `in`, `notIn`, and `IS NOT NULL`.
+- [`tokenbf_v1`](/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — supports `equals` and `IS NOT NULL`.
+- [`ngrambf_v1`](/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — supports `equals` and `IS NOT NULL`.
+- [`text`](/engines/table-engines/mergetree-family/textindexes) (inverted index) — supports `equals` and `IS NOT NULL`.
 
 #### Example {#json-indexes-jsonallpaths-example}
 

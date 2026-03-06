@@ -59,48 +59,32 @@ FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE 1 = json.a.b)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 2: tokenbf_v1 — notEquals
+-- Section 2: tokenbf_v1 — IS NOT NULL
 -- =============================================================================
 
--- 2a: Dynamic notEquals
-SELECT 'tokenbf notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.a.b != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 2b: CAST notEquals
-SELECT 'tokenbf CAST notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.a.b::Int64 != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- =============================================================================
--- Section 3: tokenbf_v1 — IS NOT NULL
--- =============================================================================
-
--- 3a: IS NOT NULL on Dynamic subcolumn — path a.b only in part 1
+-- 2a: IS NOT NULL on Dynamic subcolumn — path a.b only in part 1
 SELECT 'tokenbf IS NOT NULL Dynamic';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.a.b IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 3b: IS NOT NULL on typed subcolumn (Nullable)
+-- 2b: IS NOT NULL on typed subcolumn (Nullable)
 SELECT 'tokenbf IS NOT NULL typed';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.a.b.:Int64 IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 3c: IS NOT NULL on non-existing path — skip all
+-- 2c: IS NOT NULL on non-existing path — skip all
 SELECT 'tokenbf IS NOT NULL nonexistent';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.nonexistent IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 4: tokenbf_v1 — Sub-object ^ access
+-- Section 3: tokenbf_v1 — Sub-object ^ access
 -- =============================================================================
 
--- 4a: Sub-object access — index should NOT be used
+-- 3a: Sub-object access — index should NOT be used
 SELECT 'tokenbf sub-object ^ not used';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE empty(json.^a))
@@ -149,13 +133,7 @@ SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_ngram WHERE json.a.b::Int64 = 0)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6e: notEquals
-SELECT 'ngrambf notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_ngram WHERE json.a.b != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 6f: IS NOT NULL
+-- 6e: IS NOT NULL
 SELECT 'ngrambf IS NOT NULL';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_ngram WHERE json.a.b IS NOT NULL)

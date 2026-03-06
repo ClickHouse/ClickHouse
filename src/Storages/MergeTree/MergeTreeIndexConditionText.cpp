@@ -526,16 +526,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// tryMatchNodeToJSONIndex handles both plain identifiers and CAST-unwrapped expressions.
     auto json_info = tryMatchNodeToJSONIndex(index_column_node, header);
 
-    if (json_info && (function_name == "equals" || function_name == "notEquals"))
+    if (json_info && function_name == "equals")
     {
         auto key_type = index_column_node.getDAGNode()->result_type;
         if (!isJSONPathFilterSafe(key_type, value_field))
             return false;
 
         auto tokens = stringToTokens(Field(json_info->path));
-        out.function = (function_name == "equals")
-            ? RPNElement::FUNCTION_EQUALS
-            : RPNElement::FUNCTION_NOT_EQUALS;
+        out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name, TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
         return true;

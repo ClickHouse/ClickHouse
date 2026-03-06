@@ -791,16 +791,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header))
     {
-        if (function_name != "equals" && function_name != "notEquals")
+        if (function_name != "equals")
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
         if (!isJSONPathFilterSafe(key_type, value_field))
             return false;
 
-        out.function = (function_name == "equals")
-            ? RPNElement::FUNCTION_EQUALS
-            : RPNElement::FUNCTION_NOT_EQUALS;
+        out.function = RPNElement::FUNCTION_EQUALS;
         fillJSONPathBloomPredicate(*json_info, header, out);
 
         return true;

@@ -65,82 +65,59 @@ FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE 1 = json.a.b)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 2: notEquals
+-- Section 2: IN — no JSON support in tryPrepareSetForTextSearch
 -- =============================================================================
 
--- 2a: Dynamic notEquals
-SELECT 'text notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 2b: CAST notEquals
-SELECT 'text CAST notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b::Int64 != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 2c: CAST notEquals default value — handled by traverseJSONSubcolumnKeyNode
---     which evaluates 0 != 0 = false on default → safe to use index
-SELECT 'text CAST notEquals default';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b::Int64 != 0)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- =============================================================================
--- Section 3: IN — no JSON support in tryPrepareSetForTextSearch
--- =============================================================================
-
--- 3a: IN with typed subcolumn — text index does not support JSON IN
+-- 2a: IN with typed subcolumn — text index does not support JSON IN
 SELECT 'text IN not supported';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b.:Int64 IN (1, 2, 3))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 4: traverseJSONSubcolumnKeyNode — arbitrary boolean functions
+-- Section 3: traverseJSONSubcolumnKeyNode — arbitrary boolean functions
 -- =============================================================================
 
--- 4a: IS NOT NULL on typed subcolumn (NULL IS NOT NULL is false → safe)
+-- 3a: IS NOT NULL on typed subcolumn (NULL IS NOT NULL is false → safe)
 SELECT 'text IS NOT NULL safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b.:Int64 IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 5: Sub-object ^ access
+-- Section 4: Sub-object ^ access
 -- =============================================================================
 
--- 5a: Sub-object access — index should NOT be used
+-- 4a: Sub-object access — index should NOT be used
 SELECT 'text sub-object ^ not used';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE empty(json.^a))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 6: AND/OR
+-- Section 5: AND/OR
 -- =============================================================================
 
--- 6a: AND — both paths in part 1
+-- 5a: AND — both paths in part 1
 SELECT 'text AND both paths';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b = 1 AND json.c = 'hello')
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6b: OR — path a.b in part 1, path x.y in part 2
+-- 5b: OR — path a.b in part 1, path x.y in part 2
 SELECT 'text OR different paths';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b = 1 OR json.x.y = 3)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6c: AND — one non-existing
+-- 5c: AND — one non-existing
 SELECT 'text AND one non-existing';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b = 1 AND json.nonexistent = 99)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 7: Dotted column name and Tuple(JSON)
+-- Section 6: Dotted column name and Tuple(JSON)
 -- =============================================================================
 
 DROP TABLE t_json_text;
@@ -186,7 +163,7 @@ WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Sk
 DROP TABLE t_json_text_tuple;
 
 -- =============================================================================
--- Section 8: Correctness
+-- Section 7: Correctness
 -- =============================================================================
 
 DROP TABLE IF EXISTS t_json_text_res;

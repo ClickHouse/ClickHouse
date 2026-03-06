@@ -71,94 +71,72 @@ FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE 1 = json.a.b::Int64)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 2: notEquals
+-- Section 2: IN
 -- =============================================================================
 
--- 2a: Dynamic notEquals
-SELECT 'bloom_filter notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 2b: CAST notEquals
-SELECT 'bloom_filter CAST notEquals';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 != 1)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- 2c: CAST notEquals with default value — unsafe
-SELECT 'bloom_filter CAST notEquals default unsafe';
-SELECT trimLeft(explain)
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 != 0)
-WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
-
--- =============================================================================
--- Section 3: IN
--- =============================================================================
-
--- 3a: IN with typed subcolumn (Nullable)
+-- 2a: IN with typed subcolumn (Nullable)
 SELECT 'bloom_filter IN typed';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b.:Int64 IN (1, 2, 3))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 3b: IN with CAST (no default in set)
+-- 2b: IN with CAST (no default in set)
 SELECT 'bloom_filter IN CAST';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 IN (1, 2, 3))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 3c: IN with CAST (default in set) — unsafe
+-- 2c: IN with CAST (default in set) — unsafe
 SELECT 'bloom_filter IN CAST default in set unsafe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 IN (0, 1, 2))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 3d: IN with Nullable (default in set) — safe because Nullable
+-- 2d: IN with Nullable (default in set) — safe because Nullable
 SELECT 'bloom_filter IN Nullable default in set safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b.:Int64 IN (0, 1, 2))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 4: NOT IN
+-- Section 3: NOT IN
 -- =============================================================================
 
--- 4a: NOT IN with typed subcolumn (Nullable)
+-- 3a: NOT IN with typed subcolumn (Nullable)
 SELECT 'bloom_filter NOT IN typed';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b.:Int64 NOT IN (10, 20))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 4b: NOT IN with CAST (no default in set)
+-- 3b: NOT IN with CAST (no default in set)
 SELECT 'bloom_filter NOT IN CAST';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 NOT IN (10, 20))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 4c: NOT IN with CAST (default in set) — unsafe
+-- 3c: NOT IN with CAST (default in set) — unsafe
 SELECT 'bloom_filter NOT IN CAST default in set unsafe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b::Int64 NOT IN (0, 10, 20))
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 -- =============================================================================
--- Section 5: IS NOT NULL
+-- Section 4: IS NOT NULL
 -- =============================================================================
 
--- 5a: IS NOT NULL on Dynamic subcolumn — path a.b only in part 1
+-- 4a: IS NOT NULL on Dynamic subcolumn — path a.b only in part 1
 SELECT 'bloom_filter IS NOT NULL Dynamic';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 5b: IS NOT NULL on typed subcolumn (Nullable)
+-- 4b: IS NOT NULL on typed subcolumn (Nullable)
 SELECT 'bloom_filter IS NOT NULL typed';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.a.b.:Int64 IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 5c: IS NOT NULL on non-existing path — skip all
+-- 4c: IS NOT NULL on non-existing path — skip all
 SELECT 'bloom_filter IS NOT NULL nonexistent';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_bf WHERE json.nonexistent IS NOT NULL)
@@ -167,7 +145,7 @@ WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Sk
 DROP TABLE t_json_bf;
 
 -- =============================================================================
--- Section 6: Safety semantics — CAST to String, Nullable, Float64
+-- Section 5: Safety semantics — CAST to String, Nullable, Float64
 -- =============================================================================
 
 DROP TABLE IF EXISTS t_json_safety;
@@ -184,31 +162,31 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_json_safety VALUES (1, '{"a": "hello"}'), (2, '{"b": "world"}');
 INSERT INTO t_json_safety VALUES (3, '{"c": "test"}'), (4, '{"d": "extra"}');
 
--- 6a: CAST ::String = '' — unsafe ('' is default for String)
+-- 5a: CAST ::String = '' — unsafe ('' is default for String)
 SELECT 'CAST String empty unsafe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_safety WHERE json.a::String = '')
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6b: CAST ::String = 'hello' — safe
+-- 5b: CAST ::String = 'hello' — safe
 SELECT 'CAST String non-empty safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_safety WHERE json.a::String = 'hello')
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6c: CAST to Nullable(Int64) = 0 — safe (Nullable)
+-- 5c: CAST to Nullable(Int64) = 0 — safe (Nullable)
 SELECT 'CAST Nullable safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_safety WHERE CAST(json.a, 'Nullable(Int64)') = 0)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6d: CAST ::Float64 = 0.0 — unsafe (0.0 is default for Float64)
+-- 5d: CAST ::Float64 = 0.0 — unsafe (0.0 is default for Float64)
 SELECT 'CAST Float64 default unsafe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_safety WHERE json.a::Float64 = 0.0)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 6e: CAST ::Float64 = 1.5 — safe
+-- 5e: CAST ::Float64 = 1.5 — safe
 SELECT 'CAST Float64 non-default safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_safety WHERE json.a::Float64 = 1.5)
@@ -217,7 +195,7 @@ WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Sk
 DROP TABLE t_json_safety;
 
 -- =============================================================================
--- Section 7: Array type subcolumn
+-- Section 6: Array type subcolumn
 -- =============================================================================
 
 DROP TABLE IF EXISTS t_json_arr;
@@ -233,13 +211,13 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_json_arr VALUES (1, '{"a": [1, 2, 3]}'), (2, '{"b": [4, 5]}');
 INSERT INTO t_json_arr VALUES (3, '{"c": [6]}'), (4, '{"d": [7, 8]}');
 
--- 7a: Array subcolumn = [] — unsafe
+-- 6a: Array subcolumn = [] — unsafe
 SELECT 'Array subcolumn empty unsafe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_arr WHERE json.a.:`Array(Nullable(Int64))` = [])
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
--- 7b: Array subcolumn = [1,2,3] — safe
+-- 6b: Array subcolumn = [1,2,3] — safe
 SELECT 'Array subcolumn non-empty safe';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_arr WHERE json.a.:`Array(Nullable(Int64))` = [1, 2, 3])
@@ -248,7 +226,7 @@ WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Sk
 DROP TABLE t_json_arr;
 
 -- =============================================================================
--- Section 8: Sub-object ^ access
+-- Section 7: Sub-object ^ access
 -- =============================================================================
 
 DROP TABLE IF EXISTS t_json_subobj;
@@ -264,7 +242,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_json_subobj VALUES (1, '{"a": {"b": 1}, "c": "hello"}'), (2, '{"a": {"d": 2}, "e": "world"}');
 INSERT INTO t_json_subobj VALUES (3, '{"x": {"y": 3}, "z": "test"}'), (4, '{"p": {"q": 4}, "r": "foo"}');
 
--- 8a: Sub-object access — index should NOT be used
+-- 7a: Sub-object access — index should NOT be used
 SELECT 'sub-object ^ access not used';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_subobj WHERE empty(json.^a))

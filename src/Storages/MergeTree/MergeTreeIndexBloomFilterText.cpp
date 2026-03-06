@@ -437,7 +437,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
-    if (function_name == "equals" || function_name == "notEquals")
+    if (function_name == "equals")
     {
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns))
         {
@@ -446,9 +446,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 return false;
 
             out.key_column = json_info->header_position;
-            out.function = (function_name == "equals")
-                ? RPNElement::FUNCTION_EQUALS
-                : RPNElement::FUNCTION_NOT_EQUALS;
+            out.function = RPNElement::FUNCTION_EQUALS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
             tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
             return true;

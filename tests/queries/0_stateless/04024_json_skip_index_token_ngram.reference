@@ -19,14 +19,6 @@ tokenbf reversed equals
 Skip
 Parts: 1/2
 Granules: 1/4
-tokenbf notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
-tokenbf CAST notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
 tokenbf IS NOT NULL Dynamic
 Skip
 Parts: 1/2
@@ -53,10 +45,6 @@ Skip
 Parts: 1/2
 Granules: 1/4
 ngrambf CAST default unsafe
-ngrambf notEquals
-Skip
-Parts: 2/2
-Granules: 4/4
 ngrambf IS NOT NULL
 Skip
 Parts: 1/2
