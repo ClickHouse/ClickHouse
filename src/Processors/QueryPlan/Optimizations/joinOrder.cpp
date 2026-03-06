@@ -74,20 +74,13 @@ void QueryGraph::buildColumnEquivalences()
         if (op != JoinConditionOperator::Equals)
             continue;
 
-        const auto * lhs_node = lhs.getNode();
-        while (lhs_node->type == ActionsDAG::ActionType::ALIAS)
-            lhs_node = lhs_node->children.at(0);
-        const auto * rhs_node = rhs.getNode();
-        while (rhs_node->type == ActionsDAG::ActionType::ALIAS)
-            rhs_node = rhs_node->children.at(0);
-
-        if (lhs_node->type != ActionsDAG::ActionType::INPUT || rhs_node->type != ActionsDAG::ActionType::INPUT)
+        auto lhs_resolved = resolveInput(lhs);
+        auto rhs_resolved = resolveInput(rhs);
+        if (!lhs_resolved || !rhs_resolved)
             continue;
 
-        auto lhs_rel = lhs.getSourceRelations().getSingleBit();
-        auto rhs_rel = rhs.getSourceRelations().getSingleBit();
-        if (!lhs_rel || !rhs_rel)
-            continue;
+        auto lhs_rel = lhs_resolved->getSourceRelations().getSingleBit();
+        auto rhs_rel = rhs_resolved->getSourceRelations().getSingleBit();
 
         /// Skip predicates involving outer-joined relations: when a LEFT/RIGHT/FULL JOIN
         /// doesn't match, the outer side produces NULLs, so the equality doesn't hold
@@ -98,9 +91,7 @@ void QueryGraph::buildColumnEquivalences()
             || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
 
-        column_equivalences.add(
-            RelColumn{*lhs_rel, lhs_node->result_name},
-            RelColumn{*rhs_rel, rhs_node->result_name});
+        column_equivalences.add(*lhs_resolved, *rhs_resolved);
     }
 }
 
@@ -108,7 +99,8 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 {
     for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
     {
-        if (!left.test(member.first))
+        auto member_rel = member.getSourceRelations().getSingleBit();
+        if (!member_rel || !left.test(*member_rel))
             continue;
 
         auto equiv_class = column_equivalences.getClass(member);
@@ -116,8 +108,11 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
             continue;
 
         for (const auto & other : *equiv_class)
-            if (right.test(other.first))
+        {
+            auto other_rel = other.getSourceRelations().getSingleBit();
+            if (other_rel && right.test(*other_rel))
                 return true;
+        }
     }
     return false;
 }
@@ -240,12 +235,13 @@ double JoinOrderOptimizer::computeSelectivity(
     double selectivity = computeSelectivity(edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
-    using ConstClassPtr = EquivalenceClasses<RelColumn, RelColumnHash>::ConstClassPtr;
+    using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
     std::set<ConstClassPtr> visited;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {
-        if (!left.test(member.first))
+        auto member_rel = member.getSourceRelations().getSingleBit();
+        if (!member_rel || !left.test(*member_rel))
             continue;
 
         auto equiv_class = query_graph.column_equivalences.getClass(member);
@@ -254,11 +250,12 @@ double JoinOrderOptimizer::computeSelectivity(
 
         for (const auto & other : *equiv_class)
         {
-            if (!right.test(other.first))
+            auto other_rel = other.getSourceRelations().getSingleBit();
+            if (!other_rel || !right.test(*other_rel))
                 continue;
 
-            UInt64 lhs_ndv = getColumnStats(BitSet().set(member.first), member.second);
-            UInt64 rhs_ndv = getColumnStats(BitSet().set(other.first), other.second);
+            UInt64 lhs_ndv = getColumnStats(member.getSourceRelations(), member.getColumnName());
+            UInt64 rhs_ndv = getColumnStats(other.getSourceRelations(), other.getColumnName());
             UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
             if (max_ndv > 0)
                 selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));

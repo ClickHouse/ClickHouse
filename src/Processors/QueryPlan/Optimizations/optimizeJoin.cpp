@@ -824,23 +824,9 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
 ///      class spanning the left and right subtrees.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
-    JoinExpressionActions & expression_actions,
-    const EquivalenceClasses<RelColumn, RelColumnHash> & column_equivalences)
+    const EquivalenceClasses<JoinActionRef> & column_equivalences)
 {
-    auto extract_endpoint = [](const JoinActionRef & ref) -> std::optional<RelColumn>
-    {
-        const auto * node = ref.getNode();
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children.at(0);
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            return std::nullopt;
-        auto rel = ref.getSourceRelations().getSingleBit();
-        if (!rel)
-            return std::nullopt;
-        return RelColumn{*rel, node->result_name};
-    };
-
-    using EquivClasses = EquivalenceClasses<RelColumn, RelColumnHash>;
+    using EquivClasses = EquivalenceClasses<JoinActionRef>;
 
     std::function<EquivClasses(const DPJoinEntryPtr &)> process =
         [&](const DPJoinEntryPtr & entry) -> EquivClasses
@@ -873,13 +859,13 @@ static void cleanupJoinPredicates(
             if (op != JoinConditionOperator::Equals)
                 return false;
 
-            auto lhs_endpoint = extract_endpoint(lhs);
-            auto rhs_endpoint = extract_endpoint(rhs);
-            if (!lhs_endpoint || !rhs_endpoint)
+            auto lhs_resolved = resolveInput(lhs);
+            auto rhs_resolved = resolveInput(rhs);
+            if (!lhs_resolved || !rhs_resolved)
                 return false;
 
-            auto lhs_class = equiv.getClass(*lhs_endpoint);
-            auto rhs_class = equiv.getClass(*rhs_endpoint);
+            auto lhs_class = equiv.getClass(*lhs_resolved);
+            auto rhs_class = equiv.getClass(*rhs_resolved);
             if (lhs_class && rhs_class && lhs_class == rhs_class)
             {
                 ++removed;
@@ -890,7 +876,7 @@ static void cleanupJoinPredicates(
             /// outer join equality holds only for matching rows
             /// and would be invalid for NULL-padded non-matching rows.
             if (is_inner)
-                equiv.add(*lhs_endpoint, *rhs_endpoint);
+                equiv.add(*lhs_resolved, *rhs_resolved);
             return false;
         });
 
@@ -909,7 +895,8 @@ static void cleanupJoinPredicates(
 
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
-                if (!left_rels.test(member.first))
+                auto member_rel = member.getSourceRelations().getSingleBit();
+                if (!member_rel || !left_rels.test(*member_rel))
                     continue;
 
                 auto equiv_class = column_equivalences.getClass(member);
@@ -918,22 +905,18 @@ static void cleanupJoinPredicates(
 
                 for (const auto & other : *equiv_class)
                 {
-                    if (!right_rels.test(other.first))
-                        continue;
-
-                    auto lhs_ref = expression_actions.findNode(member.second, true, false);
-                    auto rhs_ref = expression_actions.findNode(other.second, true, false);
-                    if (!lhs_ref || !rhs_ref)
+                    auto other_rel = other.getSourceRelations().getSingleBit();
+                    if (!other_rel || !right_rels.test(*other_rel))
                         continue;
 
                     expressions.push_back(JoinActionRef::transform(
-                        {lhs_ref, rhs_ref},
+                        {member, other},
                         JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
                     equiv.add(member, other);
 
                     LOG_DEBUG(&Poco::Logger::get("JoinOrderOptimizer"),
                         "Synthesized transitive predicate: relation {} `{}` = relation {} `{}`",
-                        member.first, member.second, other.first, other.second);
+                        *member_rel, member.getColumnName(), *other_rel, other.getColumnName());
                     break;
                 }
             }
@@ -984,7 +967,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
 
-    EquivalenceClasses<RelColumn, RelColumnHash> column_equivalences;
+    EquivalenceClasses<JoinActionRef> column_equivalences;
     if (optimization_settings.enable_join_transitive_predicates)
     {
         query_graph.buildColumnEquivalences();
@@ -992,7 +975,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     }
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
-    cleanupJoinPredicates(optimized, global_expression_actions, column_equivalences);
+    cleanupJoinPredicates(optimized, column_equivalences);
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())

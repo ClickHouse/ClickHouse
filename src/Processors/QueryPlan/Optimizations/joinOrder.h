@@ -13,16 +13,6 @@ namespace DB
 struct DPJoinEntry;
 using DPJoinEntryPtr = std::shared_ptr<DPJoinEntry>;
 
-/// (relation_id, column_name) identifies a column endpoint in the join graph.
-using RelColumn = std::pair<size_t, String>;
-struct RelColumnHash
-{
-    size_t operator()(const RelColumn & rc) const
-    {
-        return std::hash<size_t>()(rc.first) ^ (std::hash<String>()(rc.second) * 0x9e3779b97f4a7c15ULL);
-    }
-};
-
 enum class JoinMethod : UInt8
 {
     None,
@@ -83,7 +73,8 @@ struct QueryGraph
     /// Column equivalence classes derived from equi-join edges (e.g., A.x = B.x AND B.x = C.x
     /// implies A.x, B.x, C.x are all equivalent). Used by the join order optimizer to detect
     /// transitive connectivity between relations without synthesizing extra edges.
-    EquivalenceClasses<RelColumn, RelColumnHash> column_equivalences;
+    /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
+    EquivalenceClasses<JoinActionRef> column_equivalences;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
@@ -92,6 +83,18 @@ struct QueryGraph
     /// (i.e., there exists at least one equivalence class with members in both sets).
     bool areTransitivelyConnected(const BitSet & left, const BitSet & right) const;
 };
+
+/// Resolve a JoinActionRef to an INPUT node suitable for equivalence tracking.
+/// Returns nullopt if the ref is not a simple single-relation INPUT column.
+inline std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
+{
+    auto resolved = ref.resolveAliases();
+    if (resolved.getNode()->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+    if (!resolved.getSourceRelations().getSingleBit())
+        return std::nullopt;
+    return resolved;
+}
 
 struct QueryPlanOptimizationSettings;
 
