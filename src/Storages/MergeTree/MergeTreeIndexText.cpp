@@ -343,6 +343,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     is_empty = false;
     remaining_tokens.clear();
     pattern_tokens.clear();
+    pattern_tokens_per_query.clear();
 
     analyzeDictionaryForTokens(*index_stream, *dictionary_stream, state);
     analyzeDictionaryForPatterns(*index_stream, *dictionary_stream, state);
