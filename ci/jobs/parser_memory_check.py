@@ -501,8 +501,9 @@ def run_profiler_collect_heap(
     binary_path: str, query: str, profile_prefix: str
 ) -> dict:
     """
-    Run parser_memory_profiler with heap profiling on a single query.
-    Does NOT symbolize — heap files are collected for batch symbolization later.
+    Run parser_memory_profiler with heap profiling + in-process symbolization.
+    Symbolization must happen in the same process because the binary is PIE,
+    so addresses are only valid within the process that generated them.
     Returns dict with keys: jemalloc_diff, heap_before, heap_after, error
     """
     env = os.environ.copy()
@@ -510,7 +511,7 @@ def run_profiler_collect_heap(
     env["JE_MALLOC_CONF"] = malloc_conf
     env["MALLOC_CONF"] = malloc_conf
 
-    args = [binary_path, "--profile", profile_prefix]
+    args = [binary_path, "--profile", profile_prefix, "--symbolize"]
 
     try:
         result = subprocess.run(
@@ -552,44 +553,10 @@ def run_profiler_collect_heap(
     }
 
 
-def batch_symbolize(binary_path: str, heap_files: list) -> bool:
-    """
-    Run batch symbolization: invokes --symbolize-batch on all heap files.
-    The tool's global LRU cache deduplicates addresses across files.
-    Writes .heap.sym for each input file.
-    Returns True on success.
-    """
-    if not heap_files:
-        return True
-
-    args = [binary_path, "--symbolize-batch"] + heap_files
-
-    try:
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-    except subprocess.TimeoutExpired:
-        print("ERROR: batch symbolization timed out")
-        return False
-    except Exception as e:
-        print(f"ERROR: batch symbolization failed: {e}")
-        return False
-
-    if result.returncode != 0:
-        print(f"ERROR: batch symbolization exit code {result.returncode}: {result.stderr[:500]}")
-        return False
-
-    print(result.stderr.rstrip())
-    return True
-
-
 def analyze_heap_profiles(heap_before: str, heap_after: str) -> dict:
     """
     Parse symbolized heap profiles and compute diff for a single query.
-    Expects .heap.sym files to exist (from batch symbolization).
+    Expects .heap.sym files to exist (from in-process symbolization).
     Returns dict with: heap_diff, stack_diffs
     """
     sym_before = heap_before + ".sym" if heap_before else ""
@@ -662,12 +629,10 @@ def main():
     os.makedirs(profiles_dir, exist_ok=True)
 
     # =========================================================================
-    # Phase 1: Profile all queries (no symbolization — fast)
+    # Phase 1: Profile + symbolize all queries (in-process)
     # =========================================================================
-    print("Phase 1: Profiling all queries...")
+    print("Phase 1: Profiling all queries (with in-process symbolization)...")
     raw_results = []  # (query_num, query, query_display, master_data, pr_data)
-    master_heap_files = []
-    pr_heap_files = []
 
     for i, query in enumerate(queries):
         query_num = i + 1
@@ -685,46 +650,18 @@ def main():
 
         raw_results.append((query_num, query, query_display, master_data, pr_data))
 
-        if not master_data.get("error"):
-            if master_data.get("heap_before"):
-                master_heap_files.append(master_data["heap_before"])
-            if master_data.get("heap_after"):
-                master_heap_files.append(master_data["heap_after"])
-        if not pr_data.get("error"):
-            if pr_data.get("heap_before"):
-                pr_heap_files.append(pr_data["heap_before"])
-            if pr_data.get("heap_after"):
-                pr_heap_files.append(pr_data["heap_after"])
-
         if query_num % 10 == 0:
             print(f"  Profiled {query_num}/{len(queries)} queries...")
 
-    # =========================================================================
-    # Phase 2: Batch symbolization (single DWARF pass per binary)
-    # =========================================================================
-    print(f"\nPhase 2: Batch symbolizing {len(master_heap_files)} master + {len(pr_heap_files)} PR heap files...")
-
-    sym_ok = True
-    if master_heap_files:
-        if not batch_symbolize(master_profiler, master_heap_files):
-            print("WARNING: Master batch symbolization failed, stacks will be empty")
-            sym_ok = False
-    if pr_heap_files:
-        if not batch_symbolize(pr_profiler, pr_heap_files):
-            print("WARNING: PR batch symbolization failed, stacks will be empty")
-            sym_ok = False
-
-    if sym_ok:
-        results.append(Result(name="Batch symbolization", status=Result.Status.SUCCESS))
-    else:
-        results.append(
-            Result(name="Batch symbolization", status=Result.Status.FAILED, info="See logs")
-        )
+    # Symbolization already happened in-process during Phase 1 (--symbolize flag).
+    # The binary is PIE so addresses are only valid in the same process that dumped them.
+    results.append(Result(name="Symbolization", status=Result.Status.SUCCESS,
+                          info="In-process symbolization via --symbolize flag"))
 
     # =========================================================================
-    # Phase 3: Analyze symbolized profiles and build results
+    # Phase 2: Analyze symbolized profiles and build results
     # =========================================================================
-    print("\nPhase 3: Analyzing profiles and building report...")
+    print("\nPhase 2: Analyzing profiles and building report...")
 
     ci_results = []  # Result objects for CI report
     html_data = []  # structured dicts for HTML report
