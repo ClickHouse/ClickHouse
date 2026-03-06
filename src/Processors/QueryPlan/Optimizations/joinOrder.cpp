@@ -604,9 +604,8 @@ void JoinOrderOptimizer::buildHyperedges()
     node_to_edge_ids.assign(num_relations, {});
     hyperedges.clear();
 
-    for (size_t edge_idx = 0; edge_idx < query_graph.edges.size(); ++edge_idx)
+    for (const auto & edge : query_graph.edges)
     {
-        const auto & edge = query_graph.edges[edge_idx];
         if (!edge)
             continue;
 
