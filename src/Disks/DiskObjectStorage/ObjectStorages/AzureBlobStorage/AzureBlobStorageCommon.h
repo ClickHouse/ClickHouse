@@ -67,6 +67,7 @@ struct Endpoint
     String sas_auth;
     String additional_params;
     std::optional<bool> container_already_exists;
+    std::optional<bool> add_account_name_to_url;
 
     String getContainerEndpoint() const
     {
