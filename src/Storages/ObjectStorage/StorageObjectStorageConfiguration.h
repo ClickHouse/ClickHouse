@@ -100,7 +100,7 @@ public:
     virtual std::string getNamespaceType() const { return "namespace"; }
 
 
-    // Path provided by the user in the query
+    /// Base path for the object key. May be modified after construction by placeholder resolution.
     virtual Path getRawPath() const = 0;
     virtual void setRawPath(const Path & path) = 0;
 
