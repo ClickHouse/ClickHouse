@@ -7,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/NetUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
@@ -153,6 +154,8 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     {
         int32_t first_int;
         memcpy(&first_int, in.position(), sizeof(int32_t));
+        /// Arrow IPC uses little-endian byte order on the wire.
+        first_int = DB::fromLittleEndian(first_int);
 
         /// In the modern format, the first 4 bytes must be the continuation token 0xFFFFFFFF.
         /// In the legacy format, the first 4 bytes are the metadata length (a positive int32).
