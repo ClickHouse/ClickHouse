@@ -473,10 +473,13 @@ void initClickHouseDB(
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
 
     /// Start a temporary server bound only to localhost.
+    /// The "--" separator is required: positional arguments after "--" override config.xml
+    /// properties (e.g. --listen_host=127.0.0.1), while options before "--" are parsed by
+    /// Poco and must be registered. Without "--", Poco rejects "--listen_host" as unknown.
     std::vector<std::string> server_args = {
         g_clickhouse_binary, "su", run_as, "clickhouse-server",
         "--config-file=" + config_file,
-        "--listen_host=127.0.0.1",
+        "--", "--listen_host=127.0.0.1",
     };
     for (const auto & arg : extra_server_args)
         server_args.push_back(arg);
