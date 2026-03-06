@@ -54,8 +54,10 @@ Upcoming meetups
 * [San Francisco Meetup](https://luma.com/6rnu6wzs) - March 11th, 2026
 * [SRE Days London Meetup](https://luma.com/sreday-2026-london-q1) - March 12, 2026
 * [Apache Iceberg™ Meetup Pittsburgh](https://luma.com/mqgwk79x) - March 12th, 2026
+* [AI Builders Night San Jose](https://luma.com/xoq2dz0l) - March 16th, 2026
 * [Munich Meetup](https://www.meetup.com/clickhouse-meetup-munich/events/313487152/) - March 19th, 2026
 * [NY Meetup](https://luma.com/c7tprb51) - March 19th, 2026
+* [RSA Iceberg Meetup SF](https://luma.com/rsa-iceberg) - March 24th, 2026 
 * [Milan Meetup](https://www.meetup.com/clickhouse-italy-user-group/events/313586581/) - March 26th, 2026
 * [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
 * [San Francisco Observability FireSide Chat](https://luma.com/v5d8u087) - March 31st, 2026
@@ -71,9 +73,6 @@ Recent meetups
 * [ClickHouse Dinner at FOSDEM](https://luma.com/czvs584m) - January 31st, 2026
 * [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
 * [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/312679894/) - January 29th, 2026
-* [ClickHouse France Meetup](https://www.meetup.com/clickhouse-france-user-group/events/312295018/) - January 28th, 2026
-* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/312801791/) - January 27th, 2026
-* [New York Meetup](https://luma.com/iicnlq41) - January 26th, 2026
 
 
 

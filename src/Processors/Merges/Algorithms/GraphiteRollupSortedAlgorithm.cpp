@@ -69,6 +69,11 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     columns_definition = defineColumns(*header_, params);
 }
 
+GraphiteRollupSortedAlgorithm::~GraphiteRollupSortedAlgorithm()
+{
+    merged_data.reset();
+}
+
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
     static_assert(is_signed_v<time_t>, "time_t must be signed type");
