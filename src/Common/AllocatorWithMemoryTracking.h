@@ -56,7 +56,10 @@ struct AllocatorWithMemoryTracking
             p = static_cast<T *>(__real_malloc(bytes));
         }
         if (!p)
+        {
+            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(bytes);
             throw std::bad_alloc();
+        }
 
         trace.onAlloc(p, bytes);
 

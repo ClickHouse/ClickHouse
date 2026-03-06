@@ -6,6 +6,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <base/getPageSize.h>
 #include <IO/MMappedFileDescriptor.h>
 
@@ -65,6 +66,7 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_, size_t length_)
         throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "MMappedFileDescriptor: Cannot mmap {}", ReadableSize(length));
 
     data = static_cast<char *>(buf);
+    [[maybe_unused]] auto trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(length));
 
     files_metric_increment.changeTo(1);
     bytes_metric_increment.changeTo(length);
@@ -85,8 +87,11 @@ void MMappedFileDescriptor::finish()
     if (!length)
         return;
 
+    size_t old_length = length;
     if (0 != munmap(data, length))
         throw ErrnoException(ErrorCodes::CANNOT_MUNMAP, "MMappedFileDescriptor: Cannot munmap {}", ReadableSize(length));
+
+    [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(old_length));
 
     length = 0;
 

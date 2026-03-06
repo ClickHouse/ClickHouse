@@ -8,6 +8,7 @@
 #    include <base/MemorySanitizer.h>
 #    include <base/errnoToString.h>
 #    include <Common/CurrentMetrics.h>
+#    include <Common/CurrentMemoryTracker.h>
 #    include <Common/ProfileEvents.h>
 #    include <Common/Stopwatch.h>
 #    include <Common/ThreadPool.h>
@@ -81,8 +82,28 @@ IOUringReader::IOUringReader(uint32_t entries_)
     if (ret < 0)
         ErrnoException::throwWithErrno(ErrorCodes::IO_URING_INIT_FAILED, -ret, "Failed initializing io_uring");
 
+    ssize_t ring_size = io_uring_mlock_size_params(entries_, &params);
+    if (ring_size > 0)
+    {
+        tracked_ring_size = static_cast<size_t>(ring_size);
+        [[maybe_unused]] auto trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_ring_size));
+    }
+
     cq_entries = params.cq_entries;
-    ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
+    try
+    {
+        ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
+    }
+    catch (...)
+    {
+        io_uring_queue_exit(&ring);
+        if (tracked_ring_size)
+        {
+            [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
+            tracked_ring_size = 0;
+        }
+        throw;
+    }
 }
 
 std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
@@ -333,6 +354,9 @@ void IOUringReader::monitorRing()
 
 IOUringReader::~IOUringReader()
 {
+    if (!is_supported)
+        return;
+
     cancelled.store(true, std::memory_order_relaxed);
 
     // interrupt the monitor thread by sending a noop event
@@ -348,6 +372,11 @@ IOUringReader::~IOUringReader()
     ring_completion_monitor->join();
 
     io_uring_queue_exit(&ring);
+    if (tracked_ring_size)
+    {
+        [[maybe_unused]] auto trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_ring_size));
+        tracked_ring_size = 0;
+    }
 }
 
 }
