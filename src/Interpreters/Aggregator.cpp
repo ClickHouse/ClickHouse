@@ -1312,27 +1312,43 @@ void NO_INLINE Aggregator::executeImplBatch(
         /// with top_n=true. The compiler generates a separate NO_INLINE instantiation for each value,
         /// keeping the common path (top_n=false) free of heap-related code and avoiding
         /// instruction cache pressure for all aggregation queries.
-        if (params.top_n_keys > 0)
-        {
-            if (!method.top_n_heap.heap_column)
-            {
-                const auto & key_cols = state.getKeyColumns();
-                size_t heap_key_count = params.top_n_key_columns;
-                if (heap_key_count == 1)
-                    method.top_n_heap.init(
-                        *key_cols[0], params.top_n_keys,
-                        params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
-                else
-                {
-                    ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
-                    method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
-                }
-            }
+        ///
+        /// Skip the optimization for key8/key16 types (and their nullable/low-cardinality wrappers)
+        /// because they use `FixedImplicitZeroHashMap`, where lookups are direct array accesses
+        /// (O(1) with no hashing). The per-row virtual `compareAt` call in `shouldSkip` is more
+        /// expensive than the hash table lookup itself, causing a net regression.
+        constexpr bool uses_fixed_hash_map =
+            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>
+            || std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>
+            || std::is_same_v<Method, typename decltype(AggregatedDataVariants::nullable_key8)::element_type>
+            || std::is_same_v<Method, typename decltype(AggregatedDataVariants::nullable_key16)::element_type>
+            || std::is_same_v<Method, typename decltype(AggregatedDataVariants::low_cardinality_key8)::element_type>
+            || std::is_same_v<Method, typename decltype(AggregatedDataVariants::low_cardinality_key16)::element_type>;
 
-            executeImplBatch<prefetch, true>(
-                method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
-                no_more_keys, all_keys_are_const, use_compiled_functions, overflow_row);
-            return;
+        if constexpr (!uses_fixed_hash_map)
+        {
+            if (params.top_n_keys > 0)
+            {
+                if (!method.top_n_heap.heap_column)
+                {
+                    const auto & key_cols = state.getKeyColumns();
+                    size_t heap_key_count = params.top_n_key_columns;
+                    if (heap_key_count == 1)
+                        method.top_n_heap.init(
+                            *key_cols[0], params.top_n_keys,
+                            params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
+                    else
+                    {
+                        ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
+                        method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
+                    }
+                }
+
+                executeImplBatch<prefetch, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
+                    no_more_keys, all_keys_are_const, use_compiled_functions, overflow_row);
+                return;
+            }
         }
     }
 
