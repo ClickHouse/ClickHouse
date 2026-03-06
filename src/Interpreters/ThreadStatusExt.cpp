@@ -107,6 +107,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
     , memory_tracker(&parent->memory_tracker, VariableContext::Scope, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    assert(effective_group_stopwatch.elapsed() == 0);
 }
 
 // c-tor for method createForFlushAsyncInsertQueue
@@ -121,6 +122,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    assert(effective_group_stopwatch.elapsed() == 0);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -186,7 +189,8 @@ void ThreadGroup::unlinkThread()
     if (active_thread_count == 0)
     {
         elapsed_group_ns += effective_group_stopwatch.elapsedNanoseconds();
-        effective_group_stopwatch.stop();
+        // Reset not stop the stopwatch, to avoid double time at getGroupElapsedNs when there are no thread attached
+        effective_group_stopwatch.reset();
     }
 }
 
