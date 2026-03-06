@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <set>
 #include <unordered_set>
 
 #include <IO/WriteBufferFromString.h>
@@ -511,120 +513,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
-    /// For JSON (Object) types
-    {
-        bool have_object = false;
-        bool all_objects = true;
-
-        for (const auto & type : types)
-        {
-            if (typeid_cast<const DataTypeObject *>(type.get()))
-                have_object = true;
-            else
-                all_objects = false;
-        }
-
-        if (have_object)
-        {
-            if (!all_objects)
-                return throwOrReturn<on_error>(types, "because some of them are JSON and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            const auto & first = assert_cast<const DataTypeObject &>(*types[0]);
-            auto schema_format = first.getSchemaFormat();
-
-            /// Verify all have the same schema format.
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-                if (current.getSchemaFormat() != schema_format)
-                    return throwOrReturn<on_error>(types, "because JSON types have different schema formats", ErrorCodes::NO_COMMON_TYPE);
-            }
-
-            /// Typed paths: intersection by path name, with type promotion.
-            /// Start with the first type's paths, then narrow down.
-            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
-
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-                const auto & current_typed_paths = current.getTypedPaths();
-
-                std::unordered_map<String, DataTypePtr> new_merged;
-                for (auto & [path, type] : merged_typed_paths)
-                {
-                    auto it = current_typed_paths.find(path);
-                    if (it == current_typed_paths.end())
-                        continue; /// Path not in current type — drop it.
-
-                    auto common_type = getLeastSupertype<on_error>(DataTypes{type, it->second});
-                    if (!common_type)
-                        continue; /// Types are incompatible — drop the path.
-
-                    new_merged.emplace(path, std::move(common_type));
-                }
-
-                merged_typed_paths = std::move(new_merged);
-            }
-
-            /// Paths to skip: intersection.
-            std::unordered_set<String> merged_paths_to_skip = first.getPathsToSkip();
-
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-                const auto & current_paths_to_skip = current.getPathsToSkip();
-
-                std::unordered_set<String> intersection;
-                for (const auto & path : merged_paths_to_skip)
-                {
-                    if (current_paths_to_skip.contains(path))
-                        intersection.insert(path);
-                }
-
-                merged_paths_to_skip = std::move(intersection);
-            }
-
-            /// Path regexps to skip: keep only identical regexp strings present in all types.
-            std::unordered_set<String> common_regexps(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
-
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-                std::unordered_set<String> current_set(current.getPathRegexpsToSkip().begin(), current.getPathRegexpsToSkip().end());
-
-                std::unordered_set<String> intersection;
-                for (const auto & regexp : common_regexps)
-                {
-                    if (current_set.contains(regexp))
-                        intersection.insert(regexp);
-                }
-
-                common_regexps = std::move(intersection);
-            }
-
-            std::vector<String> merged_path_regexps_to_skip(common_regexps.begin(), common_regexps.end());
-
-            /// Numeric limits: take the maximum.
-            size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
-            size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
-
-            for (size_t i = 1; i < types.size(); ++i)
-            {
-                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
-                merged_max_dynamic_paths = std::max(merged_max_dynamic_paths, current.getMaxDynamicPaths());
-                merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
-            }
-
-            return std::make_shared<DataTypeObject>(
-                schema_format,
-                std::move(merged_typed_paths),
-                std::move(merged_paths_to_skip),
-                std::move(merged_path_regexps_to_skip),
-                merged_max_dynamic_paths,
-                merged_max_dynamic_types);
-        }
-    }
-
     /// For LowCardinality. This is above Nullable, because LowCardinality can contain Nullable but cannot be inside Nullable.
     {
         bool have_low_cardinality = false;
@@ -695,6 +583,96 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (isVariant(nested_type))
                 return nested_type;
             return std::make_shared<DataTypeNullable>(nested_type);
+        }
+    }
+
+    /// For JSON (Object) types.
+    /// This must be after Nullable, because JSON can be inside Nullable.
+    /// The Nullable handler strips Nullable wrappers first, so by this point all types are bare JSON.
+    {
+        bool have_object = false;
+        bool all_objects = true;
+
+        for (const auto & type : types)
+        {
+            if (typeid_cast<const DataTypeObject *>(type.get()))
+                have_object = true;
+            else
+                all_objects = false;
+        }
+
+        if (have_object)
+        {
+            if (!all_objects)
+                return throwOrReturn<on_error>(types, "because some of them are JSON and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            const auto & first = assert_cast<const DataTypeObject &>(*types[0]);
+            auto schema_format = first.getSchemaFormat();
+
+            /// Merge all JSON parameters in a single pass:
+            /// - schema format: verify all types match
+            /// - typed paths: intersection by path name with type promotion
+            /// - paths to skip / path regexps to skip: intersection using sorted sets
+            /// - max_dynamic_paths / max_dynamic_types: take the maximum
+            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
+            std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
+            std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
+            size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
+            size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
+
+            for (size_t i = 1; i < types.size(); ++i)
+            {
+                const auto & current = assert_cast<const DataTypeObject &>(*types[i]);
+
+                if (current.getSchemaFormat() != schema_format)
+                    return throwOrReturn<on_error>(types, "because JSON types have different schema formats", ErrorCodes::NO_COMMON_TYPE);
+
+                /// Typed paths intersection with type promotion.
+                const auto & current_typed_paths = current.getTypedPaths();
+                std::unordered_map<String, DataTypePtr> new_merged;
+                for (auto & [path, type] : merged_typed_paths)
+                {
+                    auto it = current_typed_paths.find(path);
+                    if (it == current_typed_paths.end())
+                        continue; /// Path not in current type — drop it.
+
+                    auto common_type = getLeastSupertype<on_error>(DataTypes{type, it->second});
+                    if (!common_type)
+                        continue; /// Types are incompatible — drop the path.
+
+                    new_merged.emplace(path, std::move(common_type));
+                }
+                merged_typed_paths = std::move(new_merged);
+
+                /// Paths to skip intersection.
+                std::set<String> skip_set(current.getPathsToSkip().begin(), current.getPathsToSkip().end());
+                std::set<String> skip_intersection;
+                std::set_intersection(
+                    merged_paths_to_skip.begin(), merged_paths_to_skip.end(),
+                    skip_set.begin(), skip_set.end(),
+                    std::inserter(skip_intersection, skip_intersection.begin()));
+                merged_paths_to_skip = std::move(skip_intersection);
+
+                /// Path regexps to skip intersection.
+                std::set<String> regexp_set(current.getPathRegexpsToSkip().begin(), current.getPathRegexpsToSkip().end());
+                std::set<String> regexp_intersection;
+                std::set_intersection(
+                    merged_regexps_to_skip.begin(), merged_regexps_to_skip.end(),
+                    regexp_set.begin(), regexp_set.end(),
+                    std::inserter(regexp_intersection, regexp_intersection.begin()));
+                merged_regexps_to_skip = std::move(regexp_intersection);
+
+                merged_max_dynamic_paths = std::max(merged_max_dynamic_paths, current.getMaxDynamicPaths());
+                merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
+            }
+
+            return std::make_shared<DataTypeObject>(
+                schema_format,
+                std::move(merged_typed_paths),
+                std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
+                std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
+                merged_max_dynamic_paths,
+                merged_max_dynamic_types);
         }
     }
 
