@@ -1113,37 +1113,66 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    if (!no_more_keys)
+    const bool top_n = params.top_n_keys > 0;
+
+    /// Initialize the top-N heap once (lazy, guarded by heap_column check inside).
+    /// This is done here — before dispatching into the NO_INLINE `executeImplBatch`
+    /// template — so the init logic lives in one place instead of being duplicated
+    /// in both the top_n=true and top_n=false instantiations.
+    if (top_n)
+        method.top_n_heap.initIfNeeded(
+            state.getKeyColumns(), params.top_n_key_columns,
+            params.top_n_keys, params.top_n_keys_collators);
+
+    /// Helper that forwards to `executeImplBatch` with the given template arguments.
+    /// This avoids repeating the long argument list at every call site.
+    auto call = [&]<bool prefetch_v, bool top_n_v>(
+        bool no_more_keys_arg, bool use_compiled_functions)
     {
-        /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
-            && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+        executeImplBatch<prefetch_v, top_n_v>(
+            method, state, aggregates_pool, row_begin, row_end,
+            aggregate_instructions, no_more_keys_arg, all_keys_are_const,
+            use_compiled_functions, overflow_row);
+    };
+
+    /// Dispatch on {prefetch, top_n, use_compiled_functions}.
+    /// The `top_n` and `prefetch` flags are template parameters so the compiler
+    /// generates separate NO_INLINE instantiations, keeping heap-related code
+    /// out of the common (top_n=false) path.
+    auto dispatch = [&]<bool top_n_v>()
+    {
+        if (!no_more_keys)
+        {
+            const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
-        {
-            if (prefetch)
-                executeImplBatch<true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, true, overflow_row);
+            if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
+            {
+                if (prefetch)
+                    call.template operator()<true, top_n_v>(false, true);
+                else
+                    call.template operator()<false, top_n_v>(false, true);
+            }
             else
-                executeImplBatch<false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, true, overflow_row);
+#endif
+            {
+                if (prefetch)
+                    call.template operator()<true, top_n_v>(false, false);
+                else
+                    call.template operator()<false, top_n_v>(false, false);
+            }
         }
         else
-#endif
         {
-            if (prefetch)
-                executeImplBatch<true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, false, overflow_row);
-            else
-                executeImplBatch<false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, false, overflow_row);
+            call.template operator()<false, top_n_v>(true, false);
         }
-    }
+    };
+
+    if (top_n)
+        dispatch.template operator()<true>();
     else
-    {
-        executeImplBatch<false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, true, all_keys_are_const, false, overflow_row);
-    }
+        dispatch.template operator()<false>();
 }
 
 /// Trim the bounded heap and prune evicted keys from the hash table.
@@ -1152,21 +1181,11 @@ void Aggregator::executeImpl(
 template <typename Method>
 void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states) const
 {
-    /// For composite (multi-column) keys, reconstructing the hash table key from the
-    /// evicted ColumnTuple row is too complex and not worth the overhead.
-    /// Just trim the heap without pruning — the hash table may keep some extra entries,
-    /// but the heap still bounds the final result correctly.
-    if (method.top_n_heap.is_composite)
-    {
-        method.top_n_heap.trimAndCompact([](size_t) {});
-        return;
-    }
-
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
     if constexpr (requires(DataType d, KeyType k) { { d.erase(k) } -> std::same_as<bool>; })
     {
-        method.top_n_heap.trimAndCompact([&](size_t evicted)
+        auto on_evicted = [&](size_t evicted)
         {
             /// Check if evicted key is NULL (for nullable columns).
             if (method.top_n_heap.heap_column->isNullAt(evicted))
@@ -1220,13 +1239,16 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
             }
 
             method.data.erase(evicted_key);
-        });
+        };
+
+        method.top_n_heap.trimAndCompact(on_evicted);
     }
     else
     {
         /// FixedHashTable (key8/key16) has no erase() — just trim without pruning.
         /// With at most 256/65536 possible keys, the hash table stays small regardless.
-        method.top_n_heap.trimAndCompact([](size_t) {});
+        auto noop = [](size_t) {};
+        method.top_n_heap.trimAndCompact(noop);
     }
 }
 
@@ -1288,54 +1310,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    if constexpr (top_n)
-    {
-        if (!method.top_n_heap.heap_column)
-        {
-            const auto & key_cols = state.getKeyColumns();
-            /// The heap compares only the leading ORDER BY prefix of GROUP BY keys.
-            size_t heap_key_count = params.top_n_key_columns;
-            if (heap_key_count == 1)
-                method.top_n_heap.init(
-                    *key_cols[0], params.top_n_keys,
-                    params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
-            else
-            {
-                ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
-                method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
-            }
-        }
-    }
-    else
-    {
-        /// When the top-N GROUP BY limit pushdown optimization is active, re-enter this function
-        /// with top_n=true. The compiler generates a separate NO_INLINE instantiation for each value,
-        /// keeping the common path (top_n=false) free of heap-related code and avoiding
-        /// instruction cache pressure for all aggregation queries.
-        if (params.top_n_keys > 0)
-        {
-            if (!method.top_n_heap.heap_column)
-            {
-                const auto & key_cols = state.getKeyColumns();
-                size_t heap_key_count = params.top_n_key_columns;
-                if (heap_key_count == 1)
-                    method.top_n_heap.init(
-                        *key_cols[0], params.top_n_keys,
-                        params.top_n_keys_collators.empty() ? nullptr : params.top_n_keys_collators[0]);
-                else
-                {
-                    ColumnRawPtrs heap_cols(key_cols.begin(), key_cols.begin() + heap_key_count);
-                    method.top_n_heap.init(heap_cols, params.top_n_keys, params.top_n_keys_collators);
-                }
-            }
-
-            executeImplBatch<prefetch, true>(
-                method, state, aggregates_pool, row_begin, row_end, aggregate_instructions,
-                no_more_keys, all_keys_are_const, use_compiled_functions, overflow_row);
-            return;
-        }
-    }
-
     /// Optimization for special case when aggregating by 8bit key.
     /// Not applicable with top-N since these fast-paths can't do per-row heap checks.
     if constexpr (!top_n)
@@ -1393,17 +1367,15 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    [[maybe_unused]] const IColumn * key_col = nullptr;
+    /// Slice of key columns used by the top-N heap for shouldSkip/push comparisons.
+    /// For single-column keys this contains just one pointer; for composite keys
+    /// it holds the leading ORDER BY prefix.
     [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_n)
     {
         const auto & all_key_cols = state.getKeyColumns();
         size_t heap_key_count = params.top_n_key_columns;
-        /// Always set key_col so that the static analyzer can prove it is non-null
-        /// in the non-composite branch below. In the composite branch it is unused.
-        key_col = all_key_cols[0];
-        if (method.top_n_heap.is_composite)
-            heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
+        heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
     }
 
     if (is_simple_count)
@@ -1445,13 +1417,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_n)
                 {
-                    if (method.top_n_heap.size() >= params.top_n_keys)
-                    {
-                        if (method.top_n_heap.is_composite
-                            ? method.top_n_heap.shouldSkip(heap_key_cols, i)
-                            : method.top_n_heap.shouldSkip(*key_col, i))
+                    if (method.top_n_heap.size() >= params.top_n_keys
+                            && method.top_n_heap.shouldSkip(heap_key_cols, i))
                             continue;
-                    }
                 }
 
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
@@ -1459,12 +1427,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_n)
                 {
                     if (emplace_result.isInserted())
-                    {
-                        if (method.top_n_heap.is_composite)
-                            method.top_n_heap.push(heap_key_cols, i);
-                        else
-                            method.top_n_heap.push(*key_col, i);
-                    }
+                        method.top_n_heap.push(heap_key_cols, i);
                 }
 
                 if (emplace_result.isInserted())
@@ -1523,14 +1486,16 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    /// Throwaway aggregate state for skipped rows — only needed with top-N,
-    /// because skipped rows get places[i] = temp so executeAggregateInstructions
-    /// still has a valid write target for every row index.
-    [[maybe_unused]] AggregateDataPtr temp = nullptr;
+    /// Throwaway aggregate state for rows skipped by the top-N heap.
+    /// The JIT-compiled addBatch path does not null-check places[i],
+    /// so every slot must point to a valid aggregate state.  Skipped rows
+    /// are redirected here; the state accumulates garbage and is destroyed
+    /// at the end of this function.
+    [[maybe_unused]] AggregateDataPtr discarded_row_state = nullptr;
     if constexpr (top_n)
     {
-        temp = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-        createAggregateStates(temp);
+        discarded_row_state = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(discarded_row_state);
     }
 
     /// For all rows.
@@ -1554,15 +1519,11 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_n)
             {
-                if (method.top_n_heap.size() >= params.top_n_keys)
+                if (method.top_n_heap.size() >= params.top_n_keys
+                    && method.top_n_heap.shouldSkip(heap_key_cols, i))
                 {
-                    if (method.top_n_heap.is_composite
-                        ? method.top_n_heap.shouldSkip(heap_key_cols, i)
-                        : method.top_n_heap.shouldSkip(*key_col, i))
-                    {
-                        places[i] = temp;
-                        continue;
-                    }
+                    places[i] = discarded_row_state;
+                    continue;
                 }
             }
 
@@ -1571,12 +1532,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_n)
             {
                 if (emplace_result.isInserted())
-                {
-                    if (method.top_n_heap.is_composite)
-                        method.top_n_heap.push(heap_key_cols, i);
-                    else
-                        method.top_n_heap.push(*key_col, i);
-                }
+                    method.top_n_heap.push(heap_key_cols, i);
             }
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
@@ -1636,7 +1592,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// When top-N is active, some rows may have been redirected to a throwaway aggregate state (temp).
+    /// When top-N is active, some rows may have been redirected to `discarded_row_state`.
     /// The "equal keys range" optimization (addBatchSinglePlace) must be disabled in this case,
     /// because it assumes all rows belong to the single key — but skipped rows belong to no real group.
     bool has_only_one_value = top_n ? false : state.hasOnlyOneValueSinceLastReset();
@@ -1657,7 +1613,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_n)
     {
         for (size_t j = 0; j < aggregate_functions.size(); ++j)
-            aggregate_functions[j]->destroy(temp + offsets_of_aggregate_states[j]);
+            aggregate_functions[j]->destroy(discarded_row_state + offsets_of_aggregate_states[j]);
     }
 }
 
