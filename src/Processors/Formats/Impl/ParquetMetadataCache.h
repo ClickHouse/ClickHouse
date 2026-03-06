@@ -3,6 +3,7 @@
 
 #if USE_PARQUET
 
+#include <boost/functional/hash.hpp>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>

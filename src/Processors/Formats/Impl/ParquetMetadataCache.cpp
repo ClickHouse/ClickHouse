@@ -23,7 +23,10 @@ bool ParquetMetadataCacheKey::operator==(const ParquetMetadataCacheKey & other) 
 
 size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & key) const
 {
-    return std::hash<String>{}(key.file_path) ^ std::hash<String>{}(key.etag);
+    size_t hash = 0;
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.file_path.data(), key.file_path.size()));
+    boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.etag.data(), key.etag.size()));
+    return hash;
 }
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
