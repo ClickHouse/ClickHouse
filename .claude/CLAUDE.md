@@ -98,6 +98,11 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+When adding a new test, first run the following command to find the current test with the last prefix index, then increment the resulting index by 1, and use this as the prefix for the new test name:
+```
+ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
+```
+
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
