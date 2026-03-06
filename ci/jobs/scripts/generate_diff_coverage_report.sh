@@ -59,8 +59,16 @@ fi
 
 patterns=()
 while IFS= read -r f; do
-  [ -n "$f" ] && patterns+=("*$f")
+  # Only include C/C++ source files that can appear in lcov coverage data
+  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]]; then
+    patterns+=("*$f")
+  fi
 done < <(echo "$changed_files")
+
+if [ ${#patterns[@]} -eq 0 ]; then
+  echo "No C/C++ source files changed, skipping differential coverage report"
+  exit 0
+fi
 
 lcov --extract llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \

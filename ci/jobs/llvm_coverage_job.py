@@ -107,8 +107,6 @@ def get_git_info() -> tuple[str, str, str, str, str, int]:
         )
         .strip()
         .replace("origin/", "")
-        if info.pr_number > 0
-        else ""
     )
     repo_name = (
         info.repo_name
@@ -162,6 +160,7 @@ if __name__ == "__main__":
 
     os.environ["BRANCH"] = branch
     os.environ["CURRENT_COMMIT"] = current_commit_sha
+    print("base_branch = ", base_branch)
     os.environ["BASE_BRANCH"] = base_branch
     os.environ["BASE_COMMIT"] = merge_base_commit_sha
     os.environ["REPO_NAME"] = repo_name
