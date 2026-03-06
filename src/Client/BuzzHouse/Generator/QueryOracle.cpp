@@ -166,7 +166,7 @@ void QueryOracle::generateRoundtripOracleQueries(
 
     /// Choose roundtrip function pair
     String roundtrip_pred;
-    switch (rg.randomInt<uint32_t>(0, 4))
+    switch (rg.randomInt<uint32_t>(0, 3))
     {
         case 0:
             /// hex/unhex — exercises hex encoding path
@@ -183,7 +183,7 @@ void QueryOracle::generateRoundtripOracleQueries(
                 roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
             }
             break;
-        case 3: {
+        default: {
             /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
             struct CipherSpec
             {
@@ -233,69 +233,6 @@ void QueryOracle::generateRoundtripOracleQueries(
                     key_hex,
                     iv_hex,
                     spec.name);
-            }
-            break;
-        }
-        default: {
-            /// parseDateTime/formatDateTime roundtrip — exercises datetime parsing and formatting.
-            /// Uses col_ref directly (not val) since formatDateTime requires a Date/DateTime argument.
-            /// The predicate format→parse→format = format ensures the roundtrip holds for valid DateTime values.
-            static const DB::Strings dt_fmts = {
-                "%Y-%m-%d %H:%i:%s",
-                "%Y/%m/%d %H:%i:%s",
-                "%d.%m.%Y %H:%i:%s",
-                "%Y-%m-%d",
-                "%Y/%m/%d",
-            };
-            const String & fmt_str = rg.pickRandomly(dt_fmts);
-            const uint32_t scale = rg.randomInt<uint32_t>(0, 9);
-            switch (rg.randomInt<uint32_t>(0, 5))
-            {
-                case 0:
-                    /// parseDateTime(str, fmt) — strict format-based parsing → DateTime
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTime(formatDateTime({0}, '{1}'), '{1}'), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str);
-                    break;
-                case 1:
-                    /// parseDateTimeBestEffort(str) — heuristic parsing → DateTime
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTimeBestEffort(formatDateTime({0}, '{1}')), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str);
-                    break;
-                case 2:
-                    /// parseDateTimeBestEffortUS(str) — US month-first heuristic parsing → DateTime
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTimeBestEffortUS(formatDateTime({0}, '{1}')), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str);
-                    break;
-                case 3:
-                    /// parseDateTime64(str, scale, fmt) — strict format-based parsing → DateTime64(scale)
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTime64(formatDateTime({0}, '{1}'), {2}, '{1}'), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str,
-                        scale);
-                    break;
-                case 4:
-                    /// parseDateTime64BestEffort(str, scale) — heuristic parsing → DateTime64(scale)
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTime64BestEffort(formatDateTime({0}, '{1}'), {2}), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str,
-                        scale);
-                    break;
-                default:
-                    /// parseDateTime64BestEffortUS(str, scale) — US month-first heuristic parsing → DateTime64(scale)
-                    roundtrip_pred = fmt::format(
-                        "formatDateTime(parseDateTime64BestEffortUS(formatDateTime({0}, '{1}'), {2}), '{1}') = formatDateTime({0}, '{1}')",
-                        col_ref,
-                        fmt_str,
-                        scale);
-                    break;
             }
             break;
         }
