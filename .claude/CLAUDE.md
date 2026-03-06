@@ -54,6 +54,72 @@ To compile and run C++ code snippets against the ClickHouse codebase without mod
 
 Key options: `-i HEADER` to include headers, `-g 'CODE'` for global-scope code, `-b STEPS` for benchmarking, `-l LIB` to link extra libraries, `--plain` for standalone compilation without ClickHouse. The `OUT(expr)` macro prints `expr -> value`.
 
+To analyze CI performance comparison results (slower/faster queries, unstable queries), use the tool at `.claude/tools/fetch_perf_report.py`. It fetches the machine-readable `all-query-metrics.tsv` from S3 for each performance shard, filters to `client_time`, and classifies queries as changed or unstable using the same thresholds as `compare.sh`.
+
+```bash
+# Show performance changes for a PR (default: changed + unstable queries only)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345"
+
+# Filter by architecture
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --arch amd
+
+# Show only per-shard summary (no individual queries)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --summary
+
+# Filter by test name
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --test group_by
+
+# Show all queries (not just changes)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --all --sort times
+
+# JSON output for structured analysis
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --json
+
+# TSV output for piping
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --tsv
+
+# Also accepts CI HTML URLs
+python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=12345&sha=abc123"
+```
+
+Key options: `--arch <amd|arm|all>` to filter architecture, `--metric <name>` to change metric (default `client_time`), `--shard <n>` for a specific shard, `--test <name>` / `--query <text>` for substring filtering, `--sort <diff|times|threshold|test>` for ordering, `--summary` for shard-level overview only, `--json` / `--tsv` for machine-readable output.
+
+When asked to analyze assembly, inspect generated code, find register spills, check branch density, compare codegen between builds, or investigate optimization opportunities in compiled functions, use the tool at `.claude/tools/analyze-assembly.py`. It disassembles functions from a compiled binary, builds a CFG, computes metrics (spill/branch/call density), and reports findings. Use it instead of manually running `llvm-objdump` or `llvm-nm`.
+
+```bash
+# Basic analysis of a function
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>"
+
+# Search for overloaded/templated functions by regex
+python3 .claude/tools/analyze-assembly.py <binary> "insertRangeFrom" --search
+
+# Pick a specific overload from ambiguous results
+python3 .claude/tools/analyze-assembly.py <binary> "insertRangeFrom" --search --select 3
+
+# JSON output for structured analysis
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --format json
+
+# Source-interleaved disassembly (needs debug info)
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --source
+
+# Microarchitectural analysis of loop bodies (--mcpu is required)
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --mca --mcpu=znver3
+
+# Profile-weighted analysis (re-ranks findings by runtime impact)
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --perf-map tmp/perf.map.jsonl
+
+# Compare codegen between two builds
+python3 .claude/tools/analyze-assembly.py --before <old_binary> --after <new_binary> "<function_name>"
+
+# Analyze function at a specific address (useful for heavily-templated symbols)
+python3 .claude/tools/analyze-assembly.py <binary> 0x0dc7c780
+
+# Verbose mode to see tool commands
+python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" -v
+```
+
+Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. Hex addresses (e.g. `0x0dc7c780`) are resolved to the enclosing symbol automatically — useful when symbol names are too long for regex matching. The tool caches symbol tables by build-id for fast repeated queries.
+
 You can build multiple versions of ClickHouse inside `build_*` directories, such as `build`, `build_debug`, `build_asan`, etc.
 
 You can run integration tests as in `tests/integration/README.md` using: `python -m ci.praktika run "integration" --test <selectors>` invoked from the repository root.
