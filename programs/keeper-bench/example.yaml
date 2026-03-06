@@ -1,6 +1,6 @@
 concurrency: 20
 iterations: 10000
-delay: 4
+report_delay: 4
 timelimit: 300
 continue_on_error: true
 
