@@ -53,14 +53,15 @@ Creates a table with the same structure as another table. You can specify a diff
 ### With a Schema and Data Cloned from Another Table {#with-a-schema-and-data-cloned-from-another-table}
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
+Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine as the original table (`[db.]table`) will be used. After the new table is created, all partitions from `db.table` are attached to the cloned table (`db2.table_clone`). 
+In other words, the data of `db.table` is cloned into `db2.table_clone` upon creation. This query is equivalent to the following:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db].table_clone;
 ```
 
 ### From a Table Function {#from-a-table-function}
