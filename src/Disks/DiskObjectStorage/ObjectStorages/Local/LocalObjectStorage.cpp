@@ -17,6 +17,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/ErrnoException.h>
 
 namespace fs = std::filesystem;
 
@@ -35,7 +36,6 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int READONLY;
     extern const int FAULT_INJECTED;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -53,7 +53,6 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
-    throwIfPathAccessDenied(object.remote_path);
     return fs::exists(object.remote_path);
 }
 
@@ -71,7 +70,6 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint) const
 {
-    throwIfPathAccessDenied(object.remote_path);
     LOG_TEST(log, "Read object: {}", object.remote_path);
     return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 }
@@ -136,8 +134,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
-    throwIfPathAccessDenied(object.remote_path);
-
     LOG_TEST(log, "Write object: {}", object.remote_path);
 
     /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
@@ -158,7 +154,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
-    throwIfPathAccessDenied(object.remote_path);
 
     /// For local object storage files are actually removed when "metadata" is removed.
     if (!exists(object))
@@ -233,19 +228,12 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     throwIfReadonly();
-    throwIfPathAccessDenied(object.remote_path);
     if (exists(object))
         removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
     });
-}
-
-void LocalObjectStorage::throwIfPathAccessDenied(const String & path) const
-{
-    if (!pathStartsWith(path, settings.key_prefix))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "Path {} is not inside key prefix {}", path, settings.key_prefix);
 }
 
 void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
@@ -257,7 +245,6 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
-    throwIfPathAccessDenied(path);
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
 
@@ -272,7 +259,6 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
-    throwIfPathAccessDenied(path);
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
 
@@ -296,7 +282,6 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
-    throwIfPathAccessDenied(path);
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
@@ -314,7 +299,6 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
-    throwIfPathAccessDenied(path);
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
     return exists(StoredObject(path));
@@ -328,8 +312,6 @@ void LocalObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> /* object_to_attributes */)
 {
     throwIfReadonly();
-    throwIfPathAccessDenied(object_from.remote_path);
-    throwIfPathAccessDenied(object_to.remote_path);
     auto in = readObject(object_from, read_settings);
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);

@@ -94,7 +94,6 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
-    void throwIfPathAccessDenied(const String & path) const;
 
     LocalObjectStorageSettings settings;
     LoggerPtr log;
