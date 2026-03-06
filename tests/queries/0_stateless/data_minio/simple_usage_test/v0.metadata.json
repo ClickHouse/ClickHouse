@@ -1,7 +1,7 @@
 {
   "format-version" : 2,
   "table-uuid" : "8f1f9ae2-18bb-421e-b640-ec2f85e67bca",
-  "location" : "/home/divanik-work/ClickHouseClone1/ClickHouse/tests/queries/0_stateless/data_minio/simple_usage_test/metadata/field_ids_table_test",
+  "location": "/ClickHouse/tests/queries/0_stateless/data_minio/simple_usage_test/metadata/field_ids_table_test",
   "last-sequence-number" : 0,
   "last-updated-ms" : 1752481476160,
   "last-column-id" : 1,
