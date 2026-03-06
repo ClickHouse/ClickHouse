@@ -129,11 +129,21 @@ SOURCE(CLICKHOUSE(
 LIFETIME(MIN 1 MAX 1)
 LAYOUT(FLAT())"
 
-# Force initial load, then wait for auto-reloads.
+# Force initial load, then wait for at least one auto-reload by polling system.dictionaries.
 $CLICKHOUSE_CLIENT --query "SELECT dictHas('${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict', toUInt64(0)) FORMAT Null"
 
-# 5s (periodic updater check) + 3s (sleep in query) + eps
-sleep 9
+INITIAL_LOAD_TIME=$($CLICKHOUSE_CLIENT --query "SELECT last_successful_update_time FROM system.dictionaries WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'test_logging_internal_queries_dict'")
+for _ in $(seq 1 60); do
+    CURRENT_LOAD_TIME=$($CLICKHOUSE_CLIENT --query "SELECT last_successful_update_time FROM system.dictionaries WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'test_logging_internal_queries_dict'")
+    if [ "$CURRENT_LOAD_TIME" != "$INITIAL_LOAD_TIME" ]; then
+        break
+    fi
+    sleep 1
+done
+
+if [ "$CURRENT_LOAD_TIME" = "$INITIAL_LOAD_TIME" ]; then
+    echo "Dictionary did not reload within 60 seconds"
+fi
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, trace_log"
