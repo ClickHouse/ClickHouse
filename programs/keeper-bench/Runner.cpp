@@ -389,23 +389,23 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         auto promise = std::make_shared<std::promise<size_t>>();
         auto future = promise->get_future();
 
-        auto success_cbs = std::move(request_with_callbacks.on_success_callbacks);
-        auto failure_cbs = std::move(request_with_callbacks.on_failure_callbacks);
+        auto success_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_success_callbacks));
+        auto failure_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_failure_callbacks));
 
         Coordination::ResponseCallback callback =
             [promise,
-             success_callbacks = std::move(success_cbs),
-             failure_callbacks = std::move(failure_cbs)](const Coordination::Response & response)
+             success_callbacks,
+             failure_callbacks](const Coordination::Response & response)
         {
             if (response.error == Coordination::Error::ZOK)
             {
-                for (const auto & cb : success_callbacks)
+                for (const auto & cb : *success_callbacks)
                     cb();
                 promise->set_value(response.bytesSize());
             }
             else
             {
-                for (const auto & cb : failure_callbacks)
+                for (const auto & cb : *failure_callbacks)
                     cb();
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
             }
@@ -434,6 +434,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...)
         {
+            for (const auto & cb : *failure_callbacks)
+                cb();
             handle_request_exception(slot.request);
             ++requests_executed;
         }
