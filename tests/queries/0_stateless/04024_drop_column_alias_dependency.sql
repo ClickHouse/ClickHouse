@@ -7,10 +7,15 @@ CREATE TABLE test_drop_column_alias_dep
 (
     `data` JSON,
     `seq` UInt64,
+    `item` String,
     `derived_hashes` Array(FixedString(32)) ALIAS arrayMap(item -> unhex(CAST(item.hash, 'String')), CAST(data.nested.entries, 'Array(JSON)'))
 )
 ENGINE = MergeTree
 ORDER BY seq;
+
+-- Dropping the column "item" should be allowed, since the ALIAS expression
+-- only depends on "data" and "item" is a lambda parameter, not a real column.
+ALTER TABLE test_drop_column_alias_dep DROP COLUMN item;
 
 -- Dropping the column that the ALIAS depends on must fail.
 ALTER TABLE test_drop_column_alias_dep DROP COLUMN data; -- { serverError ILLEGAL_COLUMN }
@@ -22,3 +27,11 @@ ALTER TABLE test_drop_column_alias_dep DROP COLUMN derived_hashes;
 ALTER TABLE test_drop_column_alias_dep DROP COLUMN data;
 
 DROP TABLE IF EXISTS test_drop_column_alias_dep;
+
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (a Int32, b Int32 ALIAS a + 1, c Int32 ALIAS b * 2) ENGINE = MergeTree;
+
+ALTER TABLE t DROP COLUMN b; -- { serverError ILLEGAL_COLUMN }
+
+DROP TABLE t;
