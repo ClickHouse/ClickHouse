@@ -5,7 +5,7 @@
     -->
     <query><![CDATA[
         select CounterID, UserID, count(*) user_hits
-        from hits_100m_single
+        from hits_10m_single
         where CounterID < 10000
         group by CounterID, UserID
         order by user_hits desc
@@ -21,7 +21,7 @@
                     over (partition by CounterID order by user_hits desc
                         rows unbounded preceding)
                     user_rank
-            from hits_100m_single
+            from hits_10m_single
             where CounterID < 10000
             group by CounterID, UserID
         )
@@ -43,7 +43,7 @@
                     over (partition by CounterID order by user_hits desc
                         range unbounded preceding)
                     user_rank
-            from hits_100m_single
+            from hits_10m_single
             where CounterID < 10000
             group by CounterID, UserID
         )

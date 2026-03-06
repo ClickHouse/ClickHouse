@@ -7,7 +7,7 @@
         <substitution>
             <name>table_name</name>
             <values>
-                <value>hits_100m_single</value>
+                <value>hits_10m_single</value>
             </values>
         </substitution>
 

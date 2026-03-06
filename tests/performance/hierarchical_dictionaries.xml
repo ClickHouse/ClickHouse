@@ -62,16 +62,16 @@
     </fill_query>
 
     <query>
-        SELECT dictGetHierarchy('hierarchical_flat_dictionary', number + 1) FROM numbers(2500000) FORMAT Null;
+        SELECT dictGetHierarchy('hierarchical_flat_dictionary', number + 1) FROM numbers(1500000) FORMAT Null;
     </query>
     <query>
-        SELECT dictGetDescendants('hierarchical_flat_dictionary', number + 1) FROM numbers(500000) FORMAT Null;
+        SELECT dictGetDescendants('hierarchical_flat_dictionary', number + 1) FROM numbers(300000) FORMAT Null;
     </query>
     <query>
-        SELECT dictGetHierarchy('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(2200000) FORMAT Null;
+        SELECT dictGetHierarchy('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(1300000) FORMAT Null;
     </query>
     <query>
-        SELECT dictGetDescendants('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(470000) FORMAT Null;
+        SELECT dictGetDescendants('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(280000) FORMAT Null;
     </query>
 
     <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary;</drop_query>
