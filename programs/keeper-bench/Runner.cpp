@@ -1269,9 +1269,9 @@ void Runner::runBenchmarkWithGenerator()
     {
         if (!warmup_complete && warmup_watch.elapsedSeconds() >= warmup_seconds)
         {
-            warmup_complete = true;
             std::lock_guard lock(mutex);
             info->clear();
+            warmup_complete = true;
             std::cerr << "Warmup complete, starting measurement" << std::endl;
             total_watch.restart();
             delay_watch.restart();
