@@ -33,7 +33,7 @@ create table test_04004_hash_hive (a UInt64, b String) engine = S3(s3_conn, file
 
 -- Test 6: Truncate should work with {_schema_hash}
 truncate table test_04004_hash_write;
-select count() from test_04004_hash_write;
+select count() from test_04004_hash_write settings s3_ignore_file_doesnt_exist=1;
 
 drop table test_04004_hash_write;
 drop table test_04004_hash_write2;

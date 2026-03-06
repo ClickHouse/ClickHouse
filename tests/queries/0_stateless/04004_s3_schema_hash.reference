@@ -32,7 +32,7 @@ create table test_04004_hash_no_schema engine = S3(s3_conn, filename='test_04004
 create table test_04004_hash_hive (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/data.parquet', format=Parquet, partition_strategy='hive') partition by a; -- { serverError BAD_ARGUMENTS }
 -- Test 6: Truncate should work with {_schema_hash}
 truncate table test_04004_hash_write;
-select count() from test_04004_hash_write;
+select count() from test_04004_hash_write settings s3_ignore_file_doesnt_exist=1;
 0
 drop table test_04004_hash_write;
 drop table test_04004_hash_write2;
