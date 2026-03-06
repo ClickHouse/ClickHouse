@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
 {
@@ -190,5 +191,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
     bool can_skip_mark,
-    const std::unordered_map<String, String> & serialized_index_data);
+    const IndexGranulesMap & index_granules);
 }

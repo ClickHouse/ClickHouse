@@ -2249,7 +2249,7 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} already exists in IndexAnalysisPartsRanges", part_name);
 
         it->second.ranges = std::move(part_ranges.ranges);
-        it->second.extra_data = std::move(part_ranges.skip_indexes_extra_data.serialized_index_data);
+        it->second.index_granules = std::move(part_ranges.skip_indexes_extra_data.index_granules);
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
@@ -2461,7 +2461,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };
 
-            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), indexes_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, context_);
+            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), indexes_column_names, res_parts, vector_search_parameters, local_index_analysis_callback, indexes->skip_indexes.useful_indices, context_);
             IndexAnalysisPartsRanges analyzed_parts_ranges;
 
             /// Index stats
@@ -2518,7 +2518,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 chassert(part_range_info.exact_ranges.empty());
 
                 part_range_info.ranges = std::move(part_result.ranges);
-                part_range_info.skip_indexes_extra_data.serialized_index_data = std::move(part_result.extra_data);
+                part_range_info.skip_indexes_extra_data.index_granules = std::move(part_result.index_granules);
+
                 result_parts_ranges.push_back(std::move(part_range_info));
             }
 
@@ -3312,7 +3313,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         {
             /// Vector similarity indexes are not applicable on data reads.
             /// Indexes for which index read task is created use another mechanism to read index data.
-            return idx.index->isVectorSimilarityIndex() || index_read_tasks.contains(idx.index->index.name);
+            /// Text indexes are kept because their granules are passed to the text index reader.
+            return idx.index->isVectorSimilarityIndex()
+                || (index_read_tasks.contains(idx.index->index.name) && !idx.index->isTextIndex());
         });
 
         if (!applicable_skip_indexes.empty())

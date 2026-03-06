@@ -326,10 +326,10 @@ public:
     void addPostings(std::string_view token, PostingListPtr postings);
 
     /// Serializes the analyzer state (token_infos, token_postings, missing_tokens).
-    void serializeStateBinary(WriteBuffer & out) const;
+    void serializeStateBinary(WriteBuffer & out, PostingListCodecPtr posting_list_codec) const;
 
     /// Deserializes state from a buffer.
-    static TextIndexAnalyzer deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition);
+    static TextIndexAnalyzer deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition, PostingListCodecPtr posting_list_codec);
 
 private:
     template <typename Operation>
@@ -355,7 +355,7 @@ public:
     const MergeTreeIndexTextParams & getParams() const { return params; }
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return is_empty; }
@@ -367,13 +367,8 @@ public:
 
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
-    /// Serializes the analyzer state into a binary string.
-    String serializeAnalyzerState() const;
-    /// Restores the analyzer from a serialized state.
-    void deserializeFromState(const String & state_data, const MergeTreeIndexConditionText & condition);
-
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
-    const String & getIndexIdForCaches() const { return index_id_for_caches; }
+    static String createIndexIdForCaches(const MergeTreeIndexDeserializationState & state);
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -424,7 +419,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
     size_t memoryUsageBytes() const override;

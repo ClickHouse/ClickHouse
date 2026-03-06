@@ -21,7 +21,7 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
     ~MergeTreeIndexGranuleBloomFilterText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return !has_elems; }
 

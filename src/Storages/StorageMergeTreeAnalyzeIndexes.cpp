@@ -15,6 +15,8 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <IO/WriteBufferFromString.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
@@ -104,7 +106,7 @@ protected:
             col_array.getOffsets().push_back(col_tuple.size());
         };
 
-        auto insert_extra_data = [&](size_t res_index, const std::unordered_map<String, String> & data)
+        auto insert_extra_data = [&](size_t res_index, const IndexGranulesMap & granules)
         {
             auto & col_map = assert_cast<ColumnMap &>(*res_columns[res_index]);
             auto & col_array = col_map.getNestedColumn();
@@ -112,10 +114,13 @@ protected:
             auto & col_keys = assert_cast<ColumnString &>(col_tuple.getColumn(0));
             auto & col_values = assert_cast<ColumnString &>(col_tuple.getColumn(1));
 
-            for (const auto & [key, value] : data)
+            for (const auto & [name, granule] : granules)
             {
-                col_keys.insertData(key.data(), key.size());
-                col_values.insertData(value.data(), value.size());
+                WriteBufferFromOwnString out;
+                granule->serializeBinary(out);
+                auto serialized = out.str();
+                col_keys.insertData(name.data(), name.size());
+                col_values.insertData(serialized.data(), serialized.size());
             }
 
             col_array.getOffsets().push_back(col_tuple.size());
@@ -131,7 +136,7 @@ protected:
             if (columns_mask[src_index++])
                 insert_ranges(res_index++, ranges_in_part.ranges);
             if (columns_mask[src_index++])
-                insert_extra_data(res_index++, ranges_in_part.skip_indexes_extra_data.serialized_index_data);
+                insert_extra_data(res_index++, ranges_in_part.skip_indexes_extra_data.index_granules);
 
             processed_parts.insert(ranges_in_part.data_part->name);
         }

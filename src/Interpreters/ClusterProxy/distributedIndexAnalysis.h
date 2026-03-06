@@ -6,6 +6,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 namespace DB
@@ -18,8 +20,7 @@ class ActionsDAG;
 struct IndexAnalysisPartResult
 {
     MarkRanges ranges;
-    /// index_name -> serialized analyzer state (binary)
-    std::unordered_map<String, String> extra_data;
+    IndexGranulesMap index_granules;
 };
 
 /// <part_name, result>
@@ -34,6 +35,7 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 /// in case of any failures the analysis will be done on local replica.
 ///
 /// For local replica uses LocalIndexAnalysisCallback (can be called multiple times).
+/// Serialized index granules received from remote replicas are deserialized using `useful_indices`.
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
@@ -41,6 +43,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
+    const std::vector<MergeTreeIndexWithCondition> & useful_indices,
     ContextPtr context);
 
 }

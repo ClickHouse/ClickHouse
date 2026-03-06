@@ -57,10 +57,10 @@ using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, Merge
 
 struct MergeTreeIndexDeserializationState
 {
-    MergeTreeIndexVersion version;
-    const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPart & part;
-    const IMergeTreeIndex & index;
+    MergeTreeIndexVersion version = 0;
+    const IMergeTreeIndexCondition * condition = nullptr;
+    const IMergeTreeDataPart * part = nullptr;
+    const IMergeTreeIndex * index = nullptr;
 };
 
 }

@@ -7,6 +7,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
@@ -33,6 +34,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -136,27 +138,48 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
-std::unordered_map<String, String> getExtraDataFromMap(const IColumn & column, size_t row)
+IndexGranulesMap deserializeIndexGranules(
+    const IColumn & map_column,
+    size_t row,
+    const std::vector<MergeTreeIndexWithCondition> & useful_indices)
 {
-    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    const auto & column_map = assert_cast<const ColumnMap &>(map_column);
     const auto & map_offsets = column_map.getNestedColumn().getOffsets();
     const auto & map_data = column_map.getNestedData();
     const auto & keys = assert_cast<const ColumnString &>(map_data.getColumn(0));
     const auto & values = assert_cast<const ColumnString &>(map_data.getColumn(1));
 
-    std::unordered_map<String, String> result;
     size_t map_begin = map_offsets[row - 1];
     size_t map_end = map_offsets[row];
 
+    /// Build a lookup from index name to the map entry position
+    std::unordered_map<std::string_view, size_t> name_to_pos;
     for (size_t j = map_begin; j < map_end; ++j)
-        result[String(keys.getDataAt(j))] = String(values.getDataAt(j));
+        name_to_pos[keys.getDataAt(j)] = j;
 
-    return result;
+    IndexGranulesMap granules;
+    for (const auto & idx : useful_indices)
+    {
+        const auto & index_name = idx.index->index.name;
+        auto it = name_to_pos.find(std::string_view(index_name));
+
+        if (it == name_to_pos.end())
+            continue;
+
+        auto idx_granule = idx.index->createIndexGranule();
+        MergeTreeIndexDeserializationState state{.condition = idx.condition.get(), .index = idx.index.get()};
+        ReadBufferFromString in(values.getDataAt(it->second));
+        idx_granule->deserializeBinary(in, state);
+        granules[index_name] = std::move(idx_granule);
+    }
+
+    return granules;
 }
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+                                                     const std::vector<std::string_view> & parts, ConnectionPoolPtr pool,
+                                                     const std::vector<MergeTreeIndexWithCondition> & useful_indices)
 {
     std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$'",
         storage_id.uuid,
@@ -220,7 +243,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
                 part_result.ranges.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
 
             if (col_extra_data)
-                part_result.extra_data = getExtraDataFromMap(*col_extra_data->column, i);
+                part_result.index_granules = deserializeIndexGranules(*col_extra_data->column, i, useful_indices);
         }
     }
 
@@ -252,6 +275,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
+    const std::vector<MergeTreeIndexWithCondition> & useful_indices,
     ContextPtr context)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DistributedIndexAnalysisMicroseconds);
@@ -335,12 +359,12 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         else
         {
             /// Passing references here is fine. All of them will outlive the runner
-            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &res]()
+            runner.enqueueAndKeepTrack([i, replica_address, connection_pool, &logger, &replica_parts, &replicas_marks, &replicas_rows, &storage_id, &filter_query, &vector_search_parameters, &execution_context, &external_tables, &useful_indices, &res]()
             {
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool, useful_indices);
                     LOG_TRACE(logger, "Received {} parts from {} (index {})", parts_ranges.size(), replica_address, i);
                     res[i].second = std::move(parts_ranges);
                 }

@@ -1931,9 +1931,8 @@ std::pair<MarkRanges, SkipIndexesExtraData> MergeTreeDataSelectExecutor::filterM
             }
         }
 
-        auto serialized = granule_text.serializeAnalyzerState();
-        if (!serialized.empty())
-            extra_data.serialized_index_data[index_helper->index.name] = std::move(serialized);
+        if (granule)
+            extra_data.index_granules[index_helper->index.name] = std::move(granule);
     }
     else if (bulk_filtering)
     {

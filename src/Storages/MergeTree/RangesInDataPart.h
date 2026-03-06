@@ -8,12 +8,15 @@
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
+#include <memory>
 #include <unordered_map>
 
 namespace DB
 {
 
 class IMergeTreeDataPart;
+struct IMergeTreeIndexGranule;
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// The only purpose of this struct is that serialize and deserialize methods
@@ -78,13 +81,15 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
     }
 };
 
+using IndexGranulesMap = std::unordered_map<String, MergeTreeIndexGranulePtr>;
+
 /// A vehicle which transports additional information to optimize searches
 struct SkipIndexesExtraData
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
-    /// Preloaded skip index data from distributed analysis (index_name -> serialized state)
-    std::unordered_map<String, String> serialized_index_data;
+    /// Preloaded index granules from planning-time analysis (index_name -> granule)
+    IndexGranulesMap index_granules;
 };
 
 struct RangesInDataPart

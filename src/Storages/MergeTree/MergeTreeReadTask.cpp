@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -187,7 +189,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
                 index_read_task->index,
                 pre_columns_per_step,
                 can_skip_marks,
-                read_info->skip_indexes_extra_data.serialized_index_data));
+                read_info->skip_indexes_extra_data.index_granules));
         }
         else
         {
@@ -312,13 +314,26 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
 
     const PaddedPODArray<UInt64> * part_rows = nullptr;
     if (lazy_materializing_rows)
-    {
         part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
-        // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
-    }
 
     if (index_read_result || lazy_materializing_rows)
+    {
+        /// Inject granules from skip index read result into prewhere text index readers.
+        if (index_read_result && index_read_result->skip_index_read_result)
+        {
+            for (auto & prewhere_reader : readers.prewhere)
+            {
+                if (auto * text_reader = dynamic_cast<MergeTreeReaderTextIndex *>(prewhere_reader.get()))
+                {
+                    auto it = index_read_result->skip_index_read_result->index_granules.find(text_reader->getIndexName());
+                    if (it != index_read_result->skip_index_read_result->index_granules.end())
+                        text_reader->setGranule(it->second);
+                }
+            }
+        }
+
         readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
+    }
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

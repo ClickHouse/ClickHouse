@@ -37,7 +37,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     MergeTreeIndexWithCondition index_,
     NamesAndTypesList columns_,
     bool can_skip_mark_,
-    String serialized_state_)
+    MergeTreeIndexGranulePtr granule_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         columns_,
@@ -49,7 +49,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
-    , serialized_state(std::move(serialized_state_))
+    , granule(std::move(granule_))
     , can_skip_mark(can_skip_mark_)
     , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
@@ -64,26 +64,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     }
 
     auto data_part = getDataPart();
-    auto substreams = index.index->getSubstreams();
-
-    auto make_stream = [&](const auto & substream)
-    {
-        return makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(settings, substream.type));
-    };
-
-    /// When preloaded state is available, we only need the postings stream for large postings.
-    /// Sparse index and dictionary streams are not needed since the analyzer is already built.
-    if (serialized_state.empty())
-    {
-        sparse_index_stream = make_stream(substreams[0]);
-        dictionary_stream = make_stream(substreams[1]);
-        small_postings_stream = make_stream(substreams[2]);
-    }
-
     auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
     chassert(index_format);
 
@@ -91,11 +71,12 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     {
         .version = index_format.version,
         .condition = index.condition.get(),
-        .part = *data_part,
-        .index = *index.index,
+        .part = data_part.get(),
+        .index = index.index.get(),
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
+    index_id_for_caches = MergeTreeIndexGranuleText::createIndexIdForCaches(*deserialization_state);
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -113,16 +94,6 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
     }
 }
 
-void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
-{
-    if (sparse_index_stream)
-    {
-        sparse_index_stream->seekToStart();
-        sparse_index_stream->getDataBuffer()->prefetch(priority);
-    }
-    is_prefetched = true;
-}
-
 MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 {
     const auto * loaded_data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
@@ -130,32 +101,6 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading text index is supported only for loaded data parts");
 
     return loaded_data_part->getDataPart();
-}
-
-void MergeTreeReaderTextIndex::readGranule()
-{
-    if (!serialized_state.empty())
-    {
-        granule = index.index->createIndexGranule();
-        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-        granule_text.deserializeFromState(serialized_state, condition_text);
-        return;
-    }
-
-    if (!is_prefetched)
-        sparse_index_stream->seekToStart();
-
-    dictionary_stream->seekToStart();
-    small_postings_stream->seekToStart();
-
-    MergeTreeIndexInputStreams streams;
-    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = small_postings_stream.get();
-
-    granule = index.index->createIndexGranule();
-    granule->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
 }
 
 void MergeTreeReaderTextIndex::analyzeTokensCardinality()
@@ -238,11 +183,11 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
     if (!rows_range.has_value())
         return true;
 
-    if (!granule)
+    if (!is_initialized)
     {
-        readGranule();
         analyzeTokensCardinality();
         initializePostingStreams();
+        is_initialized = true;
     }
 
     auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
@@ -521,9 +466,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     auto blocks_to_read = token_info.getBlocksToRead(range);
-
     if (blocks_to_read.empty())
         return {};
 
@@ -541,7 +484,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
                 token_info,
                 block_idx,
                 postings_serialization,
-                granule_text.getIndexIdForCaches());
+                index_id_for_caches);
         }
 
         result.push_back(it->second);
@@ -590,14 +533,25 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
     }
 }
 
+void MergeTreeReaderTextIndex::setGranule(MergeTreeIndexGranulePtr granule_)
+{
+    granule = std::move(granule_);
+    is_initialized = false;
+}
+
+const String & MergeTreeReaderTextIndex::getIndexName() const
+{
+    return index.index->index.name;
+}
+
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
     bool can_skip_mark,
-    String serialized_state)
+    MergeTreeIndexGranulePtr granule)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark, std::move(serialized_state));
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark, std::move(granule));
 }
 
 }

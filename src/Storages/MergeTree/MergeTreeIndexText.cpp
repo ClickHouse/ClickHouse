@@ -258,14 +258,17 @@ MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams pa
 {
 }
 
-void MergeTreeIndexGranuleText::serializeBinary(WriteBuffer &) const
+void MergeTreeIndexGranuleText::serializeBinary(WriteBuffer & ostr) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Serialization of MergeTreeIndexGranuleText is not implemented");
+    if (analyzer)
+        analyzer->serializeStateBinary(ostr, postings_serialization.getPostingListCodec());
 }
 
-void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
+void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings");
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    analyzer = TextIndexAnalyzer::deserializeFromStateBinary(istr, condition_text, postings_serialization.getPostingListCodec());
+    is_empty = false;
 }
 
 namespace
@@ -499,12 +502,12 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
     }
 }
 
-void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out) const
+void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out, PostingListCodecPtr posting_list_codec) const
 {
     using enum PostingsSerialization::Flags;
     static constexpr size_t posting_block_size = std::numeric_limits<size_t>::max();
 
-    PostingsSerialization postings_serialization(nullptr);
+    PostingsSerialization postings_serialization(posting_list_codec);
     writeVarUInt(token_infos.size(), out);
 
     for (const auto & [token, info] : token_infos)
@@ -535,10 +538,10 @@ void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out) const
         writeStringBinary(token, out);
 }
 
-TextIndexAnalyzer TextIndexAnalyzer::deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition)
+TextIndexAnalyzer TextIndexAnalyzer::deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition, PostingListCodecPtr posting_list_codec)
 {
     TextIndexAnalyzer analyzer(condition);
-    PostingsSerialization postings_serialization(nullptr);
+    PostingsSerialization postings_serialization(posting_list_codec);
 
     size_t num_token_infos;
     readVarUInt(num_token_infos, in);
@@ -575,21 +578,13 @@ TextIndexAnalyzer TextIndexAnalyzer::deserializeFromStateBinary(ReadBuffer & in,
     return analyzer;
 }
 
-String MergeTreeIndexGranuleText::serializeAnalyzerState() const
+String MergeTreeIndexGranuleText::createIndexIdForCaches(const MergeTreeIndexDeserializationState & state)
 {
-    if (!analyzer)
-        return {};
+    if (!state.condition || !state.part || !state.index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexDeserializationState must have condition, part, and index set for text index deserialization");
 
-    WriteBufferFromOwnString out;
-    analyzer->serializeStateBinary(out);
-    return out.str();
-}
-
-void MergeTreeIndexGranuleText::deserializeFromState(const String & state_data, const MergeTreeIndexConditionText & condition)
-{
-    ReadBufferFromString in(state_data);
-    analyzer = TextIndexAnalyzer::deserializeFromStateBinary(in, condition);
-    is_empty = false;
+    const auto & part_storage = state.part->getDataPartStorage();
+    return fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index->getFileName());
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
@@ -603,13 +598,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    if (index_id_for_caches.empty())
-    {
-        const auto & part_storage = state.part.getDataPartStorage();
-        index_id_for_caches = fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), state.index.getFileName());
-    }
-
     is_empty = false;
+    index_id_for_caches = createIndexIdForCaches(state);
     analyzer.emplace(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
 
     analyzeDictionary(*index_stream, *dictionary_stream, state);
@@ -627,7 +617,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
     if (tokens_to_read.empty())
     {
-        cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+        cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
         return;
     }
 
@@ -639,7 +629,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     auto tokens_cache = condition_text.tokensCache();
     cardinalities_cache->sortTokens(tokens_to_read);
 
-    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part->getDataPartStorage().getFullPath());
 
     /// Collect blocks ids in the same order as tokens are sorted by cardinality.
     std::vector<size_t> blocks_ids_to_read;
@@ -687,7 +677,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
         if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
         {
-            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
             return;
         }
 
@@ -708,12 +698,12 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
         if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
         {
-            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
             return;
         }
     }
 
-    cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+    cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
 }
 
 std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
@@ -1435,7 +1425,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     TextIndexSerialization::serializeSparseIndex(sparse_index_block, index_stream->compressed_hashing);
 }
 
-void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
+void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, const MergeTreeIndexDeserializationState &)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialization of MergeTreeIndexGranuleTextWritable is not implemented");
 }
