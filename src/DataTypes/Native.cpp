@@ -200,9 +200,9 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
         return typeIsSigned(*from_type) ? b.CreateSIToFP(value, to_native_type) : b.CreateUIToFP(value, to_native_type);
     if (from_native_type->isFloatingPointTy() && to_native_type->isIntegerTy())
         return typeIsSigned(*to_type) ? b.CreateFPToSI(value, to_native_type) : b.CreateFPToUI(value, to_native_type);
-    if (from_native_type->isIntegerTy() && from_native_type->isIntegerTy())
+    if (from_native_type->isIntegerTy() && to_native_type->isIntegerTy())
         return b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
-    if (to_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
+    if (from_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
         return b.CreateFPCast(value, to_native_type);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
