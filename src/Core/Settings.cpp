@@ -5369,6 +5369,10 @@ Possible values:
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
+    DECLARE(Bool, optimize_in_to_equal, true, R"(
+Convert `IN` with a single element to `equals`, and `NOT IN` to `notEquals`.
+For example, `x IN (1)` becomes `x = 1`, `x NOT IN (1)` becomes `x != 1`.
+)", 0) \
     DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
 Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
 only when col is of String or FixedString type.
