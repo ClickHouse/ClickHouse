@@ -764,7 +764,8 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "concat('%', 'CORRUPTED', '_DATA', '%'))"
-                ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
                 fuzzer_out_file.generic_string())))
     {
         String buf;
