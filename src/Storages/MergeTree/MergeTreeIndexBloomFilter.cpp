@@ -476,8 +476,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
+    /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header))
     {
+        if (function_name != "in" && function_name != "globalIn")
+            return false;
+
         if (!prepared_set)
             return false;
 
@@ -497,12 +501,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         }
 
         fillJSONPathBloomPredicate(*json_info, header, out);
-
-        if (function_name == "in" || function_name == "globalIn")
-            out.function = RPNElement::FUNCTION_IN;
-
-        if (function_name == "notIn" || function_name == "globalNotIn")
-            out.function = RPNElement::FUNCTION_NOT_IN;
+        out.function = RPNElement::FUNCTION_IN;
 
         return true;
     }
