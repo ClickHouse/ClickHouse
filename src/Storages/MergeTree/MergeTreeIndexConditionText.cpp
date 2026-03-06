@@ -595,6 +595,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
                 search_tokens.push_back(element.safeGet<String>());
             }
+            search_tokens = postprocessor->applyBatch(std::move(search_tokens));
         }
 
         if (function_name == "hasAnyTokens")
