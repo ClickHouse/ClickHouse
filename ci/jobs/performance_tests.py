@@ -771,19 +771,6 @@ def main():
             )
         )
 
-    # dmesg -T > dmesg.log
-    #
-    # ls -lath
-    #
-    # 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
-    #    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    #    report analyze benchmark metrics \
-    #    ./*.core.dmp ./*.core
-
-    ## If the files aren't same, copy it
-    # cmp --silent compare.log /tmp/praktika/compare.log || \
-    #  cp compare.log /output
-
     files_to_attach = []
     if res:
         files_to_attach += logs_to_attach
