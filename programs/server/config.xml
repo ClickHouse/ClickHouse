@@ -292,14 +292,15 @@
       -->
     <!-- <listen_host>::</listen_host> -->
 
-    <vector_similarity_index_cache_size>42949672960</vector_similarity_index_cache_size>
 
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
 
     <!-- Default values - try listen localhost on IPv4 and IPv6. -->
+    <!--
     <listen_host>::1</listen_host>
-    <listen_host>0.0.0.0</listen_host>
+    <listen_host>127.0.0.1</listen_host>
+    -->
 
     <!-- <interserver_listen_host>::</interserver_listen_host> -->
     <!-- Listen host for communication between replicas. Used for data exchange -->
@@ -886,7 +887,7 @@
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 
-    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate).
+    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate). 
          Default profile name is 'background', which can be changed via the following setting. If such profile is not configured, system_profile is used.
     -->
     <!-- <background_profile>background</background_profile> -->
