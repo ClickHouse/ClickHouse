@@ -1293,7 +1293,10 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->rows_read;
+    /// `rows_read` is updated from pipeline progress and may include auxiliary
+    /// reads such as `CreatingSetStep` subqueries. Here we need the exact number
+    /// of rows coming from source parts only.
+    size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->total_rows_count;
     size_t input_rows_filtered = *global_ctx->input_rows_filtered;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_columns.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
