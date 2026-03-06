@@ -131,7 +131,9 @@ LAYOUT(FLAT())"
 
 # Force initial load, then wait for auto-reloads.
 $CLICKHOUSE_CLIENT --query "SELECT dictHas('${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict', toUInt64(0)) FORMAT Null"
-sleep 8
+
+# 5s (periodic updater check) + 3s (sleep in query) + eps
+sleep 9
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.test_logging_internal_queries_dict"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, trace_log"
