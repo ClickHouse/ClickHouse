@@ -593,12 +593,10 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         shard.busy_timeout_ms = timeout_ms;
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
-        ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
-        ProfileEvents::increment(ProfileEvents::InsertQuery);
 
         if (data_to_process)
         {
