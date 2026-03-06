@@ -61,7 +61,7 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
             return res;
 
     /// In case if the entry exists, but expirted we should avoid double memory accounting.
-    if (!(inserted && it->second.expired()))
+    if (!(!inserted && it->second.expired()))
     {
         CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
         CurrentMetrics::add(CurrentMetrics::SerializationCacheBytesUncorrected, allocated_bytes);
