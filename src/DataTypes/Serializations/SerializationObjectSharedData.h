@@ -81,6 +81,8 @@ public:
 
     static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

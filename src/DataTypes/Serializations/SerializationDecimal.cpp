@@ -142,6 +142,12 @@ UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
     return hash.get128();
 }
 
+template <typename T>
+size_t SerializationDecimal<T>::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;

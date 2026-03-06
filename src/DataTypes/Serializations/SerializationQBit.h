@@ -59,6 +59,8 @@ public:
         return ISerialization::pooled(getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

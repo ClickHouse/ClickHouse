@@ -1,3 +1,4 @@
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SharedMutex.h>
@@ -9,6 +10,7 @@
 namespace CurrentMetrics
 {
     extern const Metric SerializationCacheBytes;
+    extern const Metric SerializationCacheBytesUncorrected;
     extern const Metric SerializationCacheCount;
 }
 
@@ -21,7 +23,8 @@ namespace SerializationObjectPool
 struct Pool
 {
     SharedMutex mutex;
-    absl::flat_hash_map<UInt128, std::weak_ptr<const ISerialization>> map;
+    using SerializationMap = absl::flat_hash_map<UInt128, std::weak_ptr<const ISerialization>>;
+    SerializationMap map;
 };
 
 /// Intentionally leaked to avoid static destruction order issues: the custom
@@ -38,19 +41,18 @@ Pool & getPool()
 SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
 {
     auto & pool = getPool();
-
     {
         std::shared_lock read_lock(pool.mutex);
         auto it = pool.map.find(key);
         if (it != pool.map.end())
             if (auto res = it->second.lock())
                 return res;
-
     }
 
     /// Creating the serialization object must be outside of the critical section
     /// because there might be nested serializaitons.
     auto tmp = std::unique_ptr<const ISerialization>(creator());
+    auto allocated_bytes = tmp->allocatedBytes();
 
     std::lock_guard write_lock(pool.mutex);
     auto [it, inserted] = pool.map.emplace(key, std::weak_ptr<const ISerialization>());
@@ -58,13 +60,20 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
         if (auto res = it->second.lock())
             return res;
 
-    CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
-    CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, pool.map.capacity());
+    /// In case if the entry exists, but expirted we should avoid double memory accounting.
+    if (inserted && !it->second.expired())
+    {
+        CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
+        CurrentMetrics::add(CurrentMetrics::SerializationCacheBytesUncorrected, allocated_bytes);
+        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, 
+            sizeof(typename Pool::SerializationMap::value_type) * pool.map.capacity() 
+            + CurrentMetrics::get(CurrentMetrics::SerializationCacheBytesUncorrected));
+    }
 
     SerializationPtr ret
     (
         tmp.release(),
-        [k = std::move(key)](const ISerialization * ptr)
+        [k = std::move(key), b = allocated_bytes](const ISerialization * ptr)
         {
             auto & p = getPool();
             {
@@ -74,7 +83,10 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
                 {
                     p.map.erase(map_it);
                     CurrentMetrics::sub(CurrentMetrics::SerializationCacheCount);
-                    CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, p.map.capacity());
+                    CurrentMetrics::sub(CurrentMetrics::SerializationCacheBytesUncorrected, b);
+                        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, 
+                            sizeof(typename Pool::SerializationMap::value_type) * p.map.capacity() 
+                            + CurrentMetrics::get(CurrentMetrics::SerializationCacheBytesUncorrected));
                 }
             }
             delete ptr;

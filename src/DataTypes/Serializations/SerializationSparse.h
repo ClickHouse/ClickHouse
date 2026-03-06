@@ -36,6 +36,8 @@ public:
         return ISerialization::pooled(getHash(nested_), [&] { return new SerializationSparse(nested_); });
     }
 
+    size_t allocatedBytes() const override;
+
     KindStack getKindStack() const override;
 
     void enumerateStreams(
@@ -153,6 +155,8 @@ public:
     {
         return ISerialization::pooled(getHash(), [] { return new SerializationSparseNullMap(); });
     }
+
+    size_t allocatedBytes() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,

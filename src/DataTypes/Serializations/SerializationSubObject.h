@@ -27,6 +27,8 @@ public:
         return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

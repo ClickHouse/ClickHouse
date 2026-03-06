@@ -105,4 +105,9 @@ void SerializationNamed::addToPath(SubstreamPath & path) const
     path.back().name_of_substream = name;
 }
 
+size_t SerializationNamed::allocatedBytes() const
+{
+    return sizeof(*this) + name.capacity();
+}
+
 }

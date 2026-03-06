@@ -24,6 +24,8 @@ public:
         return ISerialization::pooled(getHash(nested_), [&] { return new SerializationMap(key_type_, value_type_, nested_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

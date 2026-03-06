@@ -19,6 +19,8 @@ public:
         return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate(time_zone_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

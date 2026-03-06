@@ -24,6 +24,8 @@ public:
         return ISerialization::pooled(getHash(max_dynamic_types_), [=] { return new SerializationDynamic(max_dynamic_types_); });
     }
 
+    size_t allocatedBytes() const override;
+
     struct SerializationVersion
     {
         enum Value

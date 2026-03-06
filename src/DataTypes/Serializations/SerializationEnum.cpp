@@ -235,6 +235,20 @@ UInt128 SerializationEnum<Type>::getHash(const Values & values)
     return hash.get128();
 }
 
+template <typename Type>
+size_t SerializationEnum<Type>::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    if (own_enum_values)
+    {
+        const auto & vals = own_enum_values->getValues();
+        bytes += vals.capacity() * sizeof(typename EnumValues<Type>::Value);
+        for (const auto & [name, _] : vals)
+            bytes += name.capacity();
+    }
+    return bytes;
+}
+
 template class SerializationEnum<Int8>;
 template class SerializationEnum<Int16>;
 

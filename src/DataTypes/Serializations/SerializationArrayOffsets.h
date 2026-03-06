@@ -19,6 +19,8 @@ public:
         return ISerialization::pooled(getHash(), [] { return new SerializationArrayOffsets(); });
     }
 
+    size_t allocatedBytes() const override;
+
     void deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,

@@ -20,6 +20,8 @@ public:
         return ISerialization::pooled(getHash(nested_), [&] { return new SerializationBool(nested_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

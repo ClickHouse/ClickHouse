@@ -22,6 +22,8 @@ public:
         return ISerialization::pooled(getHash(nested_), [&] { return new SerializationReplicated(nested_); });
     }
 
+    size_t allocatedBytes() const override;
+
     KindStack getKindStack() const override;
 
     void enumerateStreams(

@@ -302,4 +302,13 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+size_t SerializationObjectDistinctPaths::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += typed_paths.capacity() * sizeof(String);
+    for (const auto & path : typed_paths)
+        bytes += path.capacity();
+    return bytes;
+}
+
 }

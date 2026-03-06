@@ -346,4 +346,9 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
     deserializeBasedOnInput(column, settings, s);
 }
 
+size_t SerializationAggregateFunction::allocatedBytes() const
+{
+    return sizeof(*this) + type_name.capacity();
+}
+
 }

@@ -357,4 +357,9 @@ void SerializationReplicated::serializeTextXML(const IColumn & column, size_t ro
     nested->serializeTextXML(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
 }
 
+size_t SerializationReplicated::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

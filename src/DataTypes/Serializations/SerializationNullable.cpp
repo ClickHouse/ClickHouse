@@ -945,4 +945,9 @@ void SerializationNullable::serializeNullXML(DB::WriteBuffer & ostr)
     writeCString("\\N", ostr);
 }
 
+size_t SerializationNullable::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

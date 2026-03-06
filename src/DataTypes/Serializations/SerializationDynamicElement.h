@@ -31,6 +31,8 @@ public:
         return ISerialization::pooled(getHash(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_), [&] { return new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

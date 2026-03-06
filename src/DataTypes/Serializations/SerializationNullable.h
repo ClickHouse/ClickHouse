@@ -28,6 +28,8 @@ public:
         return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
     }
 
+    size_t allocatedBytes() const override;
+
     const SerializationPtr & getNested() const { return nested; }
 
     void enumerateStreams(

@@ -20,6 +20,8 @@ public:
         return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

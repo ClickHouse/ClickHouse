@@ -190,4 +190,9 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+size_t SerializationObjectDynamicPath::allocatedBytes() const
+{
+    return sizeof(*this) + path.capacity() + path_subcolumn.capacity();
+}
+
 }

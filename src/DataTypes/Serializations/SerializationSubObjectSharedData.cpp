@@ -358,4 +358,9 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
+size_t SerializationSubObjectSharedData::allocatedBytes() const
+{
+    return sizeof(*this) + paths_prefix.capacity();
+}
+
 }

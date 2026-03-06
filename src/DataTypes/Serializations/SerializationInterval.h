@@ -22,6 +22,8 @@ public:
         return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;

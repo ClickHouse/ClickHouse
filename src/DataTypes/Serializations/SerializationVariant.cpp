@@ -1339,4 +1339,17 @@ void SerializationVariant::serializeTextXML(const IColumn & column, size_t row_n
         variant_serializations[global_discr]->serializeTextXML(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
 }
 
+size_t SerializationVariant::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += variant_serializations.capacity() * sizeof(SerializationPtr);
+    bytes += variant_names.capacity() * sizeof(String);
+    for (const auto & name : variant_names)
+        bytes += name.capacity();
+    bytes += variant_types.capacity() * sizeof(DataTypePtr);
+    bytes += deserialize_text_order.capacity() * sizeof(size_t);
+    bytes += variant_name.capacity();
+    return bytes;
+}
+
 }

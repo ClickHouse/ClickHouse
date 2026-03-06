@@ -27,6 +27,8 @@ public:
         return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

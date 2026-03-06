@@ -21,6 +21,8 @@ public:
 
     static SerializationPtr create(const DataTypePtr & dictionary_type);
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

@@ -21,6 +21,8 @@ public:
         return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

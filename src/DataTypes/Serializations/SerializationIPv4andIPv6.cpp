@@ -193,6 +193,12 @@ UInt128 SerializationIP<IPv>::getHash()
     return hash.get128();
 }
 
+template <typename IPv>
+size_t SerializationIP<IPv>::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 template class SerializationIP<IPv4>;
 template class SerializationIP<IPv6>;
 

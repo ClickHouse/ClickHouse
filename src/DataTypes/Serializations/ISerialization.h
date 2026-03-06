@@ -665,6 +665,10 @@ public:
     /// Perform insertion from column found in substreams cache.
     static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
+    /// Returns the total number of bytes allocated for this serialization object,
+    /// including sizeof(*this) and any heap allocations (strings, vectors, etc.).
+    virtual size_t allocatedBytes() const { return 0; }
+
     /// Returns the hash that uniquely identifies this serialization object.
     /// Set by pooled() or manually for non-pooled objects.
     UInt128 getHash() const { return cached_hash; }

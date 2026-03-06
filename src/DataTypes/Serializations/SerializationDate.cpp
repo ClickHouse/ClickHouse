@@ -146,4 +146,9 @@ SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone
 {
 }
 
+size_t SerializationDate::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

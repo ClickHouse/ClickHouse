@@ -541,4 +541,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     nested->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, state, cache);
 }
 
+size_t SerializationMap::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

@@ -86,4 +86,9 @@ void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+size_t SerializationObjectTypedPath::allocatedBytes() const
+{
+    return sizeof(*this) + path.capacity();
+}
+
 }

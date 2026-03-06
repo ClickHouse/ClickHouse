@@ -21,6 +21,8 @@ public:
         return ISerialization::pooled(getHash(), [] { return new SerializationIP<IPv>(); });
     }
 
+    size_t allocatedBytes() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

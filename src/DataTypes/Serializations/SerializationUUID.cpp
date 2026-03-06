@@ -206,4 +206,9 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
 #pragma clang diagnostic pop
 }
 
+size_t SerializationUUID::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

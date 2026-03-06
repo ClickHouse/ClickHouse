@@ -349,4 +349,9 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
     }
 }
 
+size_t SerializationObjectSharedDataPath::allocatedBytes() const
+{
+    return sizeof(*this) + path.capacity() + path_subcolumn.capacity();
+}
+
 }

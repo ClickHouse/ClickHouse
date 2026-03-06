@@ -236,6 +236,12 @@ UInt128 SerializationNumber<T>::getHash()
     return hash.get128();
 }
 
+template <typename T>
+size_t SerializationNumber<T>::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;

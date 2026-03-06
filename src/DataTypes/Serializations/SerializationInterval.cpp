@@ -111,4 +111,9 @@ void SerializationInterval::serializeTextQuoted(const IColumn & column, size_t r
     }
 }
 
+size_t SerializationInterval::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

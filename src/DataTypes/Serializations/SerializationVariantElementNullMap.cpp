@@ -226,5 +226,9 @@ ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::cr
     return null_map_col;
 }
 
+size_t SerializationVariantElementNullMap::allocatedBytes() const
+{
+    return sizeof(*this) + variant_element_name.capacity();
+}
 
 }

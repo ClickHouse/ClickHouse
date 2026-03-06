@@ -27,6 +27,8 @@ public:
         return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
     }
 
+    size_t allocatedBytes() const override;
+
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;

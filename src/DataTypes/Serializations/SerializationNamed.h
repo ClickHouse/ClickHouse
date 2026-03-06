@@ -25,6 +25,8 @@ public:
         return ISerialization::pooled(getHash(nested_, name_, substream_type_), [&] { return new SerializationNamed(nested_, name_, substream_type_); });
     }
 
+    size_t allocatedBytes() const override;
+
     const String & getElementName() const { return name; }
 
     void enumerateStreams(

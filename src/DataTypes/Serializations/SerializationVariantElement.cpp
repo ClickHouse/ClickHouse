@@ -470,4 +470,9 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     return res_column;
 }
 
+size_t SerializationVariantElement::allocatedBytes() const
+{
+    return sizeof(*this) + variant_element_name.capacity();
+}
+
 }

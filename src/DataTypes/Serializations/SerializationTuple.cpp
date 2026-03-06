@@ -861,4 +861,11 @@ size_t SerializationTuple::getPositionByName(const String & name) const
     return std::numeric_limits<size_t>::max();
 }
 
+size_t SerializationTuple::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += elems.capacity() * sizeof(ElementSerializationPtr);
+    return bytes;
+}
+
 }

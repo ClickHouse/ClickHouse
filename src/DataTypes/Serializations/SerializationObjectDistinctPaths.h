@@ -26,6 +26,8 @@ public:
         return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

@@ -21,6 +21,8 @@ public:
         return ISerialization::pooled(getHash(nested_), [&] { return new SerializationDetached(nested_); });
     }
 
+    size_t allocatedBytes() const override;
+
     KindStack getKindStack() const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;

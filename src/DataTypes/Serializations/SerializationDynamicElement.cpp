@@ -273,4 +273,9 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
+size_t SerializationDynamicElement::allocatedBytes() const
+{
+    return sizeof(*this) + dynamic_element_name.capacity() + nested_subcolumn.capacity();
+}
+
 }

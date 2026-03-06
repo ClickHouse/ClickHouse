@@ -241,4 +241,14 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+size_t SerializationSubObject::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += paths_prefix.capacity();
+    bytes += typed_paths_serializations.bucket_count() * sizeof(void *);
+    for (const auto & [key, _] : typed_paths_serializations)
+        bytes += sizeof(std::pair<const String, SerializationPtr>) + sizeof(void *) + key.capacity();
+    return bytes;
+}
+
 }

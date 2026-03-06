@@ -39,6 +39,8 @@ public:
         return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_); });
     }
 
+    size_t allocatedBytes() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

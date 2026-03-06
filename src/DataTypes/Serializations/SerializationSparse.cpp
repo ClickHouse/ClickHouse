@@ -659,4 +659,14 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
+size_t SerializationSparse::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
+size_t SerializationSparseNullMap::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }

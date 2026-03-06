@@ -143,4 +143,10 @@ bool SerializationDate32::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
 SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }
+
+size_t SerializationDate32::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
 }
