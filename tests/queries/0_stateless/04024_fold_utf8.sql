@@ -58,3 +58,11 @@ SELECT '-- ASCII only';
 SELECT caseFoldUTF8('ABC');
 SELECT accentFoldUTF8('abc');
 SELECT foldUTF8('ABC');
+
+-- Multi-row table test
+SELECT '-- table test';
+DROP TABLE IF EXISTS test_fold_utf8;
+CREATE TABLE test_fold_utf8 (s String) ENGINE = Memory;
+INSERT INTO test_fold_utf8 VALUES ('Hello World'), ('Straße'), ('HÉLLO'), ('café résumé'), ('ﬃ'), ('');
+SELECT s, caseFoldUTF8(s), accentFoldUTF8(s), foldUTF8(s) FROM test_fold_utf8 ORDER BY s;
+DROP TABLE test_fold_utf8;
