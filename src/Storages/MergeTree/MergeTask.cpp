@@ -2256,23 +2256,25 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_,
-        const MergeTreeMutableDataPartPtr & data_part_)
+        bool force_)
         : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
     {
-        /// Create the transform once and reuse it in transformPipeline(), following the
-        /// same pattern as TTLStep. This ensures the FutureSet objects filled by
-        /// CreatingSetStep are the same ones used during execution.
-        transform = std::make_shared<TTLDeleteFilterTransform>(
-            context_, input_header_, metadata_snapshot_, old_ttl_infos_, current_time_, force_, data_part_);
-        subqueries_for_sets = transform->getSubqueries();
+        /// Build TTL expressions once and share them across all per-stream
+        /// transform instances created by `addSimpleTransform`. This ensures the
+        /// `FutureSet` objects filled by `CreatingSetStep` are the same ones used
+        /// during execution.
+        std::tie(shared_state, subqueries_for_sets)
+            = TTLDeleteFilterTransform::build(context_, metadata_snapshot_, old_ttl_infos_, current_time_, force_);
     }
 
     String getName() const override { return "TTLDeleteFilter"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.addTransform(transform);
+        pipeline.addSimpleTransform([state = shared_state](const SharedHeader & header)
+        {
+            return std::make_shared<TTLDeleteFilterTransform>(header, state);
+        });
     }
 
     void updateOutputHeader() override
@@ -2288,7 +2290,7 @@ private:
         return ITransformingStep::Traits
         {
             {
-                .returns_single_stream = true,
+                .returns_single_stream = false,
                 .preserves_number_of_streams = true,
                 .preserves_sorting = true,
             },
@@ -2298,7 +2300,7 @@ private:
         };
     }
 
-    std::shared_ptr<TTLDeleteFilterTransform> transform;
+    std::shared_ptr<const TTLDeleteFilterTransform::SharedState> shared_state;
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
@@ -2699,8 +2701,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl,
-            global_ctx->new_data_part);
+            ctx->force_ttl);
 
         ttl_filter_subqueries = ttl_filter_step->getSubqueries();
         ttl_filter_step->setStepDescription("TTL delete filter");
