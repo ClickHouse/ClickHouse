@@ -45,7 +45,7 @@ struct ParquetMetadataCacheKeyHash
 struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     parquet::format::FileMetaData metadata;
-    Int64 memory_bytes;
+    UInt64 memory_bytes;
     explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_);
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;

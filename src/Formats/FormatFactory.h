@@ -126,7 +126,7 @@ private:
         bool is_remote_fs,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        const std::optional<RelativePathWithMetadata> & metadata)>;
+        const std::optional<RelativePathWithMetadata> & object_with_metadata)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
         WriteBuffer & buf,
@@ -197,7 +197,7 @@ private:
         const Block & sample,
         const ContextPtr & context,
         UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
@@ -242,7 +242,7 @@ public:
         const Block & sample,
         const ContextPtr & context,
         UInt64 max_block_size,
-        const std::optional<RelativePathWithMetadata> & metadata,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
         FormatFilterInfoPtr format_filter_info = nullptr,

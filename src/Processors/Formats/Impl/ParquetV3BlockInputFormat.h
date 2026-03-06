@@ -23,7 +23,7 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek,
         ParquetMetadataCachePtr metadata_cache_ = nullptr,
-        const std::optional<RelativePathWithMetadata> & metadata_ = std::nullopt);
+        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
 
     void resetParser() override;
 
@@ -48,7 +48,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     ParquetMetadataCachePtr metadata_cache;
-    const std::optional<RelativePathWithMetadata> metadata;
+    const std::optional<RelativePathWithMetadata> object_with_metadata;
 
     /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,

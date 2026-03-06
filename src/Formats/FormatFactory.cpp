@@ -418,7 +418,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     const Block & sample,
     const ContextPtr & context,
     UInt64 max_block_size,
-    const std::optional<RelativePathWithMetadata> & metadata,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
     const std::optional<FormatSettings> & _format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
@@ -530,11 +530,11 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
     // 2. Prefer to use metadata-aware creator if we have object metadata
-    else if (creators.random_access_input_creator_with_metadata && metadata.has_value())
+    else if (creators.random_access_input_creator_with_metadata && object_with_metadata.has_value())
     {
         format = creators.random_access_input_creator_with_metadata(
             buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
-            parser_shared_resources, format_filter_info, metadata);
+            parser_shared_resources, format_filter_info, object_with_metadata);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
@@ -597,7 +597,7 @@ InputFormatPtr FormatFactory::getInputWithMetadata(
     const Block & sample,
     const ContextPtr & context,
     UInt64 max_block_size,
-    const std::optional<RelativePathWithMetadata> & metadata,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
@@ -608,8 +608,8 @@ InputFormatPtr FormatFactory::getInputWithMetadata(
     const std::optional<UInt64> & min_block_size_rows,
     const std::optional<UInt64> & min_block_size_bytes) const
 {
-    chassert(metadata.has_value());
-    return getInputImpl(name, buf, sample, context, max_block_size, metadata,
+    chassert(object_with_metadata.has_value());
+    return getInputImpl(name, buf, sample, context, max_block_size, object_with_metadata,
                        format_settings, parser_shared_resources, format_filter_info,
                        is_remote_fs, compression, need_only_count,
                        max_block_size_bytes, min_block_size_rows, min_block_size_bytes);

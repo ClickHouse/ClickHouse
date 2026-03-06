@@ -1404,7 +1404,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
-    auto log = getLogger("ParquetMetadataCache");
     factory.registerFileBucketInfo(
         "Parquet",
         []
@@ -1421,7 +1420,7 @@ void registerInputFormatParquet(FormatFactory & factory)
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
            FormatFilterInfoPtr format_filter_info,
-           const std::optional<RelativePathWithMetadata> & metadata) -> InputFormatPtr
+           const std::optional<RelativePathWithMetadata> & object_with_metadata) -> InputFormatPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             size_t min_bytes_for_seek
@@ -1438,7 +1437,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                     std::move(format_filter_info),
                     min_bytes_for_seek,
                     metadata_cache,
-                    metadata
+                    object_with_metadata
                 );
             }
             else
