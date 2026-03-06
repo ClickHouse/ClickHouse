@@ -745,6 +745,313 @@ void alter(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
 }
 
+/// Table-level retention policy read from Iceberg table properties.
+/// Each field carries a spec-defined default (see Constant.h) that applies
+/// when the table property is absent.
+struct RetentionPolicy
+{
+    Int32 min_snapshots_to_keep = Iceberg::default_min_snapshots_to_keep;
+    Int64 max_snapshot_age_ms = Iceberg::default_max_snapshot_age_ms;
+    Int64 max_ref_age_ms = Iceberg::default_max_ref_age_ms;
+};
+
+/// Read retention policy from `properties` in table metadata JSON,
+/// falling back to spec defaults for any missing property.
+static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata)
+{
+    RetentionPolicy policy;
+    if (!metadata->has(Iceberg::f_properties))
+        return policy;
+
+    auto props = metadata->getObject(Iceberg::f_properties);
+    if (props->has(Iceberg::f_min_snapshots_to_keep))
+        policy.min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
+    if (props->has(Iceberg::f_max_snapshot_age_ms))
+        policy.max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
+    if (props->has(Iceberg::f_max_ref_age_ms))
+        policy.max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
+    return policy;
+}
+
+/// Directed graph of snapshot parent relationships, built from the `snapshots`
+/// array in table metadata. Provides ancestor traversal used by retention policy.
+class SnapshotGraph
+{
+public:
+    explicit SnapshotGraph(const Poco::JSON::Array::Ptr & snapshots)
+    {
+        for (UInt32 i = 0; i < snapshots->size(); ++i)
+        {
+            auto snapshot = snapshots->getObject(i);
+            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            timestamps[snap_id] = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+            if (snapshot->has(Iceberg::f_parent_snapshot_id) && !snapshot->isNull(Iceberg::f_parent_snapshot_id))
+                parent_chain[snap_id] = snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        }
+    }
+
+    bool hasSnapshot(Int64 snap_id) const { return timestamps.contains(snap_id); }
+
+    Int64 getTimestamp(Int64 snap_id) const { return timestamps.at(snap_id); }
+
+    std::optional<Int64> getParent(Int64 snap_id) const
+    {
+        auto it = parent_chain.find(snap_id);
+        return it != parent_chain.end() ? std::optional(it->second) : std::nullopt;
+    }
+
+    /// Walk branch ancestors starting from head_id, retaining snapshots that satisfy
+    /// min-snapshots-to-keep or max-snapshot-age-ms. Implements spec steps 3-4.
+    void walkBranchAncestors(Int64 now_ms, Int64 head_id, Int32 min_keep, Int64 max_age_ms, std::set<Int64> & retained) const
+    {
+        Int64 walk_id = head_id;
+        Int32 count = 0;
+        while (hasSnapshot(walk_id))
+        {
+            bool within_min_keep = (count < min_keep);
+            bool within_max_age = (now_ms - getTimestamp(walk_id) < max_age_ms);
+            if (!within_min_keep && !within_max_age)
+                break;
+            retained.insert(walk_id);
+            ++count;
+            auto parent = getParent(walk_id);
+            if (!parent)
+                break;
+            walk_id = *parent;
+        }
+    }
+
+private:
+    std::unordered_map<Int64, Int64> parent_chain;
+    std::unordered_map<Int64, Int64> timestamps;
+};
+
+/// Implements the Iceberg spec Snapshot Retention Policy (steps 1-5).
+/// Returns the set of snapshot IDs to retain and the list of ref names to remove.
+static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
+    const Poco::JSON::Object::Ptr & metadata,
+    Int64 current_snapshot_id,
+    const SnapshotGraph & graph,
+    const RetentionPolicy & policy,
+    Int64 now_ms)
+{
+    /// 1. Start with an empty set of snapshots to retain.
+    std::set<Int64> retained;
+    Strings expired_ref_names;
+
+    /// 2-4. Process refs: expire old refs, walk branches, add tags.
+    bool main_branch_walked = false;
+    if (metadata->has(Iceberg::f_refs))
+    {
+        auto refs = metadata->getObject(Iceberg::f_refs);
+        for (const auto & ref_name : refs->getNames())
+        {
+            auto ref_obj = refs->getObject(ref_name);
+            Int64 ref_snap_id = ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            String ref_type = ref_obj->getValue<String>(Iceberg::f_type);
+
+            Int64 ref_max_ref_age = ref_obj->has(Iceberg::f_max_ref_age_ms)
+                ? ref_obj->getValue<Int64>(Iceberg::f_max_ref_age_ms)
+                : policy.max_ref_age_ms;
+
+            bool is_main = (ref_name == Iceberg::f_main);
+            bool ref_expired = !is_main && graph.hasSnapshot(ref_snap_id)
+                && (now_ms - graph.getTimestamp(ref_snap_id)) >= ref_max_ref_age;
+
+            if (ref_expired)
+            {
+                expired_ref_names.push_back(ref_name);
+                continue;
+            }
+
+            if (ref_type == Iceberg::f_branch)
+            {
+                Int32 min_keep = ref_obj->has(Iceberg::f_min_snapshots_to_keep)
+                    ? ref_obj->getValue<Int32>(Iceberg::f_min_snapshots_to_keep)
+                    : policy.min_snapshots_to_keep;
+                Int64 max_age = ref_obj->has(Iceberg::f_max_snapshot_age_ms)
+                    ? ref_obj->getValue<Int64>(Iceberg::f_max_snapshot_age_ms)
+                    : policy.max_snapshot_age_ms;
+                graph.walkBranchAncestors(now_ms, ref_snap_id, min_keep, max_age, retained);
+                if (is_main)
+                    main_branch_walked = true;
+            }
+            else if (ref_type == Iceberg::f_tag)
+            {
+                retained.insert(ref_snap_id);
+            }
+        }
+    }
+
+    /// The spec says "There is always a main branch reference pointing to
+    /// the current-snapshot-id even if the refs map is null."
+    if (!main_branch_walked)
+        graph.walkBranchAncestors(now_ms, current_snapshot_id, policy.min_snapshots_to_keep, policy.max_snapshot_age_ms, retained);
+
+    return {retained, expired_ref_names};
+}
+
+/// Collect all data/delete file paths referenced by a single manifest file
+/// (data files, position deletes, and equality deletes).
+static void collectAllFilePaths(
+    const ManifestFilePtr & manifest_file,
+    std::set<String> & out)
+{
+    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
+        out.insert(entry->file_path);
+    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+        out.insert(entry->file_path);
+    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+        out.insert(entry->file_path);
+}
+
+/// Walk retained snapshots and build the full set of file paths that must
+/// be kept: manifest lists, manifest files, and data/delete files.
+/// These sets are later used to decide which files from expired snapshots
+/// are safe to delete.
+static void collectRetainedFiles(
+    const Poco::JSON::Array::Ptr & retained_snapshots,
+    ObjectStoragePtr object_storage,
+    PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    std::set<String> & retained_manifest_paths,
+    std::set<String> & retained_data_file_paths,
+    std::set<String> & retained_manifest_list_paths)
+{
+    for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
+    {
+        auto snapshot = retained_snapshots->getObject(i);
+        if (!snapshot->has(Iceberg::f_manifest_list))
+            continue;
+
+        String manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+        retained_manifest_list_paths.insert(manifest_list_path);
+
+        String storage_manifest_list_path = getProperFilePathFromMetadataInfo(
+            manifest_list_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+        auto manifest_keys = getManifestList(
+            object_storage, persistent_table_components, context, storage_manifest_list_path, log);
+
+        for (const auto & mf_key : manifest_keys)
+        {
+            retained_manifest_paths.insert(mf_key.manifest_file_path);
+            auto manifest_file = getManifestFile(
+                object_storage, persistent_table_components, context, log,
+                mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
+            collectAllFilePaths(manifest_file, retained_data_file_paths);
+        }
+    }
+}
+
+/// Scan manifest lists of expired snapshots and collect files that are no
+/// longer referenced by any retained snapshot. Returns the list of storage
+/// paths (manifest lists, manifests, data/delete files) to be physically removed.
+static Strings collectOrphanedFiles(
+    const std::vector<String> & expired_manifest_list_paths,
+    const std::set<String> & retained_manifest_list_paths,
+    const std::set<String> & retained_manifest_paths,
+    const std::set<String> & retained_data_file_paths,
+    ObjectStoragePtr object_storage,
+    PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    Strings files_to_delete;
+    for (const auto & ml_path : expired_manifest_list_paths)
+    {
+        if (retained_manifest_list_paths.contains(ml_path))
+            continue;
+
+        String storage_ml_path = getProperFilePathFromMetadataInfo(
+            ml_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+        ManifestFileCacheKeys manifest_keys;
+        try
+        {
+            manifest_keys = getManifestList(
+                object_storage, persistent_table_components, context, storage_ml_path, log);
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Failed to read manifest list {}, skipping", storage_ml_path);
+            continue;
+        }
+
+        for (const auto & mf_key : manifest_keys)
+        {
+            if (retained_manifest_paths.contains(mf_key.manifest_file_path))
+                continue;
+
+            ManifestFilePtr manifest_file;
+            try
+            {
+                manifest_file = getManifestFile(
+                    object_storage, persistent_table_components, context, log,
+                    mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to read manifest file {}, skipping", mf_key.manifest_file_path);
+                continue;
+            }
+
+            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
+                if (!retained_data_file_paths.contains(entry->file_path))
+                    files_to_delete.push_back(entry->file_path);
+            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+                if (!retained_data_file_paths.contains(entry->file_path))
+                    files_to_delete.push_back(entry->file_path);
+            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+                if (!retained_data_file_paths.contains(entry->file_path))
+                    files_to_delete.push_back(entry->file_path);
+
+            files_to_delete.push_back(mf_key.manifest_file_path);
+        }
+
+        files_to_delete.push_back(storage_ml_path);
+    }
+    return files_to_delete;
+}
+
+/// Remove expired entries from the snapshot-log array in metadata.
+/// Keeps the contiguous suffix of entries whose snapshot IDs are all retained,
+/// discarding any leading segment that references expired snapshots.
+static void trimSnapshotLog(
+    const Poco::JSON::Object::Ptr & metadata,
+    const std::set<Int64> & expired_snapshot_ids)
+{
+    if (!metadata->has(Iceberg::f_snapshot_log))
+        return;
+
+    auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    Int32 suffix_start = static_cast<Int32>(snapshot_log->size());
+    for (Int32 j = static_cast<Int32>(snapshot_log->size()) - 1; j >= 0; --j)
+    {
+        auto entry = snapshot_log->getObject(static_cast<UInt32>(j));
+        Int64 snap_id = entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        if (expired_snapshot_ids.contains(snap_id))
+            break;
+        suffix_start = j;
+    }
+    Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
+    for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
+        retained_log->add(snapshot_log->getObject(j));
+    metadata->set(Iceberg::f_snapshot_log, retained_log);
+}
+
+/// Expire old Iceberg snapshots following the spec's Snapshot Retention Policy.
+///
+/// The process:
+///   1. Read retention policy from table properties (with spec defaults).
+///   2. Build the snapshot parent graph and determine which snapshots to retain
+///      based on branch/tag refs and their min-snapshots-to-keep / max-snapshot-age-ms.
+///   3. If the caller provided expire_before_ms, it acts as an additional safety
+///      fuse — snapshots newer than this timestamp are never expired regardless
+///      of retention policy.
+///   4. Collect files exclusively owned by expired snapshots and delete them.
+///   5. Write updated metadata with optimistic concurrency (retry on conflict).
 void expireSnapshots(
     std::optional<Int64> expire_before_ms,
     ContextPtr context,
@@ -791,115 +1098,25 @@ void expireSnapshots(
         }
 
         Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+        if (current_snapshot_id < 0)
+        {
+            LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
+            return;
+        }
 
         auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
-
-        static constexpr Int64 DEFAULT_MAX_SNAPSHOT_AGE_MS = 432000000; // 5 days
-        static constexpr Int32 DEFAULT_MIN_SNAPSHOTS_TO_KEEP = 1;
-
-        std::optional<Int32> table_min_snapshots_to_keep;
-        std::optional<Int64> table_max_snapshot_age_ms;
-        std::optional<Int64> table_max_ref_age_ms;
-        if (metadata->has(Iceberg::f_properties))
-        {
-            auto props = metadata->getObject(Iceberg::f_properties);
-            if (props->has(Iceberg::f_min_snapshots_to_keep))
-                table_min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
-            if (props->has(Iceberg::f_max_snapshot_age_ms))
-                table_max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
-            if (props->has(Iceberg::f_max_ref_age_ms))
-                table_max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
-        }
-
-        std::unordered_map<Int64, Int64> parent_chain;
-        std::unordered_map<Int64, Int64> snapshot_timestamps;
-        for (UInt32 i = 0; i < snapshots->size(); ++i)
-        {
-            auto snapshot = snapshots->getObject(i);
-            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-            snapshot_timestamps[snap_id] = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
-            if (snapshot->has(Iceberg::f_parent_snapshot_id) && !snapshot->isNull(Iceberg::f_parent_snapshot_id))
-                parent_chain[snap_id] = snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
-        }
-
         auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        Int64 effective_expire_before_ms = expire_before_ms.value_or(
-            now_ms - table_max_snapshot_age_ms.value_or(DEFAULT_MAX_SNAPSHOT_AGE_MS));
-
-        auto walk_branch_ancestors = [&](Int64 head_id, Int32 min_keep, std::optional<Int64> max_age_ms, std::set<Int64> & retained)
-        {
-            Int64 walk_id = head_id;
-            Int32 count = 0;
-            while (snapshot_timestamps.contains(walk_id))
-            {
-                bool within_min_keep = (count < min_keep);
-                bool within_max_age = max_age_ms.has_value() && (now_ms - snapshot_timestamps[walk_id] < *max_age_ms);
-                if (!within_min_keep && !within_max_age)
-                    break;
-                retained.insert(walk_id);
-                ++count;
-                auto it = parent_chain.find(walk_id);
-                if (it == parent_chain.end())
-                    break;
-                walk_id = it->second;
-            }
-        };
-
-        std::set<Int64> retention_retained_ids;
-        retention_retained_ids.insert(current_snapshot_id);
-
-        Int32 main_min_keep = table_min_snapshots_to_keep.value_or(DEFAULT_MIN_SNAPSHOTS_TO_KEEP);
-        walk_branch_ancestors(current_snapshot_id, main_min_keep, table_max_snapshot_age_ms, retention_retained_ids);
-
-        Strings expired_ref_names;
-        if (metadata->has(Iceberg::f_refs))
-        {
-            auto refs = metadata->getObject(Iceberg::f_refs);
-            for (const auto & ref_name : refs->getNames())
-            {
-                auto ref_obj = refs->getObject(ref_name);
-                Int64 ref_snap_id = ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-                String ref_type = ref_obj->getValue<String>("type");
-
-                std::optional<Int64> ref_max_ref_age;
-                if (ref_obj->has(Iceberg::f_max_ref_age_ms))
-                    ref_max_ref_age = ref_obj->getValue<Int64>(Iceberg::f_max_ref_age_ms);
-                else
-                    ref_max_ref_age = table_max_ref_age_ms;
-
-                bool is_main = (ref_name == "main");
-                bool ref_expired = false;
-                if (!is_main && ref_max_ref_age && snapshot_timestamps.contains(ref_snap_id)
-                    && (now_ms - snapshot_timestamps[ref_snap_id]) >= *ref_max_ref_age)
-                {
-                    ref_expired = true;
-                    expired_ref_names.push_back(ref_name);
-                }
-
-                if (ref_type == "branch" && !ref_expired)
-                {
-                    Int32 min_keep = ref_obj->has(Iceberg::f_min_snapshots_to_keep)
-                        ? ref_obj->getValue<Int32>(Iceberg::f_min_snapshots_to_keep)
-                        : main_min_keep;
-                    std::optional<Int64> max_age = ref_obj->has(Iceberg::f_max_snapshot_age_ms)
-                        ? std::optional<Int64>(ref_obj->getValue<Int64>(Iceberg::f_max_snapshot_age_ms))
-                        : table_max_snapshot_age_ms;
-                    walk_branch_ancestors(ref_snap_id, min_keep, max_age, retention_retained_ids);
-                }
-                else if (ref_type == "tag" && !ref_expired)
-                {
-                    retention_retained_ids.insert(ref_snap_id);
-                }
-            }
-        }
+        auto policy = readRetentionPolicy(metadata);
+        SnapshotGraph graph(snapshots);
+        auto [retention_retained_ids, expired_ref_names] = applyRetentionPolicy(metadata, current_snapshot_id, graph, policy, now_ms);
 
         for (const auto & ref_name : expired_ref_names)
-        {
-            auto refs = metadata->getObject(Iceberg::f_refs);
-            refs->remove(ref_name);
-        }
+            metadata->getObject(Iceberg::f_refs)->remove(ref_name);
 
+        /// 5. Expire any snapshot not in the set of snapshots to retain.
+        ///    If the user provided a timestamp argument, it acts as an
+        ///    additional fuse: never expire snapshots newer than it.
         Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
         std::set<Int64> expired_snapshot_ids;
         std::vector<String> expired_manifest_list_paths;
@@ -911,9 +1128,9 @@ void expireSnapshots(
             Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
 
             bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
-            bool is_newer = (snap_ts >= effective_expire_before_ms);
+            bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
 
-            if (is_retained_by_policy || is_newer)
+            if (is_retained_by_policy || is_protected_by_fuse)
             {
                 retained_snapshots->add(snapshot);
             }
@@ -935,127 +1152,17 @@ void expireSnapshots(
 
         std::set<String> retained_manifest_paths;
         std::set<String> retained_data_file_paths;
-
-        for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
-        {
-            auto snapshot = retained_snapshots->getObject(i);
-            if (!snapshot->has(Iceberg::f_manifest_list))
-                continue;
-
-            String manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
-            String storage_manifest_list_path = getProperFilePathFromMetadataInfo(
-                manifest_list_path, persistent_table_components.table_path, persistent_table_components.table_location);
-
-            auto manifest_keys = getManifestList(
-                object_storage, persistent_table_components, context, storage_manifest_list_path, log);
-
-            for (const auto & mf_key : manifest_keys)
-            {
-                retained_manifest_paths.insert(mf_key.manifest_file_path);
-
-                auto manifest_file = getManifestFile(
-                    object_storage, persistent_table_components, context, log,
-                    mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
-
-                for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
-                    retained_data_file_paths.insert(entry->file_path);
-
-                for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                    retained_data_file_paths.insert(entry->file_path);
-            }
-        }
-
         std::set<String> retained_manifest_list_paths;
-        for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
-        {
-            auto snapshot = retained_snapshots->getObject(i);
-            if (snapshot->has(Iceberg::f_manifest_list))
-                retained_manifest_list_paths.insert(snapshot->getValue<String>(Iceberg::f_manifest_list));
-        }
+        collectRetainedFiles(
+            retained_snapshots, object_storage, persistent_table_components, context, log,
+            retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
 
-        Strings files_to_delete;
-
-        for (const auto & ml_path : expired_manifest_list_paths)
-        {
-            if (retained_manifest_list_paths.contains(ml_path))
-                continue;
-
-            String storage_ml_path = getProperFilePathFromMetadataInfo(
-                ml_path, persistent_table_components.table_path, persistent_table_components.table_location);
-
-            ManifestFileCacheKeys manifest_keys;
-            try
-            {
-                manifest_keys = getManifestList(
-                    object_storage, persistent_table_components, context, storage_ml_path, log);
-            }
-            catch (...)
-            {
-                LOG_WARNING(log, "Failed to read manifest list {}, skipping", storage_ml_path);
-                continue;
-            }
-
-            for (const auto & mf_key : manifest_keys)
-            {
-                if (!retained_manifest_paths.contains(mf_key.manifest_file_path))
-                {
-                    Iceberg::ManifestFilePtr manifest_file;
-                    try
-                    {
-                        manifest_file = getManifestFile(
-                            object_storage, persistent_table_components, context, log,
-                            mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
-                    }
-                    catch (...)
-                    {
-                        LOG_WARNING(log, "Failed to read manifest file {}, skipping", mf_key.manifest_file_path);
-                        continue;
-                    }
-
-                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
-                    {
-                        if (!retained_data_file_paths.contains(entry->file_path))
-                            files_to_delete.push_back(entry->file_path);
-                    }
-
-                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                    {
-                        if (!retained_data_file_paths.contains(entry->file_path))
-                            files_to_delete.push_back(entry->file_path);
-                    }
-
-                    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-                    {
-                        if (!retained_data_file_paths.contains(entry->file_path))
-                            files_to_delete.push_back(entry->file_path);
-                    }
-
-                    files_to_delete.push_back(mf_key.manifest_file_path);
-                }
-            }
-
-            files_to_delete.push_back(storage_ml_path);
-        }
+        auto files_to_delete = collectOrphanedFiles(
+            expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
+            object_storage, persistent_table_components, context, log);
 
         metadata->set(Iceberg::f_snapshots, retained_snapshots);
-
-        if (metadata->has(Iceberg::f_snapshot_log))
-        {
-            auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
-            Int32 suffix_start = static_cast<Int32>(snapshot_log->size());
-            for (Int32 j = static_cast<Int32>(snapshot_log->size()) - 1; j >= 0; --j)
-            {
-                auto entry = snapshot_log->getObject(static_cast<UInt32>(j));
-                Int64 snap_id = entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-                if (expired_snapshot_ids.contains(snap_id))
-                    break;
-                suffix_start = j;
-            }
-            Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
-            for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
-                retained_log->add(snapshot_log->getObject(j));
-            metadata->set(Iceberg::f_snapshot_log, retained_log);
-        }
+        trimSnapshotLog(metadata, expired_snapshot_ids);
 
         auto now = std::chrono::system_clock::now();
         auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());

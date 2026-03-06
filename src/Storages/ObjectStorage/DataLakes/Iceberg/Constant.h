@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <limits>
 namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
@@ -62,6 +63,7 @@ DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
 DEFINE_ICEBERG_FIELD(refs);
 DEFINE_ICEBERG_FIELD(branch);
+DEFINE_ICEBERG_FIELD(tag);
 DEFINE_ICEBERG_FIELD(main);
 DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
@@ -142,4 +144,10 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
+
+/// Default values for snapshot retention policy per Iceberg configuration spec.
+/// See: https://iceberg.apache.org/docs/nightly/configuration/#table-behavior-properties
+constexpr Int32 default_min_snapshots_to_keep = 1;
+constexpr Int64 default_max_snapshot_age_ms = 432000000; // 5 days
+constexpr Int64 default_max_ref_age_ms = std::numeric_limits<Int64>::max(); // forever, main branch never expires
 }
