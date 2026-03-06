@@ -381,7 +381,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         {
             /// Always run query on peer server
             fmt::print(stdout, "Running query on peer server\n");
-            peer_success &= external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+            peer_success &= !external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
         }
         if (can_compare && fuzz_config->compare_success_results && peer_success != !have_error)
         {
@@ -866,7 +866,7 @@ bool Client::buzzHouse()
                     fuzz_config->outf << full_query2 << std::endl;
                     if (clickhouse_only)
                     {
-                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2) ? 0 : 1;
+                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
                     }
                     else
                     {
