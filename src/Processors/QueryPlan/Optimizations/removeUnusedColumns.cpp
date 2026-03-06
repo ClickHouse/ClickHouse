@@ -178,13 +178,22 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
 
         /// The child step may have extra columns in its output that the parent doesn't need
         /// (e.g. ReadFromMergeTree with FINAL must keep sort key / version columns).
-        /// If the parent is an ExpressionStep, absorb these extra columns as consumed DAG inputs
-        /// so the step's output is unchanged but input headers match.
+        /// Try two strategies:
+        ///   1. If the parent is an ExpressionStep, absorb the extra columns as consumed DAG
+        ///      inputs so the step's output is unchanged but input headers match.
+        ///   2. Otherwise (e.g. FilterStep), insert a discarding ExpressionStep between the
+        ///      parent and child to drop the extra columns.
         {
             const auto & current_parent_input = node.step->getInputHeaders()[child_id];
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
             if (child_output->columns() != current_parent_input->columns())
-                absorbExtraChildColumns(node, child_id);
+            {
+                if (!absorbExtraChildColumns(node, child_id))
+                {
+                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id))
+                        added_any_discarding_step = true;
+                }
+            }
         }
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
