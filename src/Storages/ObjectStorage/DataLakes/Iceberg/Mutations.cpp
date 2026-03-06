@@ -1096,6 +1096,7 @@ static void deleteOrphanedFiles(
         try
         {
             object_storage->removeObjectIfExists(StoredObject(file_path));
+            LOG_DEBUG(log, "Deleted orphaned file {}", file_path);
         }
         catch (...)
         {
@@ -1209,6 +1210,7 @@ void expireSnapshots(
                 compression_method,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
         {
+            LOG_WARNING(log, "Metadata commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
             continue;
         }
 
@@ -1228,6 +1230,7 @@ void expireSnapshots(
             }
         }
 
+        LOG_INFO(log, "Deleting {} orphaned files for {} expired snapshots", files_to_delete.size(), partition.expired_snapshot_ids.size());
         deleteOrphanedFiles(files_to_delete, object_storage, log);
         LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), files_to_delete.size());
         return;
