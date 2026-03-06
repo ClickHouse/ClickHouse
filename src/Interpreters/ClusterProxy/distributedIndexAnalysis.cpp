@@ -408,7 +408,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, std::move(connection), useful_indices);
-                    LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
+                    LOG_TRACE(logger, "Received {} parts from {} (index {})", parts_ranges.size(), replica_address, i);
                     res[i].second = std::move(parts_ranges);
                 }
                 catch (const Exception & e)
