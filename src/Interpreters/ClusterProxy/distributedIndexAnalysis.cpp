@@ -240,6 +240,7 @@ public:
     {
         auto cluster = context->getClusterForParallelReplicas();
         const auto & shard = cluster->getShardsInfo().at(0);
+        original_pool = shard.pool;
         remote_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
         auto local_pool = extractLocalReplica(remote_pools, shard.local_addresses);
         local_address = dynamic_cast<ConnectionPool &>(*local_pool.pool).getAddress();
@@ -295,6 +296,7 @@ public:
         }
         catch (...)
         {
+            propagateErrorCounts();
             if (local_thread.joinable())
                 local_thread.join();
             /// It make sense to re-throw exception from local resolving, since it should be more meaningful (it does not includes any network problems).
@@ -302,6 +304,8 @@ public:
                 std::rethrow_exception(*local_exception);
             throw;
         }
+
+        propagateErrorCounts();
 
         if (local_thread.joinable())
             local_thread.join();
@@ -315,6 +319,26 @@ public:
     }
 
 private:
+    /// Propagate error counts from the temporary remote_pool back to the original cluster pool,
+    /// so that subsequent queries can deprioritize replicas that failed during this analysis.
+    void propagateErrorCounts()
+    {
+#if defined(OS_LINUX)
+        if (hedged_factory.has_value())
+        {
+            /// Reset the factory so its destructor propagates error counts into remote_pool via updateSharedError.
+            hedged_factory.reset();
+
+            /// Copy error counts from remote_pool back into remote_pools entries
+            /// (which still have the original indices valid for original_pool).
+            auto statuses = remote_pool->getStatus();
+            for (size_t i = 0; i < remote_replicas; ++i)
+                remote_pools[i].error_count = statuses[i].error_count;
+        }
+#endif
+        original_pool->updateSharedError(remote_pools);
+    }
+
     /// Returns connections[remote_replicas], nullptr for unavailable.
     std::vector<Connection *> establishConnections(const ConnectionTimeouts & timeouts)
     {
@@ -396,6 +420,7 @@ private:
                     {
                         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaUnavailable);
                         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
+                        ++remote_pools[i].error_count;
                         tryLogCurrentException(logger, fmt::format("Cannot connect to {}. It will not participate in distributed index analysis", replica_addresses[i]), LogsLevel::warning);
                     }
                 }, Priority{});
@@ -776,6 +801,8 @@ private:
 
     std::string local_address;
     size_t local_original_index; /// Position among all replicas (for consistent hash distribution).
+    /// Original pool from cluster, used to propagate error counts back.
+    ConnectionPoolWithFailoverPtr original_pool;
     /// Combined pool with failover logic, used by `HedgedConnectionsFactory` for async connections.
     ConnectionPoolWithFailoverPtr remote_pool;
     /// Individual per-replica pools (local extracted), used by sync connections via `pool->get`, sorted by replica index.
