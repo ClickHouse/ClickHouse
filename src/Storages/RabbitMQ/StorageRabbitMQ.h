@@ -42,6 +42,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
