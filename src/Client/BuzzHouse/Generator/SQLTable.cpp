@@ -2901,7 +2901,6 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
             d.shard_name = "{shard}";
             d.replica_name = "{replica}";
         }
-        d.finishDatabaseSpecification(de);
     }
     else if (d.isBackupDatabase())
     {
@@ -2916,6 +2915,7 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
         de->add_params()->mutable_backup_out()->CopyFrom(backup.bout);
         d.backup_number = backup.bout.backup_number();
     }
+    d.finishDatabaseSpecification(de);
 }
 
 void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
