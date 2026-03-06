@@ -755,8 +755,6 @@ struct RetentionPolicy
     Int64 max_ref_age_ms = Iceberg::default_max_ref_age_ms;
 };
 
-/// Read retention policy from `properties` in table metadata JSON,
-/// falling back to spec defaults for any missing property.
 static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata)
 {
     RetentionPolicy policy;
@@ -773,8 +771,7 @@ static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metad
     return policy;
 }
 
-/// Directed graph of snapshot parent relationships, built from the `snapshots`
-/// array in table metadata. Provides ancestor traversal used by retention policy.
+/// Snapshot parent graph built from metadata, used for branch ancestor traversal.
 class SnapshotGraph
 {
 public:
@@ -826,8 +823,7 @@ private:
     std::unordered_map<Int64, Int64> timestamps;
 };
 
-/// Implements the Iceberg spec Snapshot Retention Policy (steps 1-5).
-/// Returns the set of snapshot IDs to retain and the list of ref names to remove.
+/// Apply Iceberg Snapshot Retention Policy. Returns (retained IDs, expired ref names).
 static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
     const Poco::JSON::Object::Ptr & metadata,
     Int64 current_snapshot_id,
@@ -835,11 +831,8 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
     const RetentionPolicy & policy,
     Int64 now_ms)
 {
-    /// 1. Start with an empty set of snapshots to retain.
     std::set<Int64> retained;
     Strings expired_ref_names;
-
-    /// 2-4. Process refs: expire old refs, walk branches, add tags.
     bool main_branch_walked = false;
     if (metadata->has(Iceberg::f_refs))
     {
@@ -883,16 +876,13 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
         }
     }
 
-    /// The spec says "There is always a main branch reference pointing to
-    /// the current-snapshot-id even if the refs map is null."
+    /// Main branch always exists, even if refs map is null.
     if (!main_branch_walked)
         graph.walkBranchAncestors(now_ms, current_snapshot_id, policy.min_snapshots_to_keep, policy.max_snapshot_age_ms, retained);
 
     return {retained, expired_ref_names};
 }
 
-/// Collect all data/delete file paths referenced by a single manifest file
-/// (data files, position deletes, and equality deletes).
 static void collectAllFilePaths(
     const ManifestFilePtr & manifest_file,
     std::set<String> & out)
@@ -905,10 +895,8 @@ static void collectAllFilePaths(
         out.insert(entry->file_path);
 }
 
-/// Walk retained snapshots and build the full set of file paths that must
-/// be kept: manifest lists, manifest files, and data/delete files.
-/// These sets are later used to decide which files from expired snapshots
-/// are safe to delete.
+/// Collect all file paths (manifest lists, manifests, data/delete files)
+/// referenced by retained snapshots.
 static void collectRetainedFiles(
     const Poco::JSON::Array::Ptr & retained_snapshots,
     ObjectStoragePtr object_storage,
@@ -945,9 +933,7 @@ static void collectRetainedFiles(
     }
 }
 
-/// Scan manifest lists of expired snapshots and collect files that are no
-/// longer referenced by any retained snapshot. Returns the list of storage
-/// paths (manifest lists, manifests, data/delete files) to be physically removed.
+/// Collect files from expired snapshots that are not referenced by any retained snapshot.
 static Strings collectOrphanedFiles(
     const std::vector<String> & expired_manifest_list_paths,
     const std::set<String> & retained_manifest_list_paths,
@@ -1015,9 +1001,7 @@ static Strings collectOrphanedFiles(
     return files_to_delete;
 }
 
-/// Remove expired entries from the snapshot-log array in metadata.
-/// Keeps the contiguous suffix of entries whose snapshot IDs are all retained,
-/// discarding any leading segment that references expired snapshots.
+/// Trim snapshot-log to the suffix of entries referencing only retained snapshots.
 static void trimSnapshotLog(
     const Poco::JSON::Object::Ptr & metadata,
     const std::set<Int64> & expired_snapshot_ids)
@@ -1039,6 +1023,79 @@ static void trimSnapshotLog(
     for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
         retained_log->add(snapshot_log->getObject(j));
     metadata->set(Iceberg::f_snapshot_log, retained_log);
+}
+
+struct SnapshotPartition
+{
+    Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
+    std::set<Int64> expired_snapshot_ids;
+    std::vector<String> expired_manifest_list_paths;
+};
+
+/// Split snapshots into retained (by policy or user fuse) and expired.
+static SnapshotPartition partitionSnapshots(
+    const Poco::JSON::Array::Ptr & snapshots,
+    const std::set<Int64> & retention_retained_ids,
+    std::optional<Int64> expire_before_ms)
+{
+    SnapshotPartition result;
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+
+        bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
+        bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
+
+        if (is_retained_by_policy || is_protected_by_fuse)
+        {
+            result.retained_snapshots->add(snapshot);
+        }
+        else
+        {
+            result.expired_snapshot_ids.insert(snap_id);
+            if (snapshot->has(Iceberg::f_manifest_list))
+                result.expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        }
+    }
+    return result;
+}
+
+/// Mutate metadata: remove expired refs, update snapshots, trim log, bump timestamp.
+static void updateMetadataForExpiration(
+    const Poco::JSON::Object::Ptr & metadata,
+    const Strings & expired_ref_names,
+    const Poco::JSON::Array::Ptr & retained_snapshots,
+    const std::set<Int64> & expired_snapshot_ids)
+{
+    for (const auto & ref_name : expired_ref_names)
+        metadata->getObject(Iceberg::f_refs)->remove(ref_name);
+
+    metadata->set(Iceberg::f_snapshots, retained_snapshots);
+    trimSnapshotLog(metadata, expired_snapshot_ids);
+
+    auto now = std::chrono::system_clock::now();
+    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    metadata->set(Iceberg::f_last_updated_ms, ms.count());
+}
+
+static void deleteOrphanedFiles(
+    const Strings & files_to_delete,
+    ObjectStoragePtr object_storage,
+    LoggerPtr log)
+{
+    for (const auto & file_path : files_to_delete)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(file_path));
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
+        }
+    }
 }
 
 /// Expire old Iceberg snapshots following the spec's Snapshot Retention Policy.
@@ -1110,71 +1167,32 @@ void expireSnapshots(
         auto policy = readRetentionPolicy(metadata);
         SnapshotGraph graph(snapshots);
         auto [retention_retained_ids, expired_ref_names] = applyRetentionPolicy(metadata, current_snapshot_id, graph, policy, now_ms);
+        auto partition = partitionSnapshots(snapshots, retention_retained_ids, expire_before_ms);
 
-        for (const auto & ref_name : expired_ref_names)
-            metadata->getObject(Iceberg::f_refs)->remove(ref_name);
-
-        /// 5. Expire any snapshot not in the set of snapshots to retain.
-        ///    If the user provided a timestamp argument, it acts as an
-        ///    additional fuse: never expire snapshots newer than it.
-        Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
-        std::set<Int64> expired_snapshot_ids;
-        std::vector<String> expired_manifest_list_paths;
-
-        for (UInt32 i = 0; i < snapshots->size(); ++i)
-        {
-            auto snapshot = snapshots->getObject(i);
-            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-            Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
-
-            bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
-            bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
-
-            if (is_retained_by_policy || is_protected_by_fuse)
-            {
-                retained_snapshots->add(snapshot);
-            }
-            else
-            {
-                expired_snapshot_ids.insert(snap_id);
-                if (snapshot->has(Iceberg::f_manifest_list))
-                    expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
-            }
-        }
-
-        if (expired_snapshot_ids.empty())
+        if (partition.expired_snapshot_ids.empty())
         {
             LOG_INFO(log, "No snapshots to expire");
             return;
         }
-
-        LOG_INFO(log, "Expiring {} snapshots", expired_snapshot_ids.size());
+        LOG_INFO(log, "Expiring {} snapshots", partition.expired_snapshot_ids.size());
 
         std::set<String> retained_manifest_paths;
         std::set<String> retained_data_file_paths;
         std::set<String> retained_manifest_list_paths;
         collectRetainedFiles(
-            retained_snapshots, object_storage, persistent_table_components, context, log,
+            partition.retained_snapshots, object_storage, persistent_table_components, context, log,
             retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
-
         auto files_to_delete = collectOrphanedFiles(
-            expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
+            partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
             object_storage, persistent_table_components, context, log);
 
-        metadata->set(Iceberg::f_snapshots, retained_snapshots);
-        trimSnapshotLog(metadata, expired_snapshot_ids);
-
-        auto now = std::chrono::system_clock::now();
-        auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-        metadata->set(Iceberg::f_last_updated_ms, ms.count());
+        updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
-
         auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
         auto hint = filename_generator.generateVersionHint();
-
         if (!writeMetadataFileAndVersionHint(
                 storage_metadata_name,
                 json_representation,
@@ -1204,19 +1222,8 @@ void expireSnapshots(
             }
         }
 
-        for (const auto & file_path : files_to_delete)
-        {
-            try
-            {
-                object_storage->removeObjectIfExists(StoredObject(file_path));
-            }
-            catch (...)
-            {
-                LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
-            }
-        }
-
-        LOG_INFO(log, "Expired {} snapshots, deleted {} files", expired_snapshot_ids.size(), files_to_delete.size());
+        deleteOrphanedFiles(files_to_delete, object_storage, log);
+        LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), files_to_delete.size());
         return;
     }
 
