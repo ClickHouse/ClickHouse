@@ -93,7 +93,7 @@ struct CaseFoldImpl
 {
     static constexpr auto name = "caseFoldUTF8";
 
-    static void init(FoldContext & ctx, bool aggressive, bool /* handle_special_i */)
+    static void init(FoldContext & ctx, bool aggressive, bool handle_special_i)
     {
         UErrorCode err = U_ZERO_ERROR;
         ctx.aggressive = aggressive;
@@ -109,6 +109,8 @@ struct CaseFoldImpl
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
         }
+
+        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
     /// Result is left in buf1.
@@ -147,7 +149,7 @@ struct AccentFoldImpl
 {
     static constexpr auto name = "accentFoldUTF8";
 
-    static void init(FoldContext & ctx, bool /* aggressive */, bool handle_special_i)
+    static void init(FoldContext & ctx, bool /* aggressive */, bool /* handle_special_i */)
     {
         UErrorCode err = U_ZERO_ERROR;
 
@@ -159,8 +161,6 @@ struct AccentFoldImpl
         ctx.nfd = unorm2_getNFDInstance(&err);
         if (U_FAILURE(err))
             throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFD normalizer: {}", u_errorName(err));
-
-        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
     /// Result is left in buf1.
@@ -180,7 +180,7 @@ struct FullFoldImpl
 {
     static constexpr auto name = "foldUTF8";
 
-    static void init(FoldContext & ctx, bool aggressive, bool handle_special_i)
+    static void init(FoldContext & ctx, bool aggressive, bool /* handle_special_i */)
     {
         UErrorCode err = U_ZERO_ERROR;
         ctx.aggressive = aggressive;
@@ -201,8 +201,6 @@ struct FullFoldImpl
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
         }
-
-        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
     /// Result is left in buf1.
@@ -324,7 +322,7 @@ template <typename Impl>
 class FunctionFoldUTF8 : public IFunction
 {
     static constexpr bool has_method_arg = std::is_same_v<Impl, CaseFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
-    static constexpr bool has_special_i_arg = std::is_same_v<Impl, AccentFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
+    static constexpr bool has_special_i_arg = std::is_same_v<Impl, CaseFoldImpl>;
     static constexpr size_t max_args = 1 + has_method_arg + has_special_i_arg;
 
 public:
@@ -456,40 +454,56 @@ REGISTER_FUNCTION(FoldUTF8)
     /// caseFoldUTF8
     FunctionDocumentation::Description case_desc = R"(
 Applies Unicode case folding to a UTF-8 string, converting it to a lowercase-like normalized form suitable for case-insensitive comparisons.
-Two methods are available: 'aggressive' (default) applies NFKC_Casefold normalization which also resolves compatibility equivalences;
-'conservative' applies NFC normalization followed by standard Unicode case folding.
+
+Two methods are available:
+- 'aggressive' (default): applies NFKC_Casefold normalization, which performs case folding and also resolves
+  Unicode compatibility equivalences — for example, ligatures like `ﬃ` are decomposed to `ffi`, and
+  circled numbers like `①` become `1`. This is faster as it uses a single ICU normalization pass.
+- 'conservative': applies NFC normalization followed by standard Unicode case folding, preserving the
+  visual form of compatibility characters (e.g. ligatures remain intact). This requires multiple ICU passes.
 )";
-    FunctionDocumentation::Syntax case_syntax = "caseFoldUTF8(str[, method])";
+    FunctionDocumentation::Syntax case_syntax = "caseFoldUTF8(str[, method][, handle_special_I])";
     FunctionDocumentation::Arguments case_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
-        {"method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}}
+        {"method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}},
+        {"handle_special_I", "Optional. 1 to exclude Turkish/Azerbaijani special I mapping (U_FOLD_CASE_EXCLUDE_SPECIAL_I). Default 0.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue case_ret = {"Case-folded UTF-8 string.", {"String"}};
-    FunctionDocumentation::Examples case_examples = {{
-        "Usage example",
-        "SELECT caseFoldUTF8('Straße'), caseFoldUTF8('Straße', 'conservative')",
+    FunctionDocumentation::Examples case_examples = {
+    {
+        "Basic case folding",
+        "SELECT caseFoldUTF8('Straße')",
         R"(
-┌─caseFoldUTF8('Straße')─┬─caseFoldUTF8('Straße', 'conservative')─┐
-│ strasse                 │ strasse                                 │
-└─────────────────────────┴─────────────────────────────────────────┘
+┌─caseFoldUTF8('Straße')─┐
+│ strasse                 │
+└─────────────────────────┘
+)"
+    },
+    {
+        "Aggressive vs conservative — ligature handling",
+        "SELECT caseFoldUTF8('ﬃ') AS aggressive, caseFoldUTF8('ﬃ', 'conservative') AS conservative",
+        R"(
+┌─aggressive─┬─conservative─┐
+│ ffi        │ ﬃ            │
+└────────────┴──────────────┘
 )"
     }};
-    FunctionDocumentation::IntroducedIn intro = {25, 6};
+    FunctionDocumentation::IntroducedIn intro = {26, 3};
     FunctionDocumentation::Category cat = FunctionDocumentation::Category::String;
     factory.registerFunction<FunctionCaseFoldUTF8>({case_desc, case_syntax, case_args, {}, case_ret, case_examples, intro, cat});
 
     /// accentFoldUTF8
     FunctionDocumentation::Description accent_desc = R"(
-Removes diacritical marks (accents) from a UTF-8 string by decomposing characters via NFD and stripping combining marks (Unicode category Mn), then recomposing via NFC.
+Removes diacritical marks (accents) from a UTF-8 string by decomposing characters via NFD,
+stripping combining marks (Unicode category Mn), then recomposing via NFC.
 )";
-    FunctionDocumentation::Syntax accent_syntax = "accentFoldUTF8(str[, handle_special_I])";
+    FunctionDocumentation::Syntax accent_syntax = "accentFoldUTF8(str)";
     FunctionDocumentation::Arguments accent_args = {
-        {"str", "UTF-8 encoded input string.", {"String"}},
-        {"handle_special_I", "Optional. 1 to enable Turkish/Azerbaijani special I handling. Default 0.", {"UInt8"}}
+        {"str", "UTF-8 encoded input string.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue accent_ret = {"UTF-8 string with diacritics removed.", {"String"}};
     FunctionDocumentation::Examples accent_examples = {{
-        "Usage example",
+        "Basic accent removal",
         "SELECT accentFoldUTF8('café résumé naïve')",
         R"(
 ┌─accentFoldUTF8('café résumé naïve')─┐
@@ -502,23 +516,41 @@ Removes diacritical marks (accents) from a UTF-8 string by decomposing character
     /// foldUTF8
     FunctionDocumentation::Description fold_desc = R"(
 Applies both case folding and accent (diacritical mark) removal to a UTF-8 string.
-'aggressive' mode (default) applies NFKC_Casefold, then NFD + strip combining marks + NFC.
-'conservative' mode applies NFC, case fold, NFD, strip combining marks, then NFC.
+This combines the behavior of `caseFoldUTF8` and `accentFoldUTF8` into a single function.
+
+Two methods are available:
+- 'aggressive' (default): applies NFKC_Casefold (case fold + compatibility decomposition in one pass),
+  then NFD + strip combining marks + NFC. Faster, but decomposes compatibility characters like ligatures.
+- 'conservative': applies NFC, case fold, NFD, strip combining marks, then NFC.
+  Preserves compatibility characters like ligatures while still folding case and removing accents.
+
+See the caseFoldUTF8 and accentFoldUTF8 functions for more info on each step. The result of this function will be equivalent
+to accentFoldUTF8(caseFoldUTF8(input)) however foldUTF8(input) will be slightly faster due to avoiding a redundant normalization step.
+Note that there is no handle_special_I parameter since the special I would be stripped of any accents anyway.
 )";
-    FunctionDocumentation::Syntax fold_syntax = "foldUTF8(str[, case_fold_method][, handle_special_I])";
+    FunctionDocumentation::Syntax fold_syntax = "foldUTF8(str[, case_fold_method])";
     FunctionDocumentation::Arguments fold_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
-        {"case_fold_method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}},
-        {"handle_special_I", "Optional. 1 to enable Turkish/Azerbaijani special I handling. Default 0.", {"UInt8"}}
+        {"case_fold_method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue fold_ret = {"Case-folded and accent-stripped UTF-8 string.", {"String"}};
-    FunctionDocumentation::Examples fold_examples = {{
-        "Usage example",
+    FunctionDocumentation::Examples fold_examples = {
+    {
+        "Basic usage",
         "SELECT foldUTF8('Café Résumé')",
         R"(
 ┌─foldUTF8('Café Résumé')─┐
 │ cafe resume               │
 └───────────────────────────┘
+)"
+    },
+    {
+        "Aggressive vs conservative — ligature with accents",
+        "SELECT foldUTF8('Ǆeﬃcient') AS aggressive, foldUTF8('Ǆeﬃcient', 'conservative') AS conservative",
+        R"(
+┌─aggressive─┬─conservative─┐
+│ dzefficient │ dzeﬃcient   │
+└─────────────┴──────────────┘
 )"
     }};
     factory.registerFunction<FunctionFullFoldUTF8>({fold_desc, fold_syntax, fold_args, {}, fold_ret, fold_examples, intro, cat});

@@ -19,7 +19,8 @@ strasse
 -- foldUTF8 conservative
 cafe resume
 hello world
--- foldUTF8 with special I handling
+-- caseFoldUTF8 with special I handling
+i̇stanbul
 istanbul
 -- empty strings
 
