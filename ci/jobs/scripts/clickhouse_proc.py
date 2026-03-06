@@ -9,6 +9,7 @@ import traceback
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from typing import List
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
@@ -16,7 +17,8 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
+repo_dir = Utils.cwd()
+temp_dir = f"{repo_dir}/ci/tmp"
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -47,7 +49,6 @@ class ClickHouseProc:
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
-    GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -69,6 +70,8 @@ class ClickHouseProc:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
+        self.aes_key = f"{temp_dir}/aes.key"
+
         # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
@@ -170,9 +173,7 @@ class ClickHouseProc:
             self.kafka_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
-        )
+        print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
             res = Shell.check(
@@ -592,9 +593,7 @@ profiles:
             )
             # Wait for minio to be ready
             for _ in range(30):
-                if Shell.check(
-                    "/mc ls clickminio/test", verbose=False
-                ):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
                     status = "success"
                     break
                 time.sleep(1)
@@ -814,12 +813,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                if Path(f"{self.aes_key}.rsa").exists():
+                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -843,16 +842,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
         return res
 
-    def _collect_core_dumps(self):
-        # Find at most 3 core.* files in the current directory (non-recursive)
-        cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
-        core_files = Shell.get_output(cmd, verbose=True).splitlines()
-        if len(core_files) > 3:
-            print(
-                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
-            )
-            core_files = core_files[0:3]
-        return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
+    def _collect_core_dumps(self) -> List[str]:
+        cores = list(Path(temp_dir).glob("run_r*/core.*"))[:3]
+        return [
+            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
+            for f in cores
+        ]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1033,13 +1028,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: dmesg not enabled")
         else:
             results.append(oom_check)
-        if Path(self.GDB_LOG).is_file():
-            results.append(
-                Result.from_commands_run(
-                    name="Found signal in gdb.log",
-                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
-                )
-            )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
@@ -1047,84 +1035,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             else:
                 result.set_status(Result.StatusExtended.FAIL)
         return results
-
-    def collect_core_dumps(self):
-        Shell.check(
-            f"find {self.run_path0}/.. -type f -maxdepth 1 -name 'core.*' | while read -r core; do zstd --threads=0 \"$core\"; done"
-        )
-        core_files = []
-        for core in glob.iglob(f"{self.run_path0}/../core.*.zst"):
-            core_files.append(core)
-        return core_files
-
-    def _prepare_gdb_script(self):
-        rtmin = Shell.get_output("kill -l SIGRTMIN")
-        script = """\
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG{RTMIN} nostop noprint pass
-info signals
-# safeExit is called if graceful shutdown times out. Print stack traces in that case.
-break safeExit
-continue
-thread apply all backtrace
-backtrace full
-info registers
-p "top 1 KiB of the stack:"
-p/x *(uint64_t[128]*)"'$sp'"
-maintenance info sections
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-""".format(RTMIN=rtmin)
-        with open(f"{temp_dir}/script.gdb", "w") as file:
-            file.write(script)
-        return f"{temp_dir}/script.gdb"
-
-    def attach_gdb(self):
-        Shell.check(f"rm {self.GDB_LOG}", verbose=True)
-        script_path = self._prepare_gdb_script()
-        assert self.pid, "ClickHouse not started"
-        # FIXME Hung check may work incorrectly because of attached gdb
-        # We cannot attach another gdb to get stacktraces if some queries hung
-        command = f"gdb -batch -command {script_path} -p {self.pid}"
-        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
-        with open(self.GDB_LOG, "w") as log_file:
-            self.gdb_proc = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=log_file,
-                stderr=log_file,
-            )
-        time.sleep(2)
-        time.sleep(1000)
-        self.gdb_proc.poll()
-        attached = False
-        if self.gdb_proc.returncode is not None:
-            print("ERROR: Failed to attach gdb")
-        else:
-            for i in range(60):
-                attached = Shell.check(
-                    f"clickhouse-client --query \"SELECT 'Connected to clickhouse-server after attaching gdb'\"",
-                    verbose=True,
-                )
-                if attached:
-                    break
-                time.sleep(1)
-        if not attached:
-            self.debug_artifacts += [script_path]
-        return attached
 
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.
