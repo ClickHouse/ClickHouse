@@ -50,6 +50,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -654,7 +655,7 @@ private:
                         continue;
                     }
 
-                    break;
+                    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected type: {}", static_cast<int>(result.getType()));
                 }
 
                 LOG_TRACE(logger, "Received {} parts from {}: {}", res[i].second.size(), replica_addresses[i], res[i].second);
