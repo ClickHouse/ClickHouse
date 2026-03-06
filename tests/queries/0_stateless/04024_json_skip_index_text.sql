@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Test: text (inverted/GIN) skip index support for JSONAllPaths on JSON data type
 --
 -- Data layout: 2 parts x 2 granules each (index_granularity = 1, ORDER BY tuple()).
