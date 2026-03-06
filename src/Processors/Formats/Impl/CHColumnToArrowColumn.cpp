@@ -550,10 +550,11 @@ namespace DB
         const auto * type_array = assert_cast<const DataTypeArray *>(column_type.get());
 
         const auto column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column_array->getOffsetsColumn()).getPtr();
-        size_t column_size = column_offsets->size();
-        auto offsets = extractIndexes<int32_t>(column_offsets, start, end, false);
-        size_t values_start = start >= column_size ? offsets.back() : (start == 0 ? 0 : offsets[start-1]);
-        size_t values_end = end >= column_size ? offsets.back() : (end == 0 ? 0 : offsets[end-1]);
+        size_t offsets_start = start > 0 ? start - 1 : 0;
+        size_t offsets_view_start = start > 0 ? 1 : 0;
+        auto offsets = extractIndexes<int32_t>(column_offsets, offsets_start, end, false);
+        size_t values_start = start == 0 ? 0 : offsets[0];
+        size_t values_end = offsets.empty() ? values_start : offsets.back();
 
         arrow::ListBuilder & builder = assert_cast<arrow::ListBuilder &>(*array_builder);
 
@@ -563,8 +564,8 @@ namespace DB
         arrow::Int32Builder offsets_builder;
         status = offsets_builder.Append(0);
         checkStatus(status, column_name, format_name);
-        size_t dif = start == 0 ? 0 : offsets[start-1];
-        for (size_t i = start; i < end; ++i)
+        size_t dif = values_start;
+        for (size_t i = offsets_view_start; i < offsets.size(); ++i)
         {
             status = offsets_builder.Append(static_cast<int>(offsets[i] - dif));
             checkStatus(status, column_name, format_name);
