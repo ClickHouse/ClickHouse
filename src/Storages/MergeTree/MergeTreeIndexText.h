@@ -304,13 +304,6 @@ public:
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    /// Constructor from deserialized state.
-    TextIndexAnalyzer(
-        const MergeTreeIndexConditionText & condition_text,
-        TokenToPostingsInfosMap token_infos_,
-        TokenToPostingsMap token_postings_,
-        NameSet missing_tokens_);
-
     bool hasFailedQueries() const { return has_failed_queries; }
     const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
     const TokenToPostingsMap & getTokenPostings() const { return token_postings; }
