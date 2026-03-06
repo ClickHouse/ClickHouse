@@ -1,5 +1,6 @@
 import dataclasses
 import glob
+import hashlib
 import json
 import os
 import re
@@ -313,6 +314,18 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            # Derive a stable container name from the worktree path and job name
+            # so that different jobs (or the same job in different worktrees)
+            # never share a name, while the name is deterministic enough to
+            # allow cleanup of stale containers from previous runs.
+            container_name = (
+                "praktika_"
+                + hashlib.sha1(
+                    (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
+                ).hexdigest()[:12]
+            )
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
             workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
@@ -327,13 +340,25 @@ class Runner:
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
                     workdir = ""
-            if not Shell.check(
-                "if docker ps -a --format '{{.Names}}' | grep -qx praktika; then docker rm -f praktika; fi",
-                verbose=True,
+            if Shell.check(
+                f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
             ):
                 raise RuntimeError(
-                    "Failed to remove existing docker container 'praktika'"
+                    f"Docker container '{container_name}' is already running. "
+                    f"Another instance of job [{job.name}] may be active in this worktree."
                 )
+            if Shell.check(
+                f"docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                print(
+                    f"Found stopped container '{container_name}' from a previous run — removing it"
+                )
+                if not Shell.check(f"docker rm {container_name}", verbose=True):
+                    raise RuntimeError(
+                        f"Failed to remove stopped container '{container_name}'"
+                    )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -349,7 +374,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
