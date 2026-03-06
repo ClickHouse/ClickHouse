@@ -294,11 +294,11 @@ std::optional<DataLakeTableStateSnapshot> PaimonMetadata::getTableStateSnapshot(
 }
 
 std::unique_ptr<StorageInMemoryMetadata> PaimonMetadata::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & snapshot, ContextPtr /*local_context*/) const
+    const DataLakeTableStateSnapshot & state, ContextPtr /*local_context*/) const
 {
-    chassert(std::holds_alternative<Paimon::TableStateSnapshot>(snapshot));
+    chassert(std::holds_alternative<Paimon::TableStateSnapshot>(state));
 
-    const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&snapshot);
+    const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&state);
     if (!paimon_state)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Paimon::TableStateSnapshot in DataLakeTableStateSnapshot");
 
@@ -315,7 +315,7 @@ std::unique_ptr<StorageInMemoryMetadata> PaimonMetadata::buildStorageMetadataFro
 
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(ColumnsDescription{*columns});
-    result->setDataLakeTableState(snapshot);
+    result->setDataLakeTableState(state);
     return result;
 }
 
