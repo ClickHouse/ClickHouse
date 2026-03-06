@@ -63,7 +63,7 @@ void QueryAliasesMatcher<T>::visit(const ASTSelectQuery & select, const ASTPtr &
 
     for (auto & child : with->children)
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
-            ast_with_alias->prefer_alias_to_column_name = true;
+            ast_with_alias->setPreferAliasToColumnName(true);
 }
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
@@ -110,7 +110,7 @@ void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const AST
     else
         visitOther(ast, aliases);
 
-    subquery.prefer_alias_to_column_name = true;
+    subquery.setPreferAliasToColumnName(true);
 }
 
 template <typename T>
@@ -147,7 +147,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
         if (startsWith(alias, dummy_subquery_name_prefix))
-            ast_with_alias->prefer_alias_to_column_name = true;
+            ast_with_alias->setPreferAliasToColumnName(true);
     }
 }
 

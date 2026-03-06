@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Set.h>
@@ -42,7 +43,7 @@ public:
     virtual void insert(ColumnPtr values) = 0;
 
     /// No more insert()-s after this call, only find()-s
-    virtual void finishInsert() = 0;
+    void finishInsert();
 
     /// Looks up each value and returns column of Bool-s
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
@@ -70,6 +71,8 @@ protected:
 
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
+
+    virtual void finishInsertImpl() = 0;
 
     virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
 
@@ -103,8 +106,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(filter_column_target_type->isNullable() ||
-            filter_column_target_type->isLowCardinalityNullable() ||
+        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
             WhichDataType(filter_column_target_type).isDynamic())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
@@ -127,13 +129,8 @@ public:
         is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
     }
 
-    void finishInsert() override
+    void finishInsertImpl() override
     {
-        if (filters_to_merge != 0)
-            return;
-
-        inserts_are_finished = true;
-
         exact_values->finishInsert();
 
         /// If the set is empty just return Const False column
@@ -210,7 +207,7 @@ public:
 
     void merge(const IRuntimeFilter * source) override;
 
-    void finishInsert() override;
+    void finishInsertImpl() override;
 };
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
@@ -251,7 +248,7 @@ public:
     void insert(ColumnPtr values) override;
 
     /// No more insert()-s after this call, only find()-s
-    void finishInsert() override;
+    void finishInsertImpl() override;
 
     /// Looks up each value and returns column of Bool-s
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;

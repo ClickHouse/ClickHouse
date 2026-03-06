@@ -18,6 +18,7 @@ public:
     ExpressionStep(const ExpressionStep & other)
         : ITransformingStep(other)
         , actions_dag(other.actions_dag.clone())
+        , prevent_input_removal(other.prevent_input_removal)
     {}
 
     String getName() const override { return "Expression"; }
@@ -47,10 +48,16 @@ public:
     RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
+    /// Prevent future input removal by removeUnusedColumns.
+    /// Used when extra columns were absorbed from a child step that cannot reduce its output
+    /// (e.g., ReadFromMergeTree with FINAL must keep sort key columns).
+    void setPreventInputRemoval() { prevent_input_removal = true; }
+
 private:
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
+    bool prevent_input_removal = false;
 };
 
 }

@@ -10,6 +10,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/AlterCommands.h>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -47,8 +51,15 @@ BlockIO InterpreterDropIndexQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {}, std::move(guard));
     }
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
+    {
+        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
+    }
+#endif
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
     if (table->isStaticStorage())

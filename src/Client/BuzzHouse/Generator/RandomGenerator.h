@@ -20,20 +20,36 @@ private:
 
     std::uniform_int_distribution<int8_t> ints8;
 
-    std::uniform_int_distribution<uint8_t> uints8, digits, hex_digits_dist;
+    std::uniform_int_distribution<uint8_t> uints8;
+    std::uniform_int_distribution<uint8_t> digits;
+    std::uniform_int_distribution<uint8_t> hex_digits_dist;
 
     std::uniform_int_distribution<int16_t> ints16;
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32, time_hours, second_offsets;
+    std::uniform_int_distribution<int32_t> ints32;
+    std::uniform_int_distribution<int32_t> time_hours;
+    std::uniform_int_distribution<int32_t> second_offsets;
 
-    std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes, subseconds, strlens;
+    std::uniform_int_distribution<uint32_t> uints32;
+    std::uniform_int_distribution<uint32_t> dist1;
+    std::uniform_int_distribution<uint32_t> dist2;
+    std::uniform_int_distribution<uint32_t> dist3;
+    std::uniform_int_distribution<uint32_t> dist4;
+    std::uniform_int_distribution<uint32_t> date_years;
+    std::uniform_int_distribution<uint32_t> datetime_years;
+    std::uniform_int_distribution<uint32_t> datetime64_years;
+    std::uniform_int_distribution<uint32_t> months;
+    std::uniform_int_distribution<uint32_t> hours;
+    std::uniform_int_distribution<uint32_t> minutes;
+    std::uniform_int_distribution<uint32_t> subseconds;
+    std::uniform_int_distribution<uint32_t> strlens;
 
     std::uniform_int_distribution<int64_t> ints64;
 
-    std::uniform_int_distribution<uint64_t> uints64, full_range;
+    std::uniform_int_distribution<uint64_t> uints64;
+    std::uniform_int_distribution<uint64_t> full_range;
 
     std::uniform_real_distribution<double> zero_one;
 
@@ -66,6 +82,7 @@ private:
 
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
+        "00", /// Null byte
         "FF",
         "C328",
         "A0A1",
@@ -80,7 +97,25 @@ private:
         "C328FF",
         "AAC328"};
 
-    const DB::Strings jcols{"", "_", ".", "1", "叫", "c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{
+        "_",
+        ".",
+        "1",
+        "叫",
+        "c0",
+        "c1",
+        "c0.c1",
+        "😆",
+        "😉😉",
+        "123",
+        "0",
+        "a.b.c",
+        "a.b.c.d",
+        "select",
+        "from",
+        "where",
+        "key with space",
+        "key-with-dash"};
 
 public:
     pcg64_fast generator;
@@ -107,7 +142,7 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
-        , subseconds(0, UINT32_C(1000000000))
+        , subseconds(0, UINT32_C(999999999))
         , strlens(min_string_length, max_string_length)
         , ints64(limited ? -50 : std::numeric_limits<int64_t>::min(), limited ? 50 : std::numeric_limits<int64_t>::max())
         , uints64(limited ? 0 : std::numeric_limits<uint64_t>::min(), limited ? 100 : std::numeric_limits<uint64_t>::max())
@@ -117,9 +152,71 @@ public:
     {
     }
 
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
+    const DB::Strings nasty_strings{
+        "a\"a",
+        "b\\tb",
+        "c\\nc",
+        "d\\'d",
+        "e e",
+        "",
+        "😉",
+        "\"",
+        "\\'",
+        "\\t",
+        "\\n",
+        "--",
+        "0",
+        "1",
+        "-1",
+        "{",
+        "}",
+        "(",
+        ")",
+        "[",
+        "]",
+        ",",
+        ".",
+        ";",
+        ":",
+        "\\\\",
+        "/",
+        "_",
+        "%",
+        "*",
+        "\\0",
+        "{}",
+        "[]",
+        "()",
+        "null",
+        "NULL",
+        "TRUE",
+        "叫",
+        "FALSE",
+        /// Format string probes
+        "%s",
+        "%d",
+        "%n",
+        "{0}",
+        "{{}}",
+        /// Numeric-looking strings (test implicit casts)
+        "NaN",
+        "Inf",
+        "-Inf",
+        "1e5",
+        "1.0",
+        "0.0",
+        /// Date/time-looking strings (test type coercions)
+        "2024-01-01",
+        "00:00:00",
+        "1970-01-01 00:00:00",
+        /// Windows line ending, other special whitespace
+        "\\r\\n",
+        "\\r",
+        /// Extra punctuation useful for parser probing
+        "?",
+        "@",
+        "#",
+        "$"};
 
     uint64_t getSeed() const;
 

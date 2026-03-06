@@ -14,8 +14,7 @@ except (ImportError, AssertionError):
     )
     from jwt import jwk_from_pem, JWT
 
-from ci.praktika.info import Info
-from ci.praktika.utils import Shell
+from praktika.utils import Shell
 
 
 class GHAuth:

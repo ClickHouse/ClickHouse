@@ -23,6 +23,11 @@ def test_memory_limit_success():
             "rather than failing over the memory limit"
         )
 
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer uses more memory, making precise memory limit testing unreliable"
+        )
+
     node.query(
         "CREATE TABLE test_merge_oom ENGINE=AggregatingMergeTree ORDER BY id EMPTY AS SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap(x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(20000)"
     )

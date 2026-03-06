@@ -195,6 +195,9 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
+            if (name_parts[i].empty())
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Empty Identifier part after parameter {} substitution",
+                    backQuote(ast_param.name));
             replaced_parameter = true;
         }
     }

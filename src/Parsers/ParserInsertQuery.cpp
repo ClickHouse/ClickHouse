@@ -112,17 +112,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    Pos before_lparen = pos;
+
     /// Is there a list of columns
     if (s_lparen.ignore(pos, expected))
     {
         if (!columns_p.parse(pos, columns, expected))
-            return false;
+        {
+            /// Column list parsing failed entirely (e.g. "((SELECT ..." where the second '(' is not a valid column name).
+            /// Rewind to before the '(' so it can be parsed as part of a SELECT query later.
+            columns.reset();
+            pos = before_lparen;
+        }
+        else
+        {
+            /// Optional trailing comma
+            ParserToken(TokenType::Comma).ignore(pos);
 
-        /// Optional trailing comma
-        ParserToken(TokenType::Comma).ignore(pos);
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
+            /// If this fails, we want to rewind to before the lparen so we can later check for (SELECT ...)
+            if (!s_rparen.ignore(pos, expected))
+            {
+                columns.reset();
+                pos = before_lparen;
+            }
+        }
     }
 
     /// Check if file is a source of data.

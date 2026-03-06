@@ -53,6 +53,9 @@ struct ASTTableExpression : public IAST
     ASTPtr sample_size;
     ASTPtr sample_offset;
 
+    /// Column aliases for the table expression (AS t(a, b))
+    ASTPtr column_aliases;
+
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;

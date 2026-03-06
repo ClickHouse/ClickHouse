@@ -2,6 +2,7 @@
 
 #include <sys/mman.h>
 #include <Common/Allocator.h>
+#include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
@@ -131,6 +132,25 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
     return result;
 }
 
+PageCache::MappedPtr PageCache::get(const PageCacheKey & key, bool inject_eviction)
+{
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+
+    if (inject_eviction && thread_local_rng() % 10 == 0)
+        return nullptr;
+
+    Key key_hash = key.hash();
+    Shard & shard = *shards[getShardIdx(key_hash)];
+
+    const auto result = shard.get(key_hash);
+
+    /// Count only hits. On miss, the caller would normally call getOrSet, which will count the miss.
+    if (result)
+        ProfileEvents::increment(ProfileEvents::PageCacheHits);
+
+    return result;
+}
+
 bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
 {
     /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.
@@ -241,7 +261,7 @@ PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(
         blocker.emplace();
 
     /// Allow throwing out-of-memory exceptions from here.
-    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size));
+    m_data = reinterpret_cast<char *>(JemallocCacheAllocator().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
 }
 
 PageCacheCell::~PageCacheCell()
@@ -249,7 +269,7 @@ PageCacheCell::~PageCacheCell()
     std::optional<MemoryTrackerBlockerInThread> blocker;
     if (!m_temporary)
         blocker.emplace();
-    Allocator<false>().free(m_data, m_size);
+    JemallocCacheAllocator().free(m_data, m_size);
 }
 
 }

@@ -59,7 +59,7 @@ $CLICKHOUSE_CLIENT -q """
         AND query_id = '$same_query_not_finish'
         AND query LIKE 'SELECT%'
         AND current_database = currentDatabase();
-    SELECT if(count() > 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '$same_query_not_finish';
+    SELECT if(count() > 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$same_query_not_finish';
 """
 
 # We check that there's enough metrics collected by the second query. Note we cannot really
@@ -76,5 +76,5 @@ $CLICKHOUSE_CLIENT -q """
         AND query_id = '$same_query_finish'
         AND query LIKE 'SELECT%'
         AND current_database = currentDatabase();
-    SELECT if(count() >= 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '$same_query_finish';
+    SELECT if(count() >= 1, 'ok', 'error') FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$same_query_finish';
 """

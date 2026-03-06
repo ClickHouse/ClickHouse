@@ -38,4 +38,4 @@ from (
     ) A
     LEFT JOIN (
         select '1' as `字段b`
-    ) B ON 1 = 1
+    ) B ON 1 = 1;

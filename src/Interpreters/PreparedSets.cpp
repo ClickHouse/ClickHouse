@@ -179,6 +179,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
+void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
+{
+    if (set->key != set_and_key->key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to exchange sets with different keys: {} vs {}", set->key, set_and_key->key);
+    set_and_key = std::move(set);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
+{
+    SetAndKeyPtr ret;
+    std::swap(ret, set_and_key);
+    return ret;
+}
+
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())

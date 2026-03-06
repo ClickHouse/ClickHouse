@@ -14,6 +14,7 @@ from pyspark.sql.types import (
     StringType,
 )
 from pyspark.sql.window import Window
+from pyspark.sql.functions import expr
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import (
@@ -24,13 +25,14 @@ from helpers.s3_tools import (
     S3Downloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 from typing import Optional, Any
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("iceberg_utils")
         .config(
@@ -46,6 +48,14 @@ def get_spark():
         )
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.master("local").getOrCreate()
 
 
@@ -95,7 +105,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -183,6 +195,30 @@ def generate_data(spark, start, end):
     )
 
     df = a.join(b, on=["row_index"]).drop("row_index")
+    return df
+
+def generate_data_complex(spark, start, end, div):
+    a = spark.range(start, end, 1).toDF("a")
+    b = spark.range(start + 1, end + 1, 1).toDF("b")
+    c = spark.range(start + end, end + end, 1).toDF("c")
+
+    a = a.withColumn("a", expr(f"a div {div}"))
+    b = b.withColumn("b", expr(f"b div {div}"))
+    c = c.withColumn("c", expr(f"c div {div}"))
+
+    b = b.withColumn("b", b["b"].cast(StringType()))
+
+    a = a.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    b = b.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    c = c.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+
+    df = a.join(b, on=["row_index"]).join(c, on=["row_index"]).drop("row_index")
     return df
 
 

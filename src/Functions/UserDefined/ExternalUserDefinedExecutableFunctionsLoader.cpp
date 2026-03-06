@@ -1,9 +1,10 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
-#include <boost/algorithm/string/split.hpp>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <boost/algorithm/string/split.hpp>
+#include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -158,7 +159,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (!execute_direct && !parameters.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
 
-    std::vector<String> command_arguments;
+    VectorWithMemoryTracking<String> command_arguments;
 
     if (execute_direct)
     {

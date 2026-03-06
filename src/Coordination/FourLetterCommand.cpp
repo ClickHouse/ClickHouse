@@ -37,6 +37,8 @@ String formatZxid(int64_t zxid)
     String hex = getHexUIntLowercase(zxid);
     /// without leading zeros
     trimLeft(hex, '0');
+    if (hex.empty())
+        hex = "0";
     return "0x" + hex;
 }
 
@@ -341,8 +343,10 @@ String MonitorCommand::run()
 
     if (keeper_info.is_leader)
     {
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();

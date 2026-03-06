@@ -87,7 +87,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> FractionalLimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

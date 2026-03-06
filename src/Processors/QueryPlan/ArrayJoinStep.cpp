@@ -107,7 +107,7 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

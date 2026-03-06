@@ -106,14 +106,14 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 }
 
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
     ISerialization::SubstreamData nested_data(nested_type->getDefaultSerialization());
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
 
-    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, throw_if_null);
+    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, initial_array_level, throw_if_null);
     if (!nested_subcolumn_data)
         return nullptr;
 

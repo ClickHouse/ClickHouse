@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>

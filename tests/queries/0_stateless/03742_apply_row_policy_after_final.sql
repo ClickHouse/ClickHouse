@@ -10,6 +10,7 @@ INSERT INTO tab VALUES (1, 'aaa', 1), (2, 'bbb', 1);
 INSERT INTO tab VALUES (1, 'ccc', 2);
 
 SELECT '= no row policy =';
+SET apply_row_policy_after_final = 0;
 SELECT '--- raw';
 SELECT * FROM tab ORDER BY x, version;
 SELECT '--- final';
@@ -132,3 +133,63 @@ SELECT '--- PREWHERE before FINAL';
 SELECT x FROM tab_final FINAL PREWHERE y != 'ccc' ORDER BY x;
 
 DROP TABLE tab_final;
+
+-- test that partition pruning works OK with row policy
+-- When row policy column in the partition key, minmax index must not prune partitions that FINAL needs for correct deduplication
+SELECT '';
+
+DROP TABLE IF EXISTS tab_part;
+DROP ROW POLICY IF EXISTS pol_part ON tab_part;
+
+CREATE TABLE tab_part (x UInt32, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) PARTITION BY y ORDER BY x;
+
+INSERT INTO tab_part VALUES (1, 'aaa', 1), (2, 'bbb', 1);
+INSERT INTO tab_part VALUES (1, 'ccc', 2);
+
+CREATE ROW POLICY pol_part ON tab_part USING y != 'ccc' TO ALL;
+
+SET apply_row_policy_after_final = 0;
+SELECT '--- filter before FINAL';
+-- partition 'ccc' pruned, FINAL sees (1,'aaa',1) and (2,'bbb',1)
+SELECT * FROM tab_part FINAL ORDER BY x;
+
+SET apply_row_policy_after_final = 1;
+SELECT '--- deferred';
+-- all partitions read, FINAL picks (1,'ccc',2) then row policy removes it
+SELECT * FROM tab_part FINAL ORDER BY x;
+
+DROP ROW POLICY pol_part ON tab_part;
+DROP TABLE tab_part;
+
+SELECT '';
+SELECT '= WHERE + FINAL must not prune partitions with non-sorting-key partition columns =';
+
+DROP TABLE IF EXISTS tab_where;
+
+CREATE TABLE tab_where (x UInt32, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) PARTITION BY y ORDER BY x;
+
+INSERT INTO tab_where VALUES (1, 'aaa', 1), (2, 'bbb', 1);
+INSERT INTO tab_where VALUES (1, 'ccc', 2), (2, 'ddd', 2);
+
+SELECT '--- FINAL WHERE y != ccc (should see deduplication winners, then filter)';
+SELECT * FROM tab_where FINAL WHERE y != 'ccc' ORDER BY x;
+
+DROP TABLE tab_where;
+
+SELECT '';
+SELECT '= PARTITION BY sorting-key column is still prunable =';
+
+DROP TABLE IF EXISTS tab_safe;
+
+CREATE TABLE tab_safe (x UInt32, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) PARTITION BY x ORDER BY x;
+
+INSERT INTO tab_safe VALUES (1, 'aaa', 1), (2, 'bbb', 1);
+INSERT INTO tab_safe VALUES (1, 'ccc', 2);
+
+SELECT '--- FINAL WHERE x != 1 (partition pruning is safe here)';
+SELECT * FROM tab_safe FINAL WHERE x != 1 ORDER BY x;
+
+DROP TABLE tab_safe;

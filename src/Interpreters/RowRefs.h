@@ -6,6 +6,7 @@
 #include <Core/Joins.h>
 #include <Core/TypeId.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ struct ColumnsInfo
     /// And to avoid virtual calls and casts per each row insertion we store pointer
     /// to the replicated column for each column in the list above.
     /// If columns is not Replicated, pointer will be nullptr.
-    std::vector<const ColumnReplicated *> replicated_columns;
+    PODArray<const ColumnReplicated *> replicated_columns;
 };
 
 /// Reference to the row in block.
