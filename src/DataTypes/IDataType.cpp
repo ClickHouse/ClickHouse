@@ -364,6 +364,8 @@ SerializationPtr IDataType::getSerialization(const SerializationInfo & info) con
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
 {
+    checkStackSize();
+
     if (custom_serialization)
         return custom_serialization;
 
