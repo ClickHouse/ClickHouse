@@ -21,6 +21,7 @@ def started_cluster():
 def cleanup_after_test():
     instance.query("CREATE USER OR REPLACE A")
     yield
+    instance.query("DROP ROW POLICY IF EXISTS pol1 ON table1")
     instance.query("DROP TABLE IF EXISTS table1")
     instance.query("DROP TABLE IF EXISTS table2")
 
