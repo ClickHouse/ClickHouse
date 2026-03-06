@@ -529,15 +529,12 @@ void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out, PostingListCodec
             postings_serialization.serialize(info->embedded_postings->roaring, info->header, out);
         }
 
-        bool has_postings = false;
-
-        if (auto it = token_postings.find(token); it != token_postings.end())
-        {
-            has_postings = true;
-            postings_serialization.serialize(it->second->roaring, info->header, out);
-        }
-
+        auto postings_it = token_postings.find(token);
+        bool has_postings = postings_it != token_postings.end();
         writePODBinary(has_postings, out);
+
+        if (has_postings)
+            postings_serialization.serialize(postings_it->second->roaring, info->header, out);
     }
 
     writeVarUInt(missing_tokens.size(), out);
