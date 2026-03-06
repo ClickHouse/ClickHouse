@@ -19,8 +19,8 @@ CREATE TABLE window_parallel_arrow_memory_guard
 )
 ENGINE = File(Arrow);
 
--- Force many small Arrow record batches.
-SET max_block_size = 1;
+-- Use medium Arrow record batches to keep memory pressure CI-friendly.
+SET max_block_size = 32;
 
 INSERT INTO window_parallel_arrow_memory_guard
 SELECT
@@ -34,10 +34,10 @@ SELECT
     toNullable(toFloat64(number % 1000) / 10),
     toNullable(if(number % 2 = 0, 'some', 'other')),
     toNullable(toString(number % 100000))
-FROM numbers(12000);
+FROM numbers(100000);
 
 SET max_block_size = 65505;
-SET max_threads = 32, max_memory_usage = 1500000000;
+SET max_threads = 8, max_memory_usage = 80000000;
 
 SELECT '--- explain pipeline ---';
 SELECT toUInt8(count() > 0)
