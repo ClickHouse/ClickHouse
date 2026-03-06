@@ -296,6 +296,9 @@ public:
         {
             if (local_thread.joinable())
                 local_thread.join();
+            /// It make sense to re-throw exception from local resolving, since it should be more meaningful (it does not includes any network problems).
+            if (*local_exception)
+                std::rethrow_exception(*local_exception);
             throw;
         }
 
