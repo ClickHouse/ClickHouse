@@ -307,14 +307,6 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 }
 
 
-ContextMutablePtr ReplicatedMergeMutateTaskBase::createTaskContext() const
-{
-    auto result = Context::createCopy(storage.getContext()->getBackgroundContext());
-    result->makeQueryContextForMerge(*storage.getSettings());
-    result->setCurrentQueryId(getQueryId());
-    return result;
-}
-
 ReplicatedMergeMutateTaskBase::ReplicatedMergeMutateTaskBase(
     LoggerPtr log_,
     StorageReplicatedMergeTree & storage_,

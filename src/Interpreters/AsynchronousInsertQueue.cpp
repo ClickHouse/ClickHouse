@@ -362,7 +362,6 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     auto data_shared = std::make_shared<InsertDataPtr>(std::move(data));
     try
     {
-        // ThreadGroupSwitcher
         pool.scheduleOrThrowOnError(
             [this, key, global_context, thread_group = CurrentThread::getGroup(), shard_num, my_data = data_shared]() mutable
             {

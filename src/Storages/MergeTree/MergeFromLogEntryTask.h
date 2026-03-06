@@ -43,6 +43,8 @@ protected:
     }
 
 private:
+    ContextMutablePtr createTaskContext() const override;
+
     TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;

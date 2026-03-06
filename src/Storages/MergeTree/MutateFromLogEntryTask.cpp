@@ -319,5 +319,13 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     return true;
 }
 
+ContextMutablePtr MutateFromLogEntryTask::createTaskContext() const
+{
+    auto result = Context::createCopy(storage.getContext()->getBackgroundContext());
+    result->makeQueryContextForMutate(*storage.getSettings());
+    result->setCurrentQueryId(getQueryId());
+    return result;
+}
+
 
 }

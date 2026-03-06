@@ -481,4 +481,11 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 }
 
 
+ContextMutablePtr MergeFromLogEntryTask::createTaskContext() const
+{
+    auto result = Context::createCopy(storage.getContext()->getBackgroundContext());
+    result->makeQueryContextForMerge(*storage.getSettings());
+    result->setCurrentQueryId(getQueryId());
+    return result;
+}
 }

@@ -177,6 +177,9 @@ public:
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
 
+    ThreadGroupSwitcher(const ThreadGroupSwitcher &) = delete;
+    ThreadGroupSwitcher & operator=(const ThreadGroupSwitcher &) = delete;
+
     ~ThreadGroupSwitcher();
 
 private:

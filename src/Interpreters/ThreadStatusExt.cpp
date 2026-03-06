@@ -252,9 +252,10 @@ ThreadGroupPtr ThreadGroup::createForScope()
     else
     {
         LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for scope, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
-        auto query_context =  Context::createCopy(Context::getGlobalContextInstance());
+        auto query_context = Context::createCopy(Context::getGlobalContextInstance());
         query_context->makeQueryContext();
         res_group = create(query_context);
+        res_group->memory_tracker.setParent(&background_memory_tracker);
     }
     res_group->memory_tracker.setDescription("ThreadGroupScope");
     return res_group;

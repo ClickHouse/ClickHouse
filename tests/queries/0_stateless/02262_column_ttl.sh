@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT
         count()>0, countIf(message LIKE '%TTL%')
     FROM system.text_log
-    WHERE ((query_id = optimize_qid) OR (query_id = currentDatabase() || '.t_ind_merge_1::all_1_2_1'));
+    WHERE (query_id = optimize_qid);
 
     drop table ttl_02262;
 "

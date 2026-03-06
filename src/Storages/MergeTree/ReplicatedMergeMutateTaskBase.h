@@ -52,7 +52,7 @@ protected:
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
 
-    ContextMutablePtr createTaskContext() const;
+    virtual ContextMutablePtr createTaskContext() const = 0;
 
     StorageReplicatedMergeTree & storage;
 
