@@ -84,8 +84,8 @@ SELECT wkt(groupPolygonIntersection(geom)) AS result FROM test_polygons;
 
              return std::make_shared<AggregateFunctionGroupPolygonIntersection<CartesianPoint>>(argument_types, correct_geometry);
          },
-         AggregateFunctionProperties{},
-         documentation});
+         documentation,
+         AggregateFunctionProperties{}});
 
     factory.registerAlias("ST_Intersection", "groupPolygonIntersection", AggregateFunctionFactory::Case::Insensitive);
 }
