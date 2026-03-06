@@ -23,6 +23,8 @@
 #include <Common/DNSResolver.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Option.h>
+#include <Poco/Util/OptionSet.h>
 
 
 namespace CurrentMetrics
@@ -1673,6 +1675,26 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
     impl->loadSettingsFromConfig(config);
 }
 
+void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
+{
+    const auto & accessor = ServerSettingsTraits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        const String & name = accessor.getName(i);
+        std::string_view path = accessor.getPath(i);
+
+        std::string binding = path.empty() ? name : std::string(path);
+
+        std::string argument_placeholder = "<" + std::string(accessor.getTypeName(i)) + ">";
+
+        options.addOption(
+            Poco::Util::Option(name, "" /* no short name */, std::string(accessor.getDescription(i)))
+                .required(false)
+                .repeatable(false)
+                .argument(argument_placeholder)
+                .binding(binding));
+    }
+}
 
 void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
 {
