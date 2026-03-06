@@ -43,26 +43,27 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
         std::shared_lock read_lock(pool.mutex);
         auto it = pool.map.find(key);
         if (it != pool.map.end())
-        {
             if (auto res = it->second.lock())
                 return res;
-        }
+
     }
+
+    /// Creating the serialization object must be outside of the critical section
+    /// because there might be nested serializaitons.
+    auto tmp = std::unique_ptr<const ISerialization>(creator());
 
     std::lock_guard write_lock(pool.mutex);
     auto [it, inserted] = pool.map.emplace(key, std::weak_ptr<const ISerialization>());
     if (!inserted)
-    {
         if (auto res = it->second.lock())
             return res;
-    }
 
     CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
     CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, pool.map.capacity());
 
     SerializationPtr ret
     (
-        creator(),
+        tmp.release(),
         [k = std::move(key)](const ISerialization * ptr)
         {
             auto & p = getPool();
