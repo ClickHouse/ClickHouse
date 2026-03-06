@@ -31,7 +31,7 @@ UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & ti
     SipHash hash;
     hash.update("DateTime64");
     hash.update(scale_);
-    hash.update(time_zone_.getTimeZone());
+    hash.update(time_zone_.getTimeZone().getTimeZone());
     return hash.get128();
 }
 
