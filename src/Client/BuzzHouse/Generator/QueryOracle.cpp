@@ -240,14 +240,14 @@ void QueryOracle::generateRoundtripOracleQueries(
             /// parseDateTime/formatDateTime roundtrip — exercises datetime parsing and formatting.
             /// Uses col_ref directly (not val) since formatDateTime requires a Date/DateTime argument.
             /// The predicate format→parse→format = format ensures the roundtrip holds for valid DateTime values.
-            static const DB::Strings dt_formats = {
+            static const DB::Strings dt_fmts = {
                 "%Y-%m-%d %H:%i:%s",
                 "%Y/%m/%d %H:%i:%s",
                 "%d.%m.%Y %H:%i:%s",
                 "%Y-%m-%d",
                 "%Y/%m/%d",
             };
-            const String & fmt_str = rg.pickRandomly(dt_formats);
+            const String & fmt_str = rg.pickRandomly(dt_fmts);
             const uint32_t scale = rg.randomInt<uint32_t>(0, 9);
             switch (rg.randomInt<uint32_t>(0, 5))
             {

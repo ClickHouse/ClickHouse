@@ -512,56 +512,56 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
     SetViewInterval(rg, rv->mutable_interval());
     if (pol == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY && rg.nextBool())
     {
-        const bool has_tables = collectionHas<SQLTable>(attached_tables);
-        const bool has_views = collectionHas<SQLView>(attached_views);
-        const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
-
         SetViewInterval(rg, rv->mutable_offset());
-        if (has_tables || !systemTables.empty() || has_views || has_dictionaries)
+    }
+    const bool has_tables = collectionHas<SQLTable>(attached_tables);
+    const bool has_views = collectionHas<SQLView>(attached_views);
+    const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
+
+    if ((has_tables || !systemTables.empty() || has_views || has_dictionaries) && rg.nextBool())
+    {
+        const uint32_t depend_table = 20 * static_cast<uint32_t>(has_tables);
+        const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+        const uint32_t depend_view = 10 * static_cast<uint32_t>(has_views);
+        const uint32_t depend_dictionary = 10 * static_cast<uint32_t>(has_dictionaries);
+        const uint32_t prob_space = depend_table + depend_system_table + depend_view + depend_dictionary;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (depend_table && nopt < (depend_table + 1))
         {
-            const uint32_t depend_table = 10 * static_cast<uint32_t>(has_tables);
-            const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
-            const uint32_t depend_view = 10 * static_cast<uint32_t>(has_views);
-            const uint32_t depend_dictionary = 10 * static_cast<uint32_t>(has_dictionaries);
-            const uint32_t prob_space = depend_table + depend_system_table + depend_view + depend_dictionary;
-            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.generator);
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-            if (depend_table && nopt < (depend_table + 1))
-            {
-                const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+            t.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else if (depend_system_table && nopt < (depend_table + depend_system_table + 1))
+        {
+            const auto & ntable = rg.pickRandomly(systemTables);
 
-                t.setName(rv->mutable_depends()->mutable_est(), false);
-            }
-            else if (depend_system_table && nopt < (depend_table + depend_system_table + 1))
-            {
-                const auto & ntable = rg.pickRandomly(systemTables);
+            ntable.setName(rv->mutable_depends()->mutable_est());
+        }
+        else if (depend_view && nopt < (depend_table + depend_system_table + depend_view + 1))
+        {
+            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
-                ntable.setName(rv->mutable_depends()->mutable_est());
-            }
-            else if (depend_view && nopt < (depend_table + depend_system_table + depend_view + 1))
-            {
-                const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
+            v.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else if (depend_dictionary && nopt < (depend_table + depend_system_table + depend_view + depend_dictionary + 1))
+        {
+            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
 
-                v.setName(rv->mutable_depends()->mutable_est(), false);
-            }
-            else if (depend_dictionary && nopt < (depend_table + depend_system_table + depend_view + depend_dictionary + 1))
-            {
-                const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
-
-                d.setName(rv->mutable_depends()->mutable_est(), false);
-            }
-            else
-            {
-                UNREACHABLE();
-            }
+            d.setName(rv->mutable_depends()->mutable_est(), false);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
-    if (pol == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY)
+    if (rg.nextBool())
     {
         SetViewInterval(rg, rv->mutable_randomize());
-        rv->set_append(rg.nextBool());
     }
+    rv->set_append(rg.nextBool());
 }
 
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
@@ -4013,12 +4013,14 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
                 if (!backup.partition_id.has_value())
                 {
+                    /// TODO at the moment, this is going to overwrite existing tables/views/dictionaries with the same name
                     for (const auto & [key, val] : backup.tables)
                     {
                         if (val.db && val.db->getName() == odname)
                         {
                             SQLTable ntab = val;
                             ntab.db = d;
+                            dropTable(false, true, key);
                             this->tables[key] = std::move(ntab);
                         }
                     }
@@ -4028,6 +4030,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         {
                             SQLView nview = val;
                             nview.db = d;
+                            this->views.erase(key);
                             this->views[key] = std::move(nview);
                         }
                     }
@@ -4037,6 +4040,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         {
                             SQLDictionary ndict = val;
                             ndict.db = d;
+                            this->dictionaries.erase(key);
                             this->dictionaries[key] = std::move(ndict);
                         }
                     }

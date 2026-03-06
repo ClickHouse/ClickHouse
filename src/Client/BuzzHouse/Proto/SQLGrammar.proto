@@ -3839,7 +3839,7 @@ message RefreshableView {
     required RefreshPolicy policy = 1;
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
-    required RefreshInterval randomize = 4;
+    optional RefreshInterval randomize = 4;
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;

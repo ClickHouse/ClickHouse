@@ -1059,7 +1059,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         return std::make_shared<DataTypeVariant>(variants);
     }
 
-/// NOLINTBEGIN(bugprone-macro-parentheses)
+    /// NOLINTBEGIN(bugprone-macro-parentheses)
     /// Enum types: add or remove enum values
 #define FUZZ_ENUM(INT_TYPE) \
     if (const auto * dt_enum = typeid_cast<const DataTypeEnum<INT_TYPE> *>(type.get()); dt_enum && fuzz_rand() % 4 != 0) \
@@ -1093,7 +1093,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     FUZZ_DECIMAL(Decimal128)
     FUZZ_DECIMAL(Decimal256)
 #undef FUZZ_DECIMAL
-/// NOLINTEND(bugprone-macro-parentheses)
+    /// NOLINTEND(bugprone-macro-parentheses)
 
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
@@ -2749,7 +2749,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            static const Strings formats = {
+            static const Strings insert_fmts = {
                 "Values",
                 "CSV",
                 "TSV",
@@ -2779,7 +2779,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 "ORC",
                 "Avro",
             };
-            insert_query->format = formats[fuzz_rand() % formats.size()];
+            insert_query->format = insert_fmts[fuzz_rand() % insert_fmts.size()];
         }
         /// Occasionally drop inline SETTINGS
         if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
