@@ -42,3 +42,9 @@ SELECT '-- ASCII only';
 SELECT caseFoldUTF8('ABC');
 SELECT accentFoldUTF8('abc');
 SELECT foldUTF8('ABC');
+
+-- FixedString input should be rejected
+SELECT '-- FixedString errors';
+SELECT caseFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }
+SELECT accentFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }
+SELECT foldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }

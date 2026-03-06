@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -29,28 +30,213 @@ namespace ErrorCodes
 namespace
 {
 
-enum class FoldFunction
-{
-    CaseFold,
-    AccentFold,
-    FullFold
-};
-
 /// Maximum expansion factors for UTF-16 normalization/folding operations.
-/// See https://unicode.org/faq/normalization.html#12 and
+/// See https://unicode.org/faq/normalization.html#12
 constexpr int MAX_NFC_EXPANSION = 3;
 constexpr int MAX_NFD_EXPANSION = 4;
 constexpr int MAX_NFKC_CASEFOLD_EXPANSION = 18;
 
-/// Case folding can also expand, e.g. ligatures. See https://unicode.org/Public/UCD/latest/ucd/CaseFolding.txt
+/// Case folding can also expand (e.g. `ﬃ` → `ffi`). See https://unicode.org/Public/UCD/latest/ucd/CaseFolding.txt
 constexpr int MAX_CASEFOLD_EXPANSION = 3;
 
 /// Each UTF-16 code unit produces at most 3 UTF-8 bytes.
 /// Chars which require 4 UTF-8 bytes also require 2 UTF-16 code units, so the max expansion factor is 3.
 constexpr int MAX_UTF16_TO_UTF8_EXPANSION = 3;
 
-template <FoldFunction fold_function>
-struct FoldUTF8Impl
+
+/// Normalizer context: holds ICU normalizer instances needed by a pipeline.
+struct FoldContext
+{
+    const UNormalizer2 * nfc = nullptr;
+    const UNormalizer2 * nfd = nullptr;
+    const UNormalizer2 * nfkc_cf = nullptr;
+    uint32_t fold_options = U_FOLD_CASE_DEFAULT;
+    bool aggressive = true;
+};
+
+/// Helper: normalize buf_in[0..len) into buf_out, return new length.
+inline int32_t normalizeBuffer(
+    const UNormalizer2 * normalizer,
+    const UChar * in, int32_t len,
+    PODArray<UChar> & out, int expansion,
+    const char * step_name)
+{
+    out.resize(len * expansion);
+    UErrorCode err = U_ZERO_ERROR;
+    int32_t result = unorm2_normalize(
+        normalizer, in, len,
+        out.data(), static_cast<int32_t>(out.size()), &err);
+    if (U_FAILURE(err))
+        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed ({}): {}", step_name, u_errorName(err));
+    return result;
+}
+
+/// Helper: strip combining marks (Mn category) in-place, return new length.
+inline int32_t stripCombiningMarks(UChar * data, int32_t len)
+{
+    int32_t write_pos = 0;
+    for (int32_t j = 0; j < len;)
+    {
+        UChar32 cp;
+        int32_t prev = j;
+        U16_NEXT(data, j, len, cp);
+        if (u_charType(cp) != U_NON_SPACING_MARK)
+        {
+            for (int32_t k = prev; k < j; ++k)
+                data[write_pos++] = data[k];
+        }
+    }
+    return write_pos;
+}
+
+
+/// --- CaseFold pipeline ---
+
+struct CaseFoldImpl
+{
+    static constexpr auto name = "caseFoldUTF8";
+
+    static void init(FoldContext & ctx, bool aggressive, bool /* handle_special_i */)
+    {
+        UErrorCode err = U_ZERO_ERROR;
+        ctx.aggressive = aggressive;
+
+        ctx.nfc = unorm2_getNFCInstance(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFC normalizer: {}", u_errorName(err));
+
+        if (aggressive)
+        {
+            err = U_ZERO_ERROR;
+            ctx.nfkc_cf = unorm2_getNFKCCasefoldInstance(&err);
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
+        }
+    }
+
+    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    {
+        if (ctx.aggressive)
+        {
+            /// NFKC_Casefold → NFC
+            len = normalizeBuffer(ctx.nfkc_cf, in, len, buf, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
+            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC");
+        }
+        else
+        {
+            /// NFC → case fold → NFC
+            len = normalizeBuffer(ctx.nfc, in, len, buf, MAX_NFC_EXPANSION, "NFC pre-fold");
+            PODArray<UChar> fold_buf(len * MAX_CASEFOLD_EXPANSION);
+            UErrorCode err = U_ZERO_ERROR;
+            len = u_strFoldCase(fold_buf.data(), static_cast<int32_t>(fold_buf.size()),
+                buf.data(), len, ctx.fold_options, &err);
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (u_strFoldCase): {}", u_errorName(err));
+            len = normalizeBuffer(ctx.nfc, fold_buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC recompose");
+        }
+        return len;
+    }
+};
+
+
+/// --- AccentFold pipeline ---
+
+struct AccentFoldImpl
+{
+    static constexpr auto name = "accentFoldUTF8";
+
+    static void init(FoldContext & ctx, bool /* aggressive */, bool handle_special_i)
+    {
+        UErrorCode err = U_ZERO_ERROR;
+
+        ctx.nfc = unorm2_getNFCInstance(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFC normalizer: {}", u_errorName(err));
+
+        err = U_ZERO_ERROR;
+        ctx.nfd = unorm2_getNFDInstance(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFD normalizer: {}", u_errorName(err));
+
+        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
+    }
+
+    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    {
+        /// NFD → strip Mn → NFC
+        len = normalizeBuffer(ctx.nfd, in, len, buf, MAX_NFD_EXPANSION, "NFD");
+        len = stripCombiningMarks(buf.data(), len);
+        len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC recompose");
+        return len;
+    }
+};
+
+
+/// --- FullFold pipeline (case fold + accent fold) ---
+
+struct FullFoldImpl
+{
+    static constexpr auto name = "foldUTF8";
+
+    static void init(FoldContext & ctx, bool aggressive, bool handle_special_i)
+    {
+        UErrorCode err = U_ZERO_ERROR;
+        ctx.aggressive = aggressive;
+
+        ctx.nfc = unorm2_getNFCInstance(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFC normalizer: {}", u_errorName(err));
+
+        err = U_ZERO_ERROR;
+        ctx.nfd = unorm2_getNFDInstance(&err);
+        if (U_FAILURE(err))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFD normalizer: {}", u_errorName(err));
+
+        if (aggressive)
+        {
+            err = U_ZERO_ERROR;
+            ctx.nfkc_cf = unorm2_getNFKCCasefoldInstance(&err);
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
+        }
+
+        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
+    }
+
+    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    {
+        if (ctx.aggressive)
+        {
+            /// NFKC_Casefold → NFD → strip Mn → NFC
+            len = normalizeBuffer(ctx.nfkc_cf, in, len, buf, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
+            len = normalizeBuffer(ctx.nfd, buf.data(), len, buf, MAX_NFD_EXPANSION, "NFD");
+            len = stripCombiningMarks(buf.data(), len);
+            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC final");
+        }
+        else
+        {
+            /// NFC → case fold → NFD → strip Mn → NFC
+            len = normalizeBuffer(ctx.nfc, in, len, buf, MAX_NFC_EXPANSION, "NFC pre-fold");
+
+            PODArray<UChar> fold_buf(len * MAX_CASEFOLD_EXPANSION);
+            UErrorCode err = U_ZERO_ERROR;
+            len = u_strFoldCase(fold_buf.data(), static_cast<int32_t>(fold_buf.size()),
+                buf.data(), len, ctx.fold_options, &err);
+            if (U_FAILURE(err))
+                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (u_strFoldCase): {}", u_errorName(err));
+
+            len = normalizeBuffer(ctx.nfd, fold_buf.data(), len, buf, MAX_NFD_EXPANSION, "NFD");
+            len = stripCombiningMarks(buf.data(), len);
+            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC final");
+        }
+        return len;
+    }
+};
+
+
+/// Common row-loop template: handles UTF-8 ↔ UTF-16 conversion and iteration.
+template <typename Impl>
+struct FoldUTF8Common
 {
     static void process(
         const ColumnString::Chars & data,
@@ -61,37 +247,8 @@ struct FoldUTF8Impl
         bool aggressive,
         bool handle_special_i)
     {
-        UErrorCode err = U_ZERO_ERROR;
-
-        const UNormalizer2 * nfc_normalizer = unorm2_getNFCInstance(&err);
-        if (U_FAILURE(err))
-            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFC normalizer: {}", u_errorName(err));
-
-        const UNormalizer2 * nfkc_cf_normalizer = nullptr;
-        const UNormalizer2 * nfd_normalizer = nullptr;
-
-        if constexpr (fold_function == FoldFunction::CaseFold || fold_function == FoldFunction::FullFold)
-        {
-            if (aggressive)
-            {
-                err = U_ZERO_ERROR;
-                nfkc_cf_normalizer = unorm2_getNFKCCasefoldInstance(&err);
-                if (U_FAILURE(err))
-                    throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
-            }
-        }
-
-        if constexpr (fold_function == FoldFunction::AccentFold || fold_function == FoldFunction::FullFold)
-        {
-            err = U_ZERO_ERROR;
-            nfd_normalizer = unorm2_getNFDInstance(&err);
-            if (U_FAILURE(err))
-                throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFD normalizer: {}", u_errorName(err));
-        }
-
-        uint32_t fold_options = U_FOLD_CASE_DEFAULT;
-        if (handle_special_i)
-            fold_options = U_FOLD_CASE_EXCLUDE_SPECIAL_I;
+        FoldContext ctx;
+        Impl::init(ctx, aggressive, handle_special_i);
 
         res_offsets.resize(input_rows_count);
         res_data.reserve(data.size());
@@ -99,8 +256,8 @@ struct FoldUTF8Impl
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
 
-        PODArray<UChar> buf1;
-        PODArray<UChar> buf2;
+        PODArray<UChar> buf_in;
+        PODArray<UChar> buf_out;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -108,116 +265,19 @@ struct FoldUTF8Impl
 
             if (from_size > 0)
             {
-                /// Step 1: UTF-8 → UTF-16
-                buf1.resize(from_size);
+                /// UTF-8 → UTF-16
+                buf_in.resize(from_size);
                 int32_t u16_len = 0;
-                err = U_ZERO_ERROR;
+                UErrorCode err = U_ZERO_ERROR;
                 u_strFromUTF8(
-                    buf1.data(), static_cast<int32_t>(buf1.size()), &u16_len,
+                    buf_in.data(), static_cast<int32_t>(buf_in.size()), &u16_len,
                     reinterpret_cast<const char *>(&data[current_from_offset]), static_cast<int32_t>(from_size),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (strFromUTF8): {}", u_errorName(err));
 
-                int32_t len = u16_len;
-
-                if constexpr (fold_function == FoldFunction::CaseFold || fold_function == FoldFunction::FullFold)
-                {
-                    if (aggressive)
-                    {
-                        /// Aggressive: NFKC_Casefold (does NFKC + case fold in one shot)
-                        buf2.resize(len * MAX_NFKC_CASEFOLD_EXPANSION);
-                        err = U_ZERO_ERROR;
-                        len = unorm2_normalize(nfkc_cf_normalizer, buf1.data(), len,
-                            buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                        if (U_FAILURE(err))
-                            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFKC_Casefold): {}", u_errorName(err));
-                        std::swap(buf1, buf2);
-                    }
-                    else
-                    {
-                        /// Conservative step 1: NFC normalize
-                        buf2.resize(len * MAX_NFC_EXPANSION);
-                        err = U_ZERO_ERROR;
-                        len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
-                            buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                        if (U_FAILURE(err))
-                            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFC pre-fold): {}", u_errorName(err));
-                        std::swap(buf1, buf2);
-
-                        /// Conservative step 2: Case fold
-                        buf2.resize(len * MAX_CASEFOLD_EXPANSION);
-                        err = U_ZERO_ERROR;
-                        len = u_strFoldCase(buf2.data(), static_cast<int32_t>(buf2.size()),
-                            buf1.data(), len, fold_options, &err);
-                        if (U_FAILURE(err))
-                            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (u_strFoldCase): {}", u_errorName(err));
-                        std::swap(buf1, buf2);
-                    }
-                }
-
-                if constexpr (fold_function == FoldFunction::AccentFold || fold_function == FoldFunction::FullFold)
-                {
-                    /// NFD decompose (to separate base characters from combining marks)
-                    buf2.resize(len * MAX_NFD_EXPANSION);
-                    err = U_ZERO_ERROR;
-                    len = unorm2_normalize(nfd_normalizer, buf1.data(), len,
-                        buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                    if (U_FAILURE(err))
-                        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFD): {}", u_errorName(err));
-
-                    /// Strip combining marks (category Mn = U_NON_SPACING_MARK)
-                    int32_t write_pos = 0;
-                    for (int32_t j = 0; j < len; ++j)
-                    {
-                        UChar32 cp;
-                        int32_t prev = j;
-                        U16_NEXT(buf2.data(), j, len, cp);
-                        if (u_charType(cp) != U_NON_SPACING_MARK)
-                        {
-                            /// Copy the code units for this code point
-                            for (int32_t k = prev; k < j; ++k)
-                                buf2[write_pos++] = buf2[k];
-                        }
-                        j--; /// U16_NEXT already advanced j; the loop will advance again
-                    }
-                    len = write_pos;
-                    std::swap(buf1, buf2);
-                }
-
-                if constexpr (fold_function == FoldFunction::FullFold)
-                {
-                    /// Final NFC recompose (both paths)
-                    buf2.resize(len * MAX_NFC_EXPANSION);
-                    err = U_ZERO_ERROR;
-                    len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
-                        buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                    if (U_FAILURE(err))
-                        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFC final): {}", u_errorName(err));
-                    std::swap(buf1, buf2);
-                }
-                else if constexpr (fold_function == FoldFunction::CaseFold)
-                {
-                    /// caseFoldUTF8: NFC recompose at the end
-                    buf2.resize(len * MAX_NFC_EXPANSION);
-                    err = U_ZERO_ERROR;
-                    len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
-                        buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                    if (U_FAILURE(err))
-                        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFC recompose): {}", u_errorName(err));
-                    std::swap(buf1, buf2);
-                }
-                else if constexpr (fold_function == FoldFunction::AccentFold)
-                {
-                    /// accentFoldUTF8: NFC recompose at the end
-                    buf2.resize(len * MAX_NFC_EXPANSION);
-                    err = U_ZERO_ERROR;
-                    len = unorm2_normalize(nfc_normalizer, buf1.data(), len,
-                        buf2.data(), static_cast<int32_t>(buf2.size()), &err);
-                    if (U_FAILURE(err))
-                        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (NFC recompose): {}", u_errorName(err));
-                    std::swap(buf1, buf2);
-                }
+                /// Run the impl-specific transform pipeline
+                int32_t len = Impl::transform(ctx, buf_in.data(), u16_len, buf_out);
 
                 /// UTF-16 → UTF-8
                 size_t max_to_size = current_to_offset + MAX_UTF16_TO_UTF8_EXPANSION * static_cast<size_t>(len);
@@ -230,7 +290,7 @@ struct FoldUTF8Impl
                     reinterpret_cast<char *>(&res_data[current_to_offset]),
                     static_cast<int32_t>(res_data.size() - current_to_offset),
                     &to_size,
-                    buf1.data(), len, &err);
+                    buf_out.data(), len, &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (strToUTF8): {}", u_errorName(err));
 
@@ -246,14 +306,16 @@ struct FoldUTF8Impl
 };
 
 
-template <FoldFunction fold_function>
+/// IFunction wrapper — handles argument parsing and dispatches to FoldUTF8Common.
+template <typename Impl>
 class FunctionFoldUTF8 : public IFunction
 {
+    static constexpr bool has_method_arg = std::is_same_v<Impl, CaseFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
+    static constexpr bool has_special_i_arg = std::is_same_v<Impl, AccentFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
+    static constexpr size_t max_args = 1 + has_method_arg + has_special_i_arg;
+
 public:
-    static constexpr auto name =
-        fold_function == FoldFunction::CaseFold ? "caseFoldUTF8" :
-        fold_function == FoldFunction::AccentFold ? "accentFoldUTF8" :
-        "foldUTF8";
+    static constexpr auto name = Impl::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFoldUTF8>(); }
 
@@ -265,46 +327,44 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        if constexpr (fold_function == FoldFunction::CaseFold)
-            return {1};
-        else if constexpr (fold_function == FoldFunction::AccentFold)
-            return {1};
-        else
+        if constexpr (max_args == 3)
             return {1, 2};
+        else
+            return {1};
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if constexpr (fold_function == FoldFunction::CaseFold)
-        {
-            if (arguments.empty() || arguments.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires 1 or 2 arguments, got {}", getName(), arguments.size());
-        }
-        else if constexpr (fold_function == FoldFunction::AccentFold)
-        {
-            if (arguments.empty() || arguments.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires 1 or 2 arguments, got {}", getName(), arguments.size());
-        }
-        else
-        {
-            if (arguments.empty() || arguments.size() > 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires 1 to 3 arguments, got {}", getName(), arguments.size());
-        }
+        if (arguments.empty() || arguments.size() > max_args)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 to {} arguments, got {}", getName(), max_args, arguments.size());
 
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of first argument of function {}, expected String",
                 arguments[0]->getName(), getName());
 
-        for (size_t i = 1; i < arguments.size(); ++i)
+        size_t arg_idx = 1;
+        if constexpr (has_method_arg)
         {
-            if (!isString(arguments[i]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}, expected String",
-                    arguments[i]->getName(), i + 1, getName());
+            if (arg_idx < arguments.size())
+            {
+                if (!isString(arguments[arg_idx]))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}, expected String",
+                        arguments[arg_idx]->getName(), arg_idx + 1, getName());
+                ++arg_idx;
+            }
+        }
+        if constexpr (has_special_i_arg)
+        {
+            if (arg_idx < arguments.size())
+            {
+                if (!isUInt8(arguments[arg_idx]))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}, expected UInt8",
+                        arguments[arg_idx]->getName(), arg_idx + 1, getName());
+            }
         }
 
         return std::make_shared<DataTypeString>();
@@ -320,27 +380,24 @@ public:
 
         bool aggressive = true;
         bool handle_special_i = false;
+        size_t arg_idx = 1;
 
-        if constexpr (fold_function == FoldFunction::CaseFold)
+        if constexpr (has_method_arg)
         {
-            if (arguments.size() >= 2)
-                aggressive = parseMethodArgument(arguments[1], "second");
+            if (arg_idx < arguments.size())
+            {
+                aggressive = parseMethodArgument(arguments[arg_idx]);
+                ++arg_idx;
+            }
         }
-        else if constexpr (fold_function == FoldFunction::AccentFold)
+        if constexpr (has_special_i_arg)
         {
-            if (arguments.size() >= 2)
-                handle_special_i = parseBoolArgument(arguments[1], "second");
-        }
-        else /// FullFold
-        {
-            if (arguments.size() >= 2)
-                aggressive = parseMethodArgument(arguments[1], "second");
-            if (arguments.size() >= 3)
-                handle_special_i = parseBoolArgument(arguments[2], "third");
+            if (arg_idx < arguments.size())
+                handle_special_i = parseUInt8Argument(arguments[arg_idx]);
         }
 
         auto col_res = ColumnString::create();
-        FoldUTF8Impl<fold_function>::process(
+        FoldUTF8Common<Impl>::process(
             col_str->getChars(), col_str->getOffsets(),
             col_res->getChars(), col_res->getOffsets(),
             input_rows_count, aggressive, handle_special_i);
@@ -348,13 +405,12 @@ public:
     }
 
 private:
-    static bool parseMethodArgument(const ColumnsWithTypeAndName::value_type & arg, const char * ordinal)
+    static bool parseMethodArgument(const ColumnsWithTypeAndName::value_type & arg)
     {
         const ColumnConst * col_const = checkAndGetColumnConstStringOrFixedString(arg.column.get());
         if (!col_const)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The {} argument of function {} must be a constant string ('aggressive' or 'conservative')", ordinal,
-                fold_function == FoldFunction::CaseFold ? "caseFoldUTF8" : "foldUTF8");
+                "The 'method' argument of function {} must be a constant string ('aggressive' or 'conservative')", Impl::name);
 
         String method = col_const->getValue<String>();
         if (method == "aggressive")
@@ -362,32 +418,23 @@ private:
         if (method == "conservative")
             return false;
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid method '{}' for function {}, expected 'aggressive' or 'conservative'", method,
-            fold_function == FoldFunction::CaseFold ? "caseFoldUTF8" : "foldUTF8");
+            "Invalid method '{}' for function {}, expected 'aggressive' or 'conservative'", method, Impl::name);
     }
 
-    static bool parseBoolArgument(const ColumnsWithTypeAndName::value_type & arg, const char * ordinal)
+    static bool parseUInt8Argument(const ColumnsWithTypeAndName::value_type & arg)
     {
-        const ColumnConst * col_const = checkAndGetColumnConstStringOrFixedString(arg.column.get());
+        const auto * col_const = checkAndGetColumnConst<ColumnUInt8>(arg.column.get());
         if (!col_const)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The {} argument of function {} must be a constant string ('true' or 'false')", ordinal,
-                fold_function == FoldFunction::AccentFold ? "accentFoldUTF8" : "foldUTF8");
-
-        String val = col_const->getValue<String>();
-        if (val == "true" || val == "1")
-            return true;
-        if (val == "false" || val == "0")
-            return false;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value '{}' for handle_special_I parameter, expected 'true' or 'false'", val);
+                "The 'handle_special_I' argument of function {} must be a constant UInt8", Impl::name);
+        return col_const->getValue<UInt8>() != 0;
     }
 };
 
 
-using FunctionCaseFoldUTF8 = FunctionFoldUTF8<FoldFunction::CaseFold>;
-using FunctionAccentFoldUTF8 = FunctionFoldUTF8<FoldFunction::AccentFold>;
-using FunctionFullFoldUTF8 = FunctionFoldUTF8<FoldFunction::FullFold>;
+using FunctionCaseFoldUTF8 = FunctionFoldUTF8<CaseFoldImpl>;
+using FunctionAccentFoldUTF8 = FunctionFoldUTF8<AccentFoldImpl>;
+using FunctionFullFoldUTF8 = FunctionFoldUTF8<FullFoldImpl>;
 
 }
 
@@ -414,9 +461,9 @@ Two methods are available: 'aggressive' (default) applies NFKC_Casefold normaliz
 └─────────────────────────┴─────────────────────────────────────────┘
 )"
     }};
-    FunctionDocumentation::IntroducedIn case_intro = {25, 6};
-    FunctionDocumentation::Category case_cat = FunctionDocumentation::Category::String;
-    factory.registerFunction<FunctionCaseFoldUTF8>({case_desc, case_syntax, case_args, {}, case_ret, case_examples, case_intro, case_cat});
+    FunctionDocumentation::IntroducedIn intro = {25, 6};
+    FunctionDocumentation::Category cat = FunctionDocumentation::Category::String;
+    factory.registerFunction<FunctionCaseFoldUTF8>({case_desc, case_syntax, case_args, {}, case_ret, case_examples, intro, cat});
 
     /// accentFoldUTF8
     FunctionDocumentation::Description accent_desc = R"(
@@ -425,7 +472,7 @@ Removes diacritical marks (accents) from a UTF-8 string by decomposing character
     FunctionDocumentation::Syntax accent_syntax = "accentFoldUTF8(str[, handle_special_I])";
     FunctionDocumentation::Arguments accent_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
-        {"handle_special_I", "Optional. 'true' to enable Turkish/Azerbaijani special I handling. Default 'false'.", {"String"}}
+        {"handle_special_I", "Optional. 1 to enable Turkish/Azerbaijani special I handling. Default 0.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue accent_ret = {"UTF-8 string with diacritics removed.", {"String"}};
     FunctionDocumentation::Examples accent_examples = {{
@@ -437,7 +484,7 @@ Removes diacritical marks (accents) from a UTF-8 string by decomposing character
 └──────────────────────────────────────┘
 )"
     }};
-    factory.registerFunction<FunctionAccentFoldUTF8>({accent_desc, accent_syntax, accent_args, {}, accent_ret, accent_examples, case_intro, case_cat});
+    factory.registerFunction<FunctionAccentFoldUTF8>({accent_desc, accent_syntax, accent_args, {}, accent_ret, accent_examples, intro, cat});
 
     /// foldUTF8
     FunctionDocumentation::Description fold_desc = R"(
@@ -449,7 +496,7 @@ Applies both case folding and accent (diacritical mark) removal to a UTF-8 strin
     FunctionDocumentation::Arguments fold_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
         {"case_fold_method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}},
-        {"handle_special_I", "Optional. 'true' to enable Turkish/Azerbaijani special I handling. Default 'false'.", {"String"}}
+        {"handle_special_I", "Optional. 1 to enable Turkish/Azerbaijani special I handling. Default 0.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue fold_ret = {"Case-folded and accent-stripped UTF-8 string.", {"String"}};
     FunctionDocumentation::Examples fold_examples = {{
@@ -461,7 +508,7 @@ Applies both case folding and accent (diacritical mark) removal to a UTF-8 strin
 └───────────────────────────┘
 )"
     }};
-    factory.registerFunction<FunctionFullFoldUTF8>({fold_desc, fold_syntax, fold_args, {}, fold_ret, fold_examples, case_intro, case_cat});
+    factory.registerFunction<FunctionFullFoldUTF8>({fold_desc, fold_syntax, fold_args, {}, fold_ret, fold_examples, intro, cat});
 }
 
 }
