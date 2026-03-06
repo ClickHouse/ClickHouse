@@ -23,11 +23,27 @@ class TTLDeleteFilterTransform : public ISimpleTransform
 public:
     static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";
 
+    struct DeleteTTLEntry
+    {
+        TTLExpressions expressions;
+        TTLDescription description;
+        IMergeTreeDataPart::TTLInfo old_ttl_info;
+        IMergeTreeDataPart::TTLInfo new_ttl_info;
+    };
+
     TTLDeleteFilterTransform(
         const ContextPtr & context,
         const SharedHeader & header_,
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
+        time_t current_time_,
+        bool force_,
+        const MergeTreeMutableDataPartPtr & data_part_);
+
+    /// Construct from pre-built entries (sharing expressions and their prepared sets).
+    TTLDeleteFilterTransform(
+        const SharedHeader & header_,
+        std::vector<DeleteTTLEntry> pre_built_entries_,
         time_t current_time_,
         bool force_,
         const MergeTreeMutableDataPartPtr & data_part_);
@@ -38,20 +54,15 @@ public:
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
+    /// Move out pre-built entries so they can be shared with other transform instances.
+    std::vector<DeleteTTLEntry> getEntries() { return std::move(delete_ttl_entries); }
+
     static SharedHeader transformHeader(const SharedHeader & header);
 
 protected:
     void transform(Chunk & chunk) override;
 
 private:
-    struct DeleteTTLEntry
-    {
-        TTLExpressions expressions;
-        TTLDescription description;
-        IMergeTreeDataPart::TTLInfo old_ttl_info;
-        IMergeTreeDataPart::TTLInfo new_ttl_info;
-    };
-
     std::vector<DeleteTTLEntry> delete_ttl_entries;
 
     const time_t current_time;

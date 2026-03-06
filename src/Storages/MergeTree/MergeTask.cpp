@@ -2259,18 +2259,18 @@ public:
         bool force_,
         const MergeTreeMutableDataPartPtr & data_part_)
         : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
-        , context(context_)
-        , metadata_snapshot(metadata_snapshot_)
-        , old_ttl_infos(old_ttl_infos_)
         , current_time(current_time_)
         , force(force_)
         , data_part(data_part_)
     {
-        /// Collect subqueries eagerly in the constructor, following the same pattern as TTLStep.
-        /// transformPipeline() runs later during pipeline construction, after getSubqueries()
-        /// has already been called by createMergedStream(), so subqueries must be available now.
-        TTLDeleteFilterTransform probe(context, input_header_, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
-        subqueries_for_sets = probe.getSubqueries();
+        /// Build TTL entries once and share their expressions (including prepared sets)
+        /// across all transforms created in transformPipeline().
+        /// Previously, a "probe" transform was created here to collect subqueries, but then
+        /// transformPipeline() created new transforms that built their own expressions with
+        /// different Set objects that were never filled by CreatingSetsStep.
+        TTLDeleteFilterTransform canonical(context_, input_header_, metadata_snapshot_, old_ttl_infos_, current_time, force, data_part);
+        subqueries_for_sets = canonical.getSubqueries();
+        shared_entries = canonical.getEntries();
     }
 
     String getName() const override { return "TTLDeleteFilter"; }
@@ -2280,7 +2280,7 @@ public:
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<TTLDeleteFilterTransform>(
-                context, header, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
+                header, shared_entries, current_time, force, data_part);
         });
     }
 
@@ -2307,13 +2307,11 @@ private:
         };
     }
 
-    ContextPtr context;
-    StorageMetadataPtr metadata_snapshot;
-    IMergeTreeDataPart::TTLInfos old_ttl_infos;
     time_t current_time;
     bool force;
     MergeTreeMutableDataPartPtr data_part;
     PreparedSets::Subqueries subqueries_for_sets;
+    std::vector<TTLDeleteFilterTransform::DeleteTTLEntry> shared_entries;
 };
 
 class TTLStep : public ITransformingStep
