@@ -61,12 +61,12 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
             return res;
 
     /// In case if the entry exists, but expirted we should avoid double memory accounting.
-    if (inserted && !it->second.expired())
+    if (!(inserted && it->second.expired()))
     {
         CurrentMetrics::add(CurrentMetrics::SerializationCacheCount);
         CurrentMetrics::add(CurrentMetrics::SerializationCacheBytesUncorrected, allocated_bytes);
-        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, 
-            sizeof(typename Pool::SerializationMap::value_type) * pool.map.capacity() 
+        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes,
+            sizeof(typename Pool::SerializationMap::value_type) * pool.map.capacity()
             + CurrentMetrics::get(CurrentMetrics::SerializationCacheBytesUncorrected));
     }
 
@@ -84,8 +84,8 @@ SerializationPtr getOrCreate(UInt128 key, SerializationCreator creator)
                     p.map.erase(map_it);
                     CurrentMetrics::sub(CurrentMetrics::SerializationCacheCount);
                     CurrentMetrics::sub(CurrentMetrics::SerializationCacheBytesUncorrected, b);
-                        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes, 
-                            sizeof(typename Pool::SerializationMap::value_type) * p.map.capacity() 
+                        CurrentMetrics::set(CurrentMetrics::SerializationCacheBytes,
+                            sizeof(typename Pool::SerializationMap::value_type) * p.map.capacity()
                             + CurrentMetrics::get(CurrentMetrics::SerializationCacheBytesUncorrected));
                 }
             }
