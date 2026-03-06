@@ -642,17 +642,39 @@ void JoinOrderOptimizer::buildHyperedges()
 
 /// Returns the set of all relations adjacent to `node_set` via any hyperedge,
 /// excluding `node_set` itself.
+///
+/// Per the DPhyp paper, for a directed hyperedge (L, R):
+///   - R is in N(node_set) if L is fully contained in node_set
+///   - L is in N(node_set) if R is fully contained in node_set
+///
+/// For undirected hyperedges (L == R, e.g. complex predicates spanning multiple tables),
+/// all nodes in the hyperedge are neighbors of each other.
 BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
 {
     BitSet neighbors;
+    BitSet visited_edges;
     for (auto node : node_set)
     {
         if (node >= node_to_edge_ids.size())
             continue;
         for (auto hyperedge_id : node_to_edge_ids[node])
         {
-            neighbors |= hyperedges[hyperedge_id].left;
-            neighbors |= hyperedges[hyperedge_id].right;
+            if (visited_edges.test(hyperedge_id))
+                continue;
+            visited_edges.set(hyperedge_id);
+            const auto & edge = hyperedges[hyperedge_id];
+            if (edge.left == edge.right)
+            {
+                /// Undirected: any node present makes all others neighbors.
+                neighbors |= edge.left;
+            }
+            else
+            {
+                if (isSubsetOf(edge.left, node_set))
+                    neighbors |= edge.right;
+                if (isSubsetOf(edge.right, node_set))
+                    neighbors |= edge.left;
+            }
         }
     }
     return neighbors.andNot(node_set);
