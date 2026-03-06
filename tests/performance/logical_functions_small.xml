@@ -12,8 +12,8 @@
     <create_query>CREATE TABLE test_logical_functions._2_0_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE test_logical_functions._2_1_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
 
-    <fill_query>INSERT INTO test_logical_functions._2_0_UInt8 SELECT materialize(0) AS x1, materialize(0) AS x2 FROM zeros(100000000)</fill_query>
-    <fill_query>INSERT INTO test_logical_functions._2_1_UInt8 SELECT materialize(1) AS x1, materialize(1) AS x2 FROM zeros(100000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._2_0_UInt8 SELECT materialize(0) AS x1, materialize(0) AS x2 FROM zeros(600000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._2_1_UInt8 SELECT materialize(1) AS x1, materialize(1) AS x2 FROM zeros(600000000)</fill_query>
 
     <query>SELECT count() FROM test_logical_functions._2_1_UInt8 WHERE NOT ignore(and(x1,x2))</query>
     <query>SELECT count() FROM test_logical_functions._2_0_UInt8 WHERE NOT ignore(and(x1,x2))</query>
