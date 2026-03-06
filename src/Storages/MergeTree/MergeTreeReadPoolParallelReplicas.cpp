@@ -249,6 +249,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         current_task.ranges.pop_front();
     }
 
+    /// Extract serialized index granules before potentially destroying current_task via pop_front.
+    auto serialized_index_granules = std::move(current_task.serialized_index_granules);
+
     if (current_task.ranges.empty())
         buffered_ranges.pop_front();
 
@@ -257,10 +260,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     /// If the protocol carries serialized index granules that this replica doesn't have
     /// (e.g. computed during distributed index analysis on another replica),
     /// deserialize them and inject into the task info so the text index reader can use them.
-    if (!current_task.serialized_index_granules.empty())
+    if (!serialized_index_granules.empty())
     {
         bool missing_any = false;
-        for (const auto & [name, _] : current_task.serialized_index_granules)
+        for (const auto & [name, _] : serialized_index_granules)
         {
             if (!task_info->skip_indexes_extra_data.index_granules.contains(name))
             {
@@ -272,7 +275,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         if (missing_any)
         {
             auto modified = std::make_shared<MergeTreeReadTaskInfo>(*task_info);
-            for (const auto & [name, data] : current_task.serialized_index_granules)
+            for (const auto & [name, data] : serialized_index_granules)
             {
                 if (modified->skip_indexes_extra_data.index_granules.contains(name))
                     continue;
