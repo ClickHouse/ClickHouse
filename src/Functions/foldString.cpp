@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -54,18 +55,17 @@ struct FoldContext
     bool aggressive = true;
 };
 
-/// Helper: normalize buf_in[0..len) into buf_out, return new length.
+/// Helper: normalize in[0..len) into out, return new length.
+/// in and out must be distinct PODArrays.
 inline int32_t normalizeBuffer(
     const UNormalizer2 * normalizer,
-    const UChar * in, int32_t len,
+    PODArray<UChar> & in, int32_t len,
     PODArray<UChar> & out, int expansion,
     const char * step_name)
 {
     out.resize(len * expansion);
     UErrorCode err = U_ZERO_ERROR;
-    int32_t result = unorm2_normalize(
-        normalizer, in, len,
-        out.data(), static_cast<int32_t>(out.size()), &err);
+    int32_t result = unorm2_normalize(normalizer, in.data(), len, out.data(), static_cast<int32_t>(out.size()), &err);
     if (U_FAILURE(err))
         throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed ({}): {}", step_name, u_errorName(err));
     return result;
@@ -79,7 +79,7 @@ inline int32_t stripCombiningMarks(UChar * data, int32_t len)
     {
         UChar32 cp;
         int32_t prev = j;
-        U16_NEXT(data, j, len, cp);
+        U16_NEXT(data, j, len, cp); /// advances j to next code point boundary
         if (u_charType(cp) != U_NON_SPACING_MARK)
         {
             for (int32_t k = prev; k < j; ++k)
@@ -88,9 +88,6 @@ inline int32_t stripCombiningMarks(UChar * data, int32_t len)
     }
     return write_pos;
 }
-
-
-/// --- CaseFold pipeline ---
 
 struct CaseFoldImpl
 {
@@ -114,32 +111,37 @@ struct CaseFoldImpl
         }
     }
 
-    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    /// Result is left in buf1.
+    static int32_t transform(const FoldContext & ctx, PODArray<UChar> & buf1, PODArray<UChar> & buf2, int32_t len)
     {
         if (ctx.aggressive)
         {
             /// NFKC_Casefold → NFC
-            len = normalizeBuffer(ctx.nfkc_cf, in, len, buf, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
-            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC");
+            len = normalizeBuffer(ctx.nfkc_cf, buf1, len, buf2, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
+            std::swap(buf1, buf2);
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC");
+            std::swap(buf1, buf2);
         }
         else
         {
             /// NFC → case fold → NFC
-            len = normalizeBuffer(ctx.nfc, in, len, buf, MAX_NFC_EXPANSION, "NFC pre-fold");
-            PODArray<UChar> fold_buf(len * MAX_CASEFOLD_EXPANSION);
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC pre-fold");
+            std::swap(buf1, buf2);
+
+            buf2.resize(len * MAX_CASEFOLD_EXPANSION);
             UErrorCode err = U_ZERO_ERROR;
-            len = u_strFoldCase(fold_buf.data(), static_cast<int32_t>(fold_buf.size()),
-                buf.data(), len, ctx.fold_options, &err);
+            len = u_strFoldCase(buf2.data(), static_cast<int32_t>(buf2.size()),
+                buf1.data(), len, ctx.fold_options, &err);
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (u_strFoldCase): {}", u_errorName(err));
-            len = normalizeBuffer(ctx.nfc, fold_buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC recompose");
+            std::swap(buf1, buf2);
+
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC recompose");
+            std::swap(buf1, buf2);
         }
         return len;
     }
 };
-
-
-/// --- AccentFold pipeline ---
 
 struct AccentFoldImpl
 {
@@ -161,18 +163,18 @@ struct AccentFoldImpl
         ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
-    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    /// Result is left in buf1.
+    static int32_t transform(const FoldContext & ctx, PODArray<UChar> & buf1, PODArray<UChar> & buf2, int32_t len)
     {
         /// NFD → strip Mn → NFC
-        len = normalizeBuffer(ctx.nfd, in, len, buf, MAX_NFD_EXPANSION, "NFD");
-        len = stripCombiningMarks(buf.data(), len);
-        len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC recompose");
+        len = normalizeBuffer(ctx.nfd, buf1, len, buf2, MAX_NFD_EXPANSION, "NFD");
+        std::swap(buf1, buf2);
+        len = stripCombiningMarks(buf1.data(), len);
+        len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC recompose");
+        std::swap(buf1, buf2);
         return len;
     }
 };
-
-
-/// --- FullFold pipeline (case fold + accent fold) ---
 
 struct FullFoldImpl
 {
@@ -203,36 +205,43 @@ struct FullFoldImpl
         ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
-    static int32_t transform(const FoldContext & ctx, UChar * in, int32_t len, PODArray<UChar> & buf)
+    /// Result is left in buf1.
+    static int32_t transform(const FoldContext & ctx, PODArray<UChar> & buf1, PODArray<UChar> & buf2, int32_t len)
     {
         if (ctx.aggressive)
         {
             /// NFKC_Casefold → NFD → strip Mn → NFC
-            len = normalizeBuffer(ctx.nfkc_cf, in, len, buf, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
-            len = normalizeBuffer(ctx.nfd, buf.data(), len, buf, MAX_NFD_EXPANSION, "NFD");
-            len = stripCombiningMarks(buf.data(), len);
-            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC final");
+            len = normalizeBuffer(ctx.nfkc_cf, buf1, len, buf2, MAX_NFKC_CASEFOLD_EXPANSION, "NFKC_Casefold");
+            std::swap(buf1, buf2);
+            len = normalizeBuffer(ctx.nfd, buf1, len, buf2, MAX_NFD_EXPANSION, "NFD");
+            std::swap(buf1, buf2);
+            len = stripCombiningMarks(buf1.data(), len);
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC final");
+            std::swap(buf1, buf2);
         }
         else
         {
             /// NFC → case fold → NFD → strip Mn → NFC
-            len = normalizeBuffer(ctx.nfc, in, len, buf, MAX_NFC_EXPANSION, "NFC pre-fold");
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC pre-fold");
+            std::swap(buf1, buf2);
 
-            PODArray<UChar> fold_buf(len * MAX_CASEFOLD_EXPANSION);
+            buf2.resize(len * MAX_CASEFOLD_EXPANSION);
             UErrorCode err = U_ZERO_ERROR;
-            len = u_strFoldCase(fold_buf.data(), static_cast<int32_t>(fold_buf.size()),
-                buf.data(), len, ctx.fold_options, &err);
+            len = u_strFoldCase(buf2.data(), static_cast<int32_t>(buf2.size()),
+                buf1.data(), len, ctx.fold_options, &err);
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (u_strFoldCase): {}", u_errorName(err));
+            std::swap(buf1, buf2);
 
-            len = normalizeBuffer(ctx.nfd, fold_buf.data(), len, buf, MAX_NFD_EXPANSION, "NFD");
-            len = stripCombiningMarks(buf.data(), len);
-            len = normalizeBuffer(ctx.nfc, buf.data(), len, buf, MAX_NFC_EXPANSION, "NFC final");
+            len = normalizeBuffer(ctx.nfd, buf1, len, buf2, MAX_NFD_EXPANSION, "NFD");
+            std::swap(buf1, buf2);
+            len = stripCombiningMarks(buf1.data(), len);
+            len = normalizeBuffer(ctx.nfc, buf1, len, buf2, MAX_NFC_EXPANSION, "NFC final");
+            std::swap(buf1, buf2);
         }
         return len;
     }
 };
-
 
 /// Common row-loop template: handles UTF-8 ↔ UTF-16 conversion and iteration.
 template <typename Impl>
@@ -250,8 +259,8 @@ struct FoldUTF8Common
         FoldContext ctx;
         Impl::init(ctx, aggressive, handle_special_i);
 
-        res_offsets.resize(input_rows_count);
         res_data.reserve(data.size());
+        res_offsets.resize(input_rows_count);
 
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
@@ -270,14 +279,17 @@ struct FoldUTF8Common
                 int32_t u16_len = 0;
                 UErrorCode err = U_ZERO_ERROR;
                 u_strFromUTF8(
-                    buf_in.data(), static_cast<int32_t>(buf_in.size()), &u16_len,
-                    reinterpret_cast<const char *>(&data[current_from_offset]), static_cast<int32_t>(from_size),
+                    buf_in.data(),
+                    static_cast<int32_t>(buf_in.size()),
+                    &u16_len,
+                    reinterpret_cast<const char *>(&data[current_from_offset]),
+                    static_cast<int32_t>(from_size),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (strFromUTF8): {}", u_errorName(err));
 
-                /// Run the impl-specific transform pipeline
-                int32_t len = Impl::transform(ctx, buf_in.data(), u16_len, buf_out);
+                /// Run the impl-specific transform pipeline (result left in buf_in)
+                int32_t len = Impl::transform(ctx, buf_in, buf_out, u16_len);
 
                 /// UTF-16 → UTF-8
                 size_t max_to_size = current_to_offset + MAX_UTF16_TO_UTF8_EXPANSION * static_cast<size_t>(len);
@@ -290,7 +302,9 @@ struct FoldUTF8Common
                     reinterpret_cast<char *>(&res_data[current_to_offset]),
                     static_cast<int32_t>(res_data.size() - current_to_offset),
                     &to_size,
-                    buf_out.data(), len, &err);
+                    buf_in.data(),
+                    len,
+                    &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Fold failed (strToUTF8): {}", u_errorName(err));
 
@@ -304,7 +318,6 @@ struct FoldUTF8Common
         res_data.resize(current_to_offset);
     }
 };
-
 
 /// IFunction wrapper — handles argument parsing and dispatches to FoldUTF8Common.
 template <typename Impl>

@@ -1,3 +1,18 @@
+-- Negative tests: parameter validation
+SELECT caseFoldUTF8(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT caseFoldUTF8('x', 'aggressive', 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT accentFoldUTF8('x', 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT foldUTF8('x', 'aggressive', 1, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT caseFoldUTF8(123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT caseFoldUTF8('x', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT accentFoldUTF8('x', 'true'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT foldUTF8('x', 'aggressive', 'true'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT caseFoldUTF8('x', 'invalid'); -- { serverError BAD_ARGUMENTS }
+SELECT foldUTF8('x', 'invalid'); -- { serverError BAD_ARGUMENTS }
+SELECT caseFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT accentFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT foldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- caseFoldUTF8: basic case folding
 SELECT '-- caseFoldUTF8 aggressive (default)';
 SELECT caseFoldUTF8('Hello World');
@@ -29,7 +44,7 @@ SELECT foldUTF8('HÉLLO Wörld', 'conservative');
 
 -- foldUTF8 with handle_special_I
 SELECT '-- foldUTF8 with special I handling';
-SELECT foldUTF8('Istanbul', 'aggressive', 'false');
+SELECT foldUTF8('Istanbul', 'aggressive', 0);
 
 -- Empty string
 SELECT '-- empty strings';
@@ -42,9 +57,3 @@ SELECT '-- ASCII only';
 SELECT caseFoldUTF8('ABC');
 SELECT accentFoldUTF8('abc');
 SELECT foldUTF8('ABC');
-
--- FixedString input should be rejected
-SELECT '-- FixedString errors';
-SELECT caseFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }
-SELECT accentFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }
-SELECT foldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_COLUMN }
