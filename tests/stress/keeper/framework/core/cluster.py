@@ -145,10 +145,15 @@ class RaftKeeperCluster:
 
     def start(self, timeout: float = 120) -> None:
         """Run docker compose up -d and wait until all nodes respond to ruok."""
-        subprocess.run(
+        result = subprocess.run(
             ["docker", "compose", "-p", self.project_name, "-f", self.compose_path, "up", "-d"],
-            check=True, capture_output=True, timeout=60, env={**os.environ, **self.env}
+            capture_output=True, timeout=60, env={**os.environ, **self.env}
         )
+        if result.returncode != 0:
+            print(f"[raftkeeper] docker compose up failed (exit={result.returncode})")
+            print(f"[raftkeeper] stdout: {(result.stdout or b'').decode(errors='replace')}")
+            print(f"[raftkeeper] stderr: {(result.stderr or b'').decode(errors='replace')}")
+            raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
         n = len(RAFTKEEPER_HOST_PORTS)
         ports = [int(self.env.get(f"RAFTKEEPER_HOST_PORT_{i}", RAFTKEEPER_HOST_PORTS[i - 1])) for i in range(1, n + 1)]
         start_t = time.time()
@@ -471,7 +476,15 @@ class ClusterBuilder:
         self.base_dir = self.cluster.base_dir
         self.conf_dir = base_dir_raftkeeper / "_config"
         self.conf_dir.mkdir(parents=True, exist_ok=True)
-        self.cluster.start(timeout=ready_timeout)
+        try:
+            self.cluster.start(timeout=ready_timeout)
+        except Exception:
+            # Clean up any partially-started containers so ports (18101-18103) are freed.
+            try:
+                self.cluster.shutdown()
+            except Exception:
+                pass
+            raise
 
         ch_names = keeper_node_names(topology)
         rk_names = hostnames

@@ -154,6 +154,10 @@ def cluster_factory(request):
             wait_until(lambda: count_leaders(nodes) == 1, timeout_s=timeout, interval=0.5, desc="cluster ready")
         except Exception as e:
             _print_ready_failure_diagnostics(nodes)
+            try:
+                cluster.shutdown()
+            except Exception:
+                pass
             raise e
         return cluster, nodes
     return _make

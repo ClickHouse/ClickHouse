@@ -318,7 +318,9 @@ class KeeperBench:
         """Stop bench execution and wait for completion."""
         self._stop = True
         if self._th:
-            self._th.join(timeout=(self.duration_s + 30))
+            # Join timeout must exceed bench_timeout (duration_s + 30) by enough to allow
+            # file reading and output processing after the subprocess timeout fires.
+            self._th.join(timeout=(self.duration_s + 60))
             paths = [
                 ("config (original)", self.cfg_path),
                 ("replay", self.replay_path),

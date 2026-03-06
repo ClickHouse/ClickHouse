@@ -811,6 +811,8 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     run_id = f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
     cname = re.sub(r"[^a-zA-Z0-9_-]", "_", run_id)
     os.environ["KEEPER_CLUSTER_NAME"] = cname
+    cluster = None
+    nodes = []
     cluster, nodes = cluster_factory(cname, topo, backend, opts)
 
     scenario_id = scenario.get("id")
