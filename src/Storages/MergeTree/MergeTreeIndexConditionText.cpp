@@ -478,8 +478,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
-    tokens = tokenizer->compactTokens(tokens);
-    return postprocessor->applyBatch(std::move(tokens));
+    return tokenizer->compactTokens(tokens);
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -595,8 +594,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
                 search_tokens.push_back(element.safeGet<String>());
             }
-            search_tokens = postprocessor->applyBatch(std::move(search_tokens));
         }
+        search_tokens = postprocessor->applyBatch(std::move(search_tokens));
 
         if (function_name == "hasAnyTokens")
         {
@@ -616,6 +615,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
             tokens.push_back("");
+
+        tokens = postprocessor->applyBatch(tokens);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
