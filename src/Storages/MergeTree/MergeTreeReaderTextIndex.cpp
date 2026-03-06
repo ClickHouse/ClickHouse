@@ -36,7 +36,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexWithCondition index_,
     NamesAndTypesList columns_,
-    bool can_skip_mark_,
     MergeTreeIndexGranulePtr granule_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
@@ -50,7 +49,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->settings)
     , index(std::move(index_))
     , granule(std::move(granule_))
-    , can_skip_mark(can_skip_mark_)
     , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
@@ -175,38 +173,9 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     }
 }
 
-bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
-{
-    if (!granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granule was not set for index '{}'", index.index->index.name);
-
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
-
-    auto rows_range = getRowsRangeForMark(mark);
-    if (!rows_range.has_value())
-        return true;
-
-    if (!is_initialized)
-    {
-        analyzeTokensCardinality();
-        initializePostingStreams();
-        is_initialized = true;
-    }
-
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-    granule_text.setCurrentRange(*rows_range);
-    bool may_be_true = index.condition->mayBeTrueOnGranule(granule, nullptr);
-
-    if (may_be_true)
-        may_be_true_granules.add(static_cast<UInt32>(mark));
-
-    analyzed_granules.add(static_cast<UInt32>(mark));
-    return can_skip_mark && !may_be_true;
-}
-
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
-    size_t current_task_last_mark,
+    size_t /*current_task_last_mark*/,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -214,6 +183,13 @@ size_t MergeTreeReaderTextIndex::readRows(
 {
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granule was not set for index '{}'", index.index->index.name);
+
+    if (!is_initialized)
+    {
+        analyzeTokensCardinality();
+        initializePostingStreams();
+        is_initialized = true;
+    }
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -253,38 +229,20 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
 
-        /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
-        /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
-        if (!analyzed_granules.contains(static_cast<UInt32>(from_mark)))
-        {
-            canSkipMark(from_mark, current_task_last_mark);
-        }
+        auto mark_postings = buildPostingsForMark(from_mark);
 
-        if (!may_be_true_granules.contains(static_cast<UInt32>(from_mark)))
+        for (size_t i = 0; i < res_columns.size(); ++i)
         {
-            for (const auto & column : res_columns)
+            auto & column_mutable = res_columns[i]->assumeMutableRef();
+
+            if (is_always_true[i])
             {
-                auto & column_data = assert_cast<ColumnUInt8 &>(column->assumeMutableRef()).getData();
-                column_data.resize_fill(column->size() + rows_to_read, 0);
+                auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+                column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
             }
-        }
-        else
-        {
-            auto mark_postings = buildPostingsForMark(from_mark);
-
-            for (size_t i = 0; i < res_columns.size(); ++i)
+            else
             {
-                auto & column_mutable = res_columns[i]->assumeMutableRef();
-
-                if (is_always_true[i])
-                {
-                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
-                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
-                }
-                else
-                {
-                    fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
-                }
+                fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
             }
         }
 
@@ -555,10 +513,9 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark,
     MergeTreeIndexGranulePtr granule)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark, std::move(granule));
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, std::move(granule));
 }
 
 }

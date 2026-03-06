@@ -180,15 +180,10 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     {
         if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
         {
-            /// Do not skip marks for queries with FINAL in the reader,
-            /// because it may affect the result of the merging algorithm.
-            bool can_skip_marks = !index_read_task->is_final;
-
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                can_skip_marks,
                 read_info->skip_indexes_extra_data.index_granules));
         }
         else

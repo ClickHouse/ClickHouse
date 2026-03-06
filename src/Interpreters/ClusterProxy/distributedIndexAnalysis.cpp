@@ -7,6 +7,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -202,6 +203,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
 
     IndexAnalysisPartsRanges res;
 
+    auto map_type = std::make_shared<DataTypeMap>(
+        std::make_shared<DataTypeString>(),
+        std::make_shared<DataTypeString>());
+
     auto sample_block = std::make_shared<const Block>(Block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
@@ -214,6 +219,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
               std::make_shared<DataTypeUInt64>(), // end
           })),
           "ranges" },
+        { map_type->createColumn(), map_type, "extra_data" },
     });
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(*connection, analyze_index_query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);

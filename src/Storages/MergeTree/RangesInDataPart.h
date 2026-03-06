@@ -27,6 +27,9 @@ struct RangesInDataPartDescription
     MarkRanges ranges{};
     size_t rows = 0;
     String projection_name;
+    /// Serialized index granules from distributed analysis (index_name -> binary data).
+    /// Carried through the parallel replicas protocol so workers can receive preloaded granules.
+    std::unordered_map<String, String> serialized_index_granules;
 
     void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
     String describe() const;

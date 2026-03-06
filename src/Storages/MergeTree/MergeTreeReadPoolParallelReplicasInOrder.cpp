@@ -71,8 +71,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         auto info = is_projection ? part.parent_part->info : part.data_part->info;
         auto projection_name = is_projection ? part.data_part->name : "";
 
-        request.push_back({.info = info, .ranges = MarkRanges{}, .projection_name = projection_name});
-        buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
+        request.push_back({.info = info, .ranges = MarkRanges{}, .projection_name = projection_name, .serialized_index_granules = {}});
+        buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name), .serialized_index_granules = {}});
     }
 
     extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);

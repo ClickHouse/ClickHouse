@@ -1,7 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 
 #include <Core/Settings.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
 #include <algorithm>
 #include <iterator>
@@ -249,8 +252,53 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (current_task.ranges.empty())
         buffered_ranges.pop_front();
 
+    auto task_info = per_part_infos[part_idx];
+
+    /// If the protocol carries serialized index granules that this replica doesn't have
+    /// (e.g. computed during distributed index analysis on another replica),
+    /// deserialize them and inject into the task info so the text index reader can use them.
+    if (!current_task.serialized_index_granules.empty())
+    {
+        bool missing_any = false;
+        for (const auto & [name, _] : current_task.serialized_index_granules)
+        {
+            if (!task_info->skip_indexes_extra_data.index_granules.contains(name))
+            {
+                missing_any = true;
+                break;
+            }
+        }
+
+        if (missing_any)
+        {
+            auto modified = std::make_shared<MergeTreeReadTaskInfo>(*task_info);
+            for (const auto & [name, data] : current_task.serialized_index_granules)
+            {
+                if (modified->skip_indexes_extra_data.index_granules.contains(name))
+                    continue;
+
+                auto it = modified->index_read_tasks.find(name);
+                if (it == modified->index_read_tasks.end())
+                    continue;
+
+                auto granule = it->second.index.index->createIndexGranule();
+                MergeTreeIndexDeserializationState state{
+                    .condition = it->second.index.condition.get(),
+                    .index = it->second.index.index.get(),
+                };
+                ReadBufferFromString buf(data);
+                granule->deserializeBinary(buf, state);
+                modified->skip_indexes_extra_data.index_granules[name] = std::move(granule);
+            }
+
+            task_info = std::move(modified);
+            /// Cache the updated info so subsequent tasks for the same part reuse it.
+            per_part_infos[part_idx] = task_info;
+        }
+    }
+
     ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, current_sum_marks);
-    return createTask(per_part_infos[part_idx], std::move(ranges_to_read), previous_task);
+    return createTask(task_info, std::move(ranges_to_read), previous_task);
 }
 
 }

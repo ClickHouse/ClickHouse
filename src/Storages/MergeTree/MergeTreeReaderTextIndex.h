@@ -25,7 +25,6 @@ public:
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
         NamesAndTypesList columns_,
-        bool can_skip_mark_,
         MergeTreeIndexGranulePtr granule_);
 
     void setGranule(MergeTreeIndexGranulePtr granule_);
@@ -39,7 +38,6 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
-    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
@@ -70,9 +68,6 @@ private:
     MergeTreeIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
 
-    /// True if the reader is allowed to skip marks.
-    /// Otherwise it only fills virtual columns.
-    bool can_skip_mark;
     bool is_initialized = false;
 
     /// Streams for large postings that are split into multiple blocks.
@@ -85,8 +80,6 @@ private:
     size_t current_mark = 0;
 
     PaddedPODArray<UInt32> indices_buffer;
-    roaring::Roaring analyzed_granules;
-    roaring::Roaring may_be_true_granules;
 
     /// Virtual columns that are always true.
     std::vector<bool> is_always_true;
