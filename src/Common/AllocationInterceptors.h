@@ -27,16 +27,8 @@
 #define __real_pvalloc(size) ::pvalloc(size)
 #endif
 
-#if defined(OS_DARWIN) || defined(OS_FREEBSD) || defined(OS_SUNOS)
 #define __real_getaddrinfo(node, service, hints, result) ::getaddrinfo(node, service, hints, result)
 #define __real_freeaddrinfo(result) ::freeaddrinfo(result)
-#else
-/// On Linux with sanitizers, --wrap=getaddrinfo/freeaddrinfo is still active (it is outside the
-/// sanitizer guard in CMakeLists.txt), so we need extern declarations — macros calling ::getaddrinfo
-/// would cause infinite recursion through the linker wrap.
-extern "C" int __real_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** result);
-extern "C" void __real_freeaddrinfo(struct addrinfo * result);
-#endif
 
 #else
 

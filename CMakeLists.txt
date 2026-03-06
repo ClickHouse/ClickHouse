@@ -517,13 +517,6 @@ macro (clickhouse_add_executable target)
     endif ()
 
     if (NOT (OS_DARWIN OR OS_FREEBSD OR OS_SUNOS))
-        # Wrap getaddrinfo/freeaddrinfo in all Linux builds, including sanitizer builds.
-        # This keeps accounting symmetric for resolver allocations that are otherwise outside malloc/free wrapping.
-        target_link_options(${target} PRIVATE
-            "LINKER:--wrap=getaddrinfo"
-            "LINKER:--wrap=freeaddrinfo"
-        )
-
         # Wrap malloc/free and related C-style functions to inject memory tracking.
         # Sanitizers have their own interception for malloc/free, so keep these disabled there.
         if (NOT (SANITIZE OR SANITIZE_COVERAGE))
@@ -539,6 +532,8 @@ macro (clickhouse_add_executable target)
                 "LINKER:--wrap=reallocarray"
                 "LINKER:--wrap=strdup"
                 "LINKER:--wrap=strndup"
+                "LINKER:--wrap=getaddrinfo"
+                "LINKER:--wrap=freeaddrinfo"
             )
             if (NOT USE_MUSL)
                 target_link_options(${target} PRIVATE

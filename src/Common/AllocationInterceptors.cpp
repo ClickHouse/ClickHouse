@@ -286,6 +286,7 @@ private:
     bool previous_value;
 };
 
+#if !defined(SANITIZER) && !defined(SANITIZE_COVERAGE)
 size_t estimateGetAddrInfoSize(const struct addrinfo * result)
 {
     size_t total_size = 0;
@@ -317,6 +318,7 @@ struct GetaddrInfoTracking
 };
 
 GetaddrInfoTracking getaddrinfo_tracking;
+#endif
 
 }
 
@@ -542,7 +544,6 @@ extern "C" char * __wrap_strndup(const char * str, size_t size) // NOLINT
     trace.onAlloc(res, actual_size);
     return res;
 }
-#endif
 
 extern "C" int __wrap_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** result) // NOLINT
 {
@@ -616,5 +617,6 @@ extern "C" void __wrap_freeaddrinfo(struct addrinfo * result) // NOLINT
         trace.onFree(result, tracked_size);
     }
 }
+#endif // !defined(SANITIZER) && !defined(SANITIZE_COVERAGE)
 
 #pragma clang diagnostic pop
