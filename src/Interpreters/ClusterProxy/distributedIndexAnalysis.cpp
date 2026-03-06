@@ -253,6 +253,7 @@ public:
         failover_pools.reserve(remote_replicas);
         for (const auto & pool : remote_pools)
             failover_pools.push_back(pool.pool);
+        /// LoadBalancing strategy does not matter, since we use replicaIndexPriorityFunc() later for HedgedConnectionsFactory
         remote_pool = std::make_shared<ConnectionPoolWithFailover>(std::move(failover_pools), LoadBalancing::NEAREST_HOSTNAME);
 
         replica_addresses.resize(remote_replicas);
