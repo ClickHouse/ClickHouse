@@ -32,8 +32,6 @@ namespace DB
 
         bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return false; }
 
-        ASTPtr getInnerTableFunctionAST() const { return inner_table_function_ast; }
-
     private:
         StoragePtr inner_storage;
         ASTPtr inner_table_function_ast;
