@@ -45,6 +45,7 @@
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Planner/ActionsChain.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -1400,7 +1401,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 source.getStorage(), TableLockHolder{}, storage_snapshot);
 
             bool ignore_in_subqueries = !context->getSettingsRef()[Setting::validate_mutation_query];
-            QueryAnalyzer query_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/true);
+            QueryAnalyzer query_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/dry_run);
             query_analyzer.resolve(expression, table_node, execution_context);
             createUniqueAliasesIfNecessary(expression, execution_context);
 
@@ -1484,20 +1485,45 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     auto combined_expr_list = make_intrusive<ASTExpressionList>();
                     combined_expr_list->children.push_back(combined_ast);
                     auto combined_tree = buildQueryTree(combined_expr_list, execution_context);
-                    QueryAnalyzer combined_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/true);
+                    QueryAnalyzer combined_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/dry_run);
                     combined_analyzer.resolve(combined_tree, table_node, execution_context);
                     collectSourceColumns(combined_tree, planner_context, true);
                     collectSets(combined_tree, *planner_context);
                     filter_node = combined_tree->getChildren()[0];
                 }
 
-                auto [filter_dag, _] = buildActionsDAGFromExpressionNode(
-                    filter_node, input_columns, planner_context, empty_correlated_columns, false);
-
                 auto filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-                filter_actions->dag = std::move(filter_dag);
-                stage.filter_column_names.push_back(
-                    filter_actions->dag.getOutputs().at(0)->result_name);
+                filter_actions->dag = ActionsDAG(input_columns);
+                /// Use PlannerActionsVisitor directly instead of
+                /// buildActionsDAGFromExpressionNode, because the latter
+                /// replaces DAG outputs with only the expression results.
+                /// We keep stage output columns + the filter expression as
+                /// outputs, matching the old analyzer path (where the DAG
+                /// outputs are output_columns + filter_col after finalize).
+                /// This is important for on-fly mutation application where
+                /// getReadTaskColumns uses getNames() to track which columns
+                /// are already available from previous prewhere steps.
+                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns, false);
+                auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions->dag, filter_node);
+                correlated_subtrees.assertEmpty("in mutation filter");
+                chassert(expression_nodes.size() == 1);
+
+                /// Build a map from the current outputs for O(1) lookup,
+                /// then keep only columns in stage.output_columns + the filter.
+                std::unordered_map<std::string_view, const ActionsDAG::Node *> output_map;
+                for (const auto * node : filter_actions->dag.getOutputs())
+                    output_map.emplace(node->result_name, node);
+
+                auto & dag_outputs = filter_actions->dag.getOutputs();
+                dag_outputs.clear();
+                for (const auto & name : stage.output_columns)
+                {
+                    if (auto it = output_map.find(name); it != output_map.end())
+                        dag_outputs.push_back(it->second);
+                }
+                dag_outputs.push_back(expression_nodes[0]);
+
+                stage.filter_column_names.push_back(expression_nodes[0]->result_name);
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(filter_actions)));
             }
@@ -1515,35 +1541,65 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     update_expr_list->children.push_back(kv.second);
 
                 auto update_tree = buildQueryTree(update_expr_list, execution_context);
-                QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/true);
+                QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries, ignore_in_subqueries, /*use_storage_snapshot_without_data=*/dry_run);
                 update_analyzer.resolve(update_tree, table_node, execution_context);
                 collectSourceColumns(update_tree, planner_context, true);
                 collectSets(update_tree, *planner_context);
 
-                auto [update_dag, _] = buildActionsDAGFromExpressionNode(
-                    update_tree, available_columns_for_step, planner_context, empty_correlated_columns, false);
+                auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+                update_actions->dag = ActionsDAG(available_columns_for_step);
+                PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false);
+                auto [update_expression_nodes, update_correlated_subtrees] = update_visitor.visit(update_actions->dag, update_tree);
+                update_correlated_subtrees.assertEmpty("in mutation update");
 
                 /// Add aliases: expression result name -> target column name.
                 size_t idx = 0;
                 for (const auto & kv : stage.column_to_updated)
                 {
-                    const auto & dag_node = update_dag.findInOutputs(update_dag.getOutputs()[idx]->result_name);
-                    const auto & alias = update_dag.addAlias(dag_node, kv.first);
-                    update_dag.addOrReplaceInOutputs(alias);
+                    const auto & dag_node = *update_expression_nodes[idx];
+                    const auto & alias = update_actions->dag.addAlias(dag_node, kv.first);
+                    update_actions->dag.addOrReplaceInOutputs(alias);
                     ++idx;
                 }
 
-                auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-                update_actions->dag = std::move(update_dag);
+                /// Keep only stage.output_columns + aliased update columns as
+                /// outputs, matching the filter step pattern. See the comment
+                /// in the filter step above for why this matters.
+                std::unordered_map<std::string_view, const ActionsDAG::Node *> update_output_map;
+                for (const auto * node : update_actions->dag.getOutputs())
+                    update_output_map.emplace(node->result_name, node);
+
+                auto & update_dag_outputs = update_actions->dag.getOutputs();
+                update_dag_outputs.clear();
+                for (const auto & name : stage.output_columns)
+                {
+                    if (auto it = update_output_map.find(name); it != update_output_map.end())
+                        update_dag_outputs.push_back(it->second);
+                }
+                for (const auto & kv : stage.column_to_updated)
+                {
+                    if (auto it = update_output_map.find(kv.first); it != update_output_map.end())
+                        update_dag_outputs.push_back(it->second);
+                }
+
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(update_actions)));
             }
 
             /// 6. Build initial step if chain is empty (needed for first stage).
+            ///    Use only the columns from output_columns (matching the old
+            ///    path which uses syntax_result->required_source_columns).
+            ///    Using all input_columns would prevent finalize from pruning
+            ///    the identity DAG and cause reading unnecessary columns.
             if (i == 0 && actions_chain.getStepsSize() == 0)
             {
+                ColumnsWithTypeAndName initial_columns;
+                for (const auto & col : input_columns)
+                    if (stage.output_columns.contains(col.name))
+                        initial_columns.push_back(col);
+
                 auto initial_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-                initial_actions->dag = ActionsDAG(input_columns);
+                initial_actions->dag = ActionsDAG(initial_columns);
                 actions_chain.addStep(
                     std::make_unique<ActionsChainStep>(std::move(initial_actions)));
             }
@@ -1569,6 +1625,16 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             actions_chain.finalize();
 
+            /// ActionsChain::finalize unconditionally sets project_input = true
+            /// for every step. But for on-fly mutation application, input columns
+            /// like _part_offset (added by addPatchPartsColumns to the first reader)
+            /// must pass through non-projection steps.  The old analyzer path
+            /// (ExpressionActionsChain::finalize) only sets project_input for
+            /// non-first steps, so match that: clear project_input on all steps
+            /// except the last (projection) one.
+            for (size_t s = 0; s + 1 < actions_chain.getStepsSize(); ++s)
+                actions_chain[s]->getActions()->project_input = false;
+
             /// 8. Store prepared sets (aliasing shared_ptr keeps planner_context alive).
             stage.new_prepared_sets = std::shared_ptr<PreparedSets>(
                 planner_context, &planner_context->getPreparedSets());
@@ -1580,6 +1646,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 for (const auto & col_name : first_step->getInputColumnNames())
                     prepared_stages[i - 1].output_columns.insert(col_name);
             }
+
         }
         else
         {
@@ -1742,6 +1809,7 @@ void MutationsInterpreter::Source::read(
         for (const auto & col_name : first_step->getInputColumnNames())
             required_columns.push_back(col_name);
     }
+
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
 
     if (!mutation_settings.can_execute)

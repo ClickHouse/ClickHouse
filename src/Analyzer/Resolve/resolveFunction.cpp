@@ -646,6 +646,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+        /// When ignore_in_subqueries is set, skip resolving EXISTS subqueries
+        /// that may reference non-existent tables (validate_mutation_query = 0).
+        /// Resolve as a constant 0 (UInt8).
+        if (ignore_in_subqueries)
+        {
+            auto result_projection_name = calculateFunctionProjectionName(node, parameters_projection_names,
+                {function_node_ptr->getArguments().getNodes().at(0)->formatASTForErrorMessage()});
+
+            ConstantValue const_value(static_cast<UInt8>(0), std::make_shared<DataTypeUInt8>());
+            node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+            return {result_projection_name};
+        }
+
         /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
         const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
 
