@@ -393,6 +393,19 @@ def main():
         _abort(job_name, results, stop_watch, status=Result.Status.ERROR, info="ClickHouse binary --version failed.")
         return
 
+    # Build RaftKeeper Docker image if raftkeeper backend is enabled.
+    # The image is built locally from Dockerfile.raftkeeper (downloads pre-built binary for amd64).
+    backends_raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "")
+    if "raftkeeper" in backends_raw:
+        rk_image = os.environ.get("RAFTKEEPER_IMAGE", "raftkeeper:test")
+        dockerfile = f"{REPO_DIR}/tests/integration/compose/Dockerfile.raftkeeper"
+        if not Result.from_commands_run(
+            name="Build RaftKeeper Docker image",
+            command=f"docker build -f {dockerfile} -t {rk_image} {REPO_DIR}",
+        ).is_ok():
+            _abort(job_name, results, stop_watch)
+            return
+
     _, timeout_val = build_pytest_command()  # get timeout for env
     env = build_pytest_env(ch_path, timeout_val)
     sidecar = env["KEEPER_METRICS_FILE"]
