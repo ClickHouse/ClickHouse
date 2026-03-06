@@ -52,6 +52,9 @@ using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
+
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
@@ -63,7 +66,8 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         TokenizerPtr tokenizer_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -89,6 +93,7 @@ public:
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
+    MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -160,6 +165,8 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    /// Reference postprocessor expression (applied to tokens after tokenization)
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

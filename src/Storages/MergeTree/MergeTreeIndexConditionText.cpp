@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -60,11 +61,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     TokenizerPtr tokenizer_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : WithContext(context_)
     , header(index_sample_block)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
+    , postprocessor(postprocessor_)
 {
     if (!predicate)
     {
@@ -475,7 +478,8 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringToTokens(value.data(), value.size(), tokens);
-    return tokenizer->compactTokens(tokens);
+    tokens = tokenizer->compactTokens(tokens);
+    return postprocessor->applyBatch(std::move(tokens));
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -483,7 +487,8 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
-    return tokenizer->compactTokens(tokens);
+    tokens = tokenizer->compactTokens(tokens);
+    return postprocessor->applyBatch(std::move(tokens));
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
@@ -491,7 +496,8 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
-    return tokenizer->compactTokens(tokens);
+    tokens = tokenizer->compactTokens(tokens);
+    return postprocessor->applyBatch(std::move(tokens));
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
