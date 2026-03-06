@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-fasttest
 -- Regression guard for window-partition scatter memory overhead.
 -- This should pass with the fix and fail on unpatched binary under the same memory limit.
 
