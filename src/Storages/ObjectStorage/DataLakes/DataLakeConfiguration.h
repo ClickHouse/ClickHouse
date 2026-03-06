@@ -429,16 +429,9 @@ private:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
+        checkLocalCorrectness(object_storage, local_context);
         if (!current_metadata)
         {
-            checkLocalCorrectness(object_storage, local_context);
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
