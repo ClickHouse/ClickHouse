@@ -162,7 +162,10 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     auto new_key_condition = std::make_unique<KeyCondition>(filter_dag, context, column_names, expression);
 
     if (new_key_condition->alwaysUnknownOrTrue())
+    {
+        key_condition_cache[column_names] = nullptr;
         return nullptr;
+    }
 
     auto * key_condition_ptr = new_key_condition.get();
     key_condition_cache[column_names] = std::move(new_key_condition);

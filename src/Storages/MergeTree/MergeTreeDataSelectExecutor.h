@@ -135,8 +135,6 @@ private:
         size_t num_granules_after_minmax = 0;
         size_t num_parts_after_partition_pruner = 0;
         size_t num_granules_after_partition_pruner = 0;
-        size_t num_parts_after_statistics_pruner = 0;
-        size_t num_granules_after_statistics_pruner = 0;
     };
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
