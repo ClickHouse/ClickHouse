@@ -285,6 +285,69 @@ def test_list_tables(started_cluster):
     )
 
 
+def test_check_database(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}.testA.A"
+    namespace_2 = f"{root_namespace}.testB.B"
+    namespace_1_tables = ["tableA", "tableB"]
+    namespace_2_tables = ["tableC", "tableD"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in [namespace_1, namespace_2]:
+        catalog.create_namespace(namespace)
+
+    for namespace in [namespace_1, namespace_2]:
+        assert len(catalog.list_tables(namespace)) == 0
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    tables_list = ""
+    for table in namespace_1_tables:
+        create_table(catalog, namespace_1, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_1}.{table}"
+
+    for table in namespace_2_tables:
+        create_table(catalog, namespace_2, table)
+        if len(tables_list) > 0:
+            tables_list += "\n"
+        tables_list += f"{namespace_2}.{table}"
+
+    assert (
+            tables_list
+            == node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    ).strip()
+    )
+    node.restart_clickhouse()
+    assert (
+            tables_list
+            == node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    ).strip()
+    )
+
+    node.query(
+        f"CHECK DATABASE {CATALOG_NAME}"
+    )
+
+    node.query(
+        f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+    )
+
+    assert "fault when checking database" in node.query_and_get_error(
+        f"CHECK DATABASE {CATALOG_NAME}"
+    )
+
+    node.query(
+        f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+    )
+
+
 def test_many_namespaces(started_cluster):
     node = started_cluster.instances["node1"]
     root_namespace_1 = f"A_{uuid.uuid4()}"
@@ -662,7 +725,7 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
-    
+
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
     settings = {

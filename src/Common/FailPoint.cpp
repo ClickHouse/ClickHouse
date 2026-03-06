@@ -153,6 +153,7 @@ static struct InitFiu
     ONCE(local_object_storage_network_error_during_remove) \
     ONCE(parallel_replicas_check_read_mode_always)\
     REGULAR(lightweight_show_tables) \
+    REGULAR(check_database_datalake_negative) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock)
 
 namespace FailPoints

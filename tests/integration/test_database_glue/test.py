@@ -785,6 +785,66 @@ def test_table_without_metadata_location(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_check_database(started_cluster):
+    """Test that CHECK DATABASE works with Glue catalog database."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_check_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespaces
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    # Create ClickHouse Glue database once
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # Create tables in each namespace
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    # Verify database exists
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+
+    # Run CHECK DATABASE and verify it completes without error
+    node.query(f"CHECK DATABASE {CATALOG_NAME}")
+
+    node.query(
+        f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+    )
+
+    assert "fault when checking database" in node.query_and_get_error(
+        f"CHECK DATABASE {CATALOG_NAME}"
+    )
+
+    node.query(
+        f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+    )
+
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
     node = started_cluster.instances["node1"]
