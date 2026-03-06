@@ -2691,20 +2691,34 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     /// During request execution the only packet that can come from the client is stopping the query.
     if (in->poll(0))
     {
-        if (in->isCanceled() || in->eof())
-            throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
-
-        UInt64 packet_type = 0;
-        readVarUInt(packet_type, *in);
-
-        switch (packet_type)
+        try
         {
-            case Protocol::Client::Cancel:
-                processCancel(state);
-                break;
+            if (in->isCanceled() || in->eof())
+                throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
-            default:
-                throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
+            UInt64 packet_type = 0;
+            readVarUInt(packet_type, *in);
+
+            switch (packet_type)
+            {
+                case Protocol::Client::Cancel:
+                    processCancel(state);
+                    break;
+
+                default:
+                    throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
+            }
+        }
+        catch (...)
+        {
+            /// Mark the query as stopped so that other callbacks (e.g. ClusterFunctionReadTaskCallback)
+            /// that are waiting on callback_mutex will see the cancellation via checkIfQueryCanceled()
+            /// before attempting to read from the now-broken connection.
+            /// Without this, a race condition exists: when this function throws while holding callback_mutex,
+            /// the mutex is released during stack unwinding, and a pipeline worker thread can acquire it
+            /// and attempt to read from the canceled ReadBuffer before the executor is canceled.
+            state.stop_query = true;
+            throw;
         }
     }
 }
