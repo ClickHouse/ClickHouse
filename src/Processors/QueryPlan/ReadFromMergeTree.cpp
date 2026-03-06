@@ -1343,12 +1343,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 }
 
                 ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-                new_parts.emplace_back(
-                    part.data_part,
-                    part.parent_part,
-                    part.part_index_in_query,
-                    part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+
+                RangesInDataPart new_part(part);
+                new_part.ranges = std::move(ranges_to_get_from_part);
+                new_parts.emplace_back(std::move(new_part));
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1686,12 +1684,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
-                new_parts.emplace_back(
-                    part_it->data_part,
-                    part_it->parent_part,
-                    part_it->part_index_in_query,
-                    part_it->part_starting_offset_in_query,
-                    part_it->ranges);
+                new_parts.emplace_back(*part_it);
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -3325,6 +3318,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     MergeTreeIndexBuildContextPtr index_build_context;
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
+
     if (supportsSkipIndexesOnDataRead())
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;

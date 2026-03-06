@@ -81,7 +81,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             log);
 
         ranges = std::move(filtered_ranges);
-        index_granules = std::move(extra_data.index_granules);
+        for (auto & [name, granule] : extra_data.index_granules)
+            index_granules[name] = std::move(granule);
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
                         (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
         total_granules = ranges.getNumberOfMarks();
