@@ -225,11 +225,8 @@ auto getWasmEdgeVmConfig(WasmModule::Config cfg)
         WasmEdge_ConfigureSetMaxMemoryPage(config.get(), static_cast<uint32_t>(cfg.memory_limit / WASMEDGE_PAGE_SIZE));
     }
 
-    if (cfg.fuel_limit)
-    {
-        WasmEdge_ConfigureStatisticsSetCostMeasuring(config.get(), true);
-        WasmEdge_ConfigureStatisticsSetTimeMeasuring(config.get(), true);
-    }
+    WasmEdge_ConfigureStatisticsSetCostMeasuring(config.get(), true);
+    WasmEdge_ConfigureStatisticsSetTimeMeasuring(config.get(), true);
 
     return config;
 }
@@ -302,9 +299,9 @@ public:
         host_func.linkTo(import_module_ctx.get());
     }
 
-    uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override;
+    std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override;
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override;
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override;
 
     void loadModuleFromCode(std::string_view wasm_code);
     void loadModuleFromFile(const std::filesystem::path & file_path);
@@ -418,7 +415,7 @@ void WasmEdgeCompartment::loadModuleImpl()
     }
 }
 
-uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
+std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
 {
     auto * memory_ctx = WasmEdge_ModuleInstanceFindMemory(vm_instance_cxt, wasmedgeStringWrap("memory"));
     if (memory_ctx == nullptr)
@@ -430,10 +427,10 @@ uint8_t * WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
         throw Exception(
             ErrorCodes::WASM_ERROR, "Cannot get memory at offset {} and size {} from wasm module with size {}", ptr, size, total_memory);
     }
-    return data;
+    return {data, static_cast<size_t>(size)};
 }
 
-std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params)
+std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token)
 {
     auto func_it = imported_functions.find(function_name);
     if (func_it == imported_functions.end())
@@ -458,6 +455,13 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
     std::vector<WasmEdge_Value> returns_values(returns_count);
     {
         last_exception.reset();
+
+        StopCallback stop_callback(stop_token, [this, function_name]
+        {
+            LOG_DEBUG(log, "Stop requested for function '{}'", function_name);
+            auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
+            WasmEdge_StatisticsSetCostLimit(stat_ctx, 0);
+        });
 
         ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmGuestExecuteMicroseconds);
         WasmEdge_Result result = WasmEdge_VMExecute(

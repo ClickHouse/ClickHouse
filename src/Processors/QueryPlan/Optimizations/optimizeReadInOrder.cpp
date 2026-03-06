@@ -1079,6 +1079,15 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// With parallel replicas, the read-in-order-through-join optimization can produce
+        /// different results on the initiator and remote replicas (due to differences in plan
+        /// construction such as AST optimizations), leading to coordination mode mismatch
+        /// ("Replica decided to read in Default mode, not in WithOrder").
+        /// Skip this optimization for parallel replicas when it goes through a JOIN,
+        /// similar to the existing check for parallel replicas in the Union case.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return nullptr;
+
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1190,6 +1199,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1306,6 +1320,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip distinct-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
