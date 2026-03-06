@@ -41,6 +41,7 @@ void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
+void registerShufflingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
@@ -68,6 +69,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerUnionStep(registry);
     registerDistinctStep(registry);
     registerSortingStep(registry);
+    registerShufflingStep(registry);
     registerAggregatingStep(registry);
     registerMergingAggregatedStep(registry);
     registerArrayJoinStep(registry);
