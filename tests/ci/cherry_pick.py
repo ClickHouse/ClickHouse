@@ -627,13 +627,111 @@ class BackportPRs:
                 )
                 self.error = e
 
+    def _rolling_out_branches(self) -> List[str]:
+        """
+        Returns release branch names whose corresponding release PR has the
+        `rolling-out` label.  Used to skip general backports (`pr-must-backport`
+        or `pr-critical-bugfix`) to branches that are currently being rolled out.
+        Direct version-specific labels (e.g. `v25.10-must-backport`) always
+        override this and proceed as normal.
+        """
+        return [
+            release_pr.head.ref
+            for release_pr in self.release_prs
+            if Labels.ROLLING_OUT in {label.name for label in release_pr.labels}
+        ]
+
+    def _close_prs_for_rolling_out_branch(
+        self, pr: PullRequest, branch: str
+    ) -> None:
+        """
+        Close any open cherry-pick or backport PRs that were previously created
+        for a release branch that is now marked `rolling-out`.
+        """
+        cp_branch = ReleaseBranch.cp_branch(branch, pr.number)
+        bp_branch = ReleaseBranch.bp_branch(branch, pr.number)
+        # Search separately: label:A,B in GitHub search is AND (must have both),
+        # so we issue two queries — one per label — to find either type.
+        open_prs = []
+        for head_branch, label in (
+            (cp_branch, Labels.PR_CHERRYPICK),
+            (bp_branch, Labels.PR_BACKPORT),
+        ):
+            open_prs += self.gh.get_pulls_from_search(
+                query=f"type:pr repo:{self._repo_name} head:{head_branch}",
+                state="open",
+                label=label,
+            )
+        for open_pr in open_prs:
+            logging.info(
+                "PR #%s: closing PR #%s because release branch %s is rolling-out",
+                pr.number,
+                open_pr.number,
+                branch,
+            )
+            if self.dry_run:
+                logging.info(
+                    "DRY RUN: would close PR #%s for rolling-out branch %s",
+                    open_pr.number,
+                    branch,
+                )
+                continue
+            version = branch.replace("release/", "")
+            open_pr.create_issue_comment(
+                f"Closing this PR because the target release branch `{branch}` "
+                "is currently being rolled out. Backporting is skipped for "
+                "rolling-out branches when the original PR carries only the "
+                "generic `pr-must-backport` or `pr-critical-bugfix` label.\n\n"
+                f"If you still want to backport this change, add the "
+                f"`v{version}-must-backport` label to the original PR "
+                f"#{pr.number} — that overrides the rolling-out skip."
+            )
+            open_pr.edit(state="closed")
+
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if Labels.MUST_BACKPORT in pr_labels:
+        is_general_backport = Labels.MUST_BACKPORT in pr_labels or bool(
+            Labels.AUTO_BACKPORT & set(pr_labels)
+        )
+        if is_general_backport:
+            # For general backports (pr-must-backport / critical bugfix), skip
+            # release branches that are currently rolling out, unless the PR
+            # carries an explicit version-specific label for that branch.
+            rolling_out = set(self._rolling_out_branches())
+            # Build a per-branch version-specific label so we can honour explicit
+            # overrides (e.g. the PR has both pr-must-backport AND
+            # v25.10-must-backport: the 25.10 branch must be included even if it
+            # is marked rolling-out).
+            branch_specific_label = {
+                branch: f"v{branch.replace('release/', '')}-must-backport"
+                for branch in self.release_branches
+            }
+            skipped = [
+                br
+                for br in self.release_branches
+                if br in rolling_out and branch_specific_label[br] not in pr_labels
+            ]
+            if skipped:
+                logging.info(
+                    "PR #%s: skipping rolling-out release branches for general "
+                    "backport: %s",
+                    pr.number,
+                    ", ".join(skipped),
+                )
+                for br in skipped:
+                    self._close_prs_for_rolling_out_branch(pr, br)
             branches = [
-                ReleaseBranch(br, pr, self.repo) for br in self.release_branches
+                ReleaseBranch(br, pr, self.repo)
+                for br in self.release_branches
+                if br not in rolling_out or branch_specific_label[br] in pr_labels
             ]  # type: List[ReleaseBranch]
+            if not branches:
+                logging.info(
+                    "PR #%s: all release branches are rolling-out, skipping backport",
+                    pr.number,
+                )
+                return
         else:
             branches = [
                 ReleaseBranch(

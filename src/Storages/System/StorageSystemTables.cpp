@@ -27,6 +27,7 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -119,16 +120,29 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            auto table_it = database->getTablesIterator(context,
-                                                                   /* filter_by_table_name */ {},
-                                                                   /* skip_not_loaded */ false);
-            for (; table_it->isValid(); table_it->next())
+            if (engine_column || uuid_column)
             {
-                table_column->insert(table_it->name());
-                if (engine_column)
-                    engine_column->insert(table_it->table()->getName());
-                if (uuid_column)
-                    uuid_column->insert(table_it->table()->getStorageID().uuid);
+                auto table_it = database->getTablesIterator(context,
+                                                                       /* filter_by_table_name */ {},
+                                                                       /* skip_not_loaded */ false);
+                for (; table_it->isValid(); table_it->next())
+                {
+                    table_column->insert(table_it->name());
+                    if (engine_column)
+                        engine_column->insert(table_it->table()->getName());
+                    if (uuid_column)
+                        uuid_column->insert(table_it->table()->getStorageID().uuid);
+                }
+            }
+            else
+            {
+                auto table_details = database->getLightweightTablesIterator(context,
+                                                                      /* filter_by_table_name */ {},
+                                                                      /* skip_not_loaded */ false);
+                for (const auto & table_detail : table_details)
+                {
+                    table_column->insert(table_detail.name);
+                }
             }
         }
     }
@@ -289,7 +303,7 @@ protected:
     }
 
 
-    size_t fillTableNamesOnly(MutableColumns & res_columns, bool need_to_check_access_for_tables)
+    size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
         auto table_details = database->getLightweightTablesIterator(context,
                                 /* filter_by_table_name */ {},
@@ -300,10 +314,13 @@ protected:
         const auto access = context->getAccess();
         for (const auto & table_detail: table_details)
         {
+            if (!tables.contains(table_detail.name))
+                continue;
+
             size_t src_index = 0;
             size_t res_index = 0;
 
-            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
+            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
                 continue;
 
             if (columns_mask[src_index++])
@@ -322,6 +339,8 @@ protected:
     {
         if (done)
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("TablesBlockSource::generate");
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
@@ -478,9 +497,15 @@ protected:
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
-            if (needed_columns.size() == 1 && needed_columns[0].name == "name")
+            bool needs_one_column = (needed_columns.size() == 1 && needed_columns[0].name == "name");
+
+            bool needs_two_columns = (needed_columns.size() == 2 &&
+                        ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
+                            (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
+
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
             {
-                size_t rows_added = fillTableNamesOnly(res_columns, need_to_check_access_for_tables);
+                size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
                 continue;
             }

@@ -46,16 +46,71 @@ struct FailPointChannel;
 class FailPointInjection
 {
 public:
+    /// Classification of failpoints by trigger behavior.
+    ///
+    /// Failpoints are registered via the APPLY_FOR_FAILPOINTS macro in FailPoint.cpp,
+    /// which groups them into four categories. Each category uses a different callback
+    /// (ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) that determines how the failpoint
+    /// fires at runtime.
+    enum class FailPointType : uint8_t
+    {
+        /// Triggers exactly once when hit, then automatically disables itself.
+        /// Useful for injecting a transient error into an operation that retries.
+        Once = 0,
 
+        /// Triggers every time the failpoint is hit, until explicitly disabled.
+        /// Useful for simulating persistent failures (e.g., every ZooKeeper write fails).
+        Regular = 1,
+
+        /// Blocks the calling thread once (via pauseFailPoint), then automatically
+        /// disables itself after being resumed with notifyFailPoint / disableFailPoint.
+        PauseableOnce = 2,
+
+        /// Blocks the calling thread every time it is hit, until resumed.
+        /// The failpoint remains enabled after resume, so the next hit will block again.
+        Pauseable = 3,
+    };
+
+    /// Snapshot of a single failpoint's registration and runtime state.
+    /// Returned by getFailPoints() for introspection (e.g., the system.fail_points table).
+    struct FailPointInfo
+    {
+        /// The failpoint identifier as declared in APPLY_FOR_FAILPOINTS (e.g., "replicated_merge_tree_commit_zk_fail_after_op").
+        String name;
+
+        /// Category that governs how the failpoint fires (see FailPointType).
+        FailPointType type;
+
+        /// Whether the failpoint is currently active (i.e., present in fail_point_wait_channels).
+        bool enabled;
+    };
+
+    /** Block the calling thread at a pauseable failpoint until notifyFailPoint()
+      * or disableFailPoint() is called for the same @p fail_point_name.
+      * Has no effect if the failpoint is not currently enabled.
+      */
     static void pauseFailPoint(const String & fail_point_name);
 
+    /** Activate a failpoint so that subsequent hits (via fiu_do_on / pauseFailPoint)
+      * will take effect. Creates a FailPointChannel in fail_point_wait_channels.
+      * No-op if the failpoint is already enabled.
+      */
     static void enableFailPoint(const String & fail_point_name);
 
+    /** Deactivate a failpoint and resume any threads currently blocked on it.
+      * Removes the FailPointChannel from fail_point_wait_channels.
+      * No-op if the failpoint is not currently enabled.
+      */
     static void disableFailPoint(const String & fail_point_name);
 
+    /** Resume all threads currently blocked on a pauseable failpoint without
+      * disabling it. For Pauseable failpoints the next hit will block again;
+      * for PauseableOnce the failpoint auto-disables after resume.
+      */
     static void notifyFailPoint(const String & fail_point_name);
 
-    /// Notify test code that this thread has paused, then wait for resume notification
+    /** Notify test code that this thread has paused, then wait for resume notification.
+      */
     static void notifyPauseAndWaitForResume(const String & fail_point_name);
 
     /**
@@ -128,8 +183,24 @@ public:
       */
     static void waitForResume(const String & fail_point_name);
 
+    /** Return a snapshot of every registered failpoint with its type and enabled status.
+      *
+      * Iterates over all four categories declared in APPLY_FOR_FAILPOINTS and checks
+      * fail_point_wait_channels under the mutex to determine whether each failpoint is
+      * currently active. Used by StorageSystemFailPoints to populate system.fail_points.
+      *
+      * Thread-safe: acquires FailPointInjection::mu internally.
+      */
+    static std::vector<FailPointInfo> getFailPoints();
+
 private:
+    /// Guards all accesses to fail_point_wait_channels.
     static std::mutex mu;
+
+    /// Maps enabled failpoint names to their channels.
+    /// A failpoint is considered enabled if and only if it has an entry here.
+    /// Channels carry the condition variables used by pauseable failpoints to
+    /// block / resume threads and track pause_count / resume_epoch.
     static std::unordered_map<String, std::shared_ptr<FailPointChannel>> fail_point_wait_channels;
 };
 }

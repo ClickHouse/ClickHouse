@@ -1,5 +1,6 @@
 import dataclasses
 import glob
+import hashlib
 import json
 import os
 import re
@@ -158,14 +159,18 @@ class Runner:
             status=Result.Status.RUNNING,
             start_time=Utils.timestamp(),
         )
+        if env.WORKFLOW_JOB_DATA:
+            result.add_ext_key_value(
+                "run_url", f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}"
+            )
         result.dump()
 
         if not local_run:
-            if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME and not job.no_aws:
+            if workflow.enable_report and job.name != Settings.CI_CONFIG_JOB_NAME:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and not _is_praktika_job(job.name) and not job.no_aws:
+        if job.requires and not _is_praktika_job(job.name):
             print("Download required artifacts")
             required_artifacts = []
             # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
@@ -265,7 +270,7 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if job.name != Settings.CI_CONFIG_JOB_NAME:
+        if env.WORKFLOW_CONFIG:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
@@ -309,6 +314,18 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            # Derive a stable container name from the worktree path and job name
+            # so that different jobs (or the same job in different worktrees)
+            # never share a name, while the name is deterministic enough to
+            # allow cleanup of stale containers from previous runs.
+            container_name = (
+                "praktika_"
+                + hashlib.sha1(
+                    (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
+                ).hexdigest()[:12]
+            )
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
             workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
@@ -323,10 +340,25 @@ class Runner:
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
                     workdir = ""
-            Shell.check(
-                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
-                verbose=True,
-            )
+            if Shell.check(
+                f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                raise RuntimeError(
+                    f"Docker container '{container_name}' is already running. "
+                    f"Another instance of job [{job.name}] may be active in this worktree."
+                )
+            if Shell.check(
+                f"docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                print(
+                    f"Found stopped container '{container_name}' from a previous run — removing it"
+                )
+                if not Shell.check(f"docker rm {container_name}", verbose=True):
+                    raise RuntimeError(
+                        f"Failed to remove stopped container '{container_name}'"
+                    )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -342,7 +374,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -371,6 +403,15 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        # Clean up stale experimental result file before starting the subprocess.
+        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
+        # the process — if the subprocess completes during that sleep (common for
+        # fast native jobs like Finish Workflow in backport PRs), deleting the file
+        # afterwards would remove the subprocess's own output, causing a spurious
+        # "Job killed or terminated" error.
+        if Path((Result.experimental_file_name_static())).exists():
+            Path(Result.experimental_file_name_static()).unlink()
+
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -378,10 +419,6 @@ class Runner:
             timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
-
-            if Path((Result.experimental_file_name_static())).exists():
-                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-                Path(Result.experimental_file_name_static()).unlink()
 
             exit_code = process.wait()
 
@@ -588,7 +625,7 @@ class Runner:
                     result.set_link(link)
 
         ci_db = None
-        if workflow.enable_cidb and not job.no_aws:
+        if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
                 url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
@@ -647,12 +684,12 @@ class Runner:
         result.dump()
 
         # always in the end
-        if workflow.enable_cache and not job.no_aws:
+        if workflow.enable_cache:
             print(f"Run CI cache hook")
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        if workflow.enable_open_issues_check and not job.no_aws:
+        if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
             try:
@@ -669,7 +706,7 @@ class Runner:
                     env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
         # Always run report generation at the end to finalize workflow status with latest job result
-        if workflow.enable_report and not job.no_aws:
+        if workflow.enable_report:
             print(f"Run html report hook")
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
@@ -705,7 +742,7 @@ class Runner:
         info = Info()
         report_url = info.get_job_report_url(latest=False)
 
-        if workflow.enable_gh_summary_comment and not job.no_aws and (
+        if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
@@ -723,10 +760,9 @@ class Runner:
                 print(f"ERROR: failed to post CI summary, ex: {e}")
                 traceback.print_exc()
 
-        if not job.no_aws and (
-            (workflow.enable_commit_status_on_failure and not result.is_ok())
-            or job.enable_commit_status
-        ):
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
             _GH_Auth(workflow)
             if not GH.post_commit_status(
                 name=job.name,
@@ -737,7 +773,7 @@ class Runner:
                 env.add_info("Failed to post GH commit status for the job")
                 print(f"ERROR: Failed to post commit status for the job")
 
-        if workflow.enable_report and not job.no_aws:
+        if workflow.enable_report:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 
@@ -775,7 +811,7 @@ class Runner:
             )
 
         # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
-        if workflow.enable_slack_feed and not job.no_aws and (
+        if workflow.enable_slack_feed and (
             is_final_job or is_initial_job or not result.is_ok()
         ):
             updated_emails = []

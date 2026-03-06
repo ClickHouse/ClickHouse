@@ -1,6 +1,7 @@
 #include <Functions/hasAnyAllTokens.h>
 
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
@@ -8,10 +9,11 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -32,7 +34,7 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 constexpr size_t arg_tokenizer = 2;
 
-TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenExtractor & tokenizer, std::string_view function_name)
+TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
 {
     if (arguments.size() < 2)
         return {};
@@ -80,16 +82,27 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     return search_tokens;
 }
 
-/// Function input accept string, fixed string, array of string or array of fixed strings.
+/// Function input accepts string, fixed string, array of string or array of fixed strings.
 bool isStringOrFixedStringOrArrayOfStringOrFixedString(const IDataType & type)
 {
-    if (isStringOrFixedString(type))
+    const IDataType * nested_type = &type;
+
+    /// Unwrap an optional top-level Nullable.
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
+        nested_type = nullable->getNestedType().get();
+
+    if (isStringOrFixedString(*nested_type))
         return true;
 
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(&type); array_type)
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
     {
-        const DataTypePtr & nested_type = array_type->getNestedType();
-        return isStringOrFixedString(nested_type);
+        const IDataType * element_type = array_type->getNestedType().get();
+
+        /// Array elements may also be Nullable(String) or Nullable(FixedString).
+        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
+            element_type = nullable_elem->getNestedType().get();
+
+        return isStringOrFixedString(*element_type);
     }
 
     return false;
@@ -123,37 +136,42 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
     FunctionArgumentDescriptors mandatory_args
     {
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
-        {"needles",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
-         isColumnConst,
-         "const String or const Array(String)"}
+        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"}
     };
 
-    FunctionArgumentDescriptors optional_args;
-    if (arguments.size() == 3)
-        optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+    FunctionArgumentDescriptors optional_args
+    {
+        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+    };
 
     validateFunctionArguments(name, arguments, mandatory_args, optional_args);
-    return std::make_shared<DataTypeNumber<UInt8>>();
+
+    DataTypePtr return_type = std::make_shared<DataTypeNumber<UInt8>>();
+
+    /// Propagate nullability: if the input column is Nullable, the result is Nullable(UInt8).
+    if (arguments[arg_input].type->isNullable())
+        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<UInt8>>());
+
+    return return_type;
 }
 
 template <class HasTokensTraits>
 FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
-        ? SplitByNonAlphaTokenExtractor::getExternalName()
+        ? SplitByNonAlphaTokenizer::getExternalName()
         : arguments[arg_tokenizer].column->getDataAt(0);
 
-    auto token_extractor = TokenizerFactory::instance().get(tokenizer_name);
-    auto search_tokens = initializeSearchTokens(arguments, *token_extractor, getName());
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-    return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(token_extractor), std::move(search_tokens), std::move(argument_types), return_type);
+    return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
 }
 
 template <class HasTokensTraits>
 ExecutableFunctionPtr FunctionBaseHasAnyAllTokens<HasTokensTraits>::prepare(const ColumnsWithTypeAndName &) const
 {
-    return std::make_unique<ExecutableFunctionHasAnyAllTokens<HasTokensTraits>>(token_extractor, search_tokens);
+    return std::make_unique<ExecutableFunctionHasAnyAllTokens<HasTokensTraits>>(tokenizer, search_tokens);
 }
 
 namespace
@@ -239,9 +257,10 @@ concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as
 void searchOnArray(
     const ColumnArray::Offsets & offsets,
     const StringColumnType auto & input_string,
+    const ColumnNullable * null_map,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     ArrayOffset current_offset = 0;
@@ -253,9 +272,14 @@ void searchOnArray(
 
         for (size_t j = 0; j < array_size; ++j)
         {
-            std::string_view input = input_string.getDataAt(current_offset + j);
+            const size_t element_idx = current_offset + j;
 
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+            if (null_map && null_map->isNullAt(element_idx))
+                continue;
+
+            std::string_view input = input_string.getDataAt(element_idx);
+
+            forEachToken(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -270,7 +294,7 @@ void searchOnString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -279,7 +303,7 @@ void searchOnString(
         col_result[i] = false;
         matcher.reset();
 
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+        forEachToken(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 
@@ -288,7 +312,7 @@ void executeString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     if (tokens.empty())
@@ -301,9 +325,9 @@ void executeString(
     col_result.resize(input_rows_count);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -312,8 +336,9 @@ template <class HasTokensTraits>
 void executeArray(
     const ColumnArray * array,
     const StringColumnType auto & input_string,
+    const ColumnNullable * null_map,
     PaddedPODArray<UInt8> & col_result,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     const auto & offsets = array->getOffsets();
@@ -329,9 +354,9 @@ void executeArray(
     col_result.resize(input_size);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -341,19 +366,24 @@ void executeStringOrArray(
     ColumnPtr col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, token_extractor, tokens);
+        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, token_extractor, tokens);
+        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
     {
-        if (const auto * input_string = checkAndGetColumn<ColumnString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, token_extractor, tokens);
-        else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, token_extractor, tokens);
+         /// Array elements may be Nullable(String) or Nullable(FixedString); unwrap and pass the null map.
+        const IColumn * data_col = &col_input_array->getData();
+        const ColumnNullable * null_map = checkAndGetColumn<ColumnNullable>(data_col);
+        const IColumn * actual_data = null_map ? &null_map->getNestedColumn() : data_col;
+
+        if (const auto * input_string = checkAndGetColumn<ColumnString>(actual_data))
+            executeArray<HasTokensTraits>(col_input_array, *input_string, null_map, col_result, tokenizer, tokens);
+        else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(actual_data))
+            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, null_map, col_result, tokenizer, tokens);
     }
 }
 
@@ -376,17 +406,17 @@ ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
     ColumnPtr col_input = arguments[arg_input].column;
 
-    if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
+    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
     {
         /// The sparse gram token extractor stores an internal state which modified during the execution.
         /// This leads to an error while executing this function multi-threaded because that state is not protected.
         /// To avoid this case, a clone of the sparse gram token extractor will be used.
-        auto sparse_gram_extractor = token_extractor->clone();
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_gram_extractor.get(), search_tokens);
+        auto sparse_grams_tokenizer = tokenizer->clone();
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
     }
 
     return col_result;
@@ -422,7 +452,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
-        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
+        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };

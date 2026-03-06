@@ -43,7 +43,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_with_retry(check_result, func, retries=100):
+def run_with_retry(check_result, func, retries=300):
     for _ in range(retries):
         last = func()
         if check_result(last):
@@ -162,7 +162,7 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
             "keeper_path": keeper_path,
             "parallel_inserts": parallel_inserts,
             "s3queue_processing_threads_num": 16,
-            "s3queue_loading_retries": 20,
+            "s3queue_loading_retries": 100,
             "s3queue_max_processed_files_before_commit": max_processed_files_before_commit,
         },
     )

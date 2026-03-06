@@ -545,7 +545,7 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     FunctionDocumentation::Description description_mapContainsKey = R"(
 Determines if a key is contained in a map.
 )";
-    FunctionDocumentation::Syntax syntax_mapContainsKey = "mapContains(map, key)";
+    FunctionDocumentation::Syntax syntax_mapContainsKey = "mapContainsKey(map, key)";
     FunctionDocumentation::Arguments arguments_mapContainsKey = {
         {"map", "Map to search in.", {"Map(K, V)"}},
         {"key", "Key to search for. Type must match the key type of the map.", {"Any"}}

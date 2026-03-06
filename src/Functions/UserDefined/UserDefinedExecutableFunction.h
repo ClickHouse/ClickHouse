@@ -3,8 +3,9 @@
 #include <string>
 
 #include <DataTypes/IDataType.h>
-#include <Processors/Sources/ShellCommandSource.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ struct UserDefinedExecutableFunctionConfiguration
 {
     std::string name;
     std::string command;
-    std::vector<std::string> command_arguments;
+    VectorWithMemoryTracking<std::string> command_arguments;
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
     std::vector<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;

@@ -26,11 +26,17 @@ namespace ErrorCodes
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
-    ContextPtr context,
-    bool /* if_not_updated_before */)
+    ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context)
+{
+    update(object_storage_ptr, context);
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
@@ -62,9 +68,20 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+    return std::nullopt;
+}
+
+std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot &, ContextPtr) const
+{
+    return nullptr;
+}
+
+bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return false;
 }
 
 
@@ -72,7 +89,8 @@ void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    const StorageID * table_id)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -84,7 +102,7 @@ void StorageObjectStorageConfiguration::initialize(
     }
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);

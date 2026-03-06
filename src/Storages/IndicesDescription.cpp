@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -108,6 +109,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
+    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
@@ -193,6 +195,14 @@ bool IndicesDescription::has(const String & name) const
         if (index.name == name)
             return true;
     return false;
+}
+
+const IndexDescription & IndicesDescription::getByName(const String & name) const
+{
+    for (const auto & index : *this)
+        if (index.name == name)
+            return index;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no index with name '{}'", name);
 }
 
 bool IndicesDescription::hasType(const String & type) const

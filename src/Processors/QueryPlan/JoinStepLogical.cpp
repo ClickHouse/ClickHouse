@@ -1484,6 +1484,15 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     });
 }
 
+std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+{
+    std::vector<JoinActionRef> input_actions;
+    const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
+    for (const auto * node : raw_inputs)
+        input_actions.emplace_back(node, expression_actions);
+    return input_actions;
+}
+
 
 std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 {

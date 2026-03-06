@@ -76,6 +76,7 @@ class Labels:
 
     CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
     CI_FUNCTIONAL = "ci-functional-test"
+    CI_TOOLCHAIN = "ci-toolchain"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
@@ -188,6 +189,9 @@ def check_labels(category, info):
 
 if __name__ == "__main__":
     info = Info()
+    if Labels.RELEASE in info.pr_labels or Labels.RELEASE_LTS in info.pr_labels:
+        print("NOTE: Release PR detected, skipping changelog category check")
+        sys.exit(0)
     error, category = get_category(info.pr_body)
     if not category or error:
         print(f"ERROR: {error}")

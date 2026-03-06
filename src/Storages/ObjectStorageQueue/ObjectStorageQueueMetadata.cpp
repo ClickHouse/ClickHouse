@@ -1091,6 +1091,8 @@ void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const St
 
 void ObjectStorageQueueMetadata::updateRegistryFunc()
 {
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueMetadata::updateRegistry");
+
     try
     {
         Coordination::EventPtr wait_event = std::make_shared<Poco::Event>();
@@ -1164,6 +1166,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFunc()
     if (shutdown_called)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueMetadata::cleanupThreadFunc");
     try
     {
         cleanupThreadFuncImpl();
@@ -1250,7 +1253,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded");
+        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), table_metadata.tracked_files_limit.load());
         return;
     }
 

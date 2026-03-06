@@ -1176,7 +1176,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
             {
                 /// Ephemeral common virtual columns (e.g. `_table`) are only supported
-                /// by the new analyzer which fills them via ExpressionStep.
+                /// by the analyzer which fills them via ExpressionStep.
                 /// The old analyzer has no mechanism to fill them, so skip them here
                 /// to avoid a type mismatch between the header and the actual data.
                 if (!common_column_desc->isEphemeral())

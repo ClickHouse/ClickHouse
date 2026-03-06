@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 -- Smoke test for encrypted disk over cached S3 storage.
 -- Verifies the `s3_cache_encrypted` disk and storage policy are configured and functional.

@@ -446,7 +446,7 @@ DECLARE_DEFAULT_CODE(
     })
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
-DECLARE_AVX512F_SPECIFIC_CODE(
+DECLARE_X86_64_V4_SPECIFIC_CODE(
     void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
@@ -454,6 +454,9 @@ DECLARE_AVX512F_SPECIFIC_CODE(
 
         const __m512i bmask = _mm512_set1_epi64(bit_mask);
 
+        /// By default clang-21 with X86_64_V4 unrolls this loop (it didn't with AVX512F) and that makes it slower.
+        /// Prevent unrolling to achieve better performance.
+        _Pragma("nounroll")
         for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {
             uint8_t v = src[b];
@@ -470,7 +473,7 @@ DECLARE_AVX512F_SPECIFIC_CODE(
         }
     })
 
-DECLARE_AVX512VL_SPECIFIC_CODE(
+DECLARE_X86_64_V4_SPECIFIC_CODE(
     void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
@@ -523,7 +526,15 @@ DECLARE_AVX512VL_SPECIFIC_CODE(
         }
     })
 
-DECLARE_AVX512VL_SPECIFIC_CODE(
+#if USE_MULTITARGET_CODE
+
+/// Use explicit AVX512BW target instead of x86-64-v4 for better performance
+/// The generic x86-64-v4 arch seems to generate slower code for this specific workload
+_Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,avx512vl\"))),apply_to=function)")
+namespace TargetSpecific::x86_64_v4
+{
+    using namespace DB::TargetSpecific::x86_64_v4;
+
     void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
@@ -567,7 +578,11 @@ DECLARE_AVX512VL_SPECIFIC_CODE(
             cur = _mm_mask_mov_epi16(cur, k8, upd);
             _mm_storeu_si128(reinterpret_cast<__m128i *>(rp), cur);
         }
-    })
+    }
+}
+_Pragma("clang attribute pop")
+
+#endif
 
 template <typename T>
 void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
@@ -575,18 +590,18 @@ void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __
 #if USE_MULTITARGET_CODE
     if constexpr (std::is_same_v<T, UInt64>)
     {
-        if (isArchSupported(TargetArch::AVX512F))
-            return TargetSpecific::AVX512F::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
     }
     else if constexpr (std::is_same_v<T, UInt32>)
     {
-        if (isArchSupported(TargetArch::AVX512VL))
-            return TargetSpecific::AVX512VL::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
     }
     else if constexpr (std::is_same_v<T, UInt16>)
     {
-        if (isArchSupported(TargetArch::AVX512VL))
-            return TargetSpecific::AVX512VL::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
     }
 #endif
     return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
