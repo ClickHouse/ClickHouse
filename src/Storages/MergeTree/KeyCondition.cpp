@@ -1114,6 +1114,8 @@ bool applyFunctionChainToColumn(
                 return false;
             if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
                 return false;
+            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
         }
         else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner)))
         {
