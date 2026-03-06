@@ -1065,7 +1065,7 @@ There are two ways to reference a JSON subcolumn in an index expression:
 
 You can also use expressions that combine multiple subcolumns, for example `json.a || json.b::String`.
 
-#### Example
+#### Example {#json-indexes-on-subcolumns-example}
 
 ```sql
 CREATE TABLE sensor_data
@@ -1119,7 +1119,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 [Data skipping indexes](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can also be created on `JSON` columns using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function.
 This works similarly to creating skip indexes on [`Map`](/sql-reference/data-types/map) columns via `mapKeys` — the index stores the set of JSON paths present in each granule and uses it to skip granules that cannot contain the queried path.
 
-#### Supported index types
+#### Supported index types {#json-indexes-jsonallpaths-supported-types}
 
 `JSONAllPaths` can be used with the following skip index types:
 - [`bloom_filter`](/engines/table-engines/mergetree-family/mergetree#bloom-filter) — supports `equals`, `notEquals`, `in`, `notIn`, and `IS NOT NULL`.
@@ -1127,7 +1127,7 @@ This works similarly to creating skip indexes on [`Map`](/sql-reference/data-typ
 - [`ngrambf_v1`](/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — supports `equals`, `notEquals`, and `IS NOT NULL`.
 - [`text`](/engines/table-engines/mergetree-family/textindexes) (inverted index) — supports `equals`, `notEquals`, and `IS NOT NULL`.
 
-#### Example
+#### Example {#json-indexes-jsonallpaths-example}
 
 ```sql
 CREATE TABLE events
@@ -1190,13 +1190,13 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-#### How it works
+#### How it works {#json-indexes-jsonallpaths-how-it-works}
 
 The `JSONAllPaths(json_column)` expression produces an `Array(String)` containing all paths present in a JSON value.
 The skip index stores these path strings in its data structure (bloom filter or inverted index).
 When a query filters on `json.some.path`, the index checks whether the string `"some.path"` is present in the index for each granule and skips granules where it is absent.
 
-#### Safety with missing paths
+#### Safety with missing paths {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 When a JSON path is absent from a granule, the subcolumn evaluates to:
 - `NULL` for `Dynamic` type (e.g., `json.path`) and `Nullable` typed subcolumns (e.g., `json.path.:Int64`) — comparisons with `NULL` always return false, so skipping is safe.
