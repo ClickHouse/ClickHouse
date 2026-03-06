@@ -779,7 +779,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
                 if Path(f"{self.aes_key}.rsa").exists():
-                    res.append(f"{self.aes_key}") #REMOVEME
                     res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
@@ -805,7 +804,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        Shell.check(f"echo test >{temp_dir}/run_r0/core.test", verbose=True) #REMOVEME
         cores = list(Path(temp_dir).glob("run_r*/core.*"))[:3]
         return [
             Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
