@@ -2211,6 +2211,19 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
+        /// PREWHERE is evaluated at the storage level during data reading, before the
+        /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
+        /// uses DelayedPortsProcessor to ensure sets are built before the main query starts,
+        /// there is a race condition: if a downstream processor (e.g. JoiningTransform with
+        /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
+        /// the set-building pipeline before the set is ready.
+        /// Building sets synchronously here eliminates this race condition entirely.
+        if (query_info.prewhere_info)
+            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+        if (query_info.row_level_filter)
+            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+
         buildIndexes(
             indexes,
             index_filter_dag,
@@ -2312,7 +2325,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
-    NameSet indexes_column_names(primary_key_column_names.begin(), primary_key_column_names.end());
+    NameSet indexes_column_names;
+    /// We need not only PK columns, but source columns for this PK calculation as well
+    if (auto required_columns = primary_key.expression->getRequiredColumns(); !required_columns.empty())
+        indexes_column_names.insert(required_columns.begin(), required_columns.end());
     for (const auto & skip_index : indexes->skip_indexes.useful_indices)
     {
         const auto & skip_index_required_columns = skip_index.index->getColumnsRequiredForIndexCalc();
@@ -2515,7 +2531,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & [part_name, ranges] : analyzed_parts_ranges)
             {
                 auto part_range_info = *parts_ranges_map.at(part_name);
-                chassert(part_range_info.ranges.size() == 1);
+                /// Note: part_range_info.ranges may have been split by Query Condition Cache,
+                /// so we cannot assert ranges.size() == 1 here.
                 chassert(part_range_info.exact_ranges.empty());
 
                 part_range_info.ranges = ranges;
@@ -3278,7 +3295,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             if (!query_info.input_order_info)
                 return CoordinationMode::Default;
 
-            return result.read_type == ReadType::InOrder
+            if (!query_info.input_order_info->direction)
+                return CoordinationMode::Default;
+
+            return query_info.input_order_info->direction > 0
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };

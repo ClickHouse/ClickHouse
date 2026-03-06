@@ -7,6 +7,7 @@ on:
 
 permissions:
   actions: write
+  pull-requests: write
 
 jobs:
   retry-failed:
@@ -58,8 +59,7 @@ jobs:
             # Each failed job emits "true" (infrastructure) or "false" (real failure).
             # A job is considered an infrastructure failure if:
             # - it is the "Config Workflow" or "Finish Workflow" job (pipeline plumbing,
-            #   not actual tests; "Finish Workflow" runs in ~15s so the <120s heuristic
-            #   would always misclassify it as infra), or
+            #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
@@ -67,7 +67,7 @@ jobs:
             #   test failure
             verdicts=$(echo "$jobs_raw" | jq -r '
               .jobs[] | select(.conclusion == "failure") |
-              if .name == "Config Workflow" or .name == "Finish Workflow" then empty
+              if .name == "Config Workflow" or .name == "Finish Workflow" then true
               else
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
@@ -138,3 +138,110 @@ jobs:
           done
 
           echo "Done. Triggered $rerun_count rerun(s)."
+
+  fix-stuck-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fix PRs stuck with auto-merge enabled but not queued
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "Looking for PRs with auto-merge enabled but not queued..."
+          echo ""
+
+          now=$(date +%s)
+          cutoff_seconds=3600  # 60 minutes
+
+          # Get open PRs with auto-merge enabled that have mergeStateStatus=CLEAN
+          # (checks passed but not queued into merge queue).
+          # We use GraphQL pagination (20 PRs per page) to avoid 502 errors
+          # that occur when fetching too many PRs in a single request.
+          owner="${GH_REPO%%/*}"
+          repo_name="${GH_REPO##*/}"
+
+          cat > /tmp/query.graphql << 'QUERYEOF'
+          query($owner: String!, $repo: String!, $cursor: String) {
+            repository(owner: $owner, name: $repo) {
+              pullRequests(states: OPEN, first: 20, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  number
+                  isDraft
+                  mergeStateStatus
+                  autoMergeRequest { enabledAt }
+                }
+              }
+            }
+          }
+          QUERYEOF
+
+          stuck_prs='[]'
+          cursor_args=()
+
+          for i in $(seq 1 10); do
+            response=$(gh api graphql \
+              -f query="$(cat /tmp/query.graphql)" \
+              -f owner="$owner" \
+              -f repo="$repo_name" \
+              "${cursor_args[@]}")
+
+            filtered=$(echo "$response" | jq '[
+              .data.repository.pullRequests.nodes[] | select(
+                .autoMergeRequest != null and
+                .mergeStateStatus == "CLEAN" and
+                .isDraft == false
+              ) | {number, autoMergeRequest, mergeStateStatus, isDraft}
+            ]')
+            stuck_prs=$(echo "$stuck_prs" "$filtered" | jq -s '.[0] + .[1]')
+
+            has_next=$(echo "$response" | jq -r '.data.repository.pullRequests.pageInfo.hasNextPage')
+            if [ "$has_next" != "true" ]; then
+              break
+            fi
+            cursor=$(echo "$response" | jq -r '.data.repository.pullRequests.pageInfo.endCursor')
+            cursor_args=(-f cursor="$cursor")
+          done
+
+          count=$(echo "$stuck_prs" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "No stuck PRs found."
+            exit 0
+          fi
+
+          echo "Found $count candidate PR(s), checking age..."
+          echo ""
+
+          fixed=0
+          pr_numbers=$(echo "$stuck_prs" | jq -r '.[].number')
+
+          for pr_number in $pr_numbers; do
+            enabled_at=$(echo "$stuck_prs" | jq -r ".[] | select(.number == $pr_number) | .autoMergeRequest.enabledAt")
+            enabled_ts=$(date -d "$enabled_at" +%s 2>/dev/null || echo 0)
+            age_seconds=$((now - enabled_ts))
+
+            if [ "$age_seconds" -lt "$cutoff_seconds" ]; then
+              echo "PR #$pr_number: auto-merge enabled ${age_seconds}s ago (< ${cutoff_seconds}s), skipping."
+              continue
+            fi
+
+            age_minutes=$((age_seconds / 60))
+            echo "PR #$pr_number: stuck for ${age_minutes} minutes, retoggling auto-merge..."
+
+            if gh pr merge "$pr_number" --disable-auto --repo "$GH_REPO"; then
+              sleep 2
+              if gh pr merge "$pr_number" --auto --repo "$GH_REPO"; then
+                echo "  OK: Auto-merge retoggled for PR #$pr_number"
+                fixed=$((fixed + 1))
+              else
+                echo "  ERROR: Failed to re-enable auto-merge for PR #$pr_number"
+              fi
+            else
+              echo "  ERROR: Failed to disable auto-merge for PR #$pr_number"
+            fi
+            echo ""
+          done
+
+          echo "Done. Fixed $fixed stuck PR(s)."
