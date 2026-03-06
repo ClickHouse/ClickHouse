@@ -184,10 +184,10 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
+        context_copy->setCurrentQueryId({});
+
         if (!CurrentThread::getGroup())
             io.query_scope = CurrentThread::QueryScope::create(context_copy);
-
-        context_copy->setCurrentQueryId({});
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 

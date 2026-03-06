@@ -76,7 +76,7 @@ def test_merge_tree_load_parts(started_cluster):
 
     assert node1.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active") == "1\n"
 
-    node1.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+    node1.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1, cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;")
     node1.query(f"DETACH TABLE {table}")
     node1.query(f"ATTACH TABLE {table}")
 
