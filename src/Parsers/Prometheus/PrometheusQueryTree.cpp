@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_PROMQL_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -37,17 +38,12 @@ namespace
     }
 }
 
+Node * PrometheusQueryTree::Scalar::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
+{
+    return cloneNodeImpl(this, node_list_);
+}
+
 Node * PrometheusQueryTree::StringLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
-{
-    return cloneNodeImpl(this, node_list_);
-}
-
-Node * PrometheusQueryTree::ScalarLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
-{
-    return cloneNodeImpl(this, node_list_);
-}
-
-Node * PrometheusQueryTree::IntervalLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
 {
     return cloneNodeImpl(this, node_list_);
 }
@@ -67,7 +63,7 @@ Node * PrometheusQueryTree::Subquery::clone(std::vector<std::unique_ptr<Node>> &
     return cloneNodeImpl(this, node_list_);
 }
 
-Node * PrometheusQueryTree::At::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
+Node * PrometheusQueryTree::Offset::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
 {
     return cloneNodeImpl(this, node_list_);
 }
@@ -103,23 +99,30 @@ PrometheusQueryTree & PrometheusQueryTree::operator=(const PrometheusQueryTree &
         if (src.root)
             new_root = src.root->clone(new_node_list);
 
-        *this = PrometheusQueryTree{src.promql_query, new_root, std::move(new_node_list)};
+        *this = PrometheusQueryTree{std::move(new_node_list), new_root, src.timestamp_scale};
     }
     return *this;
 }
 
-PrometheusQueryTree::PrometheusQueryTree(String promql_query_, const Node * root_, std::vector<std::unique_ptr<Node>> node_list_)
-    : promql_query(std::move(promql_query_))
+PrometheusQueryTree::PrometheusQueryTree(std::vector<std::unique_ptr<Node>> node_list_, const Node * root_, UInt32 timestamp_scale_)
+    : node_list(std::move(node_list_))
     , root(root_)
-    , node_list(std::move(node_list_))
+    , timestamp_scale(timestamp_scale_)
 {
+}
+
+PrometheusQueryTree::PrometheusQueryTree(std::unique_ptr<Node> single_node_, UInt32 timestamp_scale_)
+    : timestamp_scale(timestamp_scale_)
+{
+    node_list.emplace_back(std::move(single_node_));
+    root = node_list.back().get();
 }
 
 PrometheusQueryTree & PrometheusQueryTree::operator=(PrometheusQueryTree && src) noexcept
 {
-    promql_query = std::exchange(src.promql_query, {});
-    root = std::exchange(src.root, nullptr);
     node_list = std::exchange(src.node_list, {});
+    root = std::exchange(src.root, nullptr);
+    timestamp_scale = std::exchange(src.timestamp_scale, 0);
     return *this;
 }
 
@@ -132,147 +135,455 @@ PrometheusQueryResultType PrometheusQueryTree::getResultType() const
 
 namespace
 {
-    constexpr const size_t NUM_SPACES_PER_INDENT = 2;
+    constexpr const size_t NUM_SPACES_PER_INDENT = 4;
 
     String makeIndent(size_t indent) { return String(indent * NUM_SPACES_PER_INDENT, ' '); }
 }
 
-String PrometheusQueryTree::dumpTree(size_t indent) const
+String PrometheusQueryTree::dumpTree() const
 {
     if (root)
-        return fmt::format("{}PrometheusQueryTree (result is {}):\n{}", makeIndent(indent), root->result_type, root->dumpTree(indent + 1));
+        return fmt::format("\nPrometheusQueryTree({}):\n{}\n", root->result_type, root->dumpNode(*this, 1));
     else
-        return fmt::format("{}PrometheusQueryTree: empty", makeIndent(indent));
+        return "\nPrometheusQueryTree(EMPTY)\n";
 }
 
-String PrometheusQueryTree::ScalarLiteral::dumpTree(size_t indent) const
+String PrometheusQueryTree::Scalar::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
-    return fmt::format("{}ScalarLiteral({})", makeIndent(indent), ::DB::toString(scalar));
+    return fmt::format("{}Scalar({})", makeIndent(indent), ::DB::toString(scalar));
 }
 
-String PrometheusQueryTree::IntervalLiteral::dumpTree(size_t indent) const
-{
-    return fmt::format("{}IntervalLiteral({})", makeIndent(indent), ::DB::toString(interval));
-}
-
-String PrometheusQueryTree::StringLiteral::dumpTree(size_t indent) const
+String PrometheusQueryTree::StringLiteral::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
     return fmt::format("{}StringLiteral({})", makeIndent(indent), quoteString(string));
 }
 
-String PrometheusQueryTree::InstantSelector::dumpTree(size_t indent) const
+String PrometheusQueryTree::InstantSelector::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
-    std::string_view matchers_word = (matchers.size() > 1) ? "matchers:" : ((matchers.size() == 1) ? "matcher:" : "matchers");
-    String str = fmt::format("{}InstantSelector(), {} {}", makeIndent(indent), matchers.size(), matchers_word);
+    String str = fmt::format("{}InstantSelector:", makeIndent(indent));
     for (const auto & matcher : matchers)
-        str += fmt::format("\n{}{} {} {})", makeIndent(indent + 1), matcher.label_name, matcher.matcher_type, quoteString(matcher.label_value));
+        str += fmt::format("\n{}{} {} {}", makeIndent(indent + 1), matcher.label_name, matcher.matcher_type, quoteString(matcher.label_value));
     return str;
 }
 
-String PrometheusQueryTree::RangeSelector::dumpTree(size_t indent) const
+String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
-    return fmt::format("{}RangeSelector():\n{}instant_selector:\n{}\n{}range:\n{}",
-                       makeIndent(indent), makeIndent(indent + 1), getInstantSelector()->dumpTree(indent + 2),
-                       makeIndent(indent + 1), getRange()->dumpTree(indent + 2));
-}
-
-String PrometheusQueryTree::Subquery::dumpTree(size_t indent) const
-{
-    String str = fmt::format("{}Subquery():\n{}expression:\n{}\n{}range:\n{}",
-                             makeIndent(indent), makeIndent(indent + 1), getExpression()->dumpTree(indent + 2),
-                             makeIndent(indent + 1), getRange()->dumpTree(indent + 2));
-    if (const auto * resolution = getResolution())
-        str += fmt::format("\n{}resolution:\n{}", makeIndent(indent + 1), resolution->dumpTree(indent + 2));
+    String str = fmt::format("{}RangeSelector:", makeIndent(indent));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}", getInstantSelector()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::At::dumpTree(size_t indent) const
+String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
-    String str = fmt::format("{}At():\n{}expression:\n{}", makeIndent(indent), makeIndent(indent + 1), getExpression()->dumpTree(indent + 2));
-    if (const auto * at = getAt())
-        str += fmt::format("\n{}at:\n{}", makeIndent(indent + 1), at->dumpTree(indent + 2));
-    if (const auto * offset = getOffset())
-        str += fmt::format("\n{}offset:\n{}", makeIndent(indent + 1), offset->dumpTree(indent + 2));
+    String str = fmt::format("{}Subquery:", makeIndent(indent));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    if (step)
+        str += fmt::format("\n{}step: {}", makeIndent(indent + 1), ::DB::toString(*step, tree.timestamp_scale));
+    str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::Function::dumpTree(size_t indent) const
+String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
+{
+    String str = fmt::format("{}Offset:", makeIndent(indent));
+    if (at_timestamp)
+        str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
+    if (offset_value)
+        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
+    str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
+    return str;
+}
+
+String PrometheusQueryTree::Function::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     const auto & arguments = getArguments();
-    std::string_view arguments_word = (arguments.size() > 1) ? "arguments:" : ((arguments.size() == 1) ? "argument:" : "arguments");
-    String str = fmt::format("{}Function(name \"{}\"): {} {}", makeIndent(indent), function_name, arguments.size(), arguments_word);
+    std::string_view maybe_colon = arguments.empty() ? "" : ":";
+    String str = fmt::format("{}Function({}){}", makeIndent(indent), function_name, maybe_colon);
     for (const auto * argument : arguments)
-        str += fmt::format("\n{}", argument->dumpTree(indent + 1));
+        str += fmt::format("\n{}", argument->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::UnaryOperator::dumpTree(size_t indent) const
+String PrometheusQueryTree::UnaryOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
-    return fmt::format("{}UnaryOperator(name \"{}\"), 1 argument:\n{}",
-                       makeIndent(indent), operator_name, getArgument()->dumpTree(indent + 1));
+    String str = fmt::format("{}UnaryOperator({})", makeIndent(indent), operator_name);
+    str += fmt::format("\n{}", getArgument()->dumpNode(tree, indent + 1));
+    return str;
 }
 
-String PrometheusQueryTree::BinaryOperator::dumpTree(size_t indent) const
+String PrometheusQueryTree::BinaryOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
-    String str = fmt::format("{}BinaryOperator(name \"{}\"", makeIndent(indent), operator_name);
+    String str = fmt::format("{}BinaryOperator({})", makeIndent(indent), operator_name);
     if (bool_modifier)
-        str += ", bool";
-    if (on)
-        str += ", on";
-    else if (ignoring)
-        str += ", ignoring";
-    if ((on || ignoring) && !labels.empty())
-        str += fmt::format(" [\"{}\"]", fmt::join(labels, "\", \""));
-    if (group_left)
-        str += ", group_left";
-    else if (group_right)
-        str += ", group_right";
-    if ((group_left || group_right) && !extra_labels.empty())
-        str += fmt::format(" [\"{}\"]", fmt::join(extra_labels, "\", \""));
-    str += fmt::format("), 2 arguments:\n{}\n{}", getLeftArgument()->dumpTree(indent + 1), getRightArgument()->dumpTree(indent + 1));
+        str += fmt::format("\n{}bool", makeIndent(indent + 1));
+    if (on || ignoring)
+    {
+        std::string_view on_or_ignoring = on ? "on" : "ignoring";
+        String joined_labels;
+        if (!labels.empty())
+            joined_labels += fmt::format(" {}", fmt::join(labels, ", "));
+        str += fmt::format("\n{}{}{}", makeIndent(indent + 1), on_or_ignoring, joined_labels);
+    }
+    if (group_left || group_right)
+    {
+        std::string_view group_left_or_right = group_left ? "group_left" : "group_right";
+        String joined_extra_labels;
+        if (!extra_labels.empty())
+            joined_extra_labels += fmt::format(" {}", fmt::join(extra_labels, ", "));
+        str += fmt::format("\n{}{}{}", makeIndent(indent + 1), group_left_or_right, joined_extra_labels);
+    }
+    str += fmt::format("\n{}", getLeftArgument()->dumpNode(tree, indent + 1));
+    str += fmt::format("\n{}", getRightArgument()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::AggregationOperator::dumpTree(size_t indent) const
+String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
-    String str = fmt::format("{}AggregationOperator(name \"{}\"", makeIndent(indent), operator_name);
-    if (by)
-        str += ", by";
-    else if (without)
-        str += ", without";
-    if ((by || without) && !labels.empty())
-        str += fmt::format(" [\"{}\"]", fmt::join(labels, "\", \""));
-    const auto & arguments = getArguments();
-    std::string_view arguments_word = (arguments.size() > 1) ? "arguments:" : ((arguments.size() == 1) ? "argument:" : "arguments");
-    str += fmt::format("), {} {}", arguments.size(), arguments_word);
-    for (const auto * argument : arguments)
-        str += fmt::format("\n{}", argument->dumpTree(indent + 1));
+    String str = fmt::format("{}AggregationOperator({})", makeIndent(indent), operator_name);
+    if (by || without)
+    {
+        std::string_view by_or_without = by ? "by" : "without";
+        String joined_labels;
+        if (!labels.empty())
+            joined_labels += fmt::format(" {}", fmt::join(labels, ", "));
+        str += fmt::format("\n{}{}{}", makeIndent(indent + 1), by_or_without, joined_labels);
+    }
+    for (const auto * argument : getArguments())
+        str += fmt::format("\n{}", argument->dumpNode(tree, indent + 1));
     return str;
 }
 
-void PrometheusQueryTree::parse(std::string_view promql_query_)
+
+void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp_scale_)
 {
     String error_message;
     size_t error_pos;
-    if (PrometheusQueryParsingUtil::parseQuery(promql_query_, *this, error_message, error_pos))
+    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, &error_message, &error_pos))
         return;
 
     throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "{} at position {} while parsing PromQL query: {}",
                     error_message, error_pos, promql_query_);
 }
 
-bool PrometheusQueryTree::tryParse(std::string_view promql_query_, String * error_message_, size_t * error_pos_)
+bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
 {
-    String error_message;
-    size_t error_pos;
-    if (PrometheusQueryParsingUtil::parseQuery(promql_query_, *this, error_message, error_pos))
-        return true;
+    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
+}
 
-    if (error_message_)
-        *error_message_ = std::move(error_message);
-    if (error_pos_)
-        *error_pos_ = error_pos;
-    return false;
+
+namespace
+{
+    String quotePromQLString(std::string_view str)
+    {
+        return doubleQuoteString(str);
+    }
+}
+
+String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
+{
+    if (std::isfinite(scalar))
+    {
+        return ::DB::toString(scalar);
+    }
+    else if (std::isinf(scalar))
+    {
+        String str;
+        if (scalar < 0)
+            str += "-";
+        str += "Inf";
+        return str;
+    }
+    else
+    {
+        return "NaN";
+    }
+}
+
+String PrometheusQueryTree::StringLiteral::toString(const PrometheusQueryTree &) const
+{
+    return quotePromQLString(string);
+}
+
+String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree &) const
+{
+    bool has_metric_name = false;
+    size_t metric_name_pos = static_cast<size_t>(-1);
+    for (size_t i = 0; i != matchers.size(); ++i)
+    {
+        const auto & matcher = matchers[i];
+        if ((matcher.label_name == "__name__") && (matcher.matcher_type == MatcherType::EQ))
+        {
+            has_metric_name = true;
+            metric_name_pos = i;
+            break;
+        }
+    }
+
+    String str;
+    if (has_metric_name)
+    {
+        str += matchers[metric_name_pos].label_value;
+    }
+
+    if (!has_metric_name || (matchers.size() - has_metric_name > 0))
+    {
+        str += "{";
+        bool need_comma = false;
+        for (size_t i = 0; i != matchers.size(); ++i)
+        {
+            if (i == metric_name_pos)
+                continue;
+            const auto & matcher = matchers[i];
+            if (need_comma)
+                str += ",";
+            str += matcher.label_name;
+            std::string_view matcher_type_str;
+            switch (matcher.matcher_type)
+            {
+                case MatcherType::EQ:  matcher_type_str = "=";  break;
+                case MatcherType::NE:  matcher_type_str = "!="; break;
+                case MatcherType::RE:  matcher_type_str = "=~"; break;
+                case MatcherType::NRE: matcher_type_str = "!~"; break;
+            }
+            chassert(!matcher_type_str.empty());
+            str += matcher_type_str;
+            str += quotePromQLString(matcher.label_value);
+            need_comma = true;
+        }
+        str += "}";
+    }
+
+    return str;
+}
+
+String PrometheusQueryTree::RangeSelector::toString(const PrometheusQueryTree & tree) const
+{
+    String str = getInstantSelector()->toString(tree);
+    str += "[";
+    str += DB::toString(range, tree.timestamp_scale);
+    str += "]";
+    return str;
+}
+
+String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree) const
+{
+    bool need_parentheses = (getPrecedence() <= getExpression()->getPrecedence());
+
+    String str;
+    if (need_parentheses)
+        str += "(";
+    str += getExpression()->toString(tree);
+    if (need_parentheses)
+        str += ")";
+
+    str += "[";
+    str += DB::toString(range, tree.timestamp_scale);
+    str += ":";
+    if (step)
+        str += DB::toString(*step, tree.timestamp_scale);
+    str += "]";
+
+    return str;
+}
+
+String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) const
+{
+    String str = getExpression()->toString(tree);
+    if (at_timestamp)
+    {
+        str += " @ ";
+        str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
+    }
+    if (offset_value)
+    {
+        str += " offset ";
+        str += DB::toString(Decimal64{*offset_value}, tree.timestamp_scale);
+    }
+    return str;
+}
+
+String PrometheusQueryTree::Function::toString(const PrometheusQueryTree & tree) const
+{
+    String str = function_name;
+    str += "(";
+    bool need_comma = false;
+    for (const auto * arg : getArguments())
+    {
+        if (need_comma)
+            str += ", ";
+        str += arg->toString(tree);
+        need_comma = true;
+    }
+    str += ")";
+    return str;
+}
+
+String PrometheusQueryTree::UnaryOperator::toString(const PrometheusQueryTree & tree) const
+{
+    bool need_parentheses = (getPrecedence() < getArgument()->getPrecedence());
+    String str = operator_name;
+    if (need_parentheses)
+        str += "(";
+    str += getArgument()->toString(tree);
+    if (need_parentheses)
+        str += ")";
+    return str;
+}
+
+String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree & tree) const
+{
+    auto precedence = getPrecedence();
+    auto left_arg_precedence = getLeftArgument()->getPrecedence();
+    auto right_arg_precedence = getRightArgument()->getPrecedence();
+    bool need_left_parentheses = (precedence < left_arg_precedence) || (precedence == left_arg_precedence && isRightAssociative());
+    bool need_right_parentheses = (precedence <= right_arg_precedence);
+
+    String str;
+    if (need_left_parentheses)
+        str += "(";
+    str += getLeftArgument()->toString(tree);
+    if (need_left_parentheses)
+        str += ")";
+
+    str += " ";
+    str += operator_name;
+    str += " ";
+
+    if (bool_modifier)
+        str += "bool ";
+
+    if (on)
+        str += "on(";
+    else if (ignoring)
+        str += "ignoring(";
+
+    if (on || ignoring)
+    {
+        bool need_comma = false;
+        for (const auto & label : labels)
+        {
+            if (need_comma)
+                str += ", ";
+            str += label;
+            need_comma = true;
+        }
+        str += ") ";
+    }
+
+    if (group_left)
+        str += "group_left";
+    else if (group_right)
+        str += "group_right";
+
+    if (group_left || group_right)
+    {
+        if (!extra_labels.empty())
+        {
+            str += "(";
+            bool need_comma = false;
+            for (const auto & label : extra_labels)
+            {
+                if (need_comma)
+                    str += ", ";
+                str += label;
+                need_comma = true;
+            }
+            str += ")";
+        }
+        str += " ";
+    }
+
+    if (need_right_parentheses)
+        str += "(";
+    str += getRightArgument()->toString(tree);
+    if (need_right_parentheses)
+        str += ")";
+
+    return str;
+}
+
+int PrometheusQueryTree::Scalar::getPrecedence() const
+{
+    if ((std::isfinite(scalar) || std::isinf(scalar)) && scalar < 0)
+        return 3; /// same as unary operator '-'
+    else
+        return 0;
+}
+
+int PrometheusQueryTree::Subquery::getPrecedence() const
+{
+    return 1; /// before anything what have precedence (we need parentheses around `expr` in "(expr)[1d:1h]" if expr is any operator)
+}
+
+int PrometheusQueryTree::UnaryOperator::getPrecedence() const
+{
+    return 3; /// same as binary operator '*'
+}
+
+int PrometheusQueryTree::BinaryOperator::getPrecedence() const
+{
+    if (operator_name == "^")
+        return 2;
+    if ((operator_name == "*") || (operator_name == "/") || (operator_name == "%") || (operator_name == "atan2"))
+        return 3;
+    if ((operator_name == "+") || (operator_name == "-"))
+        return 4;
+    if ((operator_name == "==") || (operator_name == "!=") || (operator_name == "<") || (operator_name == ">") || (operator_name == "<=") || (operator_name == ">="))
+        return 5;
+    if ((operator_name == "and") || (operator_name == "unless"))
+        return 6;
+    if (operator_name == "or")
+        return 7;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
+}
+
+bool PrometheusQueryTree::BinaryOperator::isRightAssociative() const
+{
+    return (operator_name == "^"); /// 2 ^ 3 ^ 2 is equivalent to 2 ^ (3 ^ 2)
+}
+
+String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryTree & tree) const
+{
+    String str = operator_name;
+
+    if (by)
+        str += " by (";
+    else if (without)
+        str += " without (";
+
+    if (by || without)
+    {
+        bool need_comma = false;
+        for (const auto & label : labels)
+        {
+            if (need_comma)
+                str += ", ";
+            str += label;
+            need_comma = true;
+        }
+        str += ") ";
+    }
+
+    str += "(";
+    bool need_comma = false;
+    for (const auto * arg : getArguments())
+    {
+        if (need_comma)
+            str += ", ";
+        str += arg->toString(tree);
+        need_comma = true;
+    }
+    str += ")";
+
+    return str;
+}
+
+String PrometheusQueryTree::toString() const
+{
+    if (empty())
+        return "";
+    return getRoot()->toString(*this);
 }
 
 }

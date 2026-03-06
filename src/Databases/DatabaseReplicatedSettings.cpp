@@ -70,7 +70,7 @@ void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def)
         return;
     }
 
-    auto settings_ast = std::make_shared<ASTSetQuery>();
+    auto settings_ast = make_intrusive<ASTSetQuery>();
     settings_ast->is_standalone = false;
     storage_def.set(storage_def.settings, settings_ast);
 }

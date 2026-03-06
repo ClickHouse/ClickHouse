@@ -1,5 +1,6 @@
 import dataclasses
 import glob
+import hashlib
 import json
 import os
 import re
@@ -106,7 +107,6 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={},
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
@@ -128,7 +128,13 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        if job.name == Settings.CI_CONFIG_JOB_NAME:
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
+            # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
+            # directly from the GitHub context. For workflows without this config job, each
+            # job reads the environment from the GitHub context independently.
             print("Read GH Environment from GH context")
             env = _Environment.from_env()
         else:
@@ -153,6 +159,10 @@ class Runner:
             status=Result.Status.RUNNING,
             start_time=Utils.timestamp(),
         )
+        if env.WORKFLOW_JOB_DATA:
+            result.add_ext_key_value(
+                "run_url", f"{env.RUN_URL}/job/{env.WORKFLOW_JOB_DATA['check_run_id']}"
+            )
         result.dump()
 
         if not local_run:
@@ -260,7 +270,7 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if job.name != Settings.CI_CONFIG_JOB_NAME:
+        if env.WORKFLOW_CONFIG:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_workflow_data().digest_dockers
@@ -304,6 +314,19 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            # Derive a stable container name from the worktree path and job name
+            # so that different jobs (or the same job in different worktrees)
+            # never share a name, while the name is deterministic enough to
+            # allow cleanup of stale containers from previous runs.
+            container_name = (
+                "praktika_"
+                + hashlib.sha1(
+                    (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
+                ).hexdigest()[:12]
+            )
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
+            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -312,10 +335,30 @@ class Runner:
                             "WARNING: Create mount dir point in advance to have the same owner"
                         )
                         Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
-            Shell.check(
-                "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
-                verbose=True,
-            )
+                elif setting.startswith("--workdir"):
+                    print(
+                        f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
+                    )
+                    workdir = ""
+            if Shell.check(
+                f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                raise RuntimeError(
+                    f"Docker container '{container_name}' is already running. "
+                    f"Another instance of job [{job.name}] may be active in this worktree."
+                )
+            if Shell.check(
+                f"docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                print(
+                    f"Found stopped container '{container_name}' from a previous run — removing it"
+                )
+                if not Shell.check(f"docker rm {container_name}", verbose=True):
+                    raise RuntimeError(
+                        f"Failed to remove stopped container '{container_name}'"
+                    )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -331,7 +374,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -360,6 +403,15 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
+        # Clean up stale experimental result file before starting the subprocess.
+        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
+        # the process — if the subprocess completes during that sleep (common for
+        # fast native jobs like Finish Workflow in backport PRs), deleting the file
+        # afterwards would remove the subprocess's own output, causing a spurious
+        # "Job killed or terminated" error.
+        if Path((Result.experimental_file_name_static())).exists():
+            Path(Result.experimental_file_name_static()).unlink()
+
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -367,10 +419,6 @@ class Runner:
             timeout_shell_cleanup=job.timeout_shell_cleanup,
         ) as process:
             start_time = Utils.timestamp()
-
-            if Path((Result.experimental_file_name_static())).exists():
-                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-                Path(Result.experimental_file_name_static()).unlink()
 
             exit_code = process.wait()
 
@@ -414,9 +462,8 @@ class Runner:
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
-            print(f"--- Run ownership fix command [{chown_cmd}]")
-            Shell.check(chown_cmd, verbose=True)
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            Shell.run(chown_cmd)
 
         return exit_code
 
@@ -476,6 +523,11 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
+        if result.is_error() and result.get_on_error_hook():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
+
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
@@ -509,7 +561,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0:
+        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
@@ -547,7 +599,9 @@ class Runner:
                             ), f"Artifact {artifact_path} not found"
                             for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
-                                    s3_path=s3_path, local_path=file_path
+                                    s3_path=s3_path,
+                                    local_path=file_path,
+                                    tags=artifact.ext.get("tags"),
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -654,7 +708,17 @@ class Runner:
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
-            HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            if status_updated:
+                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
+                _GH_Auth(workflow)
+                GH.post_commit_status(
+                    name=workflow.name,
+                    status=GH.convert_to_gh_status(status_updated),
+                    description="",
+                    url=Info().get_report_url(latest=False),
+                )
+
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data

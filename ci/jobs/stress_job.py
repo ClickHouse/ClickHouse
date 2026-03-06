@@ -35,7 +35,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             status = line[1]
             time = None
             if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # it's the time spent on the test
                 try:
                     time = float(line[2])
@@ -43,8 +43,11 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                     pass
 
             result = Result(name, status, duration=time)
+            assert (
+                result.is_ok() or result.is_failure or result.is_error
+            ), f"Unexpected status [{result.status}]"
             if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
+                # The value can be empty, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
                     # Python does not support TSV, so we unescape manually
@@ -56,11 +59,14 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
 
 
 def get_additional_envs(info, check_name: str) -> List[str]:
+    from ci.jobs.ci_utils import is_extended_run
+
     result = []
     if not info.is_local_run:
         azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
         result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
@@ -72,6 +78,10 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+
+    result.append(
+        f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
+    )
 
     return result
 
@@ -125,42 +135,22 @@ def process_results(
             p for p in server_log_path.iterdir() if p.is_file()
         ]
 
-    status_path = result_directory / "check_status.tsv"
-    if not status_path.exists():
-        return (
-            Result.Status.FAILED,
-            "check_status.tsv doesn't exists",
-            test_results,
-            additional_files,
-        )
-
-    logging.info("Found check_status.tsv")
-    with open(status_path, "r", encoding="utf-8") as status_file:
-        status = list(csv.reader(status_file, delimiter="\t"))
-
-    if len(status) != 1 or len(status[0]) != 2:
-        return (
-            Result.Status.ERROR,
-            "Invalid check_status.tsv",
-            test_results,
-            additional_files,
-        )
-    state, description = status[0][0], status[0][1]
-
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
             raise ValueError("Empty results")
     except Exception as e:
-        return (
-            Result.Status.ERROR,
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+        test_results = [
+            Result(
+                name="Unknown job error",
+                status=Result.Status.ERROR,
+                info=f"Cannot parse test_results.tsv ({e})",
+            )
+        ]
+        return test_results, additional_files
 
-    return state, description, test_results, additional_files
+    return test_results, additional_files
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
@@ -202,7 +192,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    _ = Shell.run(run_command)
+    exit_code = Shell.run(run_command)
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -222,12 +212,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         )
         is_oom = is_oom or server_log_oom
 
-    _state, _description, test_results, additional_logs = process_results(
-        result_path, server_log_path
-    )
+    test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
-    test_results = []
+    failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
             # This result from stress.py indicates a server crash - we use it as a flag
@@ -235,13 +223,35 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             # since we'll create a more informative result from the parsed logs
             server_died = True
         elif not test_result.is_ok():
-            test_results.append(test_result)
+            failed_results.append(test_result)
 
     if server_died:
-        server_err_log = server_log_path / "clickhouse-server.err.log"
-        stderr_log = result_path / "stderr.log"
-        if not (server_err_log.exists() and stderr_log.exists()):
-            test_results.append(
+        # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
+        # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
+        # sc1/sc2: their dedicated server log + matching stderr log
+        replica_log_pairs = []
+
+        main_stderr = result_path / "stderr.log"
+        if server_log_path.exists():
+            main_server_logs = sorted(
+                p
+                for p in server_log_path.iterdir()
+                if p.is_file()
+                and ".err." in p.name
+                and "sc1" not in p.name
+                and "sc2" not in p.name
+            )
+            for log_file in main_server_logs:
+                replica_log_pairs.append(("main", log_file, main_stderr))
+
+        for sc in ("sc1", "sc2"):
+            sc_server_log = server_log_path / f"clickhouse-server-{sc}.err.log"
+            sc_stderr = result_path / f"stderr-{sc}.log"
+            if sc_server_log.exists():
+                replica_log_pairs.append((sc, sc_server_log, sc_stderr))
+
+        if not replica_log_pairs:
+            failed_results.append(
                 Result.create_from(
                     name="Unknown error",
                     info="no server logs found",
@@ -249,33 +259,77 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            log_parser = FuzzerLogParser(
-                server_log=server_err_log,
-                stderr_log=stderr_log if stderr_log.exists() else "",
-                fuzzer_log="",
-            )
-            name, description, files = log_parser.parse_failure()
-            test_results.append(
-                Result.create_from(
-                    name=name,
-                    info=description,
-                    status=Result.StatusExtended.FAIL,
-                    files=files,
+            definitive_result = None
+            fallback_result = None
+
+            for replica_name, server_log_file, stderr_log in replica_log_pairs:
+                log_parser = FuzzerLogParser(
+                    server_log=server_log_file,
+                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
+                    fuzzer_log="",
                 )
+                try:
+                    name, description, files = log_parser.parse_failure()
+                    file_pair_info = f"Log files: {server_log_file.name}"
+                    if stderr_log.exists():
+                        file_pair_info += f", {stderr_log.name}"
+                    description = f"{file_pair_info}\n{description}"
+                    if name != FuzzerLogParser.UNKNOWN_ERROR:
+                        definitive_result = (name, description, files)
+                        break
+                    if fallback_result is None:
+                        fallback_result = (name, description, files)
+                except Exception as e:
+                    print(
+                        f"ERROR: Failed to parse failure logs for {replica_name} "
+                        f"({server_log_file.name}): {e}\n"
+                        f"Server logs should still be collected."
+                    )
+
+            result = definitive_result or fallback_result
+            if result:
+                name, description, files = result
+                failed_results.append(
+                    Result.create_from(
+                        name=name,
+                        info=description,
+                        status=Result.StatusExtended.FAIL,
+                        files=files,
+                    )
+                )
+            else:
+                failed_results.append(
+                    Result.create_from(
+                        name="Parse failure error",
+                        info="All log parsing attempts failed",
+                        status=Result.Status.FAILED,
+                    )
+                )
+
+    if exit_code != 0:
+        failed_results.append(
+            Result.create_from(
+                name="Check failed",
+                info=f"Check failed with exit code {exit_code}",
+                status=Result.Status.FAILED,
             )
+        )
 
     r = Result.create_from(
-        results=test_results,
-        status=Result.Status.SUCCESS if not test_results else "",
+        results=failed_results,
+        status=Result.Status.SUCCESS if not failed_results else "",
         stopwatch=stopwatch,
     )
     if not r.is_ok() and is_oom:
         r.set_status(Result.Status.SUCCESS)
         r.set_info("OOM error (allowed in stress tests)")
 
-    if not r.is_ok():
-        r.set_files(additional_logs)
-    r.complete_job()
+    if r.is_ok() and exit_code != 0 and not is_oom:
+        r.set_failed().set_info(
+            f"Unknown error: Test script failed with exit code {exit_code}"
+        )
+
+    r.set_files(additional_logs).complete_job()
 
 
 if __name__ == "__main__":

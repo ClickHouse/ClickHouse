@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT -q "
     drop table d;
     truncate src;
     insert into src values (1);
-    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x as select x + sleepEachRow(1) as x from src settings max_block_size = 1;
+    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x as select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system wait view e;"
 # Stop refreshes.
 $CLICKHOUSE_CLIENT -q "
@@ -54,7 +54,7 @@ done
 # Make refreshes slow, wait for a slow refresh to start. (We stopped refreshes first to make sure
 # we wait for a slow refresh, not a previous fast one.)
 $CLICKHOUSE_CLIENT -q "
-    insert into src select * from numbers(1000) settings max_block_size=1;
+    insert into src select * from numbers(20) settings max_block_size=1;
     system start view e;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
 do
@@ -102,6 +102,8 @@ $CLICKHOUSE_CLIENT -q "
     select '<29: randomize>', abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1), next_refresh_time != expected from refreshes;"
 
 # Send data 'TO' an existing table.
+# Stop auto-refreshes before reading dest to avoid racing with the atomic table exchange
+# during a concurrent refresh (which temporarily makes the old UUID inaccessible).
 $CLICKHOUSE_CLIENT -q "
     drop table g;
     create table dest (x Int64) engine MergeTree order by x;
@@ -111,9 +113,23 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view hh refresh every 2 second to dest as select x from src; -- { serverError BAD_ARGUMENTS }
     show create h;
     system wait view h;
+    system stop view h;"
+while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'h' -- $LINENO" | xargs`" != 'Disabled' ]
+do
+    sleep 0.5
+done
+$CLICKHOUSE_CLIENT -q "
     select '<30: to existing table>', * from dest;
-    insert into src values (2);"
+    insert into src values (2);
+    system start view h;"
 while [ "`$CLICKHOUSE_CLIENT -q "select count() from dest -- $LINENO" | xargs`" != '2' ]
+do
+    sleep 0.5
+done
+# Stop auto-refreshes again before the final read+drop to avoid the same
+# atomic-exchange race (UNKNOWN_TABLE on dest during a concurrent refresh).
+$CLICKHOUSE_CLIENT -q "system stop view h;"
+while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'h' -- $LINENO" | xargs`" != 'Disabled' ]
 do
     sleep 0.5
 done
@@ -132,7 +148,7 @@ $CLICKHOUSE_CLIENT -q "
     insert into src2 values (1);
     exchange tables src and src2;
     drop table src2;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, retry from refreshes -- $LINENO" | xargs`" != 'Scheduled 0' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status, retry from refreshes where view = 'h2' -- $LINENO" | xargs`" != 'Scheduled 0' ]
 do
     sleep 0.5
 done

@@ -33,18 +33,7 @@ select_view_thread &
 select_view_thread &
 select_view_thread &
 select_view_thread &
-select_view_thread &
-select_view_thread &
-select_view_thread &
-select_view_thread &
-select_view_thread &
-select_view_thread &
 
-create_or_replace_view_thread &
-create_or_replace_view_thread &
-create_or_replace_view_thread &
-create_or_replace_view_thread &
-create_or_replace_view_thread &
 create_or_replace_view_thread &
 create_or_replace_view_thread &
 create_or_replace_view_thread &
@@ -52,3 +41,5 @@ create_or_replace_view_thread &
 create_or_replace_view_thread &
 
 wait
+
+${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_db SYNC" > /dev/null

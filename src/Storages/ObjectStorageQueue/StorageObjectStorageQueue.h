@@ -78,7 +78,8 @@ public:
         const StorageID & table_id,
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
-        UUID database_uuid = UUIDHelpers::Nil);
+        UUID database_uuid = UUIDHelpers::Nil,
+        String * result_zookeeper_name = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
@@ -93,11 +94,12 @@ private:
     using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
     using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
-    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
 
     ObjectStorageType type;
     const std::string engine_name;
-    const fs::path zk_path;
+    std::string zookeeper_name;
+    fs::path zk_path;
     const bool enable_logging_to_queue_log;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
@@ -111,6 +113,7 @@ private:
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
     bool commit_on_select TSA_GUARDED_BY(mutex);
+    bool deduplication_v2 TSA_GUARDED_BY(mutex);
 
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
@@ -131,6 +134,7 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
+    std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
 
@@ -153,7 +157,8 @@ private:
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context,
-        bool commit_once_processed);
+        bool commit_once_processed,
+        size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;

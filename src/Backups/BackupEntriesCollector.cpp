@@ -18,6 +18,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
@@ -28,6 +29,10 @@
 #include <boost/range/algorithm/copy.hpp>
 
 #include <filesystem>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -73,7 +78,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 
@@ -99,12 +104,14 @@ namespace
 BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
+    const String & backup_id_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
     const ContextPtr & context_,
     ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
+    , backup_id(backup_id_)
     , backup_coordination(backup_coordination_)
     , read_settings(read_settings_)
     , context(context_)
@@ -116,10 +123,10 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(
-        context->getConfigRef().getBool("backups.compare_collected_metadata",
-                                        !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
-                                                                                          /// (because in the Cloud only Replicated databases are used)
+    , compare_collected_metadata(context->getConfigRef().getBool(
+          "backups.compare_collected_metadata",
+          !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+    /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
     , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
@@ -221,6 +228,8 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
+
+    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 
@@ -431,6 +440,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 {
     checkIsQueryCancelled();
 
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
+
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())
     {
@@ -614,7 +628,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create->temporary)
+            if (!create->isTemporary())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
@@ -799,11 +813,13 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
         return;
 
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+    /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
+    /// So they will outlive runner even if an exception is thrown
+    for (const auto & it : table_infos)
     {
         runner.enqueueAndKeepTrack([&]()
         {
-            makeBackupEntriesForTableData(table_name);
+            makeBackupEntriesForTableData(it.first);
         });
     }
     runner.waitForAllToFinishAndRethrowFirstError();

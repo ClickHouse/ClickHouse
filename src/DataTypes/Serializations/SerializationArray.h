@@ -79,6 +79,8 @@ public:
     static bool deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
     static std::pair<size_t, size_t> deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(ColumnPtr & offsets_column, size_t offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
+    static void readArraySafe(IColumn & column, std::function<void()> && read_func);
+
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;

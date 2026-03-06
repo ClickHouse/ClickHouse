@@ -41,7 +41,7 @@ private:
 
         try
         {
-            Poco::Net::SocketAddress socket_address(host, port);
+            Poco::Net::SocketAddress socket_address(host, static_cast<Poco::UInt16>(port));
             Poco::Net::StreamSocket socket(socket_address);
             socket.setSendTimeout(Poco::Timespan(static_cast<Poco::Int64>(timeout * 1000000)));
             Poco::Net::SocketStream str(socket);

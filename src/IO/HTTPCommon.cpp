@@ -1,8 +1,6 @@
-#include <string_view>
 #include <IO/HTTPCommon.h>
 
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Poco/Any.h>
 #include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
@@ -19,11 +17,8 @@
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#include <Poco/Util/Application.h>
 
 #include <istream>
-#include <sstream>
-#include <unordered_map>
 #include <Common/ProxyConfiguration.h>
 
 

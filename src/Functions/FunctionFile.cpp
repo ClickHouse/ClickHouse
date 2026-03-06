@@ -3,13 +3,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <unistd.h>
 #include <filesystem>
 
 
@@ -31,7 +31,13 @@ class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        return std::make_shared<FunctionFile>();
+    }
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }

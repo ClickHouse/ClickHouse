@@ -245,7 +245,7 @@ size_t geohashEncode(Float64 longitude, Float64 latitude, uint8_t precision, cha
 
 void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude)
 {
-    const uint8_t precision = std::min(encoded_len, static_cast<size_t>(MAX_PRECISION));
+    const uint8_t precision = static_cast<uint8_t>(std::min(encoded_len, MAX_PRECISION));
     if (precision == 0)
     {
         // Empty string is converted to (0, 0)
@@ -335,8 +335,8 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
         for (size_t j = 0; j < args.latitude_items; ++j)
         {
             size_t length = geohashEncodeImpl(
-                args.longitude_min + args.longitude_step * i,
-                args.latitude_min + args.latitude_step * j,
+                args.longitude_min + args.longitude_step * static_cast<Float64>(i),
+                args.latitude_min + args.latitude_step * static_cast<Float64>(j),
                 args.precision,
                 out);
 

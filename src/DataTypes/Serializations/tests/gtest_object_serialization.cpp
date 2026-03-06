@@ -65,10 +65,7 @@ TEST(ObjectSerialization, JSONSerialization)
             "c": 42,
             "e": 43
         },
-        "c": [
-            "Str1",
-            "Str2"
-        ]
+        "c": ["Str1","Str2"]
     },
     "b": {
         "c": {
@@ -84,10 +81,7 @@ TEST(ObjectSerialization, JSONSerialization)
     "c": {
         "g": {
             "h": {
-                "t": [
-                    "Str",
-                    "Str2"
-                ]
+                "t": ["Str","Str2"]
             }
         }
     },

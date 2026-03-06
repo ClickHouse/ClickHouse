@@ -57,6 +57,15 @@ public:
   virtual void enterParens(PromQLParser::ParensContext * /*ctx*/) override { }
   virtual void exitParens(PromQLParser::ParensContext * /*ctx*/) override { }
 
+  virtual void enterTimestamp(PromQLParser::TimestampContext * /*ctx*/) override { }
+  virtual void exitTimestamp(PromQLParser::TimestampContext * /*ctx*/) override { }
+
+  virtual void enterDuration(PromQLParser::DurationContext * /*ctx*/) override { }
+  virtual void exitDuration(PromQLParser::DurationContext * /*ctx*/) override { }
+
+  virtual void enterOffsetValue(PromQLParser::OffsetValueContext * /*ctx*/) override { }
+  virtual void exitOffsetValue(PromQLParser::OffsetValueContext * /*ctx*/) override { }
+
   virtual void enterInstantSelector(PromQLParser::InstantSelectorContext * /*ctx*/) override { }
   virtual void exitInstantSelector(PromQLParser::InstantSelectorContext * /*ctx*/) override { }
 
@@ -69,11 +78,11 @@ public:
   virtual void enterLabelMatcherList(PromQLParser::LabelMatcherListContext * /*ctx*/) override { }
   virtual void exitLabelMatcherList(PromQLParser::LabelMatcherListContext * /*ctx*/) override { }
 
-  virtual void enterMatrixSelector(PromQLParser::MatrixSelectorContext * /*ctx*/) override { }
-  virtual void exitMatrixSelector(PromQLParser::MatrixSelectorContext * /*ctx*/) override { }
+  virtual void enterRangeSelector(PromQLParser::RangeSelectorContext * /*ctx*/) override { }
+  virtual void exitRangeSelector(PromQLParser::RangeSelectorContext * /*ctx*/) override { }
 
-  virtual void enterOffset(PromQLParser::OffsetContext * /*ctx*/) override { }
-  virtual void exitOffset(PromQLParser::OffsetContext * /*ctx*/) override { }
+  virtual void enterSelectorWithOffset(PromQLParser::SelectorWithOffsetContext * /*ctx*/) override { }
+  virtual void exitSelectorWithOffset(PromQLParser::SelectorWithOffsetContext * /*ctx*/) override { }
 
   virtual void enterFunction_(PromQLParser::Function_Context * /*ctx*/) override { }
   virtual void exitFunction_(PromQLParser::Function_Context * /*ctx*/) override { }

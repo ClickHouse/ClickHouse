@@ -13,8 +13,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
@@ -31,12 +33,16 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
+    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -67,6 +73,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
+    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -632,6 +640,16 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
+bool StorageInMemoryMetadata::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            return true;
+    }
+    return false;
+}
+
 namespace
 {
     using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
@@ -832,7 +850,19 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
         return;
 
-    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns))
+    // Skip ALIAS columns that are just aliases to other columns (not expressions).
+    // Only create implicit indices for ALIAS columns with actual expressions.
+    // For example: `a ALIAS b` should be skipped, but `a ALIAS b > 0` should get an index.
+    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+    {
+        // If the expression is just a simple identifier (column reference), skip creating implicit index
+        // because the underlying column will already have its own implicit index if needed.
+        if (column.default_desc.expression->as<ASTIdentifier>())
+            return;
+    }
+
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
+        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
     {
         bool minmax_index_exists = false;
 
@@ -847,15 +877,18 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
             bool valid_index = true;
             try
             {
-                MergeTreeIndexFactory::implicitValidation(index);
+                MergeTreeIndexFactory::instance().validate(index, false);
             }
-            catch (...)
+            catch (const Exception & e)
             {
-                valid_index = false;
+                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
+                    valid_index = false;
+                else
+                    throw;
             }
             if (valid_index)
                 secondary_indices.push_back(std::move(index));
@@ -868,7 +901,11 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
 {
     for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
     {
-        if (index_it->isImplicitlyCreated() && index_it->column_names.front() == column_name)
+        /// We check the index name rather than column_names because for ALIAS columns,
+        /// the column_names contains the resolved underlying expression columns, not the alias name.
+        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
+        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
+        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
             index_it = secondary_indices.erase(index_it);
         else
             ++index_it;

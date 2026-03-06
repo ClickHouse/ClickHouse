@@ -133,17 +133,17 @@ SELECT argMinIf(number, -number::Float64, number > 2030) from numbers(2029);
 SELECT argMinIf(number, -number::Float64, number > 2030) from numbers(2032);
 2031
 Select argMax((n, n), n) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(8,8)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(8,8)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMaxIf((n, n), n, n < 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(4,4)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(4,4)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMaxIf((n, n), n, n > 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(8,8)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(8,8)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMin((n, n), n) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(1,1)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(1,1)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMinIf((n, n), n, n < 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(1,1)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(1,1)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMinIf((n, n), n, n > 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(7,7)	Tuple(Nullable(UInt64), Nullable(UInt64))
+(7,7)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 SET compile_aggregate_expressions=1;
 SET min_count_to_compile_aggregate_expression=0;
 WITH

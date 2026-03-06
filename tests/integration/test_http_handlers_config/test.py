@@ -709,3 +709,44 @@ def test_redirect_handler():
         # Query string is not empty - no redirect, and we do not add defaults so, it will be 404
         req = get("/dashboard?foo=bar")
         assert req.status_code == 404
+
+
+def test_predefined_handler_whitespace():
+    """Test that predefined query handlers correctly trim whitespace from queries.
+
+    This is a regression test for a bug where whitespace from XML indentation
+    in the config file would be interpreted as binary data, causing parsing errors.
+    """
+    import struct
+
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_whitespace",
+            "test_predefined_handler_whitespace",
+        )
+    ) as cluster:
+        # Create test table
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt64, value String) ENGINE = Memory"
+        )
+
+        # Prepare RowBinary data: a row with id=1 and value='test'
+        # RowBinary format: UInt64 (8 bytes little-endian) + String (varint length + bytes)
+        row_data = struct.pack("<Q", 1) + b"\x04test"  # 1 as UInt64 + "test" with length prefix
+
+        # POST RowBinary data to the predefined handler
+        # The handler has a query with leading/trailing whitespace in the config XML.
+        # Without the fix, this whitespace would be interpreted as binary data.
+        res = cluster.instance.http_request(
+            "insert_rowbinary",
+            method="POST",
+            data=row_data,
+        )
+        assert res.status_code == 200, f"Insert failed: {res.content}"
+
+        # Verify the data was inserted correctly
+        result = cluster.instance.query("SELECT * FROM test_table")
+        assert result.strip() == "1\ttest"
+
+        cluster.instance.query("DROP TABLE test_table")

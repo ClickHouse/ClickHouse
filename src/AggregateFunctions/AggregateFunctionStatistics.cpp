@@ -37,7 +37,7 @@ bool areComparable(UInt64 a, UInt64 b)
         return false;
 
     auto res = std::minmax(a, b);
-    return (((1 - static_cast<Float64>(res.first) / res.second) < sensitivity) && (res.first > threshold));
+    return (((1 - static_cast<Float64>(res.first) / static_cast<Float64>(res.second)) < sensitivity) && (static_cast<Float64>(res.first) > threshold));
 }
 
 
@@ -63,7 +63,7 @@ struct AggregateFunctionVarianceData
         Float64 delta = val - mean;
 
         ++count;
-        mean += delta / count;
+        mean += delta / static_cast<Float64>(count);
         m2 += delta * (val - mean);
     }
 
@@ -73,13 +73,13 @@ struct AggregateFunctionVarianceData
         if (total_count == 0)
             return;
 
-        Float64 factor = static_cast<Float64>(count * source.count) / total_count;
+        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
 
         if (areComparable(count, source.count))
-            mean = (source.count * source.mean + count * mean) / total_count;
+            mean = (static_cast<Float64>(source.count) * source.mean + static_cast<Float64>(count) * mean) / static_cast<Float64>(total_count);
         else
-            mean = source.mean + delta * (static_cast<Float64>(count) / total_count);
+            mean = source.mean + delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
 
         m2 += source.m2 + delta * delta * factor;
         count = total_count;
@@ -124,7 +124,7 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return m2 / (count - 1);
+        return m2 / static_cast<Float64>(count - 1);
     }
 
     static Float64 getStddevSamp(Float64 m2, UInt64 count)
@@ -138,7 +138,7 @@ private:
             return std::numeric_limits<Float64>::infinity();
         if (count == 1)
             return 0.0;
-        return m2 / count;
+        return m2 / static_cast<Float64>(count);
     }
 
     static Float64 getStddevPop(Float64 m2, UInt64 count)
@@ -270,8 +270,8 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
         ++count;
 
-        left_mean += left_delta / count;
-        right_mean += right_delta / count;
+        left_mean += left_delta / static_cast<Float64>(count);
+        right_mean += right_delta / static_cast<Float64>(count);
         co_moment += (left_val - left_mean) * (right_val - old_right_mean);
 
         /// Update the marginal moments, if any.
@@ -289,19 +289,19 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
         if (total_count == 0)
             return;
 
-        Float64 factor = static_cast<Float64>(count * source.count) / total_count;
+        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
         Float64 right_delta = right_mean - source.right_mean;
 
         if (areComparable(count, source.count))
         {
-            left_mean = (source.count * source.left_mean + count * left_mean) / total_count;
-            right_mean = (source.count * source.right_mean + count * right_mean) / total_count;
+            left_mean = (static_cast<Float64>(source.count) * source.left_mean + static_cast<Float64>(count) * left_mean) / static_cast<Float64>(total_count);
+            right_mean = (static_cast<Float64>(source.count) * source.right_mean + static_cast<Float64>(count) * right_mean) / static_cast<Float64>(total_count);
         }
         else
         {
-            left_mean = source.left_mean + left_delta * (static_cast<Float64>(count) / total_count);
-            right_mean = source.right_mean + right_delta * (static_cast<Float64>(count) / total_count);
+            left_mean = source.left_mean + left_delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
+            right_mean = source.right_mean + right_delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
         }
 
         co_moment += source.co_moment + left_delta * right_delta * factor;
@@ -361,7 +361,7 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return co_moment / (count - 1);
+        return co_moment / static_cast<Float64>(count - 1);
     }
 
     static Float64 getCovarPop(Float64 co_moment, UInt64 count)
@@ -370,7 +370,7 @@ private:
             return std::numeric_limits<Float64>::infinity();
         if (count == 1)
             return 0.0;
-        return co_moment / count;
+        return co_moment / static_cast<Float64>(count);
     }
 
     static Float64 getCorr(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
@@ -480,9 +480,9 @@ void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & facto
 {
     /// varSampStable documentation
     FunctionDocumentation::Description description_varSampStable = R"(
-Calculate the sample variance of a data set. Unlike [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
+Calculate the sample variance of a data set. Unlike [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
 
-The sample variance is calculated using the same formula as [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp):
+The sample variance is calculated using the same formula as [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp):
 
 $$
 \frac{\Sigma{(x - \bar{x})^2}}{n-1}
@@ -536,14 +536,13 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
         },
-        {},
         documentation_varSampStable
     });
 
     /// varPopStable documentation
     FunctionDocumentation::Description description_varPopStable = R"(
 Returns the population variance.
-Unlike [`varPop`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
+Unlike [`varPop`](/sql-reference/aggregate-functions/reference/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
 It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_varPopStable = R"(
@@ -589,7 +588,6 @@ FROM test_data;
             assertUnary(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
         },
-        {},
         documentation_varPopStable
     });
 
@@ -637,7 +635,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    }, {}, documentation_stddevSampStable});
+    }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
@@ -683,7 +681,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    }, {}, documentation_stddevPopStable});
+    }, documentation_stddevPopStable});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
@@ -694,7 +692,7 @@ $$
 
 <br/>
 
-It is similar to [`covarSamp`](../reference/covarsamp.md) but uses a numerically stable algorithm.
+It is similar to [`covarSamp`](/sql-reference/aggregate-functions/reference/covarsamp) but uses a numerically stable algorithm.
 As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax covarSampStable_syntax = "covarSampStable(x, y)";
@@ -757,7 +755,6 @@ FROM
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
         },
-        {},
         covarSampStable_documentation
     });
 
@@ -770,7 +767,7 @@ $$
 
 <br/>
 
-It is similar to the [`covarPop`](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+It is similar to the [`covarPop`](/sql-reference/aggregate-functions/reference/covarpop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax covarPopStable_syntax = "covarPopStable(x, y)";
     FunctionDocumentation::Arguments covarPopStable_arguments = {
@@ -808,7 +805,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
         },
-        {},
         covarPopStable_documentation
     });
 
@@ -867,7 +863,6 @@ FROM series
             assertBinary(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
         },
-        AggregateFunctionProperties{},
         corrStable_documentation
     });
 }

@@ -97,7 +97,7 @@ public:
             validateH3Cell(hindex_origin);
             validateH3Cell(hindex_dest);
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            auto res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
 
             dst_data[row] = res;
         }

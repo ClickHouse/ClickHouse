@@ -30,8 +30,8 @@ String extractTokenWithoutQuotes(IParser::Pos & pos)
 
 void setSelectAll(ASTSelectQuery & select_query)
 {
-    auto expression_list = std::make_shared<ASTExpressionList>();
-    expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+    auto expression_list = make_intrusive<ASTExpressionList>();
+    expression_list->children.push_back(make_intrusive<ASTAsterisk>());
     select_query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
 }
 
@@ -63,9 +63,9 @@ String wildcardToRegex(const String & wildcard)
 
 ASTPtr wrapInSelectWithUnion(const ASTPtr & select_query)
 {
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     auto & list_of_selects = select_with_union_query->list_of_selects;
-    list_of_selects = std::make_shared<ASTExpressionList>();
+    list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(select_query);
     select_with_union_query->children.push_back(list_of_selects);
 

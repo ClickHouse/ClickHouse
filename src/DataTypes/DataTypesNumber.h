@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>

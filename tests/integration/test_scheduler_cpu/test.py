@@ -16,7 +16,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     stay_alive=True,
-    main_configs=[],
+    main_configs=[
+        "configs/no_cpu_slot_preemption.xml",
+    ],
     with_zookeeper=True,
 )
 

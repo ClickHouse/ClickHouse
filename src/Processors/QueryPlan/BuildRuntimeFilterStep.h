@@ -40,6 +40,8 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     void updateOutputHeader() override;
 

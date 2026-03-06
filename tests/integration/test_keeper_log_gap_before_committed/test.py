@@ -1,4 +1,3 @@
-import time
 import pytest
 import logging
 
@@ -30,6 +29,7 @@ def get_fake_zk(timeout=30.0):
 
 def start_clickhouse():
     node1.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
 
 
 def test_keeper_log_gap_before_committed(started_cluster):
@@ -161,6 +161,12 @@ def test_keeper_log_gap_before_committed(started_cluster):
 
         node1.restart_clickhouse()
         keeper_utils.wait_until_connected(cluster, node1)
+
+        # Reconnect after restart since the old connection is now stale
+        node1_conn.stop()
+        node1_conn.close()
+        node1_conn = get_fake_zk()
+
         verify_data()
 
     finally:

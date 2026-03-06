@@ -20,6 +20,7 @@ services:
 
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
       CLUSTER_ID: "Ch3OEYBSD34fcwNTASDNDM2Qk"
     volumes:
       - ${KAFKA_DIR:-}/secrets:/etc/kafka/secrets

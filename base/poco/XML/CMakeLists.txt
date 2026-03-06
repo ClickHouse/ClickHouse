@@ -14,6 +14,7 @@ target_compile_options (_poco_xml_expat
         -Wno-implicit-fallthrough
         -Wno-reserved-identifier
         -Wno-unused-macros
+        -Wno-implicit-int-conversion
 )
 
 target_include_directories (_poco_xml_expat PUBLIC "include")

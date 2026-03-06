@@ -78,6 +78,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         {
             stage = Stage::Exception;
             onException(data.exception);
+            cancel();
             output.pushData(std::move(data));
             return Status::PortFull;
         }

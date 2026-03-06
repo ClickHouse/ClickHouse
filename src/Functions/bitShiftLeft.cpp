@@ -32,7 +32,7 @@ struct BitShiftLeftImpl
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
         else
-            return static_cast<Result>(a) << static_cast<Result>(b);
+            return static_cast<Result>(static_cast<Result>(a) << static_cast<Result>(b));
     }
 
     /// For String
@@ -73,14 +73,14 @@ struct BitShiftLeftImpl
             UInt8 * op_pointer = const_cast<UInt8 *>(begin);
             UInt8 * out = out_vec.data() + old_size;
 
-            UInt8 previous = 0;
+            UInt8 previous = static_cast<UInt8>(0);
             while (op_pointer < end)
             {
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
                     *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
-                    previous = *op_pointer << shift_left_bits;
+                    previous = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 }
                 else
                 {
@@ -91,7 +91,7 @@ struct BitShiftLeftImpl
             }
             if (shift_left_bits)
             {
-                *out = *(op_pointer - 1) << shift_left_bits;
+                *out = static_cast<UInt8>(*(op_pointer - 1) << shift_left_bits);
                 out++;
             }
 
@@ -137,7 +137,7 @@ struct BitShiftLeftImpl
 
             while (op_pointer < end)
             {
-                *out = *op_pointer << shift_left_bits;
+                *out = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 if (op_pointer + 1 < end)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte

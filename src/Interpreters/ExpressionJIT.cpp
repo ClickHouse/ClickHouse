@@ -7,14 +7,9 @@
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>
@@ -96,7 +91,7 @@ public:
             columns[arguments.size()] = getColumnData(result_column.get());
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
-            jit_compiled_function(input_rows_count, columns.data());
+            callJITFunction(jit_compiled_function, input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer doesn't know about stores from JIT-ed code.

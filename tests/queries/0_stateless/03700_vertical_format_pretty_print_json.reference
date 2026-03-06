@@ -7,10 +7,7 @@ data:         {
         "zip": "10001"
     },
     "age": 30,
-    "hobbies": [
-        "reading",
-        "cycling"
-    ],
+    "hobbies": ["reading","cycling"],
     "name": "Alice"
 }
 nullableData: {

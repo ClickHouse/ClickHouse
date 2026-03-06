@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -135,9 +134,14 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
     chassert(!creation_tid.isEmpty());
-    CSN creation = creation_csn.load(std::memory_order_relaxed);
+
+    /// Load removal_csn with acquire: if a concurrent isVisible/canBeRemovedImpl call
+    /// stored removal_csn with release after storing creation_csn,
+    /// then loading removal_csn with acquire and creation_csn after it
+    /// guarantees we see creation_csn if removal_csn is set.
+    CSN removal = removal_csn.load(std::memory_order_acquire);
     TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
-    CSN removal = removal_csn.load(std::memory_order_relaxed);
+    CSN creation = creation_csn.load(std::memory_order_relaxed);
 
     [[maybe_unused]] bool had_creation_csn = creation;
     [[maybe_unused]] bool had_removal_tid = removal_lock;
@@ -211,7 +215,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     {
         removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
-            removal_csn.store(removal, std::memory_order_relaxed);
+            removal_csn.store(removal, std::memory_order_release);  /// Pairs with acquire load at the top of isVisible
     }
 
     return creation <= snapshot_version && (!removal || snapshot_version < removal);
@@ -269,7 +273,7 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
         /// Part removal is not committed yet
         removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
-            removal_csn.store(removal, std::memory_order_relaxed);
+            removal_csn.store(removal, std::memory_order_release);  /// Pairs with acquire load in isVisible
         else
             return false;
     }

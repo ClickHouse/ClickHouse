@@ -329,16 +329,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             if (group_expression_list->children.size() == 1)
             {
                 result.key_size = 1;
-                order_expression = std::make_shared<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
+                order_expression = make_intrusive<ASTIdentifier>(group_expression_list->children.front()->getColumnName());
             }
             else
             {
-                auto function_node = std::make_shared<ASTFunction>();
+                auto function_node = make_intrusive<ASTFunction>();
                 function_node->name = "tuple";
                 function_node->arguments = group_expression_list->clone();
                 result.key_size = function_node->arguments->children.size();
                 for (auto & child : function_node->arguments->children)
-                    child = std::make_shared<ASTIdentifier>(child->getColumnName());
+                    child = make_intrusive<ASTIdentifier>(child->getColumnName());
                 function_node->children.push_back(function_node->arguments);
                 order_expression = function_node;
             }
@@ -384,7 +384,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
 
         /// Subcolumns can be used in projection only when the original column is used.
-        if (columns.hasSubcolumn(column_with_type_name.name))
+        if (columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
             if (!block.has(subcolumn.getNameInStorage()))
@@ -411,12 +411,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 {
     ProjectionDescription result;
 
-    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
-    ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
+    auto select_query = make_intrusive<ASTProjectionSelectQuery>();
+    ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
     for (const auto & column : minmax_columns)
     {
-        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
-        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
     }
 
     auto primary_key_asts = primary_key.expression_list_ast->children;
@@ -521,6 +521,12 @@ Block ProjectionDescription::calculate(
 Block ProjectionDescription::calculateByQuery(
     const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
+    /// Nothing to project from an empty block. This can happen when TTL deletes all rows during merge.
+    /// Aggregate projections with constant GROUP BY keys (e.g., GROUP BY 0.674) would produce 1 row
+    /// from 0 input rows, violating the ProjectionDataSink row count invariant.
+    if (block.rows() == 0)
+        return sample_block.cloneEmpty();
+
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
@@ -547,7 +553,7 @@ Block ProjectionDescription::calculateByQuery(
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
     }
 
     /// Only keep required columns
@@ -729,7 +735,7 @@ std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 ExpressionActionsPtr
 ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
 {
-    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & projection : projections)
         for (const auto & projection_expr : projection.query_ast->children)
             combined_expr_list->children.push_back(projection_expr->clone());

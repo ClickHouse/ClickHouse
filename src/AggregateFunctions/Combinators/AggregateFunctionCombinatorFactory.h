@@ -2,6 +2,8 @@
 
 #include <AggregateFunctions/Combinators/IAggregateFunctionCombinator.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <string>
 
 
@@ -24,7 +26,7 @@ private:
         /// for combiners with common prefix (i.e. "State" and "SimpleState").
         bool operator<(const CombinatorPair & rhs) const { return name.length() > rhs.name.length(); }
     };
-    using Dict = std::vector<CombinatorPair>;
+    using Dict = VectorWithMemoryTracking<CombinatorPair>;
     Dict dict;
 
 public:

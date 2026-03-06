@@ -91,8 +91,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
         /// flatten all left nodes and current node to a UNION DISTINCT list
         else if (union_modes[i] == SelectUnionMode::UNION_DISTINCT)
         {
-            auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
-            distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
+            auto distinct_list = make_intrusive<ASTSelectWithUnionQuery>();
+            distinct_list->list_of_selects = make_intrusive<ASTExpressionList>();
             distinct_list->children.push_back(distinct_list->list_of_selects);
 
             for (int j = 0; j <= i + 1; ++j)

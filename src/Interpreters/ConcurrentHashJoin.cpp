@@ -1,7 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -13,21 +12,14 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/createBlockSelector.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/WeakHash.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -40,7 +32,6 @@
 #include <algorithm>
 #include <numeric>
 #include <deque>
-#include <ranges>
 #include <iterator>
 
 using namespace DB;
@@ -449,6 +440,23 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
+    return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, 0, 1);
+}
+
+bool ConcurrentHashJoin::supportParallelNonJoinedBlocksProcessing() const
+{
+    return table_join->allowParallelNonJoinedRowsProcessing()
+        && JoinCommon::hasNonJoinedBlocks(*table_join)
+        && hash_joins[0]->data->twoLevelMapIsUsed();
+}
+
+///   1) always-false condition (no keys): stream 0 returns all right rows
+///   2) two-level maps - each stream scans buckets where (bucket % num_streams == stream_idx)
+///   3) single-level maps - stream 0 concatenates per-slot streams sequentially
+IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+    size_t stream_idx, size_t num_streams) const
+{
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
@@ -456,42 +464,42 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
                         table_join->kind(), table_join->strictness());
 
-    // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
-    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
-    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    /// no join keys (always false-condition), all right rows are non-joined, only stream 0 emits them
+    if (table_join->getOnlyClause().key_names_right.empty())
     {
+        if (stream_idx != 0)
+            return {};
         std::lock_guard lock(hash_joins[0]->mutex);
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    /// For joins with always false condition
-    if (table_join->getOnlyClause().key_names_right.empty())
+    /// Two-level maps: partition buckets across pipeline streams
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        /// all rows should be considered non-joined
-        /// we need to return all rows from the right table
         std::lock_guard lock(hash_joins[0]->mutex);
-        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, stream_idx, num_streams);
     }
-    else
+
+    /// single-level maps - each slot has its own HashJoin, only stream 0 collects them
+    if (stream_idx != 0)
+        return {};
+
+    std::vector<IBlocksStreamPtr> streams;
+    streams.reserve(slots);
+    for (const auto & hash_join : hash_joins)
     {
-        // Old per-slot streams approach
-        std::vector<IBlocksStreamPtr> streams;
-        streams.reserve(slots);
-        for (const auto & hash_join : hash_joins)
+        std::lock_guard lock(hash_join->mutex);
+        if (hash_join->data->hasNonJoinedRows())
         {
-            std::lock_guard lock(hash_join->mutex);
-            if (hash_join->data->hasNonJoinedRows())
-            {
-                if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                    streams.push_back(std::move(s));
-            }
+            if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                streams.push_back(std::move(s));
         }
-        if (streams.empty())
-            return {};
-        if (streams.size() == 1)
-            return streams[0];
-        return std::make_shared<ConcatStreams>(std::move(streams));
     }
+    if (streams.empty())
+        return {};
+    if (streams.size() == 1)
+        return streams[0];
+    return std::make_shared<ConcatStreams>(std::move(streams));
 }
 
 template <typename HashTable>
@@ -731,7 +739,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 if (!sc)
                     return;
                 // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), 0);
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)

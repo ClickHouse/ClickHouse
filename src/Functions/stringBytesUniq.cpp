@@ -30,7 +30,7 @@ struct StringBytesUniqImpl
             mask[byte >> 6] |= (1ULL << (byte & 0x3F));
         }
 
-        return std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]);
+        return static_cast<ResultType>(std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]));
     }
 };
 

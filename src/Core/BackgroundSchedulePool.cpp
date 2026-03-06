@@ -114,11 +114,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return scheduleImpl(lock);
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 {
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);
@@ -157,7 +152,7 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
     catch (...)
     {
-        error_code = getCurrentExceptionCode();
+        error_code = static_cast<UInt16>(getCurrentExceptionCode());
         exception_message = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
@@ -225,20 +220,28 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 
 bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex)
 {
+    if (scheduled)
+        return true;
+
     scheduled = true;
 
     auto pool_ptr = pool_ref.lock();
     if (!pool_ptr)
         return false;
 
-    if (delayed)
-        pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
-
     /// If the task is not executing at the moment, enqueue it for immediate execution.
     /// But if it is currently executing, do nothing because it will be enqueued
     /// at the end of the execute() method.
+    ///
+    /// NOTE: scheduleTask must be called before cancelDelayedTask to ensure the task
+    /// is always present in at least one of the pool's collections (task_groups,
+    /// running_tasks, delayed_tasks). This prevents getTasks() from missing the task
+    /// during the transition.
     if (!executing)
         pool_ptr->scheduleTask(*this);
+
+    if (delayed)
+        pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
 
     return true;
 }
@@ -567,7 +570,14 @@ std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::ge
     std::unordered_set<TaskInfoPtr> unique_tasks;
 
     {
-        std::lock_guard lock(tasks_mutex);
+        /// Hold both locks simultaneously to get a consistent snapshot.
+        /// In scheduleImpl, a task is first added to task_groups (under tasks_mutex)
+        /// and then removed from delayed_tasks (under delayed_tasks_mutex).
+        /// By holding both locks, we guarantee that we see the task in at least one
+        /// of the collections during such a transition.
+        std::lock_guard lock1(tasks_mutex);
+        std::lock_guard lock2(delayed_tasks_mutex);
+
         for (const auto & [task_type, group] : task_groups)
         {
             for (const auto & task : group.tasks)
@@ -580,10 +590,7 @@ std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::ge
         {
             unique_tasks.insert(task);
         }
-    }
 
-    {
-        std::lock_guard lock(delayed_tasks_mutex);
         for (const auto & [timestamp, task] : delayed_tasks)
         {
             unique_tasks.insert(task);

@@ -10,6 +10,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionPrimes(factory);
     registerTableFunctionLoop(factory);
     registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
@@ -34,6 +35,7 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeIndex(factory);
     registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
+    registerTableFunctionMergeTreeTextIndex(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

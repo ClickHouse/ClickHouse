@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -437,6 +436,66 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
+SELECT 'Test posting_list_codec argument.';
+
+SELECT '-- posting_list_codec must be a string.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 1024)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 1.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'none')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+DROP TABLE tab;
+
+SELECT '-- posting_list_codec must be none or bitpacking.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'none')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'invalid_codec')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Types are incorrect.';
 
 CREATE TABLE tab
@@ -622,14 +681,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    n_str Nullable(String),
-    INDEX idx n_str TYPE text(tokenizer = 'splitByNonAlpha')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (
+    id UInt32,
+    n Nullable(Int32),
+    INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab (
+    id UInt32,
+    arr Array(Nullable(Int32)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 SET allow_suspicious_low_cardinality_types = 1;
 

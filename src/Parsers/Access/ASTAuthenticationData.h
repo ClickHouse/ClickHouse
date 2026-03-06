@@ -24,7 +24,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTAuthenticationData>(*this);
+        auto clone = make_intrusive<ASTAuthenticationData>(*this);
         clone->cloneChildren();
         return clone;
     }

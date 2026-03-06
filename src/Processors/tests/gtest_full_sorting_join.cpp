@@ -126,7 +126,7 @@ public:
     void setBreakProbability(pcg64 & rng_)
     {
         /// random probability with possibility to have exact 0.0 and 1.0 values
-        break_prob = std::uniform_int_distribution<size_t>(0, 5)(rng_) / static_cast<double>(5);
+        break_prob = static_cast<double>(std::uniform_int_distribution<size_t>(0, 5)(rng_)) / static_cast<double>(5);
         rng = &rng_;
     }
 

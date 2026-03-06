@@ -41,13 +41,13 @@ void CompressionCodecFactory::validateCodec(
 
     if (level)
     {
-        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
             {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
             {}, sanity_check, allow_experimental_codecs);
     }
@@ -81,7 +81,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
+        ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
@@ -119,7 +119,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions->children.emplace_back(std::make_shared<ASTIdentifier>(DEFAULT_CODEC_NAME));
+                codecs_descriptions->children.emplace_back(make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
             }
             else
             {
@@ -245,7 +245,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         /// readability and backward compatibility.
         if (can_substitute_codec_arguments)
         {
-            std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+            boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
             result->name = "CODEC";
             result->arguments = codecs_descriptions;
             return result;

@@ -34,7 +34,7 @@ bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     else
         return false;
 
-    auto ast = std::make_shared<ASTTransactionControl>(action);
+    auto ast = make_intrusive<ASTTransactionControl>(action);
     ast->snapshot = snapshot;
     node = ast;
     return true;

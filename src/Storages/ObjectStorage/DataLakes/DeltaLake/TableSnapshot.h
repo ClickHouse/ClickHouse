@@ -22,28 +22,29 @@ namespace DeltaLake
  * A class representing DeltaLake table snapshot -
  * a snapshot of table state, its schema, data files, etc.
  */
-class TableSnapshot
+class TableSnapshot : public std::enable_shared_from_this<TableSnapshot>
 {
 public:
     static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
     explicit TableSnapshot(
+        std::optional<size_t> version_,
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
-        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
     size_t getVersion() const;
 
-    /// Update snapshot to latest version.
-    void update(const DB::ContextPtr & context);
+    std::optional<size_t> getTotalRows() const;
+    std::optional<size_t> getTotalBytes() const;
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
         const DB::ActionsDAG * filter_dag,
         DB::IDataLakeMetadata::FileProgressCallback callback,
-        size_t list_batch_size);
+        size_t list_batch_size,
+        DB::ContextPtr context);
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
@@ -60,18 +61,22 @@ public:
     DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
     class Iterator;
+
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelScanMetadataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
+    using KernelDvInfo = KernelPointerWrapper<ffi::SharedDvInfo, ffi::free_kernel_dv_info>;
+    using KernelExpression = KernelPointerWrapper<ffi::SharedExpression, ffi::free_kernel_expression>;
+
+    using TableSchema = DB::NamesAndTypesList;
+    using ReadSchema = DB::NamesAndTypesList;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
-
-    bool enable_expression_visitor_logging;
-    bool throw_on_engine_visitor_error;
-    bool enable_engine_predicate;
-    std::optional<size_t> snapshot_version_to_read;
+    /// std::nullopt means latest version must be used
+    const std::optional<size_t> snapshot_version_to_read;
 
     struct KernelSnapshotState : private boost::noncopyable
     {
@@ -84,18 +89,45 @@ private:
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
 
-    using TableSchema = DB::NamesAndTypesList;
-    using ReadSchema = DB::NamesAndTypesList;
+    struct SchemaInfo
+    {
+        /// Table logical schema
+        /// (e.g. actual table schema)
+        TableSchema table_schema;
+        /// Table read schema
+        /// (contains only columns contained in data file,
+        /// e.g. does not contain partition columns, generated columns, etc)
+        ReadSchema read_schema;
+        /// Mapping for physical names of parquet data files
+        DB::NameToNameMap physical_names_map;
+        /// Partition columns list (not stored in read schema)
+        DB::Names partition_columns;
+    };
+    mutable std::optional<SchemaInfo> schema;
 
-    mutable TableSchema table_schema;
-    mutable ReadSchema read_schema;
-    mutable DB::NameToNameMap physical_names_map;
-    mutable DB::Names partition_columns;
+    struct SnapshotStats
+    {
+        /// Total number of bytes in table
+        std::optional<size_t> total_bytes;
+        /// Total number of rows in table
+        std::optional<size_t> total_rows;
+    };
+    mutable std::optional<SnapshotStats> snapshot_stats;
 
-    void initSnapshot() const;
-    void initSnapshotImpl() const;
-    void updateSettings(const DB::ContextPtr & context);
+    mutable std::mutex mutex;
+
+    size_t getVersionUnlocked() const TSA_REQUIRES(mutex);
+
+    void initOrUpdateSnapshot() const TSA_REQUIRES(mutex);
+    void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
+
+    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
+    SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
+
+    std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
 };
+
+using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;
 
 }
 

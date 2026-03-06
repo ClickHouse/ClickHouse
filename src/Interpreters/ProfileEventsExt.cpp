@@ -166,7 +166,9 @@ DB::Block getProfileEvents(
 
     Block curr_block;
 
-    while (profile_queue->tryPop(curr_block))
+    /// profile_queue may be null if send_profile_events was enabled via SQL SETTINGS clause
+    /// after the queue creation decision was already made during connection setup.
+    while (profile_queue && profile_queue->tryPop(curr_block))
     {
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)

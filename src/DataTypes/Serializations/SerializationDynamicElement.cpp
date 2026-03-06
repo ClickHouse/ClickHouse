@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -176,7 +177,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.
         auto variant_type = DataTypeFactory::instance().get(dynamic_element_name);
-        auto result_type = makeNullableOrLowCardinalityNullableSafe(variant_type);
+        auto result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type);
         MutableColumnPtr variant_column = nested_subcolumn.empty() || is_null_map_subcolumn ? result_column->assumeMutable() : result_type->createColumn();
         variant_column->reserve(variant_column->size() + limit);
         MutableColumnPtr non_nullable_variant_column = variant_column->assumeMutable();
@@ -224,19 +225,27 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                     }
                     else if (is_null_map_subcolumn)
                     {
-                        null_map->push_back(0);
+                        null_map->push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         variant_serialization->deserializeBinary(*non_nullable_variant_column, buf, format_settings);
                         if (null_map)
-                            null_map->push_back(0);
+                            null_map->push_back(static_cast<UInt8>(0));
                     }
+                }
+                else if (is_null_map_subcolumn)
+                {
+                    null_map->push_back(static_cast<UInt8>(1));
                 }
                 else
                 {
                     variant_column->insertDefault();
                 }
+            }
+            else if (is_null_map_subcolumn)
+            {
+                null_map->push_back(static_cast<UInt8>(1));
             }
             else
             {

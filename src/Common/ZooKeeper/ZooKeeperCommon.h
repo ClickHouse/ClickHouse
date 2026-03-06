@@ -1,6 +1,10 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
+#include <Common/StaticString.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <vector>
@@ -57,18 +61,19 @@ struct ZooKeeperRequest : virtual Request
     UInt64 thread_id = 0;
     String query_id;
 
-    /// For histogram metrics.
     std::chrono::steady_clock::time_point create_ts = {};
-    std::chrono::steady_clock::time_point enqueue_ts = {};
-    std::chrono::steady_clock::time_point send_ts = {};
+
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
+    DB::ZooKeeperOpentelemetrySpans spans;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
 
     virtual OpNum getOpNum() const = 0;
+    virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
 
     /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out, bool use_xid_64) const;
+    void write(WriteBuffer & out, bool use_xid_64, bool supports_tracing = false) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -296,7 +301,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     ZooKeeperRemoveRequest() = default;
     explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Remove; }
+    OpNum getOpNum() const override { return try_remove ? OpNum::TryRemove : OpNum::Remove; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -310,7 +315,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
+struct ZooKeeperRemoveResponse : RemoveResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
@@ -318,6 +323,12 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Remove; }
 
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperTryRemoveResponse final : ZooKeeperRemoveResponse
+{
+    OpNum getOpNum() const override { return OpNum::TryRemove; }
+    using ZooKeeperRemoveResponse::ZooKeeperRemoveResponse;
 };
 
 struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeperRequest
@@ -457,7 +468,7 @@ struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
     ZooKeeperResponsePtr makeResponse() const override;
 };
 
-struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
+struct ZooKeeperFilteredListRequest : ZooKeeperListRequest
 {
     ListRequestType list_request_type{ListRequestType::ALL};
 
@@ -470,6 +481,23 @@ struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
     size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
 };
 
+/// Extension of FilteredListRequest with optional stats and data fields
+struct ZooKeeperFilteredListWithStatsAndDataRequest final : ZooKeeperFilteredListRequest
+{
+    /// Feature LIST_WITH_STAT_AND_DATA: optionally populate stats and data in response
+    bool with_stat = false;
+    bool with_data = false;
+
+    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+
+    size_t bytesSize() const override { return ZooKeeperFilteredListRequest::bytesSize() + sizeof(with_stat) + sizeof(with_data); }
+};
+
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
@@ -480,6 +508,15 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+/// Extension of ListResponse with optional stats and data fields
+struct ZooKeeperFilteredListWithStatsAndDataResponse final : ZooKeeperListResponse
+{
+    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
 };
 
 struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
@@ -847,5 +884,28 @@ std::string_view parentNodePath(std::string_view path);
 
 std::string_view getBaseNodeName(std::string_view path);
 
+/// RAII guard for setting component name in thread-local storage
+class ComponentGuard
+{
+public:
+    explicit ComponentGuard(StaticString component);
+    ~ComponentGuard();
+
+    ComponentGuard(const ComponentGuard &) = delete;
+    ComponentGuard & operator=(const ComponentGuard &) = delete;
+    ComponentGuard(ComponentGuard &&) = delete;
+    ComponentGuard & operator=(ComponentGuard &&) = delete;
+
+private:
+    StaticString previous_component;
+};
+
+/// Sets component name (must be a compile-time string literal) and returns RAII guard
+[[nodiscard]] inline ComponentGuard setCurrentComponent(StaticString component)
+{
+    return ComponentGuard(component);
+}
+
+StaticString getCurrentComponent();
 
 }

@@ -3,6 +3,7 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_mark_segment_size = 1;
+SET max_threads = 32;
 
 DROP TABLE IF EXISTS test_table_join_1 SYNC;
 CREATE TABLE test_table_join_1

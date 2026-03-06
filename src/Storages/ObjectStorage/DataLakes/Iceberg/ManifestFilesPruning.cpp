@@ -17,8 +17,9 @@
 #include <fmt/ranges.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
@@ -37,7 +38,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 
     std::string transform_name = Poco::toLower(transform_name_src);
     if (transform_name == "identity")
-        return std::make_shared<ASTIdentifier>(column_name);
+        return make_intrusive<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
         return makeASTOperator("tuple");
@@ -45,16 +46,13 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     if (transform_and_argument->argument.has_value())
     {
         return makeASTFunction(
-                transform_and_argument->transform_name, std::make_shared<DB::ASTLiteral>(*transform_and_argument->argument), std::make_shared<DB::ASTIdentifier>(column_name));
+                transform_and_argument->transform_name, make_intrusive<ASTLiteral>(*transform_and_argument->argument), make_intrusive<ASTIdentifier>(column_name));
     }
-    return makeASTFunction(transform_and_argument->transform_name, std::make_shared<DB::ASTIdentifier>(column_name));
+    return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
 {
-    if (source_dag == nullptr)
-        return nullptr;
-
     const auto & inputs = source_dag->getInputs();
 
     for (const auto & input : inputs)
@@ -91,7 +89,6 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     auto result = std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
     result->removeUnusedActions();
     return result;
-
 }
 
 
@@ -100,57 +97,52 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const ManifestFileContent & manifest_file,
+    const ManifestFileIterator & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
 {
+    if (filter_dag == nullptr)
+    {
+        return;
+    }
+
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
-    if (manifest_file.hasPartitionKey() || manifest_file.hasBoundsInfoInManifests())
-        transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+    transformed_dag = transformFilterDagForManifest(filter_dag, used_columns_in_filter);
+    chassert(transformed_dag != nullptr);
 
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        if (transformed_dag != nullptr)
-        {
-            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-            partition_key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
-        }
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+        partition_key_condition.emplace(
+            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
-    if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
+    for (Int32 used_column_id : used_columns_in_filter)
     {
-        {
-            const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
-            for (Int32 used_column_id : used_columns_in_filter)
-            {
-                if (!bounded_columns.contains(used_column_id))
-                    continue;
+        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+        if (!name_and_type.has_value())
+            continue;
 
-                auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
-                if (!name_and_type.has_value())
-                    continue;
+        name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
-                name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+        ExpressionActionsPtr expression
+            = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
-                ExpressionActionsPtr expression
-                    = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
-
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
-            }
-        }
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->partition_key_value;
+        const auto & partition_value = entry->parsed_entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -178,15 +170,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr 
             continue;
         }
 
-        auto it = entry->columns_infos.find(column_id);
-        if (it == entry->columns_infos.end())
-        {
+        auto rect_it = entry_hyperrectangles.find(column_id);
+        if (rect_it == entry_hyperrectangles.end())
             continue;
-        }
 
+        auto info_it = entry->parsed_entry->columns_infos.find(column_id);
+        bool has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
 
-        auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

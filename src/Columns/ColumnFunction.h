@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/WeakHash.h>
 
 
@@ -51,7 +52,7 @@ public:
     std::vector<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
-    void getExtremes(Field &, Field &) const override {}
+    void getExtremes(Field &, Field &, size_t, size_t) const override {}
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -64,7 +65,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     std::string_view getDataAt(size_t) const override
     {
@@ -122,20 +123,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
-    void updateHashWithValue(size_t, SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
-    }
-
-    WeakHash32 getWeakHash32() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getWeakHash32 is not implemented for {}", getName());
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashFast is not implemented for {}", getName());
-    }
+    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    WeakHash32 getWeakHash32() const override;
+    void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override
     {
@@ -192,6 +182,11 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
     }
+
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool isShortCircuitArgument() const { return is_short_circuit_argument; }
 

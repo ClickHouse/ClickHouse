@@ -177,7 +177,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
             return 1;
         }
         pointer += current_block_size;
-        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100); // NOLINT(modernize-use-std-print)
+        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / static_cast<float>(size) * 100); // NOLINT(modernize-use-std-print)
         total_size += size;
         compressed_size += current_block_size;
         current_block_size = 0;
@@ -185,7 +185,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     std::cout <<
         "Compressed size: " << compressed_size <<
         ", compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(compressed_size) / total_size * 100 << "%"
+        static_cast<float>(compressed_size) / static_cast<float>(total_size) * 100 << "%"
         << std::endl;
 
     if (0 != munmap(input, info_in.st_size) ||
@@ -351,9 +351,8 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         return 1;
     }
 
-    std::cout << "Compression rate: " << std::fixed << std::setprecision(2) <<
-        static_cast<float>(total_compressed_size) / total_size * 100 << "%"
-        << std::endl;
+    std::cout << "Compression rate: " << std::fixed << std::setprecision(2)
+              << static_cast<float>(total_compressed_size) / static_cast<float>(total_size) * 100 << "%" << std::endl;
 
     delete [] files_data;
     return 0;

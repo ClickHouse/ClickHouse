@@ -184,7 +184,7 @@ private:
         if (with_aliases.contains(identifier.name()))
             return;
 
-        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
@@ -210,7 +210,7 @@ private:
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
-                            child->children[i] = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
+                            child->children[i] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
@@ -321,7 +321,7 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
-            node = std::make_shared<ASTLiteral>(database_name);
+            node = make_intrusive<ASTLiteral>(database_name);
 
             if (parent)
             {

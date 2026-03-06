@@ -91,6 +91,23 @@ inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
     }
 }
 
+template <bool check_eof>
+inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
+{
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if constexpr (check_eof)
+            if (istr.eof()) [[unlikely]]
+                throwReadAfterEOF();
+
+        UInt64 byte = static_cast<unsigned char>(*istr.position());
+        ++istr.position();
+
+        if (!(byte & 0x80))
+            return;
+    }
+}
+
 }
 
 inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
@@ -99,6 +116,15 @@ inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
         varint_impl::readVarUInt<false>(x, istr);
     else
         varint_impl::readVarUInt<true>(x, istr);
+}
+
+/// Advances past a VarUInt without decoding it.
+inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 10)
+        varint_impl::ignoreVarUInt<false>(istr);
+    else
+        varint_impl::ignoreVarUInt<true>(istr);
 }
 
 inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, size_t size)
@@ -159,14 +185,14 @@ inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = tmp;
+    x = static_cast<UInt16>(tmp);
 }
 
 inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
-    x = tmp;
+    x = static_cast<Int16>(tmp);
 }
 
 template <typename T>
@@ -175,7 +201,7 @@ inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = tmp;
+    x = static_cast<T>(tmp);
 }
 
 inline size_t getLengthOfVarUInt(UInt64 x)

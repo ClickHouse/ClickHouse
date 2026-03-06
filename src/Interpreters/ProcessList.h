@@ -192,6 +192,9 @@ protected:
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
+    /// Same as above, but only for non-internal queries
+    std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
+
     bool is_internal;
 public:
     QueryStatus(
@@ -233,6 +236,11 @@ public:
         return &thread_group->memory_tracker;
     }
 
+    bool hasThreadGroup() const
+    {
+        return bool(thread_group);
+    }
+
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);
@@ -261,6 +269,9 @@ public:
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
+
+    /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+    void throwIfKilled();
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
@@ -353,10 +364,11 @@ private:
 
     ProcessList & parent;
     Container::iterator it;
+    bool registered_in_cancellation_checker = false;
 
 public:
-    ProcessListEntry(ProcessList & parent_, Container::iterator it_)
-        : parent(parent_), it(it_) {}
+    ProcessListEntry(ProcessList & parent_, Container::iterator it_, bool registered_in_cancellation_checker_)
+        : parent(parent_), it(it_), registered_in_cancellation_checker(registered_in_cancellation_checker_) {}
 
     ~ProcessListEntry();
 

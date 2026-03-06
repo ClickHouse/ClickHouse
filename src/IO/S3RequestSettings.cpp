@@ -240,13 +240,13 @@ void S3RequestSettings::validateUploadSettings()
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->min_upload_part_size.value));
 
         if (impl->max_upload_part_size < impl->min_upload_part_size)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->max_upload_part_size.value), ReadableSize(impl->min_upload_part_size.value));
 
         if (!impl->upload_part_size_multiply_factor)
             throw Exception(
@@ -264,7 +264,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};

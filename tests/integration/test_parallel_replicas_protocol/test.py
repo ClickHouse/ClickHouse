@@ -84,7 +84,6 @@ def test_final_on_parallel_replicas(start_cluster):
     nodes[0].query("DROP TABLE IF EXISTS t0")
     nodes[0].query(
         "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()",
-        settings={"allow_suspicious_primary_key": 1},
     )
     nodes[0].query("INSERT INTO t0 VALUES (1)")
     nodes[0].query("OPTIMIZE TABLE t0 FINAL")

@@ -193,7 +193,7 @@ namespace
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
-            x = rng() % (2 * max_value + 3 - num_values) - max_value - 1;
+            x = static_cast<Int16>(rng() % (2 * max_value + 3 - num_values) - max_value - 1);
         /// Make all numbers unique.
         std::sort(values.begin(), values.end());
         for (size_t i = 0; i < num_values; ++i)

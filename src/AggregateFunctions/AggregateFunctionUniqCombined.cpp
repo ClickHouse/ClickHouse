@@ -30,7 +30,7 @@ AggregateFunctionPtr createAggregateFunctionUniqCombined(bool use_64_bit_hash,
         if (precision_param > 20 || precision_param < 12)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Parameter for aggregate function {} is out of range: [12, 20].",
                 name);
-        precision = precision_param;
+        precision = static_cast<UInt8>(precision_param);
     }
 
     if (argument_types.empty())
@@ -134,7 +134,6 @@ SELECT uniqCombined(15)(number) FROM numbers(1e5);
         {
             return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
         },
-        {},
         documentation_uniqCombined
     });
     /// uniqCombined64 documentation
@@ -213,7 +212,6 @@ SELECT uniqCombined(number) FROM numbers(1e10);
         {
             return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
         },
-        {},
         documentation_uniqCombined64
     });
 }

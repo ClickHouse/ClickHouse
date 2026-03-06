@@ -172,12 +172,12 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
 
 ASTPtr DatabaseSQLite::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    auto create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
 
     if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -198,11 +198,11 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     }
     auto table_storage_define = database_engine_define->clone();
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments
-    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
+    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, make_intrusive<ASTLiteral>(table_id.table_name));
 
     const Settings & settings = getContext()->getSettingsRef();
 

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_YTSAURUS
+#include <memory>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/YTsaurusDictionarySource.h>
 #include <Interpreters/Context.h>
@@ -60,28 +61,33 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
                 "Set `allow_experimental_ytsaurus_dictionary_source` setting to enable it");
 
         const auto config_prefix = root_config_prefix + ".ytsaurus";
-        auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix, keys);
-        for (const auto & key : keys)
-        {
-            if (!YTsaurusSettings::hasBuiltin(key))
-            {
-                continue;
-            }
-            configuration->settings.set(key, config.getString(config_prefix + "." + key));
-        }
+        std::shared_ptr<YTsaurusStorageConfiguration> configuration = nullptr;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, config_prefix, context) : nullptr;
         if (named_collection)
         {
-            configuration->settings.loadFromNamedCollection(*named_collection);
-        }
 
-        boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
-        configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
-        configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
-        if (config.has(config_prefix + ".ytsaurus_columns_description"))
-            configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+            YTsaurusSettings settings;
+            configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::processNamedCollectionResult(*named_collection, settings, true));
+        }
+        else
+        {
+            configuration = std::make_shared<YTsaurusStorageConfiguration>();
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(config_prefix, keys);
+            for (const auto & key : keys)
+            {
+                if (!YTsaurusSettings::hasBuiltin(key))
+                {
+                    continue;
+                }
+                configuration->settings.set(key, config.getString(config_prefix + "." + key));
+            }
+            boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
+            configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
+            configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
+            if (config.has(config_prefix + ".ytsaurus_columns_description"))
+                configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+        }
 
         return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };
@@ -138,16 +144,21 @@ YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 BlockIO YTsarususDictionarySource::loadAll()
 {
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {
-        .cypress_path = configuration->cypress_path,
-        .settings = configuration->settings,
-        .select_rows_columns = configuration->ytsaurus_columns_description,
-        .check_types_allow_nullable = true,
-    }, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , { .settings = configuration->settings,
+            .select_rows_columns = configuration->ytsaurus_columns_description,
+            .check_types_allow_nullable = true,
+        }
+        , sample_block
+        , max_block_size
+        // TODO enable parallelization for reads from dictionary
+        , 1));
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -158,11 +169,19 @@ BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
     auto block = blockForIds(dict_struct, ids);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+        client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , sample_block
+        , max_block_size
+        // Parallel reads supported only for static tables
+        , 1
+    ));
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
@@ -176,7 +195,15 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const s
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+         , sample_block
+         , max_block_size
+         // Parallel reads supported only for static tables
+         , 1
+    ));
     return io;
 }
 

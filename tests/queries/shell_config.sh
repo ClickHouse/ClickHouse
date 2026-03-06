@@ -48,9 +48,15 @@ export CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY
 export CLICKHOUSE_BENCHMARK_BINARY="${CLICKHOUSE_BENCHMARK_BINARY:=${CLICKHOUSE_BINARY}-benchmark}"
 export CLICKHOUSE_BENCHMARK_OPT="${CLICKHOUSE_BENCHMARK_OPT0:-} ${CLICKHOUSE_BENCHMARK_OPT:-}"
 export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINARY ${CLICKHOUSE_BENCHMARK_OPT:-}"}
-# others
+# obfuscator
+[ -x "${CLICKHOUSE_BINARY}-obfuscator" ] && CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY} obfuscator"}
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
+# compressor
+[ -x "${CLICKHOUSE_BINARY}-compressor" ] && CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY} compressor"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
+
 
 export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
@@ -94,6 +100,8 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:=$(${CLICKHOUSE_E
 export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
+export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=tcp_ssh_port 2>/dev/null)} 2>/dev/null
+export CLICKHOUSE_PORT_SSH=${CLICKHOUSE_PORT_SSH:="9022"}
 
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=zookeeper.identity 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
@@ -160,6 +168,20 @@ function clickhouse_client_removed_host_parameter()
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
+}
+
+function wait_for_query_to_start()
+{
+    local query_id="$1"
+    local timeout="${2:-120}"
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout waiting for query $query_id to start" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
 }
 
 function wait_for_queries_to_finish()

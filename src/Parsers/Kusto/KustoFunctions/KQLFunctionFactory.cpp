@@ -1,6 +1,3 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
@@ -14,9 +11,6 @@
 #include <Parsers/Kusto/KustoFunctions/KQLMathematicalFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -214,6 +208,7 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
 
        {"bin", KQLFunctionValue::bin},
        {"bin_at", KQLFunctionValue::bin_at},
+       {"iif", KQLFunctionValue::iif},
 
        {"bool", KQLFunctionValue::datatype_bool},
        {"boolean", KQLFunctionValue::datatype_bool},
@@ -780,6 +775,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
 
         case KQLFunctionValue::bin_at:
             return std::make_unique<BinAt>();
+
+        case KQLFunctionValue::iif:
+            return std::make_unique<Iif>();
 
         case KQLFunctionValue::datatype_bool:
             return std::make_unique<DatatypeBool>();

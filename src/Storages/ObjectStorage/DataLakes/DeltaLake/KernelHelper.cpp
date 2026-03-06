@@ -99,8 +99,10 @@ public:
 
         LOG_TRACE(
             log,
-            "Using endpoint: {}, uri: {}, region: {}, bucket: {}",
-            url.endpoint, url.uri_str, region, url.bucket);
+            "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
+            url.endpoint, url.uri_str, region, url.bucket, no_sign,
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
         return builder;
     }
