@@ -43,7 +43,7 @@ void ExpressionTransform::transform(Chunk & chunk)
         chunk.setColumns(block.getColumns(), total_rows);
 
         if (updater)
-            updater->recordOutputChunk(chunk, block);
+            updater->recordOutputChunk(chunk, getOutputPort().getHeader());
         return;
     }
 
@@ -78,7 +78,7 @@ void ExpressionTransform::transform(Chunk & chunk)
     chunk.setColumns(std::move(output_columns), processed);
 
     if (updater)
-        updater->recordOutputChunk(chunk, getInputPort().getHeader().cloneWithColumns(chunk.getColumns()));
+        updater->recordOutputChunk(chunk, getOutputPort().getHeader());
 }
 
 void ExpressionTransform::onCancel() noexcept
