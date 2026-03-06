@@ -424,7 +424,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
     const auto & participating = predicate->getSourceRelations();
-    return (participating & left) && (participating & right);
+    return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
