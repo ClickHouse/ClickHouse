@@ -10,8 +10,6 @@
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <libdivide.h>
-
 #include <type_traits>
 
 namespace DB
@@ -249,68 +247,30 @@ void convertDecimalsBatch(
     else
     {
         const MaxNativeType divisor = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
-
-        /// Use libdivide for fast division when MaxNativeType fits in 32 or 64 bits.
-        /// libdivide replaces expensive integer division with multiply-and-shift,
-        /// which is significantly faster for runtime-constant divisors.
-        /// For wider types (Int128, Int256) we fall back to plain division.
-        if constexpr (sizeof(MaxNativeType) <= 8)
+        for (size_t i = 0; i < size; ++i)
         {
-            libdivide::divider<MaxNativeType, libdivide::BRANCHFREE> fast_divisor(divisor);
-            for (size_t i = 0; i < size; ++i)
+            MaxNativeType converted_value = from[i].value / divisor;
+            bool overflow = false;
+
+            if constexpr (check_overflow)
             {
-                MaxNativeType converted_value = static_cast<MaxNativeType>(from[i].value) / fast_divisor;
-                bool overflow = false;
-
-                if constexpr (check_overflow)
-                {
-                    overflow = converted_value < std::numeric_limits<ToNativeType>::min()
-                            || converted_value > std::numeric_limits<ToNativeType>::max();
-                }
-
-                if constexpr (has_nullmap)
-                {
-                    nullmap[i] = overflow;
-                    if (overflow)
-                        to[i] = static_cast<ToNativeType>(0);
-                    else
-                        to[i] = static_cast<ToNativeType>(converted_value);
-                }
-                else
-                {
-                    if (overflow)
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
-                    to[i] = static_cast<ToNativeType>(converted_value);
-                }
+                overflow = converted_value < std::numeric_limits<ToNativeType>::min()
+                        || converted_value > std::numeric_limits<ToNativeType>::max();
             }
-        }
-        else
-        {
-            for (size_t i = 0; i < size; ++i)
+
+            if constexpr (has_nullmap)
             {
-                MaxNativeType converted_value = from[i].value / divisor;
-                bool overflow = false;
-
-                if constexpr (check_overflow)
-                {
-                    overflow = converted_value < std::numeric_limits<ToNativeType>::min()
-                            || converted_value > std::numeric_limits<ToNativeType>::max();
-                }
-
-                if constexpr (has_nullmap)
-                {
-                    nullmap[i] = overflow;
-                    if (overflow)
-                        to[i] = static_cast<ToNativeType>(0);
-                    else
-                        to[i] = static_cast<ToNativeType>(converted_value);
-                }
+                nullmap[i] = overflow;
+                if (overflow)
+                    to[i] = static_cast<ToNativeType>(0);
                 else
-                {
-                    if (overflow)
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
                     to[i] = static_cast<ToNativeType>(converted_value);
-                }
+            }
+            else
+            {
+                if (overflow)
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
+                to[i] = static_cast<ToNativeType>(converted_value);
             }
         }
     }
