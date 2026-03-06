@@ -1,4 +1,26 @@
-Without runtime filters:
+--- Test 1: Basic 2-key LEFT ANTI JOIN ---
 0	2
-With runtime filters (must match):
 0	2
+--- Test 2: 3-key LEFT ANTI JOIN ---
+1	2	4
+1	2	4
+--- Test 3: Mixed types (Int32 vs Int64) ---
+2	20
+2	20
+--- Test 4: Empty right side ---
+1	2
+3	4
+1	2
+3	4
+--- Test 5: All rows match ---
+--- Test 6: Single-key LEFT ANTI JOIN ---
+2	20
+2	20
+--- Test 7: Multi-key INNER JOIN ---
+0	0
+1	1
+0	0
+1	1
+--- Test 8: Large right side (filter overflow) ---
+0	999
+0	999
