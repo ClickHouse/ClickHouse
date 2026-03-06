@@ -617,6 +617,8 @@ private:
             }
         }
 
+        std::exception_ptr cancellation_exception;
+
         auto process_reader = [&](size_t reader_index)
         {
             auto & reader = readers[reader_index];
@@ -655,7 +657,7 @@ private:
                         continue;
                     }
 
-                    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected type: {}", static_cast<int>(result.getType()));
+                    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected result type: {}", static_cast<int>(result.getType()));
                 }
 
                 LOG_TRACE(logger, "Received {} parts from {}: {}", res[i].second.size(), replica_addresses[i], res[i].second);
@@ -663,7 +665,12 @@ private:
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-                    throw;
+                {
+                    /// Do not throw right now, to properly finish other replicas, to preserve connection
+                    if (!cancellation_exception)
+                        cancellation_exception = std::current_exception();
+                    return;
+                }
                 ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisReplicaFallback);
                 tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", replica_addresses[i]), LogsLevel::warning);
             }
@@ -695,6 +702,9 @@ private:
 
             process_reader(reader_index);
         }
+
+        if (cancellation_exception)
+            std::rethrow_exception(cancellation_exception);
     }
 #else
     void executeRemoteAnalysisAsync(
