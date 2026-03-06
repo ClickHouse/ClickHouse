@@ -1,6 +1,6 @@
 <clickhouse>
     <logger>
         <level>trace</level>
-        <async>0</async>
+        <async>1</async>
     </logger>
 </clickhouse>
