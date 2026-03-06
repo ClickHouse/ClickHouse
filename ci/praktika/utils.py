@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
 import textwrap
 import time
@@ -974,6 +975,13 @@ class Utils:
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             sys.stdout = self.original_stdout
+
+    @staticmethod
+    def clean_dir(path: Path):
+        if path.exists():
+            shutil.rmtree(path)
+
+        path.mkdir(parents=True, exist_ok=True)
 
 
 class TeePopen:

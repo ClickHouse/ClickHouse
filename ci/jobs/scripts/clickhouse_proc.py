@@ -34,14 +34,6 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    BACKUPS_XML = """
-<clickhouse>
-    <backups>
-        <type>local</type>
-        <path>{CH_RUNTIME_DIR}/var/lib/clickhouse/disks/backups/</path>
-    </backups>
-</clickhouse>
-"""
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
@@ -56,13 +48,18 @@ class ClickHouseProc:
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
-        self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
+        self,
+        fast_test=False,
+        is_db_replicated=False,
+        is_shared_catalog=False,
+        ch_config_dir="/etc/clickhouse-server",
+        ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
-        self.ch_config_dir = f"/etc/clickhouse-server"
-        self.ch_var_lib_dir = f"/var/lib/clickhouse"
+        self.ch_config_dir = ch_config_dir
+        self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
@@ -100,7 +97,7 @@ class ClickHouseProc:
         # Fast test runs lightweight SQL tests that are not CPU-bound,
         # so we can use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}'"
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -116,18 +113,26 @@ class ClickHouseProc:
             "CLICKHOUSE_SCHEMA_FILES", f"{self.ch_var_lib_dir}/format_schemas"
         )
         Utils.set_env("CLICKHOUSE_USER_FILES", f"{self.user_files_path}")
-        # if not fast_test:
-        #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
-        #         file.write(self.BACKUPS_XML)
-        self.clean_logs()
+        self.write_configs()
+        Utils.clean_dir(Path(self.log_dir))
 
-    def clean_logs(self):
-        Shell.check(
-            f"rm -rf {self.log_dir}",
-            verbose=True,
-        )
-        Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
-        return self
+    def write_configs(self):
+        with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <backups>
+        <type>local</type>
+        <path>{self.ch_var_lib_dir}/disks/backups/</path>
+    </backups>
+</clickhouse>
+""")
+        with open(f"{self.ch_config_dir}/config.d/filesystem_caches_path.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <filesystem_caches_path>{self.ch_var_lib_dir}/filesystem_caches/</filesystem_caches_path>
+    <custom_cached_disks_base_directory replace="replace">{self.ch_var_lib_dir}/filesystem_caches/</custom_cached_disks_base_directory>
+</clickhouse>
+""")
 
     def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
@@ -170,9 +175,7 @@ class ClickHouseProc:
             self.kafka_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
-        )
+        print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
             res = Shell.check(
@@ -434,18 +437,9 @@ profiles:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
-        Shell.check(f"rm {pid_file}")
-        Shell.check(
-            f"rm -rf {run_path} && mkdir -p {run_path}",
-            verbose=True,
-            strict=True,
-        )
-
-        Shell.check(
-            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
-            verbose=True,
-            strict=True,
-        )
+        Path(pid_file).unlink(missing_ok=True)
+        Utils.clean_dir(Path(run_path))
+        Utils.clean_dir(Path(f"{temp_dir}/jemalloc_profiles"))
 
         replicas = 3 if self.is_db_replicated else 1
         tsan_memory_limit_mb = (
@@ -592,9 +586,7 @@ profiles:
             )
             # Wait for minio to be ready
             for _ in range(30):
-                if Shell.check(
-                    "/mc ls clickminio/test", verbose=False
-                ):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
                     status = "success"
                     break
                 time.sleep(1)
@@ -743,10 +735,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_fast_test(self, test=""):
-        if Path(self.test_output_file).exists():
-            Path(self.test_output_file).unlink()
-        exit_code = Shell.run(self.fast_test_command.format(TEST=test), verbose=True)
-        return exit_code == 0
+        cmd = self.fast_test_command.format(TEST=test)
+        print(f"Run test: [{cmd}]")
+        with open(self.test_output_file, "w") as f:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,  # line-buffered
+            )
+            for line in process.stdout:
+                ts_line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}"
+                print(ts_line, end="")
+                f.write(ts_line)
+
+            process.wait()
+            return process.returncode == 0
 
     def terminate(self):
         if self.minio_proc:
@@ -939,7 +944,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Exception in test runner",
-                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \\(most recent call last\\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
 
@@ -1175,9 +1180,7 @@ quit
         #
         command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
-        Shell.check(
-            f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
-        )
+        Utils.clean_dir(f"{temp_dir}/system_tables")
         res = True
 
         self.restore_system_metadata_files_from_remote_database_disk()
