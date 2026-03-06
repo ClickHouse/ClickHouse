@@ -64,6 +64,11 @@ namespace CurrentMetrics
         return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
     }
 
+    inline void max(Metric metric, Value value)
+    {
+        __atomic_fetch_max(reinterpret_cast<Value *>(&values[metric]), value, __ATOMIC_RELAXED);
+    }
+
     /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {

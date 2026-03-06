@@ -725,7 +725,7 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -1315,6 +1315,7 @@ public:
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
+    void signalKeeperDispatcherShutdown() const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
