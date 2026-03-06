@@ -3087,7 +3087,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
     constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint))
+    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

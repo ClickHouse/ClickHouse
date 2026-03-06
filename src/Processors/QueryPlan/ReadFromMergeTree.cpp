@@ -2,6 +2,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -94,6 +95,21 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 {
     auto get_partition_id = [](const RangesInDataPart & rng) { return rng.data_part->info.getPartitionId(); };
     return countPartitions(parts_with_ranges, get_partition_id);
+}
+
+/// check if a DAG node only depends on sorting key columns (ActionsDAG version of isExpressionOverSortingKey)
+bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
+{
+    if (sorting_key_set.contains(node->result_name))
+        return true;
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return true; // constants are fine
+    if (node->type == ActionsDAG::ActionType::INPUT)
+        return false; // already checked result_name
+    for (const auto * child : node->children)
+        if (!isNodeOverSortingKey(child, sorting_key_set))
+            return false;
+    return true;
 }
 
 bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
@@ -2184,18 +2200,41 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         deferFiltersAfterFinalIfNeeded();
         if (deferred_row_level_filter || deferred_prewhere_info)
         {
-            /// build a separate DAG for index analysis, without the deferred filter nodes
+            /// exclude deferred filters from index analysis, but keep sorting-key AND atoms
             NameSet deferred_column_names;
             if (deferred_row_level_filter)
                 deferred_column_names.insert(deferred_row_level_filter->column_name);
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
+            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+            NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
             std::vector<const ActionsDAG::Node *> index_nodes;
+
+            /// collect sorting-key-only atoms from a (possibly nested) AND tree
+            std::function<void(const ActionsDAG::Node *)> collect_sorting_key_atoms =
+                [&](const ActionsDAG::Node * n)
+            {
+                if (isNodeOverSortingKey(n, sorting_key_set))
+                {
+                    index_nodes.push_back(n);
+                    return;
+                }
+                if (n->type == ActionsDAG::ActionType::FUNCTION
+                    && n->function_base && n->function_base->getName() == "and")
+                {
+                    for (const auto * child : n->children)
+                        collect_sorting_key_atoms(child);
+                }
+            };
+
             for (const auto * node : added_filter_nodes.nodes)
             {
                 if (!deferred_column_names.contains(node->result_name))
                     index_nodes.push_back(node);
+                else
+                    collect_sorting_key_atoms(node);
             }
 
             auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
@@ -2210,6 +2249,19 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_row_level_filter != nullptr,
                 deferred_prewhere_info != nullptr);
         }
+
+        /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
+        /// PREWHERE is evaluated at the storage level during data reading, before the
+        /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
+        /// uses DelayedPortsProcessor to ensure sets are built before the main query starts,
+        /// there is a race condition: if a downstream processor (e.g. JoiningTransform with
+        /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
+        /// the set-building pipeline before the set is ready.
+        /// Building sets synchronously here eliminates this race condition entirely.
+        if (query_info.prewhere_info)
+            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+        if (query_info.row_level_filter)
+            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
 
         buildIndexes(
             indexes,
@@ -2518,7 +2570,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & [part_name, ranges] : analyzed_parts_ranges)
             {
                 auto part_range_info = *parts_ranges_map.at(part_name);
-                chassert(part_range_info.ranges.size() == 1);
+                /// Note: part_range_info.ranges may have been split by Query Condition Cache,
+                /// so we cannot assert ranges.size() == 1 here.
                 chassert(part_range_info.exact_ranges.empty());
 
                 part_range_info.ranges = ranges;
