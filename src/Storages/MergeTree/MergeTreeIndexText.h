@@ -156,7 +156,7 @@ struct PostingsSerialization
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serializeCompressed(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
@@ -304,7 +304,7 @@ public:
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    bool hasFailedQueries() const { return has_failed_queries; }
+    bool alwaysFalse() const { return always_false; }
     const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
     const TokenToPostingsMap & getTokenPostings() const { return token_postings; }
     const NameSet & getMissingTokens() const { return missing_tokens; }
@@ -328,14 +328,15 @@ private:
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
 
+    TextSearchMode global_search_mode;
     std::unordered_map<UInt128, QueryBuilder> query_builders;
     std::unordered_map<std::string_view, size_t> query_count_by_token;
     std::unordered_map<std::string_view, std::vector<UInt128>> queries_by_token;
 
+    bool always_false = false;
     NameSet missing_tokens;
     TokenToPostingsInfosMap token_infos;
     TokenToPostingsMap token_postings;
-    bool has_failed_queries = false;
 };
 
 /// Text index granule created on reading of the index.

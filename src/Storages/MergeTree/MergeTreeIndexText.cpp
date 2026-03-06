@@ -147,7 +147,7 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & pos
     }
 }
 
-void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
+void PostingsSerialization::serializeCompressed(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
 {
     chassert(info.header & IsCompressed);
     chassert(posting_list_codec);
@@ -159,7 +159,7 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
 {
     if (info.header & IsCompressed)
     {
-        serialize(postings.getLarge(), info, posting_list_block_size, ostr);
+        serializeCompressed(postings.getLarge(), info, posting_list_block_size, ostr);
     }
     else if (postings.isLarge())
     {
@@ -401,6 +401,8 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr postings_to_add
 
 TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
 {
+    global_search_mode = condition_text.getGlobalSearchMode();
+
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
         query_builders[hash].query = query;
@@ -491,7 +493,10 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
-            has_failed_queries = true;
+            if (global_search_mode == TextSearchMode::All)
+            {
+                always_false = true;
+            }
 
             for (const auto & other_token : query_builder.query->tokens)
             {
@@ -505,7 +510,10 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out, PostingListCodecPtr posting_list_codec) const
 {
     using enum PostingsSerialization::Flags;
-    static constexpr size_t posting_block_size = std::numeric_limits<size_t>::max();
+
+    writePODBinary(always_false, out);
+    if (always_false)
+        return;
 
     PostingsSerialization postings_serialization(posting_list_codec);
     writeVarUInt(token_infos.size(), out);
@@ -526,7 +534,7 @@ void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out, PostingListCodec
         if (auto it = token_postings.find(token); it != token_postings.end())
         {
             has_postings = true;
-            postings_serialization.serialize(*it->second, *info, posting_block_size, out);
+            postings_serialization.serialize(it->second->roaring, info->header, out);
         }
 
         writePODBinary(has_postings, out);
@@ -541,10 +549,14 @@ void TextIndexAnalyzer::serializeStateBinary(WriteBuffer & out, PostingListCodec
 TextIndexAnalyzer TextIndexAnalyzer::deserializeFromStateBinary(ReadBuffer & in, const MergeTreeIndexConditionText & condition, PostingListCodecPtr posting_list_codec)
 {
     TextIndexAnalyzer analyzer(condition);
-    PostingsSerialization postings_serialization(posting_list_codec);
+    readPODBinary(analyzer.always_false, in);
+
+    if (analyzer.always_false)
+        return analyzer;
 
     size_t num_token_infos;
     readVarUInt(num_token_infos, in);
+    PostingsSerialization postings_serialization(posting_list_codec);
 
     for (size_t i = 0; i < num_token_infos; ++i)
     {
@@ -625,7 +637,6 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     if (sparse_index->empty())
         return;
 
-    auto global_search_mode = condition_text.getGlobalSearchMode();
     auto tokens_cache = condition_text.tokensCache();
     cardinalities_cache->sortTokens(tokens_to_read);
 
@@ -675,7 +686,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
             analyzer->addMissingToken(token);
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
         {
             cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
             return;
@@ -696,7 +707,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
             analyzer->addTokenInfo(token, infos[i]);
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
         {
             cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part->rows_count);
             return;
@@ -811,9 +822,6 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getTokenInfos();
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    const auto & global_search_mode = condition_text.getGlobalSearchMode();
-
     for (const auto & [token, token_info] : token_infos)
     {
         if (!analyzer->isTokenNeeded(token) || analyzer->hasPostingsForToken(token))
@@ -830,7 +838,7 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
             analyzer->addPostings(token, std::move(block));
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
             break;
     }
 }

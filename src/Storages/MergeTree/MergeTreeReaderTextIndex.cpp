@@ -348,7 +348,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
     if (!rows_range.has_value())
         return result;
 
-    const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     const auto & analyzer = granule_text.getAnalyzer();
 
