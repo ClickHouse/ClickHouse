@@ -496,7 +496,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
     checkIterationLimit();
 
-    switch (fuzz_rand() % 40)
+    switch (fuzz_rand() % 20)
     {
         case 0: {
             const auto r = fuzz_rand() % 3;
@@ -538,11 +538,11 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             }
             break;
         }
-        case 5: {
+        case 3: {
             def.frame_begin_preceding = fuzz_rand() % 2;
             break;
         }
-        case 6: {
+        case 4: {
             def.frame_end_preceding = fuzz_rand() % 2;
             break;
         }
@@ -594,7 +594,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// No-arg index types: safe to swap to and clear any existing arguments.
         static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
         /// BF index types: require positional arguments — swap name only, keep args.
-        static const std::unordered_set<String> & bf_index_types = {"ngrambf_v1", "tokenbf_v1"};
+        static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1"};
         /// Simple no-arg tokenizers valid as text index tokenizer values.
         static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
         static const Strings posting_list_codecs = {"none", "bitpacking"};
@@ -2033,13 +2033,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         auto & union_members = with_union->list_of_selects->children;
         if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
         {
-            /// Drop a random member from the UNION
+            /// Drop a random member from the UNION; remove a mode to keep sizes in sync
             union_members.erase(union_members.begin() + fuzz_rand() % union_members.size());
+            if (!with_union->list_of_modes.empty())
+                with_union->list_of_modes.pop_back();
+            with_union->is_normalized = false;
         }
         else if (!union_members.empty() && fuzz_rand() % 100 == 0)
         {
-            /// Duplicate a random member (exercises UNION with identical branches)
+            /// Duplicate a random member; push a matching mode to keep sizes in sync
             union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
+            with_union->list_of_modes.push_back(with_union->union_mode);
         }
 
         fuzz(with_union->list_of_selects);
