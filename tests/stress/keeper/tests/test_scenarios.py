@@ -795,8 +795,6 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         pytest.skip(f"Fault injection not supported for {backend} backend; use no-fault scenarios only")
     if backend == "zookeeper" and _scenario_base_id(scenario) in ZOOKEEPER_SKIP_SCENARIO_IDS:
         pytest.skip(f"ZooKeeper backend: scenario {_scenario_base_id(scenario)} is skipped (known incompatible or failing)")
-    if backend == "raftkeeper" and _scenario_base_id(scenario) in ZOOKEEPER_SKIP_SCENARIO_IDS:
-        pytest.skip(f"RaftKeeper backend: scenario {_scenario_base_id(scenario)} is skipped (known incompatible or failing)")
     # Pre-built RaftKeeper image is x86_64 only; skip on other arches (set KEEPER_RUN_RAFTKEEPER_ANYARCH=1 to force run)
     if backend == "raftkeeper" and platform.machine().lower() not in ("x86_64", "amd64") and not env_bool("KEEPER_RUN_RAFTKEEPER_ANYARCH", False):
         pytest.skip("RaftKeeper backend requires x86_64 (pre-built RAFTKEEPER_IMAGE is amd64 only)")

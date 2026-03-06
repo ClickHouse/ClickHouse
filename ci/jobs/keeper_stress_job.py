@@ -81,7 +81,7 @@ def set_default_env():
         "KEEPER_MATRIX_BACKENDS": "raftkeeper",
         "KEEPER_METRICS_INTERVAL_S": "5",
         # Temporary: run only one scenario to isolate RaftKeeper startup failures.
-        "KEEPER_INCLUDE_IDS": "single-hot-get-no-fault",
+        "KEEPER_INCLUDE_IDS": "prod-mix-no-fault",
     }.items():
         os.environ.setdefault(k, v)
 
