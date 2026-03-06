@@ -123,7 +123,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
     return io;
 }
 
-BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -154,7 +154,7 @@ BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 

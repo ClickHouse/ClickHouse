@@ -77,7 +77,7 @@ def test_split_cache_restart(started_cluster):
     node.query("OPTIMIZE TABLE t0")
     node.query("SYSTEM STOP MERGES t0")
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE 'split_cache_slru'")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE 'split_cache_slru'")
     node.restart_clickhouse()
     wait_for_cache_initialized(node, "split_cache_slru")
 
@@ -163,7 +163,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
         )
 
     node.query("SYSTEM STOP MERGES t0")
-    node.query(f"SYSTEM DROP FILESYSTEM CACHE '{filesystem_cache_name}'")
+    node.query(f"SYSTEM CLEAR FILESYSTEM CACHE '{filesystem_cache_name}'")
     node.restart_clickhouse()
     wait_for_cache_initialized(node, storage_policy)
 

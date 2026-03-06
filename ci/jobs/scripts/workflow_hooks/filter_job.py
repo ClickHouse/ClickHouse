@@ -68,6 +68,15 @@ def should_skip_job(job_name):
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
+    # There is no way to prevent GitHub Actions from running the PR workflow on
+    # release branches, so we skip all jobs here. The ReleaseCI workflow is used
+    # for testing on release branches instead.
+    if (
+        Labels.RELEASE in _info_cache.pr_labels
+        or Labels.RELEASE_LTS in _info_cache.pr_labels
+    ):
+        return True, "Skipped for release PR"
+
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
@@ -162,7 +171,19 @@ def should_skip_job(job_name):
         )
 
     if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
-        return True, "Skipped, not a bug-fix PR"
+        # Don't skip if the corresponding test job file was changed
+        skip = True
+        if job_name == JobNames.BUGFIX_VALIDATE_FT and any(
+            f.endswith("jobs/functional_tests.py") for f in changed_files
+        ):
+            skip = False
+        elif job_name == JobNames.BUGFIX_VALIDATE_IT and any(
+            f.endswith("jobs/integration_test_job.py") for f in changed_files
+        ):
+            skip = False
+
+        if skip:
+            return True, "Skipped, not a bug-fix PR"
 
     if "flaky" in job_name.lower():
         changed_files = _info_cache.get_changed_files()

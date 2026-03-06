@@ -228,3 +228,18 @@ FROM
            timeSeriesReplaceTag(src_group, 'service', '$0', 'service', 'unknown.*') AS again_src_group,
            timeSeriesReplaceTag(src_group, 'foo', '$0', 'service', ':') AS once_again_src_group
 );
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(0, group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+);
+
+SELECT timeSeriesThrowDuplicateSeriesIf(1, group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+);  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }

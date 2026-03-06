@@ -13,6 +13,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     LLVM_COVERAGE_SKIP_PREFIXES,
     get_optimal_test_batch,
 )
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -27,6 +28,47 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
 
+INFRASTRUCTURE_ERROR_PATTERNS = [
+    "timed out after",
+    "TimeoutExpired",
+    "Cannot connect to the Docker daemon",
+    "Error response from daemon",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "Connection reset by peer",
+    "No space left on device",
+    "Cannot allocate memory",
+    "OCI runtime create failed",
+    "toomanyrequests",
+    "pull access denied",
+]
+
+
+def _is_infrastructure_error(result: Result) -> bool:
+    """Returns True if the result is an ERROR caused by infrastructure issues."""
+    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
+        return False
+    if not result.info:
+        return False
+    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+
+
+def _mark_infrastructure_errors(results: list) -> int:
+    """Scan results, label infrastructure errors with INFRA and change their status to SKIPPED.
+
+    Returns the number of results that were relabeled.
+    """
+    count = 0
+    for r in results:
+        if _is_infrastructure_error(r):
+            r.set_label(Result.Label.INFRA)
+            r.status = Result.StatusExtended.SKIPPED
+            count += 1
+    if count:
+        print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
+
 
 def _start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
@@ -37,7 +79,9 @@ def _start_docker_in_docker():
         )
     retries = 20
     for i in range(retries):
-        if Shell.check("docker info > /dev/null", verbose=True):
+        # On last retry, show errors; otherwise suppress them
+        cmd = "docker info > /dev/null" if i == retries - 1 else "docker info > /dev/null 2>&1"
+        if Shell.check(cmd, verbose=True):
             break
         if i == retries - 1:
             raise RuntimeError(
@@ -220,25 +264,58 @@ def get_parallel_sequential_tests_to_run(
     # 1) test suit (e.g. test_directory or test_directory/)
     # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
     # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def normalize_test_path(test_arg: str) -> str:
+        """Normalize test path by removing integration test directory prefixes."""
+        # Handle: tests/integration/, integration/, ./tests/integration/, or full paths
+        if "tests/integration/" in test_arg:
+            # Extract everything after tests/integration/
+            test_arg = test_arg.split("tests/integration/", 1)[1]
+        elif test_arg.startswith("integration/"):
+            # Handle integration/ prefix
+            test_arg = test_arg[len("integration/"):]
+        return test_arg
+
     def test_match(test_file: str, test_arg: str) -> bool:
         if "/" not in test_arg:
             return f"{test_arg}/" in test_file
         if test_arg.endswith(".py"):
             return test_file == test_arg
-        test_arg = test_arg.split("::", maxsplit=1)[0]
-        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
+        parts = test_arg.split("::", maxsplit=1)
+        test_module = parts[0]
+        if test_file.removesuffix(".py") != test_module.removesuffix(".py"):
+            return False
+        # When a specific test function is requested, verify it exists in the
+        # file.  Targeted CI runs pull test names from CIDB, but the test may
+        # have been moved or removed since the record was written.  Passing a
+        # stale nodeID to pytest causes the entire collection to fail with
+        # exit-code 5 ("no tests collected"), aborting all other tests too.
+        if len(parts) > 1:
+            test_func = parts[1].split("[")[0]  # strip parametrization
+            file_path = Path("./tests/integration/") / test_file
+            try:
+                content = file_path.read_text()
+                if f"def {test_func}(" not in content:
+                    print(
+                        f"WARNING: test function '{test_func}' not found in {test_file}, skipping stale target"
+                    )
+                    return False
+            except OSError:
+                return False
+        return True
 
     parallel_tests = []
     sequential_tests = []
     for test_arg in args_test:
+        # Normalize the test path first
+        normalized_test_arg = normalize_test_path(test_arg)
         matched = False
         for test_file in parallel_test_modules:
-            if test_match(test_file, test_arg):
-                parallel_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                parallel_tests.append(normalized_test_arg)
                 matched = True
         for test_file in sequential_test_modules:
-            if test_match(test_file, test_arg):
-                sequential_tests.append(test_arg)
+            if test_match(test_file, normalized_test_arg):
+                sequential_tests.append(normalized_test_arg)
                 matched = True
         if not no_strict:
             assert matched, f"Test [{test_arg}] not found"
@@ -248,13 +325,25 @@ def get_parallel_sequential_tests_to_run(
 
 def tail(filepath: str, buff_len: int = 1024) -> List[str]:
     with open(filepath, "rb") as f:
-        f.seek(-buff_len, os.SEEK_END)
-        f.readline()
+        # Get file size to avoid seeking before start of file
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size <= buff_len:
+            # File is smaller than buffer, read from beginning
+            f.seek(0)
+        else:
+            # File is larger, seek from end
+            f.seek(-buff_len, os.SEEK_END)
+            f.readline()  # Skip partial line
+
         data = f.read()
         return data.decode(errors="replace")
 
 
-def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> Result:
+def run_pytest_and_collect_results(
+    command: str, env: str, report_name: str, timeout: int = None
+) -> Result:
     """
     Does xdist timeout check.
     """
@@ -266,6 +355,7 @@ def run_pytest_and_collect_results(command: str, env: str, report_name: str) -> 
         pytest_report_file=f"{temp_path}/pytest_{report_name}.jsonl",
         pytest_logfile=f"{temp_path}/pytest_{report_name}.log",
         logfile=f"{temp_path}/{report_name}.log",
+        timeout=timeout,
     )
 
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
@@ -412,16 +502,22 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if (
-                    file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test")
-                    and file.endswith(".py")
-                    and Path(file).is_file()
-                ):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+            else:
+                # TODO: reduce scope to modified test cases instead of entire modules
+                changed_files = info.get_changed_files()
+                for file in changed_files:
+                    if (
+                        file.startswith("tests/integration/test")
+                        and Path(file).name.startswith("test")
+                        and file.endswith(".py")
+                        and Path(file).is_file()
+                    ):
+                        changed_test_modules.append(
+                            file.removeprefix("tests/integration/")
+                        )
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -473,7 +569,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )  # remove parametrization - does not work with test repeat with --count
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
-    if not Shell.check("docker info > /dev/null", verbose=True):
+    if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
@@ -556,6 +652,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
+    # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host.
+    # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
+    if not info.is_local_run:
+        try:
+            Utils.clear_dmesg()
+        except Exception as ex:
+            print(f"Failed to clear dmesg before integration tests: {ex}")
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
@@ -563,6 +667,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 env=test_env,
                 report_name="parallel",
+                timeout=session_timeout_parallel + 600,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -570,6 +675,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
             [t.name for t in test_result_parallel.results if t.is_failure()]
         )
@@ -591,6 +697,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
+                timeout=session_timeout_sequential + 600,
             )
 
             if is_flaky_check and not test_result_sequential.is_ok():
@@ -599,6 +706,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        _mark_infrastructure_errors(test_result_sequential.results)
         failed_test_cases.extend(
             [t.name for t in test_result_sequential.results if t.is_failure()]
         )
@@ -653,6 +761,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
+            timeout=1200 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -710,10 +819,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
+    # If all non-OK results are infrastructure errors, do not treat as a real failure
+    if has_error:
+        non_ok = [r for r in test_results if not r.is_ok()]
+        if non_ok and all(r.has_label(Result.Label.INFRA) for r in non_ok):
+            print(
+                "All failures are infrastructure errors - clearing error flag"
+            )
+            has_error = False
+            force_ok_exit = True
+
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation:
+    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"

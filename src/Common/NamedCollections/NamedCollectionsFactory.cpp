@@ -421,4 +421,97 @@ void NamedCollectionFactory::updateFunc()
     LOG_TRACE(log, "Named collections background updating thread finished");
 }
 
+void NamedCollectionFactory::addDependency(const String & collection_name, const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
+    dependencies.emplace(collection_name, table_id);
+}
+
+void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+
+    if (table_id.hasUUID())
+    {
+        /// Remove by UUID - this is the most reliable method for Atomic databases
+        auto & idx = dependencies.get<TableUUID>();
+        idx.erase(table_id.uuid);
+    }
+    else
+    {
+        /// Remove by name for non-Atomic databases (Ordinary, etc.) which don't have UUIDs.
+        /// We only remove entries that have Nil UUIDs - entries with UUIDs belong to Atomic
+        /// databases and must be removed via the UUID index (handled in the if branch above).
+        auto & idx = dependencies.get<TableName>();
+        auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+
+        /// Collect entries to erase - only those without UUIDs (non-Atomic database entries)
+        std::vector<decltype(range.first)> to_erase;
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->table_id.uuid == UUIDHelpers::Nil)
+                to_erase.push_back(it);
+        }
+
+        for (auto it : to_erase)
+            idx.erase(it);
+    }
+}
+
+void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+{
+    std::lock_guard lock(mutex);
+
+    /// The rename interpreter passes StorageIDs without UUIDs.
+    /// If either ID has a UUID, it's not a standard rename operation, so nothing to do.
+    /// For Atomic databases, the dependencies are tracked by UUID which doesn't change on rename.
+    if (from_table_id.hasUUID() || to_table_id.hasUUID())
+        return;
+
+    /// For non-Atomic databases (name-based tracking), we need to update the table name.
+    /// But we should only update entries that don't have UUIDs - entries with UUIDs
+    /// are from Atomic databases and should remain unchanged (UUID-based lookup still works).
+    auto & name_idx = dependencies.get<TableName>();
+    auto name_range = name_idx.equal_range(std::make_tuple(from_table_id.database_name, from_table_id.table_name));
+
+    /// Collect only entries without UUIDs (non-Atomic database entries).
+    /// A single table can depend on several named collections, so we need to save all of them
+    /// to re-insert the dependency with the new name.
+    std::vector<String> collection_names;
+    std::vector<decltype(name_range.first)> to_erase;
+    for (auto it = name_range.first; it != name_range.second; ++it)
+    {
+        if (it->table_id.uuid == UUIDHelpers::Nil)
+        {
+            collection_names.push_back(it->collection_name);
+            to_erase.push_back(it);
+        }
+    }
+
+    if (to_erase.empty())
+        return;
+
+    /// Erase and re-insert with new table name
+    for (auto it : to_erase)
+        name_idx.erase(it);
+
+    for (const auto & name : collection_names)
+        dependencies.emplace(name, to_table_id);
+}
+
+std::vector<StorageID> NamedCollectionFactory::getDependents(const String & collection_name) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<StorageID> result;
+
+    const auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+
+    for (auto it = range.first; it != range.second; ++it)
+        result.push_back(it->table_id);
+
+    return result;
+}
+
 }

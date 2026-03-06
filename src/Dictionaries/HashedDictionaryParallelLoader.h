@@ -15,7 +15,7 @@
 #include <boost/noncopyable.hpp>
 #include <numeric>
 #include <optional>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace CurrentMetrics
 {
@@ -161,11 +161,11 @@ private:
     const size_t shards;
     ThreadPool pool;
     std::atomic_bool stop_all_workers{false};
-    std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
+    VectorWithMemoryTracking<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::chrono::seconds loading_timeout;
     Stopwatch total_loading_time;
 
-    std::vector<UInt64> shards_slots;
+    VectorWithMemoryTracking<UInt64> shards_slots;
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
     struct WorkerStatistic
@@ -231,7 +231,7 @@ private:
         return out_blocks;
     }
 
-    IColumn::Selector createShardSelector(const Block & block, const std::vector<UInt64> & slots)
+    IColumn::Selector createShardSelector(const Block & block, const VectorWithMemoryTracking<UInt64> & slots)
     {
         size_t num_rows = block.rows();
         IColumn::Selector selector(num_rows);

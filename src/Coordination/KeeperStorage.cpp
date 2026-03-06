@@ -3818,7 +3818,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
         results.push_back(KeeperResponseForSession{session_id, response});
     }
-    else /// normal requests proccession
+    else /// normal requests processing
     {
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {

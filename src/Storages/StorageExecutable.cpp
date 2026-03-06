@@ -7,6 +7,7 @@
 
 #include <Columns/IColumn.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
@@ -221,7 +222,7 @@ void registerStorageExecutable(StorageFactory & factory)
 
         auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
 
-        std::vector<String> script_name_with_arguments;
+        VectorWithMemoryTracking<String> script_name_with_arguments;
         boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];

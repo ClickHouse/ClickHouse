@@ -129,16 +129,16 @@ static void updateMaxLength(ColumnUInt64 & max_length, const IColumn & length)
     if (!length_uint64)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 for array length, got {}", length.getName());
 
-    auto & max_lenght_data = max_length.getData();
+    auto & max_length_data = max_length.getData();
     const auto & length_data = length_uint64->getData();
-    size_t num_rows = max_lenght_data.size();
+    size_t num_rows = max_length_data.size();
     if (num_rows != length_data.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Different columns sizes in ARRAY JOIN: {} and {}", num_rows, length_data.size());
 
     for (size_t row = 0; row < num_rows; ++row)
-        max_lenght_data[row] = std::max(max_lenght_data[row], length_data[row]);
+        max_length_data[row] = std::max(max_length_data[row], length_data[row]);
 }
 
 ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_)

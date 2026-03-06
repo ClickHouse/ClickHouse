@@ -151,7 +151,7 @@ private:
         HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
@@ -185,7 +185,7 @@ private:
             AttributeContainerType<Array>>
             container;
 
-        std::optional<std::vector<bool>> is_value_nullable;
+        std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
     };
 
     template <typename RangeStorageType>
@@ -279,7 +279,7 @@ private:
     const RangeHashedDictionaryConfiguration configuration;
     BlockPtr update_field_loaded_block;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
@@ -628,10 +628,10 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 template <DictionaryKeyType dictionary_key_type>
 typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictionary<dictionary_key_type>::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    std::optional<std::vector<bool>> is_value_nullable;
+    std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
 
     if (dictionary_attribute.is_nullable)
-        is_value_nullable.emplace(std::vector<bool>());
+        is_value_nullable.emplace(VectorWithMemoryTracking<bool>());
 
     Attribute attribute{dictionary_attribute.underlying_type, {}, std::move(is_value_nullable)};
 

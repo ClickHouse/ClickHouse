@@ -7,11 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Full-text search with text indexes
-
-<BetaBadge/>
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
 A text index stores a mapping from tokens to the row numbers which contain each token.
@@ -79,13 +75,7 @@ If query
 SELECT value FROM system.settings WHERE name = 'compatibility';
 ```
 
-returns
-
-```text
-25.4
-```
-
-or any other value smaller than 26.2, you will need to set three additional settings to use the text index:
+returns a value smaller than `26.2` (e.g. `25.4`), you will need to set three additional settings to use the text index:
 
 ```sql
 SET enable_full_text_index = true;
@@ -96,7 +86,7 @@ SET use_skip_indexes_on_data_read = true;
 Alternatively, you can increment the [compatibility](../../../operations/settings/settings#compatibility) setting to `26.2` or newer but this affects many settings and typically requires prior testing.
 :::
 
-Text indexes can be defined on [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) map functions) columns using the following syntax:
+To create a text index use the following syntax:
 
 ```sql
 CREATE TABLE table
@@ -122,6 +112,13 @@ CREATE TABLE table
 ENGINE = MergeTree
 ORDER BY key
 ```
+
+Text indexes can be defined on columns of these types:
+- [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md),
+- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md), and
+- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions).
+
+Columns of type [Nullable(T)](/sql-reference/data-types/nullable.md) and [LowCardinality()](/sql-reference/data-types/lowcardinality.md) are also supported, including `Array(Nullable(String or FixedString))`.
 
 Alternatively, to add a text index to an existing table:
 
@@ -210,35 +207,26 @@ We plan to add specialized language-specific tokenizers to handle these cases be
 Typical use cases for the preprocessor argument include
 1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8) (see the first example below).
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
-3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](./sql-reference/functions/string-replace-functions.md/#translate).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate).
 
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+If the text index was build on a column of type `Nullable(T)` or `LowCardinality(T)` column, then the preprocessor expression should accept nullable or low-cardinality values (i.e. not throw an exception).
 
 Examples:
+
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
 
-Also, the preprocessor expression must only reference the column on top of which the text index is defined.
+Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
+
+Examples:
+
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+
 Using non-deterministic functions is disallowed.
-
-The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
-In this case, the preprocessor expression transforms the array elements individually.
-
-Example:
-
-```sql
-CREATE TABLE table
-(
-    col Array(String),
-    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
-
-    -- This is not legal:
-    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
@@ -247,7 +235,6 @@ For example,
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
@@ -262,7 +249,6 @@ is equivalent to:
 ```sql
 CREATE TABLE table
 (
-    key UInt64,
     str String,
     INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
 )
@@ -271,6 +257,43 @@ ORDER BY tuple();
 
 SELECT count() FROM table WHERE hasToken(str, lower('Foo'));
 ```
+
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    arr Array(String),
+    INDEX idx arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr))
+
+    -- This is not legal:
+    INDEX idx_illegal arr TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(arr))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'foo');
+```
+
+To define a preprocessor in a text index on build [Map](/sql-reference/data-types/map.md)-type columns, users need to decide if the index is
+build on the map keys or values.
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+    map Map(String, String),
+    INDEX idx mapKeys(map)  TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(mapKeys(map)))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
+```
+
 **Other arguments (optional)**.
 
 <details markdown="1">
@@ -752,21 +775,22 @@ This ordering enables skipping even more data granules than the granules skipped
 ### Caching {#caching}
 
 Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
-Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
+They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+
 By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
 
-#### Dictionary blocks cache settings {#caching-dictionary}
+#### Tokens cache settings {#caching-tokens}
 
 | Setting                                                                                                                                                  | Description                                                                                                    |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)                | Text index dictionary block cache policy name.                                                                 |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                    | Maximum cache size in bytes.                                                                                   |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)      | Maximum number of deserialized dictionary blocks in cache.                                                     |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)        | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.  |
+| [text_index_tokens_cache_policy](/operations/server-configuration-parameters/settings#text_index_tokens_cache_policy)                | Text index tokens cache policy name.                                                                 |
+| [text_index_tokens_cache_size](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_tokens_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_tokens_cache_max_entries)      | Maximum number of deserialized tokens in cache.                                                     |
+| [text_index_tokens_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size_ratio)        | The size of the protected queue in the text index tokens cache relative to the cache\'s total size.  |
 
 #### Header cache settings {#caching-header}
 
@@ -859,6 +883,10 @@ During this step, the sorted dictionaries of the text indexes of each input part
 The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
 This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
 If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
+
+**Debugging**
+
+Table function [mergeTreeTextIndex](../../../sql-reference/table-functions/mergeTreeTextIndex.md) can be used to introspect text indexes.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

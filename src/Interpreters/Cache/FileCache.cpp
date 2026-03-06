@@ -246,7 +246,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
-                    overcommit_eviction_evict_steps,
+                    overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
                     "overcommit");
@@ -266,6 +266,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             };
             break;
         }
+#else
+        case FileCachePolicy::LRU_OVERCOMMIT:
+        case FileCachePolicy::SLRU_OVERCOMMIT:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overcommit cache policies are not supported without distributed cache");
 #endif
     }
     if (use_split_cache)

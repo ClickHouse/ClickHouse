@@ -62,7 +62,7 @@ private:
         bool has_layout_complex;
     };
 
-    using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;
+    using LayoutRegistry = UnorderedMapWithMemoryTracking<std::string, RegisteredLayout>;
     LayoutRegistry registered_layouts;
 
 };

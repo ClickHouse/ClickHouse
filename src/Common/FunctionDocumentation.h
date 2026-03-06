@@ -127,6 +127,9 @@ struct FunctionDocumentation
         UniqTheta,
         Variant,
 
+        /// Internal utility functions, not documented in the user docs
+        Internal,
+
         /// Other types of functions
         AggregateFunction,
         TableFunction
@@ -151,5 +154,10 @@ struct FunctionDocumentation
     String examplesAsString() const;
     String introducedInAsString() const;
     String categoryAsString() const;
+
+    /// Use as a placeholder for internal functions that have no public documentation
+    static FunctionDocumentation INTERNAL_FUNCTION_DOCS;
+
 };
+
 }

@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -10,7 +12,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper_map.xml"],
-    user_configs=["configs/keeper_retries.xml"],
+    user_configs=[
+        "configs/keeper_retries.xml",
+        "configs/sync_insert.xml",],
     with_zookeeper=True,
     stay_alive=True,
     with_remote_database_disk=False,  # `test_keeper_map_without_zk` stops the Keeper connection, which might not work with the remote DB disk
@@ -139,6 +143,13 @@ def test_keeper_drop_after_update(started_cluster):
     )
 
     run_query("DROP TABLE test_keeper_drop_after_update SYNC")
+
+    # The data might not be immediately visible as removed by an external client
+    # connected to a different Keeper node due to replication lag in the 3-node cluster.
+    for _ in range(10):
+        if zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data") is None:
+            break
+        time.sleep(0.5)
 
     assert (
         zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data")
