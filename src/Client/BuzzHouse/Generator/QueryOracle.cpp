@@ -240,7 +240,7 @@ void QueryOracle::generateRoundtripOracleQueries(
             /// parseDateTime/formatDateTime roundtrip — exercises datetime parsing and formatting.
             /// Uses col_ref directly (not val) since formatDateTime requires a Date/DateTime argument.
             /// The predicate format→parse→format = format ensures the roundtrip holds for valid DateTime values.
-            static const std::vector<String> dt_formats = {
+            static const DB::Strings dt_formats = {
                 "%Y-%m-%d %H:%i:%s",
                 "%Y/%m/%d %H:%i:%s",
                 "%d.%m.%Y %H:%i:%s",

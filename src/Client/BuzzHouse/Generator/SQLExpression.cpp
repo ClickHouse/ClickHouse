@@ -1672,7 +1672,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             /// Exercise accurateCast / accurateCastOrNull across overflow-prone integer/float conversions.
             /// accurateCast throws on out-of-range; accurateCastOrNull returns NULL.
             /// Using intentionally wide random values maximises the chance of hitting boundary conditions.
-            static const std::vector<String> target_types = {
+            static const DB::Strings target_types = {
                 "UInt8",
                 "UInt16",
                 "UInt32",

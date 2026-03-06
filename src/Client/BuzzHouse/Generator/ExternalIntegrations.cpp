@@ -135,7 +135,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
     {
         /// Swap engine if others are equivalent
-        static const std::vector<TableEngineValues> & logEngines
+        static const std::vector<TableEngineValues> logEngines
             = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
 
         te.set_engine(rg.pickRandomly(logEngines));
@@ -429,7 +429,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
 
         if (nopt < 76)
         {
-            static const std::vector<String> & baseTypes
+            static const DB::Strings baseTypes
                 = {"TINYINT",
                    "SMALLINT",
                    "MEDIUMINT",
@@ -490,7 +490,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
             std::uniform_int_distribution<uint32_t> precisions(0, 65);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
-            static const std::vector<String> & baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
+            static const DB::Strings baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
 
             return fmt::format("{}({},{})", rg.pickRandomly(baseTypes), precision, scales(rg.generator));
         }
@@ -498,7 +498,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const std::vector<String> & baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
+            static const DB::Strings baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -506,7 +506,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Date/time with precision
             std::uniform_int_distribution<uint32_t> precisions(0, 6);
-            static const std::vector<String> & baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
+            static const DB::Strings baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), precisions(rg.generator));
         }
@@ -684,7 +684,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
 
         if (nopt < 81)
         {
-            static const std::vector<String> & baseTypes
+            static const DB::Strings baseTypes
                 = {"SMALLINT",  "INTEGER",   "BIGINT",   "NUMERIC", "DECIMAL", "REAL",    "DOUBLE PRECISION", "SMALLSERIAL", "SERIAL",
                    "BIGSERIAL", "MONEY",     "TEXT",     "BPCHAR",  "BYTEA",   "TIME",    "TIMESTAMP",        "DATE",        "BOOLEAN",
                    "POINT",     "LINE",      "LSEG",     "BOX",     "PATH",    "POLYGON", "CIRCLE",           "CIDR",        "INET",
@@ -696,7 +696,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 255);
-            static const std::vector<String> & prefixes = {"", "VAR", "BP"};
+            static const DB::Strings prefixes = {"", "VAR", "BP"};
 
             baseType = fmt::format("{}CHAR({})", rg.pickRandomly(prefixes), lengths(rg.generator));
         }
@@ -829,11 +829,10 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
 
         if (nopt < 91)
         {
-            static const std::vector<String> & baseTypes
-                = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
-                   "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
-                   "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
-                   "BYTEA"};
+            static const DB::Strings baseTypes = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
+                                                  "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
+                                                  "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
+                                                  "BYTEA"};
             return rg.pickRandomly(baseTypes);
         }
         else if (nopt < 96)
@@ -849,7 +848,7 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const std::vector<String> & baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
+            static const DB::Strings baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -1549,7 +1548,7 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
     return httpPut("/sparkdatabase", body);
 }
 
-static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
+static const DB::Strings catalogs = {"glue", "hive", "rest", "unity"};
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
 {

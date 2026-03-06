@@ -1059,6 +1059,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         return std::make_shared<DataTypeVariant>(variants);
     }
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
     /// Enum types: add or remove enum values
 #define FUZZ_ENUM(INT_TYPE) \
     if (const auto * dt_enum = typeid_cast<const DataTypeEnum<INT_TYPE> *>(type.get()); dt_enum && fuzz_rand() % 4 != 0) \
@@ -1092,6 +1093,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     FUZZ_DECIMAL(Decimal128)
     FUZZ_DECIMAL(Decimal256)
 #undef FUZZ_DECIMAL
+/// NOLINTEND(bugprone-macro-parentheses)
 
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
@@ -1258,7 +1260,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 {
     auto & changes = settings_ast.changes;
 
-    static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
+    static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
            {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "query_tree_passes"}},
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
@@ -2747,7 +2749,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            static const std::vector<String> formats = {
+            static const DB::Strings formats = {
                 "Values",
                 "CSV",
                 "TSV",

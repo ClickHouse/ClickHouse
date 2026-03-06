@@ -100,7 +100,7 @@ public:
     uint32_t window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
-    std::vector<String> projections;
+    DB::Strings projections;
 
     QueryLevel() = default;
 
