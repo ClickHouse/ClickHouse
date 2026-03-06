@@ -1,6 +1,6 @@
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 
 #include <base/interpolate.h>
 
@@ -30,8 +30,19 @@ public:
     void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
+        {
+            size_t size_delta = 0;
+            size_t rows_delta = 0;
             while (end >= begin + 3 && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
+            {
+                size_delta += (end - 1)->size;
+                rows_delta += (end - 1)->rows;
                 --end;
+            }
+
+            sum_size -= size_delta;
+            sum_rows -= rows_delta;
+        }
 
         double current_score = score(static_cast<double>(end - begin), static_cast<double>(sum_size), static_cast<double>(settings.size_fixed_cost_to_add));
 
