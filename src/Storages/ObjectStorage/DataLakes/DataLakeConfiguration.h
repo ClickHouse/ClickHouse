@@ -89,12 +89,12 @@ public:
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
         BaseStorageConfiguration::update(object_storage, local_context);
+        checkLocalCorrectness(object_storage, local_context);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
             return;
         }
-        checkLocalCorrectness(object_storage, local_context);
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
@@ -117,7 +117,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-        BaseStorageConfiguration::update(object_storage, local_context, true);
+        BaseStorageConfiguration::update(object_storage, local_context);
 
         checkLocalCorrectness(object_storage, local_context);
         DataLakeMetadata::createInitial(
