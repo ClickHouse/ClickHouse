@@ -14,6 +14,7 @@ struct NumberGetter
     static NumberGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value = std::nullopt);
     uint64_t getNumber() const;
     std::string description() const;
+    void setSeed(uint64_t seed) { rng.seed(seed); }
 private:
     struct NumberRange
     {
@@ -22,6 +23,7 @@ private:
     };
 
     std::variant<uint64_t, NumberRange> value;
+    mutable pcg64 rng{randomSeed()};
 };
 
 struct StringGetter
@@ -37,8 +39,10 @@ struct StringGetter
     std::string getString() const;
     std::string description() const;
     bool isRandom() const;
+    void setSeed(uint64_t seed);
 private:
     std::variant<std::string, NumberGetter> value;
+    mutable pcg64 rng{randomSeed()};
 };
 
 struct PathGetter
@@ -49,6 +53,7 @@ struct PathGetter
     std::string description() const;
 
     void initialize(Coordination::ZooKeeper & zookeeper);
+    void setSeed(uint64_t seed) { rng.seed(seed); }
 private:
     std::vector<std::string> parent_paths;
 
@@ -56,6 +61,7 @@ private:
 
     std::vector<std::string> paths;
     mutable std::uniform_int_distribution<size_t> path_picker;
+    mutable pcg64 rng{randomSeed()};
 };
 
 /// Default ACLs used throughout keeper-bench (world:anyone with all permissions)
@@ -127,6 +133,7 @@ private:
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
     void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
     StringGetter data;
@@ -139,6 +146,7 @@ private:
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
     void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
 };
@@ -150,6 +158,7 @@ private:
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
     void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
 };
@@ -171,6 +180,7 @@ private:
     std::vector<RequestGeneratorPtr> request_generators;
     std::vector<size_t> weights;
     mutable std::uniform_int_distribution<size_t> request_generator_picker;
+    mutable pcg64 rng{randomSeed()};
 };
 
 struct MultiRequestGenerator final : public RequestGenerator

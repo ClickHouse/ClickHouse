@@ -26,7 +26,7 @@ Coordination::ACLs getDefaultACLs()
 
 namespace
 {
-std::string generateRandomString(size_t length)
+std::string generateRandomString(size_t length, pcg64 & rng)
 {
     if (length == 0)
         return "";
@@ -35,8 +35,7 @@ std::string generateRandomString(size_t length)
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    thread_local pcg64 rng(randomSeed());
-    thread_local std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
+    std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
 
     std::string s;
 
@@ -88,7 +87,6 @@ uint64_t NumberGetter::getNumber() const
         return *number;
 
     const auto & range = std::get<NumberRange>(value);
-    thread_local pcg64 rng(randomSeed());
     return std::uniform_int_distribution<uint64_t>(range.min_value, range.max_value)(rng);
 }
 
@@ -115,7 +113,7 @@ std::string StringGetter::getString() const
         return *string;
 
     const auto & number_getter = std::get<NumberGetter>(value);
-    return generateRandomString(number_getter.getNumber());
+    return generateRandomString(number_getter.getNumber(), rng);
 }
 
 std::string StringGetter::description() const
@@ -130,6 +128,13 @@ std::string StringGetter::description() const
 bool StringGetter::isRandom() const
 {
     return std::holds_alternative<NumberGetter>(value);
+}
+
+void StringGetter::setSeed(uint64_t seed)
+{
+    rng.seed(seed);
+    if (auto * number_getter = std::get_if<NumberGetter>(&value))
+        number_getter->setSeed(seed + 1000003);
 }
 
 PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -211,7 +216,6 @@ std::string PathGetter::getPath() const
     if (paths.size() == 1)
         return paths[0];
 
-    thread_local pcg64 rng(randomSeed());
     return paths[path_picker(rng)];
 }
 
@@ -307,8 +311,6 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
 
 RequestGeneratorPtr RequestGetter::getRequestGenerator() const
 {
-    thread_local pcg64 rng(randomSeed());
-
     auto random_number = request_generator_picker(rng);
 
     if (weights.empty())
@@ -336,8 +338,9 @@ void RequestGetter::startup(Coordination::ZooKeeper & zookeeper)
 
 void RequestGetter::setSeed(uint64_t seed)
 {
+    rng.seed(seed);
     for (size_t i = 0; i < request_generators.size(); ++i)
-        request_generators[i]->setSeed(seed + i);
+        request_generators[i]->setSeed(seed + i + 1);
 }
 
 const std::vector<RequestGeneratorPtr> & RequestGetter::requestGenerators() const
@@ -430,6 +433,10 @@ void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
 void CreateRequestGenerator::setSeedImpl(uint64_t seed)
 {
     rng.seed(seed);
+    parent_path.setSeed(seed + 100003);
+    name.setSeed(seed + 200003);
+    if (data)
+        data->setSeed(seed + 300007);
 }
 
 ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
@@ -537,6 +544,12 @@ void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
     path.initialize(zookeeper);
 }
 
+void SetRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
+    data.setSeed(seed + 200003);
+}
+
 void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     path = PathGetter::fromConfig(key, config);
@@ -562,6 +575,11 @@ void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
     path.initialize(zookeeper);
 }
 
+void GetRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
+}
+
 void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     path = PathGetter::fromConfig(key, config);
@@ -585,6 +603,11 @@ ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordinat
 void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
 {
     path.initialize(zookeeper);
+}
+
+void ListRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
 }
 
 void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -665,6 +688,8 @@ void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
 void MultiRequestGenerator::setSeedImpl(uint64_t seed)
 {
     request_getter.setSeed(seed);
+    if (size)
+        size->setSeed(seed + 100003);
 }
 
 Generator::Generator(const Poco::Util::AbstractConfiguration & config)
