@@ -620,7 +620,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
 }
 
@@ -642,9 +642,11 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 #if USE_DELTA_KERNEL_RS
     if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
     {
+        LOG_INFO(getLogger("DeltaLakeMetadata"), "Delta Lake Kernel" " is enabled, using it to read metadata for table at path '{}'", configuration.lock()->getPathForRead().path);
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
 #endif
+    LOG_INFO(getLogger("DeltaLakeMetadata"), "Delta Lake Kernel" " is disabled, using native implementation to read metadata for table at path '{}'", configuration.lock()->getPathForRead().path);
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
 

@@ -143,6 +143,8 @@ public:
 
     ffi::EngineBuilder * createBuilder() const override
     {
+        LOG_TEST(log,"Using delta kernel for azure");
+
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
@@ -177,6 +179,7 @@ private:
     const std::string storage_account_key;
     const std::string storage_sas_key;
     const std::string table_location;
+    const LoggerPtr log = getLogger("AzureKernelHelper");
 };
 
 /// A helper class to manage local fs storage.
@@ -246,6 +249,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & account_key = azure_conf->getAccountKey();
             const auto & sas_key = azure_conf->getSasKey();
 
+            LOG_INFO(getLogger("getKernelHelper"), "Creating azure kernel helper {} , '{}'", endpoint , account_name);
             return std::make_shared<DeltaLake::AzureKernelHelper>(endpoint, container, path, account_name, account_key, sas_key);
         }
         case DB::ObjectStorageType::Local:
