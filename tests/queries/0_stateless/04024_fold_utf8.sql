@@ -7,6 +7,7 @@ SELECT caseFoldUTF8(123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT caseFoldUTF8('x', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT caseFoldUTF8('x', 'aggressive', 'true'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT caseFoldUTF8('x', 'invalid'); -- { serverError BAD_ARGUMENTS }
+SELECT caseFoldUTF8('x', 'aggressive', 1); -- { serverError BAD_ARGUMENTS }
 SELECT foldUTF8('x', 'invalid'); -- { serverError BAD_ARGUMENTS }
 SELECT caseFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT accentFoldUTF8(toFixedString('hello', 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -41,7 +42,7 @@ SELECT '-- foldUTF8 conservative';
 SELECT foldUTF8('Café Résumé', 'conservative');
 SELECT foldUTF8('HÉLLO Wörld', 'conservative');
 
--- caseFoldUTF8 with handle_special_I
+-- caseFoldUTF8 with exclude_special_I
 SELECT '-- caseFoldUTF8 with special I handling';
 SELECT caseFoldUTF8('İstanbul', 'conservative', 0);
 SELECT caseFoldUTF8('İstanbul', 'conservative', 1);

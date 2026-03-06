@@ -93,7 +93,7 @@ struct CaseFoldImpl
 {
     static constexpr auto name = "caseFoldUTF8";
 
-    static void init(FoldContext & ctx, bool aggressive, bool handle_special_i)
+    static void init(FoldContext & ctx, bool aggressive, bool exclude_special_i)
     {
         UErrorCode err = U_ZERO_ERROR;
         ctx.aggressive = aggressive;
@@ -110,7 +110,7 @@ struct CaseFoldImpl
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
         }
 
-        ctx.fold_options = handle_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
+        ctx.fold_options = exclude_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
     /// Result is left in buf1.
@@ -149,7 +149,7 @@ struct AccentFoldImpl
 {
     static constexpr auto name = "accentFoldUTF8";
 
-    static void init(FoldContext & ctx, bool /* aggressive */, bool /* handle_special_i */)
+    static void init(FoldContext & ctx, bool /* aggressive */, bool /* exclude_special_i */)
     {
         UErrorCode err = U_ZERO_ERROR;
 
@@ -180,7 +180,7 @@ struct FullFoldImpl
 {
     static constexpr auto name = "foldUTF8";
 
-    static void init(FoldContext & ctx, bool aggressive, bool /* handle_special_i */)
+    static void init(FoldContext & ctx, bool aggressive, bool /* exclude_special_i */)
     {
         UErrorCode err = U_ZERO_ERROR;
         ctx.aggressive = aggressive;
@@ -252,10 +252,10 @@ struct FoldUTF8Common
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
         bool aggressive,
-        bool handle_special_i)
+        bool exclude_special_i)
     {
         FoldContext ctx;
-        Impl::init(ctx, aggressive, handle_special_i);
+        Impl::init(ctx, aggressive, exclude_special_i);
 
         res_data.reserve(data.size());
         res_offsets.resize(input_rows_count);
@@ -390,7 +390,7 @@ public:
                 "Illegal column {} of first argument of function {}", col->getName(), getName());
 
         bool aggressive = true;
-        bool handle_special_i = false;
+        bool exclude_special_i = false;
         size_t arg_idx = 1;
 
         if constexpr (has_method_arg)
@@ -404,14 +404,18 @@ public:
         if constexpr (has_special_i_arg)
         {
             if (arg_idx < arguments.size())
-                handle_special_i = parseUInt8Argument(arguments[arg_idx]);
+                exclude_special_i = parseUInt8Argument(arguments[arg_idx]);
         }
+
+        if (aggressive && exclude_special_i)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "exclude_special_I is only supported with 'conservative' method in function {}", getName());
 
         auto col_res = ColumnString::create();
         FoldUTF8Common<Impl>::process(
             col_str->getChars(), col_str->getOffsets(),
             col_res->getChars(), col_res->getOffsets(),
-            input_rows_count, aggressive, handle_special_i);
+            input_rows_count, aggressive, exclude_special_i);
         return col_res;
     }
 
@@ -437,7 +441,7 @@ private:
         const auto * col_const = checkAndGetColumnConst<ColumnUInt8>(arg.column.get());
         if (!col_const)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The 'handle_special_I' argument of function {} must be a constant UInt8", Impl::name);
+                "The 'exclude_special_I' argument of function {} must be a constant UInt8", Impl::name);
         return col_const->getValue<UInt8>() != 0;
     }
 };
@@ -462,11 +466,11 @@ Two methods are available:
 - 'conservative': applies NFC normalization followed by standard Unicode case folding, preserving the
   visual form of compatibility characters (e.g. ligatures remain intact). This requires multiple ICU passes.
 )";
-    FunctionDocumentation::Syntax case_syntax = "caseFoldUTF8(str[, method][, handle_special_I])";
+    FunctionDocumentation::Syntax case_syntax = "caseFoldUTF8(str[, method][, exclude_special_I])";
     FunctionDocumentation::Arguments case_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
         {"method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}},
-        {"handle_special_I", "Optional. 1 to exclude Turkish/Azerbaijani special I mapping (U_FOLD_CASE_EXCLUDE_SPECIAL_I). Default 0.", {"UInt8"}}
+        {"exclude_special_I", "Optional. 1 to exclude Turkish/Azerbaijani special I mapping (U_FOLD_CASE_EXCLUDE_SPECIAL_I). Default 0. Only valid with 'conservative' method.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue case_ret = {"Case-folded UTF-8 string.", {"String"}};
     FunctionDocumentation::Examples case_examples = {
@@ -526,7 +530,7 @@ Two methods are available:
 
 See the caseFoldUTF8 and accentFoldUTF8 functions for more info on each step. The result of this function will be equivalent
 to accentFoldUTF8(caseFoldUTF8(input)) however foldUTF8(input) will be slightly faster due to avoiding a redundant normalization step.
-Note that there is no handle_special_I parameter since the special I would be stripped of any accents anyway.
+Note that there is no exclude_special_I parameter since the special I would be stripped of any accents anyway.
 )";
     FunctionDocumentation::Syntax fold_syntax = "foldUTF8(str[, case_fold_method])";
     FunctionDocumentation::Arguments fold_args = {
