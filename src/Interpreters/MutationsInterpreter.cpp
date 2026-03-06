@@ -1576,8 +1576,13 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     if (auto it = update_output_map.find(name); it != update_output_map.end())
                         update_dag_outputs.push_back(it->second);
                 }
+                /// Add updated columns that are NOT already in output_columns
+                /// to avoid duplicates (updated columns are typically already
+                /// in output_columns since they are physical table columns).
                 for (const auto & kv : stage.column_to_updated)
                 {
+                    if (stage.output_columns.contains(kv.first))
+                        continue;
                     if (auto it = update_output_map.find(kv.first); it != update_output_map.end())
                         update_dag_outputs.push_back(it->second);
                 }
@@ -1628,12 +1633,14 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// ActionsChain::finalize unconditionally sets project_input = true
             /// for every step. But for on-fly mutation application, input columns
             /// like _part_offset (added by addPatchPartsColumns to the first reader)
-            /// must pass through non-projection steps.  The old analyzer path
-            /// (ExpressionActionsChain::finalize) only sets project_input for
-            /// non-first steps, so match that: clear project_input on all steps
-            /// except the last (projection) one.
-            for (size_t s = 0; s + 1 < actions_chain.getStepsSize(); ++s)
-                actions_chain[s]->getActions()->project_input = false;
+            /// must pass through the first step of the first stage.  The old
+            /// analyzer path (ExpressionActionsChain::finalize) only calls
+            /// prependProjectInput starting from step 1, so the first step
+            /// never gets project_input.  For later stages, all steps should
+            /// keep project_input to avoid duplicate columns when the same
+            /// column is updated across multiple stages.
+            if (i == 0 && actions_chain.getStepsSize() > 0)
+                actions_chain[0]->getActions()->project_input = false;
 
             /// 8. Store prepared sets (aliasing shared_ptr keeps planner_context alive).
             stage.new_prepared_sets = std::shared_ptr<PreparedSets>(
@@ -1808,6 +1815,18 @@ void MutationsInterpreter::Source::read(
         const auto & first_step = first_stage.new_actions_chain->getSteps().front();
         for (const auto & col_name : first_step->getInputColumnNames())
             required_columns.push_back(col_name);
+
+        /// When all expressions are constants/scalar subqueries (e.g.
+        /// UPDATE c0 = (), c1 = 2 WHERE EXISTS(SELECT 1)), no table
+        /// columns are required.  We still need to read at least one
+        /// column to determine the number of rows.  Pick the smallest
+        /// column, matching the old analyzer path (TreeRewriter::collectUsedColumns).
+        if (required_columns.empty())
+        {
+            auto all_physical = snapshot_->getColumns().getAllPhysical();
+            if (!all_physical.empty())
+                required_columns.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+        }
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
