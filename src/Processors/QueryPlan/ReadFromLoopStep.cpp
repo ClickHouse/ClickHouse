@@ -8,7 +8,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -40,13 +39,17 @@ class PullingPipelineExecutor;
 
 namespace
 {
-    void buildInterpreterQueryPlan(
+    /// Build a query plan by constructing a synthetic SELECT query and running it through
+    /// the interpreter. The FROM clause is either a catalog table (database.table) or a
+    /// table function AST — exactly one of the two must be provided.
+    void buildSelectQueryPlan(
         QueryPlan & plan,
-        const String & database,
-        const String & table,
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        ContextPtr context)
+        ContextPtr context,
+        const String & database = {},
+        const String & table = {},
+        const ASTPtr & table_function_ast = nullptr)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -55,54 +58,10 @@ namespace
             select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(col_name));
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
-        select_query->replaceDatabaseAndTable(database, table);
-
-        auto select_ast = make_intrusive<ASTSelectWithUnionQuery>();
-        select_ast->list_of_selects = make_intrusive<ASTExpressionList>();
-        select_ast->list_of_selects->children.push_back(select_query);
-        select_ast->children.push_back(select_ast->list_of_selects);
-
-        auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
-
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
-            if (query_info.storage_limits)
-                interpreter.addStorageLimits(*query_info.storage_limits);
-            plan = std::move(interpreter).extractQueryPlan();
-        }
+        if (table_function_ast)
+            select_query->addTableFunction(table_function_ast);
         else
-        {
-            InterpreterSelectWithUnionQuery interpreter(select_ast, context, options, column_names);
-            if (query_info.storage_limits)
-                interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(plan);
-        }
-    }
-
-    void buildInterpreterQueryPlanForTableFunction(
-        QueryPlan & plan,
-        const ASTPtr & table_function_ast,
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        ContextPtr context)
-    {
-        auto select_query = make_intrusive<ASTSelectQuery>();
-
-        auto select_expr_list = make_intrusive<ASTExpressionList>();
-        for (const auto & col_name : column_names)
-            select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(col_name));
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
-
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
-        auto table_expr = make_intrusive<ASTTableExpression>();
-        table_expr->table_function = table_function_ast->clone();
-        table_expr->children.push_back(table_expr->table_function);
-        table_element->table_expression = table_expr;
-        table_element->children.push_back(table_element->table_expression);
-        tables->children.push_back(table_element);
-        select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+            select_query->replaceDatabaseAndTable(database, table);
 
         auto select_ast = make_intrusive<ASTSelectWithUnionQuery>();
         select_ast->list_of_selects = make_intrusive<ASTExpressionList>();
@@ -168,16 +127,16 @@ public:
         {
             inner_context = Context::createCopy(context);
             const auto & storage_id = inner_storage->getStorageID();
-            buildInterpreterQueryPlan(
-                plan, storage_id.database_name, storage_id.table_name,
-                column_names, query_info, inner_context);
+            buildSelectQueryPlan(
+                plan, column_names, query_info, inner_context,
+                storage_id.database_name, storage_id.table_name);
         }
         else if (inner_table_function_ast)
         {
             inner_context = Context::createCopy(context);
-            buildInterpreterQueryPlanForTableFunction(
-                plan, inner_table_function_ast,
-                column_names, query_info, inner_context);
+            buildSelectQueryPlan(
+                plan, column_names, query_info, inner_context,
+                {}, {}, inner_table_function_ast);
         }
         else
         {
