@@ -616,7 +616,7 @@ String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const boo
     if (this->allow_not_deterministic && rg.nextSmallNumber() < 5)
     {
         /// Use 127.0.0.{1,2,..N} to test sharding logic in remote table functions
-        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(1, 4);
+        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(2, 4);
 
         res += "127.0.0.{";
         for (uint32_t i = 0; i < nshards; i++)
@@ -625,7 +625,7 @@ String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const boo
             {
                 res += ",";
             }
-            res += std::to_string(i);
+            res += std::to_string(i + 1);
         }
         res += "}";
     }

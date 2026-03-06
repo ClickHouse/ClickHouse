@@ -1078,39 +1078,16 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     {
         return kind;
     }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::ParsedAST;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::QueryTree;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::QueryPlan;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::QueryPipeline;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::QueryEstimates;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::TableOverride;
-    }
-    if (fuzz_rand() % 11 == 0)
-    {
-        return ASTExplainQuery::ExplainKind::CurrentTransaction;
-    }
-    return kind;
+    static const std::vector<ASTExplainQuery::ExplainKind> explain_kinds
+        = {ASTExplainQuery::ExplainKind::ParsedAST,
+           ASTExplainQuery::ExplainKind::AnalyzedSyntax,
+           ASTExplainQuery::ExplainKind::QueryTree,
+           ASTExplainQuery::ExplainKind::QueryPlan,
+           ASTExplainQuery::ExplainKind::QueryPipeline,
+           ASTExplainQuery::ExplainKind::QueryEstimates,
+           ASTExplainQuery::ExplainKind::TableOverride,
+           ASTExplainQuery::ExplainKind::CurrentTransaction};
+    return explain_kinds[fuzz_rand() % explain_kinds.size()];
 }
 
 void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind)
@@ -1581,8 +1558,8 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
         static const std::vector<JoinKind> kind_values
             = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full /*,JoinKind::Cross,JoinKind::Comma,JoinKind::Paste*/};
 
-        table_join->locality = locality_values[fuzz_rand() % 2 == 0 ? 0 : (fuzz_rand() % locality_values.size())];
-        table_join->kind = kind_values[fuzz_rand() % 2 == 0 ? 0 : (fuzz_rand() % kind_values.size())];
+        table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
+        table_join->kind = kind_values[fuzz_rand() % kind_values.size()];
         if (fuzz_rand() % 2 == 0)
         {
             table_join->strictness = JoinStrictness::Unspecified;
@@ -1617,7 +1594,8 @@ static String getOldALias(const ASTPtr & input)
     {
         const auto & child = texp->database_and_table_name ? texp->database_and_table_name
                                                            : (texp->table_function ? texp->table_function : texp->subquery);
-        return dynamic_cast<const ASTWithAlias *>(child.get())->tryGetAlias();
+        const auto * walias = dynamic_cast<const ASTWithAlias *>(child.get());
+        return walias ? walias->tryGetAlias() : "";
     }
     else if (const auto * sub = dynamic_cast<const ASTWithAlias *>(input.get()))
     {
@@ -1661,7 +1639,10 @@ ASTPtr QueryFuzzer::addJoinClause()
                     ? otexp->database_and_table_name
                     : (otexp->table_function ? otexp->table_function : otexp->subquery);
                 auto * otable_exp_alias = dynamic_cast<ASTWithAlias *>(otable_exp_child.get());
-                otable_exp_alias->setAlias(next_alias);
+                if (otable_exp_alias)
+                {
+                    otable_exp_alias->setAlias(next_alias);
+                }
             }
             else if (dynamic_cast<ASTWithAlias *>(input_table.get()))
             {
