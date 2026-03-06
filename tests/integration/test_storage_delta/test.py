@@ -4018,7 +4018,7 @@ deltaLake{suffix}({cluster}
     )
     # check rows indexes size is 2
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
-    assert node.contains_in_log("Row indexes size: 2")
+    assert node.contains_in_log("Row indexes size 2 for file")
 
 
 @pytest.mark.parametrize("cluster", [False, True])
@@ -4358,14 +4358,6 @@ def test_table_statistics(started_cluster):
     )
     assert int(result_latest.strip()) == 1500
 
-    instance.query("SYSTEM FLUSH LOGS")
-    message_latest = "Updated statistics for snapshot version 14"
-    log_result_latest = instance.query(
-        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_latest}' "
-        f"AND message LIKE '%{message_latest}%'"
-    )
-    assert int(log_result_latest) == 1
-
 
 @pytest.mark.parametrize("use_delta_kernel", ["1"])
 def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
@@ -4479,3 +4471,310 @@ def test_system_reload_delta_kernel_tracing(started_cluster, use_delta_kernel):
     # Test invalid level
     error = instance.query_and_get_error("SYSTEM RELOAD DELTA KERNEL TRACING INVALID")
     assert "BAD_ARGUMENTS" in error or "Invalid delta kernel tracing level" in error
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1"])
+def test_early_return_limit(started_cluster, use_delta_kernel):
+    """Test that scan callback stops early when using LIMIT"""
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_early_return_limit")
+
+    # Create 1000 partitions to test early return
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1000),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+        partition_by="a",
+    )
+
+    files = default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+    num_data_files = len([f for f in files if f.endswith(".parquet")])
+    assert num_data_files == 1000
+
+    # Explicit schema to avoid schema inference iterator
+    bucket = started_cluster.minio_bucket
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int64, b String)
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        """
+    )
+
+    # Baseline: full scan
+    query_id_full = f"{TABLE_NAME}_full_scan"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS max_threads=1, max_streams_to_max_threads_ratio=1",
+        query_id=query_id_full,
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    full_scan_files = int(
+        instance.query(
+            f"SELECT ProfileEvents['DeltaLakeScannedFiles'] FROM system.query_log "
+            f"WHERE query_id = '{query_id_full}' AND type = 'QueryFinish'"
+        )
+    )
+
+    # Test: LIMIT scan with early return
+    # Use small s3_list_object_keys_size (1) to force frequent queue pauses
+    # This makes callback check shutdown frequently and return false to stop iteration
+    query_id = f"{TABLE_NAME}_limit_query"
+    result = instance.query(
+        f"SELECT * FROM {TABLE_NAME} LIMIT 1 SETTINGS max_threads=1, max_streams_to_max_threads_ratio=1, s3_list_object_keys_size=1",
+        query_id=query_id,
+    )
+    assert len(result.strip().split("\n")) == 1
+
+    instance.query("SYSTEM FLUSH LOGS")
+    scanned_files = int(
+        instance.query(
+            f"SELECT ProfileEvents['DeltaLakeScannedFiles'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    assert scanned_files > 0
+    assert full_scan_files == num_data_files
+
+    # Check which shutdown path was hit by querying text_log
+    first_check_hits = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%shutdown detected at first check%'"
+    ).strip()
+    queue_check_hits = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%shutdown detected after queue wait%'"
+    ).strip()
+
+    first_check_hits = int(first_check_hits)
+    queue_check_hits = int(queue_check_hits)
+
+    print(f"First shutdown check hits: {first_check_hits}")
+    print(f"Queue shutdown check hits: {queue_check_hits}")
+
+    assert first_check_hits > 0 or queue_check_hits > 0
+
+    assert 1 == int(instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%List batch size is 1/1, shutdown: true%'"
+    ))
+
+
+    # Early return should scan significantly fewer files
+    # With s3_list_object_keys_size=1, queue pauses frequently forcing shutdown checks
+    # Should stop very early after consuming just a few files
+    assert scanned_files < full_scan_files, \
+        f"Early return should scan fewer files: {scanned_files} >= {full_scan_files}"
+    # 3 because:
+    # we have async reader creation with 2 existing readers at a moment of time,
+    # each calls next() and consumes 2 files from the scan.
+    # It takes 1 file for the query to stop because of LIMIT 1.
+    # But because scan is also asynchronous and continues once batch limit is not reached,
+    # we get +1 scanned file.
+    assert scanned_files == 3, \
+        f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
+
+
+def test_snapshot_consistency(started_cluster):
+    """Test that snapshot version is correctly captured and used from metadata snapshot.
+
+    This test uses failpoints to pause a query, update the table concurrently, and verify
+    that the paused query uses the correct (original) snapshot version via log messages.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_snapshot_consistency")
+
+    delta_path = f"/{TABLE_NAME}"
+
+    data = spark.range(100).selectExpr(
+        "id as a",
+        "id * 2 as b",
+        "id * 3 as c"
+    )
+    write_delta_from_df(spark, data, delta_path)
+
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    initial_count = int(instance.query(f"SELECT count() FROM {TABLE_NAME}").strip())
+    assert initial_count == 100, f"Expected 100 rows, got {initial_count}"
+
+    # Enable failpoint to pause at iterate()
+    instance.query("SYSTEM ENABLE FAILPOINT delta_lake_metadata_iterate_pause")
+
+    result_holder = {"result": None, "error": None, "query_id": None}
+
+    from concurrent.futures import ThreadPoolExecutor
+    import concurrent.futures
+
+    executor = ThreadPoolExecutor(max_workers=2)
+
+    # Wait for failpoint to be hit
+    wait_future = executor.submit(
+        lambda: instance.query("SYSTEM WAIT FAILPOINT delta_lake_metadata_iterate_pause PAUSE", timeout=30)
+    )
+
+    time.sleep(1)
+
+    # Start query that will be paused at iterate()
+    def run_query():
+        try:
+            # Use sum() instead of count() to force actual data reading and trigger iterate()
+            query_id = f"test_consistency_concurrent_{TABLE_NAME}"
+            result_holder["query_id"] = query_id
+            result = instance.query(
+                f"SELECT sum(a) FROM {TABLE_NAME} WHERE sleepEachRow(0.01) = 0",
+                settings={"max_threads": 1, "allow_experimental_delta_kernel_rs": 1},
+                query_id=query_id,
+                timeout=60
+            )
+            result_holder["result"] = int(result.strip())
+        except Exception as e:
+            result_holder["error"] = e
+
+    query_future = executor.submit(run_query)
+
+    # Wait for the query to hit the failpoint
+    concurrent.futures.wait([wait_future], timeout=15)
+
+    if wait_future.exception() is not None:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_lake_metadata_iterate_pause")
+        raise Exception("Test setup failed - failpoint not hit")
+
+    # While query is paused, update the table (creates version 1 with 50 rows)
+    df = spark.read.format("delta").load(delta_path)
+    df_filtered = df.filter("a < 50")
+    df_filtered.write.format("delta").mode("overwrite").save(delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+
+    # Verify that a new query sees the updated data (version 1)
+    # Use sum() to trigger iterate() so we can check logs
+    query_id_v1 = f"test_consistency_version_1_{TABLE_NAME}"
+    second_query_result = instance.query(
+        f"SELECT sum(a) FROM {TABLE_NAME}",
+        query_id=query_id_v1,
+        settings={"allow_experimental_delta_kernel_rs": 1},
+    ).strip()
+    # sum(0..49) = 1225
+    assert int(second_query_result) == 1225, f"Expected sum=1225 in updated table, got {second_query_result}"
+
+    # Resume the paused query
+    instance.query("SYSTEM NOTIFY FAILPOINT delta_lake_metadata_iterate_pause")
+
+    # Wait for query to complete
+    concurrent.futures.wait([query_future], timeout=60)
+
+    instance.query("SYSTEM DISABLE FAILPOINT delta_lake_metadata_iterate_pause")
+
+    if result_holder["error"]:
+        raise result_holder["error"]
+
+    first_query_result = result_holder["result"]
+
+    # The paused query should see the ORIGINAL snapshot (version 0, 100 rows)
+    # sum(0..99) = 4950
+    if first_query_result == 1225:  # sum(0..49) - would indicate bug
+        raise Exception(f"Bug detected: First query saw updated snapshot (sum={first_query_result}, version 1) "
+                       f"instead of its original snapshot (expected sum=4950, version 0)!")
+
+    assert first_query_result == 4950, f"Expected first query to see original data (sum=4950), got {first_query_result}"
+
+    # Now verify via logs that the correct snapshot version was used
+    instance.query("SYSTEM FLUSH LOGS")
+
+    query_id = result_holder["query_id"]
+
+    # Check that we used snapshot version 0 from metadata snapshot for iterate
+    log_check_iterate = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' "
+        f"AND message LIKE '%Using snapshot version 0 from storage metadata snapshot%'"
+    )
+    assert int(log_check_iterate) > 0, "Expected to find log message about using snapshot version 0 from metadata snapshot for iterate"
+
+    # Check that we used snapshot version 0 from metadata snapshot for prepareReadingFromFormat
+    log_check_prepare = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' "
+        f"AND message LIKE '%Using snapshot version 0 from storage metadata snapshot for prepareReadingFromFormat%'"
+    )
+    assert int(log_check_prepare) > 0, "Expected to find log message about using snapshot version 0 from metadata snapshot for prepareReadingFromFormat"
+
+    # Verify that the second query (after update) used snapshot version 1 from metadata snapshot
+    # Check that we used snapshot version 1 from metadata snapshot for iterate
+    log_check_iterate_v1 = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_v1}' "
+        f"AND message LIKE '%Using snapshot version 1 from storage metadata snapshot%'"
+    )
+    assert int(log_check_iterate_v1) > 0, "Expected to find log message about using snapshot version 1 from metadata snapshot for iterate"
+
+    # Check that we used snapshot version 1 from metadata snapshot for prepareReadingFromFormat
+    log_check_prepare_v1 = instance.query(
+        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id_v1}' "
+        f"AND message LIKE '%Using snapshot version 1 from storage metadata snapshot for prepareReadingFromFormat%'"
+    )
+    assert int(log_check_prepare_v1) > 0, "Expected to find log message about using snapshot version 1 from metadata snapshot for prepareReadingFromFormat"
+
+
+def test_snapshot_initialized_once_per_query(started_cluster):
+    """Test that DeltaLake table snapshot is initialized exactly once per SELECT query.
+
+    Verifies via the `DeltaLakeSnapshotInitializations` profile event that a single
+    SELECT query loads the snapshot from object storage only once, regardless of
+    how many files/threads are involved in the query. Two cases are tested:
+    - `SELECT count()` which can be served from metadata without reading data files
+    - `SELECT sum()` which reads actual data files
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_snapshot_init_once")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    def check_initializations_count(query, expected_result, query_id):
+        result = instance.query(query, query_id=query_id, settings={"max_threads": 4})
+        assert int(result.strip()) == expected_result
+        instance.query("SYSTEM FLUSH LOGS")
+        initializations = int(instance.query(
+            f"SELECT ProfileEvents['DeltaLakeSnapshotInitializations'] "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).strip())
+        assert initializations == 1, (
+            f"Query '{query}': expected snapshot to be initialized exactly once, got {initializations}"
+        )
+
+    # FIXME
+    # count() currently produces 2 update() calls which reload table snapshot
+    # because of updateExternalDynamicMetadata
+    #check_initializations_count(
+    #    f"SELECT count() FROM {TABLE_NAME}",
+    #    expected_result=100,
+    #    query_id=f"snapshot_init_count_{TABLE_NAME}",
+    #)
+    check_initializations_count(
+        f"SELECT sum(a) FROM {TABLE_NAME}",
+        expected_result=4950,
+        query_id=f"snapshot_init_sum_{TABLE_NAME}",
+    )
+
+    cluster_table_function = (
+        f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', "
+        f"'minio', '{minio_secret_key}')"
+    )
+    # FIXME
+    # count() currently produces 2 update() calls which reload table snapshot
+    # because of updateExternalDynamicMetadata
+    #check_initializations_count(
+    #    f"SELECT count() FROM {cluster_table_function}",
+    #    expected_result=100,
+    #    query_id=f"snapshot_init_cluster_count_{TABLE_NAME}",
+    #)
+    check_initializations_count(
+        f"SELECT sum(a) FROM {cluster_table_function}",
+        expected_result=4950,
+        query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
+    )

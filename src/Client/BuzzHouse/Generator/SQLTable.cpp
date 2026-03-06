@@ -226,7 +226,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType(), entry.special));
     }
     this->table_entries.clear();
     if (allow_internal_cols && (rel.cols.empty() || (rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))))
@@ -235,39 +235,39 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             if (!this->inside_projection || rg.nextSmallNumber() < 2)
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}, string_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}, size_tp.get()));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}, size_tp.get()));
             }
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}, size_tp.get()));
         }
         else if (
             t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
             || t.isURLEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}, size_tp.get()));
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}, size_tp.get()));
                 if (t.isAnyDeltaLakeEngine())
                 {
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}));
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}));
-                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}, string_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}, size_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}, size_tp.get()));
                 }
             }
             if (t.isURLEngine())
@@ -276,35 +276,35 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             }
             else if (!t.isFileEngine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}, string_tp.get()));
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
         else if (t.isDistributedEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}, size_tp.get()));
         }
         else if (t.isMaterializedPostgreSQLEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}, string_tp.get()));
         }
         else if (t.isKafkaEngine())
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_topic"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_key"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp_ms"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "name"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "value"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_topic"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_key"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_offset"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp_ms"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "value"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}, string_tp.get()));
         }
         if (!this->inside_projection || rg.nextSmallNumber() < 2)
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}, string_tp.get()));
         }
     }
     if (rel.cols.empty())
@@ -365,7 +365,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
         {
             names.push_back(path.cname);
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, names));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, names, entry.getBottomType()));
     }
     this->table_entries.clear();
     if (!this->levels.contains(this->current_level))
@@ -398,47 +398,6 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
         }
     }
     ids.clear();
-}
-
-void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
-{
-    const uint32_t ncodecs = rg.randomInt<uint32_t>(1, 3);
-    std::uniform_int_distribution<uint32_t> codec_range(1, static_cast<uint32_t>(CompressionCodec_MAX));
-
-    for (uint32_t i = 0; i < ncodecs; i++)
-    {
-        CodecParam * cp = i == 0 ? cl->mutable_codec() : cl->add_other_codecs();
-        const CompressionCodec cc = static_cast<CompressionCodec>(codec_range(rg.generator));
-
-        cp->set_codec(cc);
-        switch (cc)
-        {
-            case COMP_LZ4HC:
-            case COMP_ZSTD:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 22));
-                }
-                break;
-            case COMP_Delta:
-            case COMP_DoubleDelta:
-            case COMP_Gorilla:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
-                }
-                break;
-            case COMP_FPC:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 28));
-                    cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
-                }
-                break;
-            default:
-                break;
-        }
-    }
 }
 
 void StatementGenerator::generateTableExpression(
@@ -556,7 +515,7 @@ void StatementGenerator::generateNextTTL(
 
             if (nopt2 < 16)
             {
-                generateNextCodecs(rg, tupt->mutable_codecs());
+                tupt->set_codecs(generateNextCodecString(rg));
             }
             else if (!fc.disks.empty() && nopt2 < 31)
             {
@@ -695,16 +654,13 @@ static const std::vector<SQLFunc> datesHash
        SQLFunc::FUNCtoWeek,
        SQLFunc::FUNCtoYearWeek,
        SQLFunc::FUNCtoDaysSinceYearZero,
-       SQLFunc::FUNCtoday,
-       SQLFunc::FUNCyesterday,
        SQLFunc::FUNCtimeSlot,
        SQLFunc::FUNCtoYYYYMM,
        SQLFunc::FUNCtoYYYYMMDD,
        SQLFunc::FUNCtoYYYYMMDDhhmmss,
        SQLFunc::FUNCmonthName,
        SQLFunc::FUNCtoModifiedJulianDay,
-       SQLFunc::FUNCtoModifiedJulianDayOrNull,
-       SQLFunc::FUNCtoUTCTimestamp};
+       SQLFunc::FUNCtoModifiedJulianDayOrNull};
 
 static const std::vector<SQLFunc> arithmeticFuncs
     = {SQLFunc::FUNCplus,
@@ -1060,14 +1016,10 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         }
         if (!this->filtered_entries.empty())
         {
+            /// only 1 column can be in sample by
             TableKey * tkey = te->mutable_sample_by();
-            const size_t ncols = (rg.nextLargeNumber() % std::min<size_t>(this->filtered_entries.size(), UINT32_C(3))) + 1;
 
-            std::shuffle(this->filtered_entries.begin(), this->filtered_entries.end(), rg.generator);
-            for (size_t i = 0; i < ncols; i++)
-            {
-                columnPathRef(this->filtered_entries[i].get(), tkey->add_exprs()->mutable_expr());
-            }
+            columnPathRef(rg.pickRandomly(this->filtered_entries).get(), tkey->add_exprs()->mutable_expr());
             this->filtered_entries.clear();
         }
     }
@@ -1084,8 +1036,6 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             /// Replicated table params must come first when set
             std::vector<TableEngineParam> temp_params;
             const uint32_t nopt = rg.nextSmallNumber();
-            static const auto & replicated_tables = [](const SQLTable & t)
-            { return t.isAttached() && t.isReplicatedOrSharedMergeTree() && (t.shard_counter > 0 || t.replica_counter > 0); };
 
             if (collectionHas<SQLTable>(replicated_tables) && nopt < 7)
             {
@@ -1291,7 +1241,7 @@ void StatementGenerator::generateEngineDetails(
     else if (
         te->has_engine()
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
-            || b.isRedisEngine() || b.isExternalDistributedEngine() || b.isKafkaEngine() || b.isURLEngine()))
+            || b.isRedisEngine() || b.isKafkaEngine() || b.isURLEngine()))
     {
         if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
@@ -1525,7 +1475,7 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextSmallNumber() < 4)
         {
             /// Add server settings
-            generateSettingValues(rg, serverSettings, te->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, te->mutable_setting_values());
         }
         if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
         {
@@ -1664,11 +1614,11 @@ void StatementGenerator::addTableColumnInternal(
             cd->set_nullable(rg.nextBool());
             col.nullable = std::optional<bool>(cd->nullable());
         }
-        if (rg.nextSmallNumber() < 2)
+        if (rg.nextMediumNumber() < 16)
         {
             generateNextStatistics(rg, cd->mutable_stats());
         }
-        if (rg.nextMediumNumber() < 6)
+        if (rg.nextMediumNumber() < 16)
         {
             DefaultModifier * def_value = cd->mutable_defaultv();
             std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
@@ -1693,7 +1643,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_ALIAS) && rg.nextMediumNumber() < 16)
             {
-                generateNextCodecs(rg, cd->mutable_codecs());
+                cd->set_codecs(generateNextCodecString(rg));
             }
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
             {
@@ -1779,24 +1729,66 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 {
     Expr * expr = idef->mutable_expr();
     std::uniform_int_distribution<uint32_t> idx_range(1, static_cast<uint32_t>(IndexType::IDX_text));
-    const IndexType itpe = projection ? IndexType::IDX_basic : static_cast<IndexType>(idx_range(rg.generator));
+    auto generate_idx = [&]() -> IndexType
+    {
+        auto raw_idx = idx_range(rg.generator);
+        /// Value 3 was previously IDX_hypothesis which has been removed; remap to IDX_minmax.
+        if (raw_idx == 3)
+            raw_idx = static_cast<uint32_t>(IndexType::IDX_minmax);
+        return static_cast<IndexType>(raw_idx);
+    };
+    const IndexType itpe = projection ? IndexType::IDX_basic : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : generate_idx());
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
-    if (!expr->has_comp_expr())
+    if (rg.nextBool())
     {
-        if (rg.nextBool())
-        {
-            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-            colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 8, "", t), t, rg.pickRandomly(this->entries), expr);
-            this->entries.clear();
-        }
-        else
-        {
-            std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+        /// For index types that require specific column types, filter to compatible columns first.
+        /// Text/ngrambf/tokenbf indices require String-compatible columns; using numeric columns causes CREATE TABLE to fail.
+        /// Vector similarity indices require Array columns.
+        const bool need_string = itpe == IDX_text || itpe == IDX_ngrambf_v1 || itpe == IDX_tokenbf_v1;
+        const bool need_array = itpe == IDX_vector_similarity;
 
-            generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 16, expr);
+        if ((need_string || need_array) && rg.nextBool())
+        {
+            flatTableColumnPath(
+                flat_tuple | flat_nested | flat_json | skip_nested_node,
+                t.cols,
+                [&](const SQLColumn & c)
+                {
+                    SQLType * tp = c.tp;
+
+                    if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+                    {
+                        LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
+
+                        tp = lc->subtype;
+                    }
+                    if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                    {
+                        /// JSON type can be inside nullable
+                        Nullable * nl = dynamic_cast<Nullable *>(tp);
+
+                        tp = nl->subtype;
+                    }
+                    const SQLTypeClass tc = tp->getTypeClass();
+
+                    return need_array ? (tc == SQLTypeClass::ARRAY) : (tc == SQLTypeClass::STRING);
+                });
         }
+        if (this->entries.empty())
+        {
+            /// No type-compatible columns found, fall back to any column
+            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+        }
+        colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 8, "", t), t, rg.pickRandomly(this->entries), expr);
+        this->entries.clear();
+    }
+    else
+    {
+        std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+
+        generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 16, expr);
     }
     switch (itpe)
     {
@@ -1830,15 +1822,15 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
             static const DB::Strings & tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
-            const String & next_tokenizer = rg.pickRandomly(tokenizerVals);
+            const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
-            buf += fmt::format("tokenizer = {}", next_tokenizer);
+            buf += fmt::format("tokenizer = {}", nt);
             buf += has_paren ? "(" : "";
-            if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
+            if (has_paren && (nt == "ngrams" || nt == "ngrambf_v1") && rg.nextBool())
             {
                 buf += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
-            else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
+            else if (has_paren && nt == "splitByString" && rg.nextBool())
             {
                 String buf2;
                 DB::Strings separators
@@ -1859,7 +1851,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf2 += "]";
                 buf += buf2;
             }
-            else if (has_paren && next_tokenizer == "sparseGrams")
+            else if (has_paren && (nt == "sparseGrams" || nt == "sparse_grams"))
             {
                 /// sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                 const uint32_t nextra = rg.randomInt<uint32_t>(0, 3);
@@ -1892,14 +1884,20 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
+                idef->add_params()->set_unescaped_sval(
+                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+            }
+            if (rg.nextBool())
+            {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 100000);
 
                 idef->add_params()->set_unescaped_sval("posting_list_block_size = " + std::to_string(next_dist(rg.generator)));
             }
             if (rg.nextBool())
             {
-                idef->add_params()->set_unescaped_sval(
-                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+                static const DB::Strings & post_codecs = {"none", "bitpacking"};
+
+                idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
         }
         break;
@@ -1960,13 +1958,23 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     if (rg.nextBool())
     {
         ProjectionSelectDef * psdef = pdef->mutable_sel_def();
+        const bool prev_allow_subqueries = this->allow_subqueries;
         const uint32_t ncols = rg.nextMediumNumber() < 91 ? 1 : (rg.nextMediumNumber() % 3) + 1;
 
+        /// Projections don't support window functions or subqueries
+        if (!this->levels.contains(this->current_level))
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+        }
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 10;
         if (!t.cols.empty())
         {
             addTableRelation(rg, true, "", t);
         }
-        generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, psdef->mutable_select());
+        this->allow_subqueries = rg.nextSmallNumber() < 10;
+        generateSelect(
+            rg, true, false, ncols, allow_groupby | allow_orderby | allow_global_aggregate, std::nullopt, psdef->mutable_select());
+        this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
         /// Add projection settings
         if (rg.nextSmallNumber() < 4)
@@ -2278,7 +2286,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.sub = (!allow_mysql_tbl || rg.nextBool()) ? PostgreSQL : MySQL;
+        b.sub = (allow_mysql_tbl && allow_postgresql_tbl) ? (rg.nextBool() ? PostgreSQL : MySQL) : (allow_mysql_tbl ? MySQL : PostgreSQL);
     }
 }
 
@@ -2351,9 +2359,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_is_deleted = 0;
         const uint32_t to_addcols = rg.randomInt<uint32_t>(1, fc.max_columns);
         const uint32_t to_addidxs
-            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 7);
+            = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 8);
         const uint32_t to_addprojs
-            = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 7);
+            = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 8);
         const uint32_t to_addconsts = rg.randomInt<uint32_t>(1, 2) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
         const uint32_t to_add_ttl_expr = static_cast<uint32_t>(has_ttl && rg.nextBool());
         const uint32_t to_add_id_cols
@@ -2449,7 +2457,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 }
             }
         }
-        if (rg.nextSmallNumber() < 2)
+        if (rg.nextSmallNumber() < 4)
         {
             CreateTableSelect * cts = ct->mutable_as_select_stmt();
 
@@ -2520,6 +2528,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
+    if (rg.nextSmallNumber() < 3)
+    {
+        ct->set_comment(nextComment(rg));
+    }
     chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
 }
@@ -2538,6 +2550,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const uint64_t type_mask_backup = this->next_type_mask;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+    /// At most one hierarchical column per dictionary (must be integer type)
+    bool has_hierarchical = false;
 
     SQLBase::setDeterministic(fc, rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
@@ -2578,7 +2592,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
     const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
     const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
-    const uint32_t null_src = 2;
+    const uint32_t null_src = 5;
     const uint32_t prob_space = dict_table + dict_system_table + dict_view + dict_dict + null_src;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -2716,9 +2730,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->allow_in_expression_alias = prev_allow_in_expression_alias;
         this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
-        if (rg.nextSmallNumber() < 9)
+        if (!has_hierarchical && rg.nextSmallNumber() < 8)
         {
-            dc->set_hierarchical(rg.nextBool());
+            /// Hierarchical is only valid once, on an integer-type value column
+            const SQLType * eff_tp = next.cols[ncname].tp;
+
+            if (eff_tp && eff_tp->getTypeClass() == SQLTypeClass::NULLABLE)
+                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype;
+            dc->set_hierarchical((eff_tp && eff_tp->getTypeClass() == SQLTypeClass::INT) || rg.nextSmallNumber() < 2);
+            has_hierarchical |= dc->hierarchical();
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
@@ -2796,7 +2816,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, cd->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, cd->mutable_setting_values());
     }
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -2844,8 +2864,6 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
     if (d.isReplicatedDatabase())
     {
         const uint32_t nopt = rg.nextSmallNumber();
-        static const auto & replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
-        { return db->isAttached() && db->isReplicatedOrSharedDatabase() && (db->shard_counter > 0 || db->replica_counter > 0); };
 
         if (collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases) && nopt < 7)
         {
@@ -2915,7 +2933,12 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
-        generateSettingValues(rg, serverSettings, deng->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, deng->mutable_setting_values());
+    }
+    if (rg.nextSmallNumber() < 3)
+    {
+        /// Add general database settings
+        generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
     if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
     {

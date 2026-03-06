@@ -1,6 +1,7 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 
 

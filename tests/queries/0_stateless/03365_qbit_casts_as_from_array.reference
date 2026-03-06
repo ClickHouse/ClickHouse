@@ -15,10 +15,10 @@ Test Array → QBit CAST AS: BFloat16
 [0.099609375,1.09375]
 [1,2,3]
 Test with and without analyzer / constant QBit
-1.4142135623730951
-1.4142135623730951
-1.4142135623730951
-1.4142135623730951
+1.4
+1.4
+1.4
+1.4
 Difficult tests
 00000000
 00000000

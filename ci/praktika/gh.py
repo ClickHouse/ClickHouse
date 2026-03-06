@@ -515,6 +515,12 @@ class GH:
         if labels is None:
             labels = []
 
+        # GitHub API limit for issue body is 65536 characters
+        max_body_length = 65536
+        if len(body) > max_body_length:
+            truncation_note = "\n\n... (truncated due to GitHub body size limit)"
+            body = body[: max_body_length - len(truncation_note)] + truncation_note
+
         temp_file_path = None
         try:
             # Create temp file for body to avoid shell escaping issues

@@ -2,6 +2,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <sys/time.h>

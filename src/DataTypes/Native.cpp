@@ -2,6 +2,14 @@
 #include <Columns/ColumnDecimal.h>
 
 #if USE_EMBEDDED_COMPILER
+
+#    if defined(__powerpc64__)
+#        undef CR1
+#        undef CR2
+#        undef CR3
+#    endif
+
+#    include <llvm/IR/IRBuilder.h>
 #    include <DataTypes/DataTypeDateTime64.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeTime64.h>
@@ -192,9 +200,9 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
         return typeIsSigned(*from_type) ? b.CreateSIToFP(value, to_native_type) : b.CreateUIToFP(value, to_native_type);
     if (from_native_type->isFloatingPointTy() && to_native_type->isIntegerTy())
         return typeIsSigned(*to_type) ? b.CreateFPToSI(value, to_native_type) : b.CreateFPToUI(value, to_native_type);
-    if (from_native_type->isIntegerTy() && from_native_type->isIntegerTy())
+    if (from_native_type->isIntegerTy() && to_native_type->isIntegerTy())
         return b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
-    if (to_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
+    if (from_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
         return b.CreateFPCast(value, to_native_type);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -300,6 +308,56 @@ llvm::Constant * getNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr
     ColumnPtr column = column_type->createColumnConst(1, field);
     return getColumnNativeValue(builder, column_type, *column, 0);
 }
+
+template <typename ToType>
+llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
+{
+    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8>)
+        return builder.getInt8Ty();
+    else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
+        return builder.getInt16Ty();
+    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> || std::is_same_v<ToType, Decimal32>)
+        return builder.getInt32Ty();
+    else if constexpr (
+        std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> || std::is_same_v<ToType, DateTime64>
+        || std::is_same_v<ToType, Decimal64>)
+        return builder.getInt64Ty();
+    else if constexpr (std::is_same_v<ToType, Float32>)
+        return builder.getFloatTy();
+    else if constexpr (std::is_same_v<ToType, Float64>)
+        return builder.getDoubleTy();
+    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> || std::is_same_v<ToType, Decimal128>)
+    /// There is one problem: LLVM uses "preferred alignment" for this type as 16 bytes,
+    /// and will generate aligned loads/stores by default
+    /// While our Int128, UInt128 types have only 8 bytes alignment.
+    /// When working with values of these types in LLVM, don't forget to do setAlignment(llvm::Align(8)) for all loads/stores.
+        return builder.getInt128Ty();
+    else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
+        return builder.getIntNTy(256);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
+}
+
+template llvm::Type * toNativeType<Int8>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt8>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int16>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt16>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int32>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt32>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int64>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt64>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int128>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt128>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Int256>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<UInt256>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Float32>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Float64>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<DateTime64>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Decimal32>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Decimal64>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Decimal128>(llvm::IRBuilderBase &);
+template llvm::Type * toNativeType<Decimal256>(llvm::IRBuilderBase &);
+
 }
 
 #endif

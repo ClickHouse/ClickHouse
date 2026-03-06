@@ -9,6 +9,7 @@
 #include <list>
 #include <memory>
 #include <vector>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -90,6 +91,15 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
+    /// Serializes the query plan and store the result
+    void ensureSerialized(size_t max_supported_version) const;
+
+    /// Get cached serialized data
+    std::string_view getSerializedData() const;
+
+    /// Check if already serialized
+    bool isSerialized() const;
+
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
@@ -168,6 +178,10 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+
+    /// Cached serialized representation
+    /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
+    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
 };
 
 /// This is a structure which contains a query plan and a list of sets.

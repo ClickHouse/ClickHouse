@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -1289,10 +1290,17 @@ public:
 
             if (!is_tuple && elements.size() == 1)
             {
-                // Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// This is needed for IN semantics: (field, value) IN (('foo', 'bar'))
+                /// should be a 1-element set, not a flat 2-element tuple.
+                /// But skip promotion when the element has an alias, because the
+                /// extra tuple() wrapper changes how the alias is formatted and
+                /// breaks AST formatting roundtrip (e.g. ON ((1, 0.648) AS a7)
+                /// would reparse as ON tuple((1, 0.648) AS a7)).
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
-                        is_tuple = true;
+                        if (elements[0]->tryGetAlias().empty())
+                            is_tuple = true;
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
@@ -2695,16 +2703,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 

@@ -26,11 +26,17 @@ namespace ErrorCodes
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
-    ContextPtr context,
-    bool /* if_not_updated_before */)
+    ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context)
+{
+    update(object_storage_ptr, context);
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
@@ -62,9 +68,20 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+    return std::nullopt;
+}
+
+std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot &, ContextPtr) const
+{
+    return nullptr;
+}
+
+bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return false;
 }
 
 

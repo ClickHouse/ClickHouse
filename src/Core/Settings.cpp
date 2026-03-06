@@ -1572,6 +1572,14 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
+Use partition key to prune partitions during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, use_partition_key) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
@@ -1683,9 +1691,6 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
-)", 0) \
-    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
-For testing purposes, enables or disables usage of bloom filter in text index.
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
         Logs index statistics per part
@@ -2512,6 +2517,9 @@ Possible values:
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
 )", 0) \
+    DECLARE(Bool, optimize_dry_run_check_part, true, R"(
+When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
+)", 0) \
     DECLARE(Bool, use_index_for_in_with_subqueries, true, R"(
 Try using an index if there is a subquery or a table expression on the right side of the IN operator.
 )", 0) \
@@ -3124,6 +3132,21 @@ but the query will fail.
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 )", 0) \
+    \
+    DECLARE(Float, ast_fuzzer_runs, 0, R"(
+Enables the server-side AST fuzzer that runs randomized queries after each normal query, discarding their results.
+- 0: disabled (default).
+- A value between 0 and 1 (exclusive): probability of running a single fuzzed query.
+- A value >= 1: the number of fuzzed queries to run per normal query.
+
+The fuzzer accumulates AST fragments from all queries across all sessions, producing increasingly interesting mutations over time. Fuzzed queries that fail are silently discarded; results are never returned to the client.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, ast_fuzzer_any_query, false, R"(
+When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_fuzz_query_functions, false, R"(
+Enables the `fuzzQuery` function that applies random AST mutations to a query string.
+)", EXPERIMENTAL) \
     \
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
@@ -4778,8 +4801,8 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 )", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, MySQLDataTypesSupportList{}, R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
@@ -4864,7 +4887,7 @@ INSERT INTO example FORMAT CSV
 
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
 )", 0) \
-    DECLARE(Bool, optimize_syntax_fuse_functions, false, R"(
+    DECLARE(Bool, optimize_syntax_fuse_functions, true, R"(
 Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](/sql-reference/aggregate-functions/reference/sum), [count](/sql-reference/aggregate-functions/reference/count) or [avg](/sql-reference/aggregate-functions/reference/avg) with identical argument to [sumCount](/sql-reference/aggregate-functions/reference/sumcount).
 
 Possible values:
@@ -5151,6 +5174,10 @@ The probability of a fault injection during table creation after creating metada
 )", 0) \
     DECLARE(Bool, delta_lake_log_metadata, false, R"(
 Enables logging delta lake metadata files into system table.
+)", 0) \
+    DECLARE(Bool, delta_lake_reload_schema_for_consistency, false, R"(
+If enabled, schema is reloaded from the DeltaLake metadata before each query execution to ensure
+consistency between the schema used during query analysis and the schema used during execution.
 )", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
@@ -5999,7 +6026,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
-    DECLARE(Bool, async_insert, false, R"(
+    DECLARE(Bool, async_insert, true, R"(
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
@@ -6147,6 +6174,10 @@ Maximum memory usage for prefetches.
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
 )", 0) \
     \
+    DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
+When enabled, ClickHouse will calculate the size of files required for each subcolumn reading for better task and block sizes calculation.
+)", 0) \
+\
     DECLARE(UInt64, use_structure_from_insertion_table_in_table_functions, 2, R"(
 Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto
 )", 0) \
@@ -7305,6 +7336,15 @@ See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc allocation and deallocation samples in trace log.
     )", 0) \
+    DECLARE(JemallocProfileFormat, jemalloc_profile_text_output_format, JemallocProfileFormat::Collapsed, R"(
+Output format for jemalloc heap profile in system.jemalloc_profile_text table. Can be: 'raw' (raw profile), 'symbolized' (jeprof format with symbols), or 'collapsed' (FlameGraph format).
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_symbolize_with_inline, true, R"(
+Whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included which can slow down symbolization process drastically; when disabled, they are skipped. Only affects 'symbolized' and 'collapsed' output formats.
+    )", 0) \
+    DECLARE(Bool, jemalloc_profile_text_collapsed_use_count, false, R"(
+When using the 'collapsed' output format for jemalloc heap profile, aggregate by allocation count instead of bytes. When false (default), each stack is weighted by live bytes; when true, by live allocation count.
+    )", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
@@ -7404,7 +7444,10 @@ The maximum number of rows in the right table to determine whether to rerange th
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL) \
-    \
+    DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
+Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
+)", EXPERIMENTAL) \
+     \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
 )", BETA, allow_statistic_optimize) \
@@ -7418,7 +7461,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
-)", BETA, allow_experimental_full_text_index) \
+)", 0, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
@@ -7428,9 +7471,9 @@ Allow to add hint (additional predicate) for filtering built from the inverted t
     DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
 Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
-    DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
-Whether to use a cache of deserialized text index dictionary block.
-Using the text index dictionary block cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+    DECLARE(Bool, use_text_index_tokens_cache, false, R"(
+Whether to use a cache of deserialized text index token infos.
+Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, use_text_index_header_cache, false, R"(
 Whether to use a cache of deserialized text index header.
@@ -7463,7 +7506,23 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     \
     DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
 Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
+
+This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
+Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
+Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
+
+- `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
+- `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
+
+This setting controls extracted subcolumn behavior only.
+It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `allow_experimental_nullable_tuple_type`.
+
+ClickHouse uses the value for this setting loaded at server startup.
+Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
+To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
+)", 0) \
     \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
@@ -7484,9 +7543,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
-    DECLARE(Bool, allow_insert_into_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
-)", BETA) \
+)", BETA, allow_experimental_insert_into_iceberg) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
@@ -7539,7 +7598,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
@@ -7593,6 +7652,19 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
+Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel.
+Set to 0 for no limit.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
+Memory limit in bytes per WebAssembly UDF instance.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
+Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
+Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
@@ -7698,6 +7770,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
+    MAKE_OBSOLETE(M, Bool, text_index_use_bloom_filter, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
@@ -7710,7 +7783,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
-    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"})
+    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
+    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

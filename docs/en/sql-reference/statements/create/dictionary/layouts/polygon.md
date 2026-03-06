@@ -93,7 +93,7 @@ There are 3 types of [in-memory storage](./#storing-dictionaries-in-memory) avai
 | `POLYGON_INDEX_CELL` | Also creates the grid described above with the same options. For each leaf cell, an index is built on all polygon pieces that fall into it, allowing fast query responses. |
 | `POLYGON` | Synonym for `POLYGON_INDEX_CELL`. |
 
-Dictionary queries are carried out using standard [functions](../../../functions/ext-dict-functions.md) for working with dictionaries.
+Dictionary queries are carried out using standard [functions](/sql-reference/functions/ext-dict-functions.md) for working with dictionaries.
 An important difference is that here the keys will be the points for which you want to find the polygon containing them.
 
 **Example**

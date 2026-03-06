@@ -1695,6 +1695,7 @@
 
     function renderFooter(nameParams) {
         const footerRight = document.querySelector('#footer .right');
+        footerRight.innerHTML = '';
         function createLinkElement(href, textContent, footer) {
             const a = document.createElement('a');
             a.href = href;
@@ -1702,10 +1703,11 @@
             a.target = '_blank';
             footer.appendChild(a);
         }
+        const result = getTargetResults(nameParams);
         if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
         if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
-        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
-        const result = getTargetResults(nameParams)
+        const runLink = result?.ext?.run_url || runtimeCache.runLink;
+        if (runLink) createLinkElement(runLink, 'Run', footerRight);
         let i = 1;
         for (const name of nameParams) {
             if (name === result.name) {
@@ -1881,8 +1883,9 @@
         if (updated) {
             runtimeCache.json0 = data;
             hasNewData = true;
-            if (data && data.links) {
-                data.links.forEach(storeLink);
+            if (data && data.ext) {
+                if (data.ext.change_url) storeLink(data.ext.change_url);
+                if (data.ext.run_url) storeLink(data.ext.run_url);
             }
         }
 

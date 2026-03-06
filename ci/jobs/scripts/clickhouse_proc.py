@@ -1,5 +1,7 @@
 import glob
+import json as json_module
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -7,6 +9,7 @@ import traceback
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from typing import List
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
@@ -14,7 +17,8 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
+repo_dir = Utils.cwd()
+temp_dir = f"{repo_dir}/ci/tmp"
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -45,7 +49,6 @@ class ClickHouseProc:
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
-    GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -56,6 +59,7 @@ class ClickHouseProc:
     def __init__(
         self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
     ):
+        self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.ch_config_dir = f"/etc/clickhouse-server"
@@ -66,6 +70,8 @@ class ClickHouseProc:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
+        self.aes_key = f"{temp_dir}/aes.key"
+
         # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
@@ -94,7 +100,10 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        # Fast test runs lightweight SQL tests that are not CPU-bound,
+        # so we can use more parallelism than the default cpu_count/2.
+        nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -136,14 +145,12 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "/mc ls clickminio/test | grep -q .",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
+        if Shell.check(
+            "/mc ls clickminio/test | grep -q .",
+            verbose=False,
+            retries=6,
+        ):
+            return True
         print("Failed to start minio")
         return False
 
@@ -166,13 +173,11 @@ class ClickHouseProc:
             self.kafka_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
-        )
+        print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
             res = Shell.check(
-                "kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list",
+                "rpk topic list --brokers 127.0.0.1:9092",
                 verbose=True,
             )
             if res:
@@ -409,6 +414,10 @@ profiles:
         )
 
     def start(self, replica_num=0):
+        if replica_num == 0:
+            # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
+            Shell.check("dmesg --clear", verbose=True)
+
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1
@@ -536,14 +545,61 @@ profiles:
             verbose=True,
             strict=True,
         )
-        status = (
-            "failed"
-            if not res
-            else Shell.get_output(
-                "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
+        if not res:
+            return False
+
+        # Restart minio with a timeout to avoid hanging forever (see #97647).
+        # If the restart hangs, kill minio and start it again.
+        # We use Popen with start_new_session=True so that on timeout we can
+        # kill the entire process group, avoiding orphaned child processes
+        # that would block communicate() indefinitely (see #98466).
+        restart_timeout = 60
+        try:
+            print(f"Restarting clickminio (timeout {restart_timeout}s)")
+            proc = subprocess.Popen(
+                [
+                    "/mc",
+                    "admin",
+                    "service",
+                    "restart",
+                    "clickminio",
+                    "--wait",
+                    "--json",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            try:
+                stdout, _ = proc.communicate(timeout=restart_timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.communicate()
+                raise
+            try:
+                status = json_module.loads(stdout).get("status", "")
+            except (json_module.JSONDecodeError, AttributeError):
+                status = stdout.strip()
+        except (subprocess.TimeoutExpired, OSError):
+            print(
+                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+            )
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            time.sleep(2)
+            Shell.check(
+                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
                 verbose=True,
             )
-        )
+            # Wait for minio to be ready
+            for _ in range(30):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
+                    status = "success"
+                    break
+                time.sleep(1)
+            else:
+                status = "failed"
+
         res = "success" in status
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
@@ -663,6 +719,8 @@ clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnabl
 # AWS S3 is very inefficient, so increase memory even further:
 clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits SETTINGS enable_filesystem_cache_on_write_operations=0, write_through_distributed_cache=0, max_insert_threads=16"
 
+clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL String, Referer String, SearchPhrase String, WatchID UInt64, UserID UInt64, CounterID UInt32, EventTime DateTime, EventDate Date, RegionID UInt32, ClientIP UInt32) ENGINE = S3('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits_compatible/hits.parquet', NOSIGN)"
+
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
@@ -702,8 +760,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
         if self.kafka_proc:
-            print("Stopping Kafka broker")
-            Shell.check("kafka-server-stop.sh", verbose=True)
+            print("Stopping Redpanda broker")
+            Shell.check("pkill -f redpanda", verbose=True)
             try:
                 self.kafka_proc.wait(timeout=30)
             except subprocess.TimeoutExpired:
@@ -722,8 +780,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if not Shell.check(
-                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill",
+                if self.fast_test:
+                    # Use --force (SIGKILL) for fast test to avoid waiting for
+                    # graceful shutdown, which can take over a minute.
+                    # Graceful shutdown is not needed here because we already
+                    # flushed system logs above and don't need to preserve data.
+                    Shell.check(
+                        f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --force >/dev/null",
+                        verbose=True,
+                    )
+                elif not Shell.check(
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     print(
@@ -746,12 +813,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                if Path(f"{self.aes_key}.rsa").exists():
+                    res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -775,16 +842,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
         return res
 
-    def _collect_core_dumps(self):
-        # Find at most 3 core.* files in the current directory (non-recursive)
-        cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
-        core_files = Shell.get_output(cmd, verbose=True).splitlines()
-        if len(core_files) > 3:
-            print(
-                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
-            )
-            core_files = core_files[0:3]
-        return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
+    def _collect_core_dumps(self) -> List[str]:
+        cores = list(Path(temp_dir).glob("run_r*/core.*"))[:3]
+        return [
+            Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
+            for f in cores
+        ]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -965,13 +1028,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: dmesg not enabled")
         else:
             results.append(oom_check)
-        if Path(self.GDB_LOG).is_file():
-            results.append(
-                Result.from_commands_run(
-                    name="Found signal in gdb.log",
-                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
-                )
-            )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
@@ -979,86 +1035,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             else:
                 result.set_status(Result.StatusExtended.FAIL)
         return results
-
-    def collect_core_dumps(self):
-        Shell.check(
-            f"find {self.run_path0}/.. -type f -maxdepth 1 -name 'core.*' | while read -r core; do zstd --threads=0 \"$core\"; done"
-        )
-        core_files = []
-        for core in glob.iglob(f"{self.run_path0}/../core.*.zst"):
-            core_files.append(core)
-        return core_files
-
-    def _prepare_gdb_script(self):
-        rtmin = Shell.get_output("kill -l SIGRTMIN")
-        script = """\
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG{RTMIN} nostop noprint pass
-info signals
-# safeExit is called if graceful shutdown times out. Print stack traces in that case.
-break safeExit
-continue
-thread apply all backtrace
-backtrace full
-info registers
-p "top 1 KiB of the stack:"
-p/x *(uint64_t[128]*)"'$sp'"
-maintenance info sections
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-""".format(
-            RTMIN=rtmin
-        )
-        with open(f"{temp_dir}/script.gdb", "w") as file:
-            file.write(script)
-        return f"{temp_dir}/script.gdb"
-
-    def attach_gdb(self):
-        Shell.check(f"rm {self.GDB_LOG}", verbose=True)
-        script_path = self._prepare_gdb_script()
-        assert self.pid, "ClickHouse not started"
-        # FIXME Hung check may work incorrectly because of attached gdb
-        # We cannot attach another gdb to get stacktraces if some queries hung
-        command = f"gdb -batch -command {script_path} -p {self.pid}"
-        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
-        with open(self.GDB_LOG, "w") as log_file:
-            self.gdb_proc = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=log_file,
-                stderr=log_file,
-            )
-        time.sleep(2)
-        time.sleep(1000)
-        self.gdb_proc.poll()
-        attached = False
-        if self.gdb_proc.returncode is not None:
-            print("ERROR: Failed to attach gdb")
-        else:
-            for i in range(60):
-                attached = Shell.check(
-                    f"clickhouse-client --query \"SELECT 'Connected to clickhouse-server after attaching gdb'\"",
-                    verbose=True,
-                )
-                if attached:
-                    break
-                time.sleep(1)
-        if not attached:
-            self.debug_artifacts += [script_path]
-        return attached
 
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.
