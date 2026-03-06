@@ -339,7 +339,9 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
                     info->addRead(microseconds, 1, request_with_callbacks.request->bytesSize() + response_size);
                 else
                     info->addWrite(microseconds, 1, request_with_callbacks.request->bytesSize() + response_size);
-            } else {
+            }
+            else
+            {
                 std::cerr << "Error: " << Coordination::errorMessage(response.error) << "\nFor request:\n" << request_with_callbacks.request->toString() << std::endl;
 
                 if (!continue_on_error)
@@ -1290,6 +1292,8 @@ bool Runner::runBenchmarkWithGenerator()
     info->writeJSON(out, concurrency, start_timestamp_ms);
     auto output_string = std::move(out.str());
     writeOutputString(output_string, start_timestamp_ms);
+
+    return !stopped_early_because_of_error.load();
 }
 
 
@@ -1316,8 +1320,6 @@ void Runner::writeOutputString(const std::string & output_string, int64_t start_
         DB::copyData(read_buffer, file_output_buffer);
         file_output_buffer.finalize();
     }
-
-    return !stopped_early_because_of_error.load();
 }
 
 
