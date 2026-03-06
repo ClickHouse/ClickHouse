@@ -177,6 +177,9 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
 {
+    if (!granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granule was not set for index '{}'", index.index->index.name);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
 
     auto rows_range = getRowsRangeForMark(mark);
@@ -209,6 +212,9 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t rows_offset,
     Columns & res_columns)
 {
+    if (!granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granule was not set for index '{}'", index.index->index.name);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
