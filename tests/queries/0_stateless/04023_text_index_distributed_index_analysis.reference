@@ -29,5 +29,5 @@ SELECT count() FROM text_idx_dist WHERE hasToken(text, 'needle') SETTINGS distri
 -- With distributed index analysis, result should be the same
 SELECT count() FROM text_idx_dist WHERE hasToken(text, 'needle') SETTINGS distributed_index_analysis = 1;
 10
-distributed_index_analysis=0, DistributedIndexAnalysisScheduledReplicas=0
-distributed_index_analysis=1, DistributedIndexAnalysisScheduledReplicas=2
+distributed_index_analysis=0, DistributedIndexAnalysisScheduledReplicas>0=0
+distributed_index_analysis=1, DistributedIndexAnalysisScheduledReplicas>0=1

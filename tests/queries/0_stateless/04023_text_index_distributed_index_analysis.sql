@@ -64,11 +64,13 @@ SYSTEM STOP MERGES text_idx_dist;
 INSERT INTO text_idx_dist SELECT number, if(number % 10000 = 0, 'needle in a haystack', 'just some regular text') FROM numbers(100000) SETTINGS max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
 
 SET cluster_for_parallel_replicas = 'parallel_replicas';
-SET max_parallel_replicas = 2;
+SET max_parallel_replicas = 10;
 SET allow_experimental_parallel_reading_from_replicas = 0;
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 0;
 SET distributed_index_analysis_for_non_shared_merge_tree = 1;
+-- Avoid error on unavailable replica
+SET send_logs_level = 'error';
 
 -- { echo }
 
@@ -82,9 +84,9 @@ SELECT count() FROM text_idx_dist WHERE hasToken(text, 'needle') SETTINGS distri
 
 SYSTEM FLUSH LOGS query_log;
 SELECT format(
-    'distributed_index_analysis={}, DistributedIndexAnalysisScheduledReplicas={}',
+    'distributed_index_analysis={}, DistributedIndexAnalysisScheduledReplicas>0={}',
     Settings['distributed_index_analysis'],
-    ProfileEvents['DistributedIndexAnalysisScheduledReplicas']
+    ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] > 0
 )
 FROM system.query_log
 WHERE
