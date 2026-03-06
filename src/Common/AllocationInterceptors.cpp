@@ -303,8 +303,20 @@ size_t estimateGetAddrInfoSize(const struct addrinfo * result)
     return total_size;
 }
 
-std::mutex getaddrinfo_tracking_mutex;
-std::unordered_map<const struct addrinfo *, size_t> getaddrinfo_tracked_sizes;
+/// Declared before the tracking objects so it is destroyed after them,
+/// allowing safe shutdown-time checks against static destruction order issues.
+std::atomic_bool getaddrinfo_tracking_initialized{false};
+
+struct GetaddrInfoTracking
+{
+    std::mutex mutex;
+    std::unordered_map<const struct addrinfo *, size_t> sizes;
+
+    GetaddrInfoTracking() { getaddrinfo_tracking_initialized.store(true, std::memory_order_release); }
+    ~GetaddrInfoTracking() { getaddrinfo_tracking_initialized.store(false, std::memory_order_release); }
+};
+
+GetaddrInfoTracking getaddrinfo_tracking;
 
 }
 
@@ -550,15 +562,18 @@ extern "C" int __wrap_getaddrinfo(const char * node, const char * service, const
     AllocationTrace trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_size));
     trace.onAlloc(*result, tracked_size);
 
-    try
+    if (likely(getaddrinfo_tracking_initialized.load(std::memory_order_acquire)))
     {
-        std::lock_guard lock(getaddrinfo_tracking_mutex);
-        getaddrinfo_tracked_sizes[*result] = tracked_size;
-    }
-    catch (...)
-    {
-        auto rollback_trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_size));
-        rollback_trace.onFree(*result, tracked_size);
+        try
+        {
+            std::lock_guard lock(getaddrinfo_tracking.mutex);
+            getaddrinfo_tracking.sizes[*result] = tracked_size;
+        }
+        catch (...)
+        {
+            auto rollback_trace = CurrentMemoryTracker::free(static_cast<Int64>(tracked_size));
+            rollback_trace.onFree(*result, tracked_size);
+        }
     }
 
     return res;
@@ -573,16 +588,16 @@ extern "C" void __wrap_freeaddrinfo(struct addrinfo * result) // NOLINT
     }
 
     size_t tracked_size = 0;
-    if (result)
+    if (result && likely(getaddrinfo_tracking_initialized.load(std::memory_order_acquire)))
     {
         try
         {
-            std::lock_guard lock(getaddrinfo_tracking_mutex);
-            auto it = getaddrinfo_tracked_sizes.find(result);
-            if (it != getaddrinfo_tracked_sizes.end())
+            std::lock_guard lock(getaddrinfo_tracking.mutex);
+            auto it = getaddrinfo_tracking.sizes.find(result);
+            if (it != getaddrinfo_tracking.sizes.end())
             {
                 tracked_size = it->second;
-                getaddrinfo_tracked_sizes.erase(it);
+                getaddrinfo_tracking.sizes.erase(it);
             }
         }
         catch (...) // NOLINT(bugprone-empty-catch) - cannot throw from C callback
