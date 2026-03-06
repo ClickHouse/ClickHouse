@@ -11,7 +11,7 @@ SELECT number AS id FROM numbers(1);
 
 DROP TABLE IF EXISTS t_04027_parquet_v3_override;
 
-CREATE TABLE t_04027_parquet_v3_override (id UInt64, name String)
+CREATE TABLE t_04027_parquet_v3_override (id UInt64)
 ENGINE = S3(s3_conn, url = 'http://localhost:11111/test/04027_parquet_v3_setting_override.parquet', format = Parquet)
 SETTINGS input_format_parquet_use_native_reader_v3 = false;
 
