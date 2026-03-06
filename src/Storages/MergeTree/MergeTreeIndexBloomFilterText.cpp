@@ -8,6 +8,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -362,7 +363,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
             {
                 auto arg_type = arg.getDAGNode()->result_type;
                 /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
-                if (!isDynamic(arg_type) && !arg_type->isNullable())
+                if (!canContainNull(*arg_type))
                     return false;
 
                 out.key_column = json_info->header_position;

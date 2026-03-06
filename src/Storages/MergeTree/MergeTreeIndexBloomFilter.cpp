@@ -379,7 +379,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         {
             auto arg_type = arg.getDAGNode()->result_type;
             /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
-            if (!isDynamic(arg_type) && !arg_type->isNullable())
+            if (!canContainNull(*arg_type))
                 return false;
 
             fillJSONPathBloomPredicate(*json_info, header, out);
@@ -485,7 +485,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         /// Check safety: if key type is non-Nullable and the set contains the default value,
         /// we cannot skip granules where the path is absent.
-        if (!isDynamic(key_type) && !key_type->isNullable())
+        if (!canContainNull(*key_type))
         {
             auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};

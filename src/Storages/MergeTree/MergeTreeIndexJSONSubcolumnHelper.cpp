@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -98,12 +99,9 @@ bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field)
 {
-    /// Dynamic type stores NULL for missing paths — always safe
-    if (isDynamic(key_expression_type))
-        return true;
-
-    /// Nullable type — NULL when path is missing — always safe
-    if (key_expression_type->isNullable())
+    /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
+    /// store NULL for missing paths — always safe to skip.
+    if (canContainNull(*key_expression_type))
         return true;
 
     /// Non-nullable type: missing path produces the type's default value.
