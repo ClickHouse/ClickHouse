@@ -99,6 +99,8 @@ private:
     std::string setup_nodes_snapshot_path;
 
     size_t concurrency = 1;
+    size_t queue_depth = 1;
+    size_t pipeline_depth = 1;
 
     std::optional<ThreadPool> pool;
 
@@ -111,6 +113,9 @@ private:
 
     std::atomic<size_t> requests_executed = 0;
     std::atomic<bool> shutdown = false;
+
+    double warmup_seconds = 0;
+    std::atomic<bool> warmup_complete = false;
 
     std::shared_ptr<Stats> info;
     bool print_to_stdout;

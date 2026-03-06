@@ -17,6 +17,7 @@ An example of a configuration file can be found in `./utils/keeper-bench/example
 - [Special Types](#special-types)
 - [General settings](#general-settings)
 - [Connections](#connections)
+- [Setup](#setup)
 - [Generator](#generator)
 - [Output](#output)
 
@@ -96,6 +97,8 @@ main:
         children_of: "/path3"
 ```
 
+**Note:** Duplicate `path` keys in the same section are supported because ClickHouse config files are parsed using Poco's XML-style config processor, which preserves all duplicate keys (renaming them to `path`, `path[1]`, `path[2]`, etc.). Standard YAML parsers would drop duplicates, so these config files should only be used with ClickHouse's built-in config parser.
+
 <a name="general-settings"></a>
 ## General settings
 
@@ -113,7 +116,19 @@ report_delay: double
 timelimit: double
 
 # continue testing even if a query fails (default: false)
-continue_on_errors: boolean
+continue_on_error: boolean
+
+# request queue capacity per thread; higher values let the producer run ahead of consumers (default: 1)
+queue_depth: integer
+
+# number of in-flight (asynchronous) requests each consumer thread keeps; higher values hide round-trip latency (default: 1)
+pipeline_depth: integer
+
+# discard stats collected during the first N seconds to let caches and connections warm up (default: 0)
+warmup_seconds: double
+
+# enable OpenTelemetry tracing on generated requests (default: false)
+enable_tracing: boolean
 ```
 
 <a name="connections"></a>
@@ -155,15 +170,10 @@ connections:
         sessions: 2
 ```
 
-<a name="generator"></a>
-## Generator
+<a name="setup"></a>
+## Setup
 
-Main part of the benchmark is the generator itself which creates necessary nodes and defines how the requests will be generated. \
-It is defined under `generator` key.
-
-### Setup
-
-Setup defines nodes that are needed for test, defined under `setup` key.
+Setup defines nodes that are needed for the test, defined under a top-level `setup` key.
 
 Each node is defined with a `node` key in the following format:
 
@@ -184,24 +194,35 @@ If `repeat` key is set, the node definition will be used multiple times. For a `
 Example for a setup:
 
 ```yaml
-generator:
-    setup:
-        node: "node1"
-            node:
-                name:
-                    random_string:
-                        size: 20
-                data: "somedata"
-                repeat: 4
+setup:
+    node: "node1"
         node:
             name:
                 random_string:
-                    size: 10
-            repeat: 2
+                    size: 20
+            data: "somedata"
+            repeat: 4
+    node:
+        name:
+            random_string:
+                size: 10
+        repeat: 2
 ```
 
 We will create node `/node1` with no data and 4 children of random name of size 20 and data set to `somedata`. \
 We will also create 2 nodes with no data and random name of size 10 under `/` node.
+
+<a name="generator"></a>
+## Generator
+
+Main part of the benchmark is the generator itself which creates necessary nodes and defines how the requests will be generated. \
+It is defined under `generator` key.
+
+```yaml
+generator:
+    # fixed RNG seed for reproducible workloads; if omitted, a random seed is used and printed to stderr
+    seed: integer
+```
 
 ### Requests
 

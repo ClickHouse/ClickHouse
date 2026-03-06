@@ -58,10 +58,14 @@ private:
     mutable std::uniform_int_distribution<size_t> path_picker;
 };
 
+/// Default ACLs used throughout keeper-bench (world:anyone with all permissions)
+Coordination::ACLs getDefaultACLs();
+
 struct ZooKeeperRequestWithCallbacks
 {
     Coordination::ZooKeeperRequestPtr request;
     std::vector<std::function<void()>> on_success_callbacks;
+    std::vector<std::function<void()>> on_failure_callbacks;
 };
 
 struct RequestGenerator
@@ -75,6 +79,7 @@ struct RequestGenerator
     std::string description();
 
     void startup(Coordination::ZooKeeper & zookeeper);
+    void setSeed(uint64_t seed);
 
     size_t getWeight() const;
 private:
@@ -82,6 +87,7 @@ private:
     virtual std::string descriptionImpl() = 0;
     virtual ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) = 0;
     virtual void startupImpl(Coordination::ZooKeeper &) {}
+    virtual void setSeedImpl(uint64_t) {}
 
     size_t weight = 1;
 };
@@ -96,6 +102,7 @@ private:
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
     void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void setSeedImpl(uint64_t seed) override;
 
     PathGetter parent_path;
     StringGetter name;
@@ -107,7 +114,10 @@ private:
 
     std::mutex paths_mutex;
     std::unordered_set<std::string> paths_pending;
-    std::unordered_set<std::string> paths_created;
+
+    /// O(1) random-access set using vector + index map (swap-and-pop for removal)
+    std::vector<std::string> paths_created_vec;
+    std::unordered_map<std::string, size_t> paths_created_index;
 };
 
 struct SetRequestGenerator final : public RequestGenerator
@@ -155,6 +165,7 @@ struct RequestGetter
     RequestGeneratorPtr getRequestGenerator() const;
     std::string description() const;
     void startup(Coordination::ZooKeeper & zookeeper);
+    void setSeed(uint64_t seed);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
     std::vector<RequestGeneratorPtr> request_generators;
@@ -169,6 +180,7 @@ private:
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
     void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+    void setSeedImpl(uint64_t seed) override;
 
     std::optional<NumberGetter> size;
     RequestGetter request_getter;
@@ -181,7 +193,10 @@ public:
 
     void startup(Coordination::ZooKeeper & zookeeper);
     ZooKeeperRequestWithCallbacks generate();
+
+    uint64_t getSeed() const { return seed; }
 private:
+    uint64_t seed;
 
     std::uniform_int_distribution<size_t> request_picker;
     RequestGetter request_getter;
