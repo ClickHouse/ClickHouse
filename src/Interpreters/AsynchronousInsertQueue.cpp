@@ -350,7 +350,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
-    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
+    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr flush_query_thread_group)
 {
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
@@ -363,13 +363,13 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, thread_group = CurrentThread::getGroup(), shard_num, my_data = data_shared]() mutable
+            [this, key, global_context, flush_query_thread_group, shard_num, my_data = data_shared]() mutable
             {
                 processData(
                     key,
                     std::move(*my_data),
                     std::move(global_context),
-                    thread_group,
+                    flush_query_thread_group,
                     flush_time_history_per_queue_shard[shard_num]);
             },
             priority);
@@ -766,7 +766,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 // that call is blocking when pool is full
                 // and we are under flush_mutex lock so other flushes are blocked too
                 // but other pending inserts are not blocked and can be processed concurrently
-                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
             }
         }
 
@@ -816,7 +816,7 @@ void AsynchronousInsertQueue::flushAll()
         {
             total_bytes += entry.data->size_in_bytes;
             total_entries += entry.data->entries.size();
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
         }
     }
 
