@@ -4,19 +4,20 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <DataTypes/NestedUtils.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnConst.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
 #include <unordered_set>
