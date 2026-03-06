@@ -249,7 +249,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto & account_key = azure_conf->getAccountKey();
             const auto & sas_key = azure_conf->getSasKey();
 
-            LOG_INFO(getLogger("getKernelHelper"), "Creating azure kernel helper {} , '{}'", endpoint , account_name);
+            LOG_INFO(getLogger("getKernelHelper"), "Creating azure kernel helper {}, '{}'", endpoint , account_name);
             return std::make_shared<DeltaLake::AzureKernelHelper>(endpoint, container, path, account_name, account_key, sas_key);
         }
         case DB::ObjectStorageType::Local:
