@@ -1497,6 +1497,10 @@ try
 
         LOG_DEBUG(log, "Shut down storages.");
 
+        /// Signal Keeper TCP handlers to close before waiting for connections,
+        /// otherwise they keep running indefinitely and block shutdown.
+        global_context->signalKeeperDispatcherShutdown();
+
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");

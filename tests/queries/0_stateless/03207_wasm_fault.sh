@@ -23,15 +23,17 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
 -- this function tries to grow number of pages specified in the argument
 -- and stops on unsuccessful allocation returning the number of successfully allocated pages
-CREATE OR REPLACE FUNCTION huge_allocate LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_memory = 655360;
-SELECT huge_allocate(1 :: UInt32) <= 10;
-SELECT huge_allocate(10 :: UInt32) == 0;
 
-CREATE OR REPLACE FUNCTION huge_allocate LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' ARGUMENTS (UInt32) RETURNS UInt32 SETTINGS max_memory = 6553600;
-SELECT 10 < huge_allocate(1 :: UInt32) AND huge_allocate(1 :: UInt32) <= 100;
+CREATE OR REPLACE FUNCTION huge_allocate LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' ARGUMENTS (UInt32) RETURNS UInt32;
+SELECT huge_allocate(1 :: UInt32) <= 10 SETTINGS webassembly_udf_max_memory = 655360;
+SELECT huge_allocate(10 :: UInt32) == 0 SETTINGS webassembly_udf_max_memory = 655360;
+SELECT 10 < huge_allocate(1 :: UInt32) AND huge_allocate(1 :: UInt32) <= 100 SETTINGS webassembly_udf_max_memory = 6553600;
 
 CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' ARGUMENTS (UInt32) RETURNS UInt32;
 SELECT infinite_loop(1 :: UInt32); -- { serverError WASM_ERROR }
+-- Fuel is unlimited, but query still can be cancelled by timeout
+SELECT infinite_loop(1 :: UInt32) SETTINGS webassembly_udf_max_fuel = 18446744073709551615, max_execution_time = 0.5; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+SELECT infinite_loop(1 :: UInt32) SETTINGS webassembly_udf_max_fuel = 0, max_execution_time = 0.5; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 CREATE OR REPLACE FUNCTION fib_wasm LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' :: 'fib' ARGUMENTS (UInt32) RETURNS UInt32;
 SELECT fib_wasm(5 :: UInt32);
