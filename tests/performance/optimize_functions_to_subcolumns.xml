@@ -8,7 +8,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO t_subcolumns SELECT range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(120000000)
+        INSERT INTO t_subcolumns SELECT range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(500000000)
     </fill_query>
 
     <fill_query>

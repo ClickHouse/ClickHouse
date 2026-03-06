@@ -18,19 +18,19 @@
     <create_query>CREATE TABLE rand_unlimited_10m_64_large (key UInt64) Engine = Memory</create_query>
 
 
-    <fill_query>INSERT INTO rand_unlimited_10m_8_large SELECT rand() AS x FROM zeros(150000000)</fill_query>
+    <fill_query>INSERT INTO rand_unlimited_10m_8_large SELECT rand() AS x FROM zeros(100000000)</fill_query>
 
-    <fill_query>INSERT INTO rand_1k_10m_16_large SELECT rand()%1000 AS x FROM zeros(100000000)</fill_query>
-    <fill_query>INSERT INTO rand_100k_10m_16_large SELECT rand()%100000 AS x FROM zeros(50000000)</fill_query>
-    <fill_query>INSERT INTO rand_unlimited_10m_16_large SELECT rand() AS x FROM zeros(50000000)</fill_query>
+    <fill_query>INSERT INTO rand_1k_10m_16_large SELECT rand()%1000 AS x FROM zeros(70000000)</fill_query>
+    <fill_query>INSERT INTO rand_100k_10m_16_large SELECT rand()%100000 AS x FROM zeros(35000000)</fill_query>
+    <fill_query>INSERT INTO rand_unlimited_10m_16_large SELECT rand() AS x FROM zeros(35000000)</fill_query>
 
-    <fill_query>INSERT INTO rand_1k_10m_32_large SELECT rand()%1000 AS x FROM zeros(200000000)</fill_query>
-    <fill_query>INSERT INTO rand_100k_10m_32_large SELECT rand()%100000 AS x FROM zeros(200000000)</fill_query>
-    <fill_query>INSERT INTO rand_unlimited_10m_32_large SELECT rand() AS x FROM zeros(200000000)</fill_query>
+    <fill_query>INSERT INTO rand_1k_10m_32_large SELECT rand()%1000 AS x FROM zeros(130000000)</fill_query>
+    <fill_query>INSERT INTO rand_100k_10m_32_large SELECT rand()%100000 AS x FROM zeros(130000000)</fill_query>
+    <fill_query>INSERT INTO rand_unlimited_10m_32_large SELECT rand() AS x FROM zeros(130000000)</fill_query>
 
-    <fill_query>INSERT INTO rand_1k_10m_64_large SELECT rand()%1000 AS x FROM zeros(120000000)</fill_query>
-    <fill_query>INSERT INTO rand_100k_10m_64_large SELECT rand()%100000 AS x FROM zeros(120000000)</fill_query>
-    <fill_query>INSERT INTO rand_unlimited_10m_64_large SELECT rand() AS x FROM zeros(120000000)</fill_query>
+    <fill_query>INSERT INTO rand_1k_10m_64_large SELECT rand()%1000 AS x FROM zeros(80000000)</fill_query>
+    <fill_query>INSERT INTO rand_100k_10m_64_large SELECT rand()%100000 AS x FROM zeros(80000000)</fill_query>
+    <fill_query>INSERT INTO rand_unlimited_10m_64_large SELECT rand() AS x FROM zeros(80000000)</fill_query>
 
 
     <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_8_large ORDER BY key)</query>

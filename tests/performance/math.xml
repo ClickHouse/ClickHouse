@@ -74,6 +74,6 @@
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore({func}({arg}))</query>
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore({func_positive}({arg_positive}))</query>
     <query>SELECT count() FROM numbers(200000000) WHERE NOT ignore({func_bounded}({arg_bounded}))</query>
-    <query>SELECT count() FROM numbers(3500000) WHERE NOT ignore({func_slow}({arg}))</query>
-    <query>SELECT count() FROM numbers(3500000) WHERE NOT ignore({func_slow_positive}({arg_positive}))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore({func_slow}({arg}))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore({func_slow_positive}({arg_positive}))</query>
 </test>

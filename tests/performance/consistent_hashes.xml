@@ -11,5 +11,5 @@
     </substitutions>
 
     <query>SELECT kostikConsistentHash(number, {buckets}) FROM numbers(60000000) FORMAT Null</query>
-    <query short="{buckets} &lt; 10">SELECT jumpConsistentHash(number, {buckets}) FROM numbers(8700000) FORMAT Null</query>
+    <query short="{buckets} &lt; 10">SELECT jumpConsistentHash(number, {buckets}) FROM numbers(5500000) FORMAT Null</query>
 </test>

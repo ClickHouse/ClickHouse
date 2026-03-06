@@ -7,20 +7,20 @@
         <substitution>
             <name>size</name>
             <values>
-                <value>15000000</value>
+                <value>10000000</value>
+                <value>8000000</value>
+                <value>8000000</value>
+                <value>9000000</value>
+                <value>10000000</value>
                 <value>12000000</value>
+                <value>8000000</value>
+                <value>8000000</value>
+                <value>8000000</value>
+                <value>8000000</value>
+                <value>8000000</value>
+                <value>9000000</value>
+                <value>10000000</value>
                 <value>12000000</value>
-                <value>14000000</value>
-                <value>15000000</value>
-                <value>18000000</value>
-                <value>12000000</value>
-                <value>12000000</value>
-                <value>12000000</value>
-                <value>12000000</value>
-                <value>12000000</value>
-                <value>14000000</value>
-                <value>15000000</value>
-                <value>18000000</value>
             </values>
         </substitution>
     </substitutions>

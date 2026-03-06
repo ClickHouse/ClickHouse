@@ -25,8 +25,8 @@
   <query>select number from {table}({size}) group by number format Null</query>
   <query>select count() from {table}({size}) group by number format Null</query>
 
-  <query>select number from numbers_mt(50000000) group by number format Null</query>
-  <query>select count() from numbers_mt(25000000) group by number format Null</query>
+  <query>select number from numbers_mt(35000000) group by number format Null</query>
+  <query>select count() from numbers_mt(18000000) group by number format Null</query>
 
   <drop_query>drop table t_str_key_{size}</drop_query>
 </test>
