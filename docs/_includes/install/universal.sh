@@ -9,10 +9,10 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        # Require at least x86-64 + SSE4.2 (introduced in 2006). On older hardware fall back to plain x86-64 (introduced in 1999) which
-        # guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than SSE 4.2 builds.
-        HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
-        if [ "${HAS_SSE42}" ]
+        # Require at least x86-64-v3 (AVX2, introduced ~2013). On older hardware fall back to plain x86-64 (introduced in 1999)
+        # which guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than x86-64-v3 builds.
+        HAS_AVX2=$(grep avx2 /proc/cpuinfo)
+        if [ "${HAS_AVX2}" ]
         then
             if ldd --version 2>&1 | grep -q musl
             then

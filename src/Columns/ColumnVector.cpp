@@ -239,7 +239,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -326,11 +326,6 @@ void ColumnVector<T>::compareColumn(
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
-        return;
-    }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
         return;
     }
 #endif
@@ -952,7 +947,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
@@ -1021,11 +1016,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
             replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
-    else if (isArchSupported(TargetArch::x86_64_v3))
-        if (use_window)
-            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
-        else
-            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else
 #endif
     {

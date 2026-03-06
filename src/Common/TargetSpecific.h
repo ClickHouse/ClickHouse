@@ -124,8 +124,6 @@ String toString(TargetArch arch);
 /// - Newer CPUs (Ice Lake, Sapphire Rapids, AMD Zen 4/5) have minimal throttling
 ///
 /// We explicitly override with `no-prefer-256-bit` to enable 512-bit vectorization for AVX-512 targets.
-#define X86_64_V2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v2")))
-#define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
 #define X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=icelake-server,no-prefer-256-bit")))
 #define X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=sapphirerapids,no-prefer-256-bit")))
@@ -133,10 +131,8 @@ String toString(TargetArch arch);
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
 /// Begin target-specific code blocks using arch= for cleaner specification
-#define BEGIN_X86_64_V2_SPECIFIC_CODE \
-    _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v2\"))),apply_to=function)")
 #define BEGIN_X86_64_V3_SPECIFIC_CODE \
-    _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v3\"))),apply_to=function)")
+_Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v3\"))),apply_to=function)")
 #define BEGIN_X86_64_V4_SPECIFIC_CODE \
     _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v4,no-prefer-256-bit\"))),apply_to=function)")
 #define BEGIN_X86_64_ICELAKE_SPECIFIC_CODE \
@@ -151,25 +147,6 @@ String toString(TargetArch arch);
  * To prevent this warning we define this function inside every macros with pragmas.
  */
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
-
-
-#define DECLARE_X86_64_V2_SPECIFIC_CODE(...) \
-BEGIN_X86_64_V2_SPECIFIC_CODE \
-namespace TargetSpecific::x86_64_v2 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::x86_64_v2; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
-
-#define DECLARE_X86_64_V3_SPECIFIC_CODE(...) \
-BEGIN_X86_64_V3_SPECIFIC_CODE \
-namespace TargetSpecific::x86_64_v3 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::x86_64_v3; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
 
 #define DECLARE_X86_64_V4_SPECIFIC_CODE(...) \
 BEGIN_X86_64_V4_SPECIFIC_CODE \
@@ -204,8 +181,6 @@ END_TARGET_SPECIFIC_CODE
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
-#define DECLARE_X86_64_V2_SPECIFIC_CODE(...)
-#define DECLARE_X86_64_V3_SPECIFIC_CODE(...)
 #define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
 #define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
 #define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...)
@@ -219,22 +194,13 @@ namespace TargetSpecific::Default { \
 }
 
 
-/// Only enable extra v3 and v4 by default
+/// Only enable extra v4 by default
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
-DECLARE_X86_64_V3_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__) \
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
-)
-
-DECLARE_X86_64_V2_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::x86_64_v2;
-)
-
-DECLARE_X86_64_V3_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::x86_64_v3;
 )
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
@@ -257,7 +223,7 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_X86_V4_V3(
+  *     MULTITARGET_FUNCTION_X86_V4(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
@@ -268,10 +234,6 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
   *         if (isArchSupported(TargetArch::x86_64_v4))
   *         {
   *             testFunctionImpl_x86_64_v4(value);
-  *         }
-  *         else if (isArchSupported(TargetArch::x86_64_v3))
-  *         {
-  *             testFunctionImpl_x86_64_v3(value);
   *         }
   *         else
   *         {
@@ -290,29 +252,11 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
     name##_x86_64_v4 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##_x86_64_v3 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    name \
-    FUNCTION_BODY \
-
-#define MULTITARGET_FUNCTION_X86_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
-    FUNCTION_HEADER \
-    \
-    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##_x86_64_v3 \
     FUNCTION_BODY \
     \
     FUNCTION_HEADER \
@@ -323,13 +267,7 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
 
 #else
 
-#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
-    FUNCTION_HEADER \
-    \
-    name \
-    FUNCTION_BODY \
-
-#define MULTITARGET_FUNCTION_X86_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

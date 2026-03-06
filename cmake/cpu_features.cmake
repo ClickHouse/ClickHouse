@@ -89,7 +89,7 @@ elseif (ARCH_AMD64)
     #   2 — SSE4.2, SSSE3, POPCNT (default, matches ClickHouse's historical baseline)
     #   3 — AVX2, BMI1/2, FMA, F16C etc.
     #   4 — AVX-512F/BW/CD/DQ/VL
-    set (X86_ARCH_LEVEL "2" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
+    set (X86_ARCH_LEVEL "3" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
     set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
     if (NOT X86_ARCH_LEVEL MATCHES "^[1-4]$")
@@ -118,6 +118,14 @@ elseif (ARCH_AMD64)
         # third-party dependencies (zlib-ng, RocksDB) rely on it. All CPUs that support x86-64-v2 also support PCLMULQDQ.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
         list (APPEND RUSTFLAGS_CPU "-C" "target-feature=+pclmulqdq")
+    endif ()
+
+    # The SSE/AVX transition penalty that `vzeroupper` guards against was
+    # eliminated in Intel Ice Lake and was never significant on AMD Zen.
+    # On v3+ builds every function uses VEX encoding, so the instruction
+    # is pure overhead — remove it globally.
+    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mno-vzeroupper")
     endif ()
 
 else ()

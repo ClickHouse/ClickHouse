@@ -1,5 +1,3 @@
-add_subdirectory(divide)
-
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
@@ -90,7 +88,7 @@ list (APPEND PUBLIC_LIBS
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
-        divide_impl
+        ch_contrib::libdivide
         ch_contrib::xxHash
         ch_contrib::stringzilla
 )

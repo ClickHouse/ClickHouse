@@ -342,8 +342,6 @@ public:
             TargetSpecific::Default::FunctionGeoDistance<method>>(context);
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionGeoDistance<method>>(context);
         selector.registerImplementation<TargetArch::x86_64_v4,
             TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
     #endif

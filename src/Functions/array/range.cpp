@@ -186,9 +186,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
+            T value = start;
             for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset] = static_cast<T>(start + idx * step);
+                out_data[offset] = value;
+                value += step;
                 ++offset;
             }
             out_offsets[row_idx] = offset;

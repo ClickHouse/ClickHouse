@@ -248,9 +248,20 @@ private:
         size_t row = 0;
         for (auto off : offsets)
         {
-            /// Process chunks in vectorized manner
+            /// Process chunks in vectorized manner.
+            /// Use 2 accumulators on x86-64-v3 instead of 4: with 4, the
+            /// compiler widens SLP/loop vectorization to 256-bit AVX2,
+            /// causing register spills (MCA: 10.7 → 21.8 cyc/iter for
+            /// LinfNorm). 2 accumulators stay within 128-bit xmm and
+            /// still saturate fmax throughput (0.5/cycle).
+#if defined(__AVX2__)
+            static constexpr size_t VEC_SIZE = 2;
+#else
             static constexpr size_t VEC_SIZE = 4;
+#endif
             ResultType results[VEC_SIZE] = {0};
+
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
@@ -262,6 +273,7 @@ private:
                 result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
 
             /// Process the tail
+#pragma clang loop vectorize(disable) unroll(disable) interleave(disable)
             for (; prev < off; ++prev)
             {
                 result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev]), kernel_params);

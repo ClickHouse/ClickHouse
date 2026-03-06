@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 

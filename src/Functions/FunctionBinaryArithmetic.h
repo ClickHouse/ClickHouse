@@ -299,17 +299,46 @@ struct BinaryOperation
         }
         else
         {
+            /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
+            /// The compiler "vectorizes" by extracting each element, doing scalar div,
+            /// and re-inserting — bloating the loop ~3-5x for no benefit. Operations
+            /// that use div/mod set `no_vectorize` to opt out.
+            static constexpr bool disable_vectorization = requires { requires bool(Op::no_vectorize); };
+
             if (right_nullmap)
             {
-                for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        apply<op_case>(a, b, c, i);
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
             }
             else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+            {
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+            }
         }
     }
 

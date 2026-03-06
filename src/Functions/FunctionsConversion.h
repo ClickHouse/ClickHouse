@@ -1762,25 +1762,34 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
             i += remaining - 1;
         }
-        /// ARM64 optimized conversion: UInt64 -> Float32
+#endif
         else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
         {
             const UInt64* __restrict s = &vec_from[i];
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN)
+#if defined(__aarch64__) && !defined(OS_DARWIN)
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-#endif
             for (size_t j = 0; j < remaining; ++j)
             {
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
+#elif defined(__x86_64__)
+            /// Prevent auto-vectorization on x86: the compiler's attempt to semi-vectorize
+            /// UInt64->Float32 with AVX2 is slower than scalar code, because there is no
+            /// vector instruction for this conversion before AVX-512.
+            _Pragma("clang loop vectorize(disable)")
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
+#else
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
+#endif
 
             i += remaining - 1;
         }
-#endif
         /// Default: simple static_cast conversion
         else
         {

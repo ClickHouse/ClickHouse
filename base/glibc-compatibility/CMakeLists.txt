@@ -34,6 +34,7 @@ if (GLIBC_COMPATIBILITY)
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
+
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
     target_no_warning(glibc-compatibility unused-command-line-argument)
