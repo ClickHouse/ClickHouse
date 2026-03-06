@@ -131,6 +131,10 @@ DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(max_ref_age_ms, history.expire.max-ref-age-ms);
+/// Ref-level override fields (short names inside the "refs" map per Iceberg spec).
+DEFINE_ICEBERG_FIELD_ALIAS(ref_min_snapshots_to_keep, min-snapshots-to-keep);
+DEFINE_ICEBERG_FIELD_ALIAS(ref_max_snapshot_age_ms, max-snapshot-age-ms);
+DEFINE_ICEBERG_FIELD_ALIAS(ref_max_ref_age_ms, max-ref-age-ms);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);

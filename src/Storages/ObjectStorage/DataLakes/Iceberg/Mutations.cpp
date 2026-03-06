@@ -745,9 +745,7 @@ void alter(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
 }
 
-/// Table-level retention policy read from Iceberg table properties.
-/// Each field carries a spec-defined default (see Constant.h) that applies
-/// when the table property is absent.
+/// Table-level snapshot retention policy read from Iceberg table properties.
 struct RetentionPolicy
 {
     Int32 min_snapshots_to_keep = Iceberg::default_min_snapshots_to_keep;
@@ -797,8 +795,7 @@ public:
         return it != parent_chain.end() ? std::optional(it->second) : std::nullopt;
     }
 
-    /// Walk branch ancestors starting from head_id, retaining snapshots that satisfy
-    /// min-snapshots-to-keep or max-snapshot-age-ms. Implements spec steps 3-4.
+    /// Retain ancestors from head_id while min-keep or max-age is satisfied.
     void walkBranchAncestors(Int64 now_ms, Int64 head_id, Int32 min_keep, Int64 max_age_ms, std::set<Int64> & retained) const
     {
         Int64 walk_id = head_id;
@@ -806,7 +803,7 @@ public:
         while (hasSnapshot(walk_id))
         {
             bool within_min_keep = (count < min_keep);
-            bool within_max_age = (now_ms - getTimestamp(walk_id) < max_age_ms);
+            bool within_max_age = (now_ms - getTimestamp(walk_id) <= max_age_ms);
             if (!within_min_keep && !within_max_age)
                 break;
             retained.insert(walk_id);
@@ -843,13 +840,21 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
             Int64 ref_snap_id = ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
             String ref_type = ref_obj->getValue<String>(Iceberg::f_type);
 
-            Int64 ref_max_ref_age = ref_obj->has(Iceberg::f_max_ref_age_ms)
-                ? ref_obj->getValue<Int64>(Iceberg::f_max_ref_age_ms)
+            Int64 ref_max_ref_age = ref_obj->has(Iceberg::f_ref_max_ref_age_ms)
+                ? ref_obj->getValue<Int64>(Iceberg::f_ref_max_ref_age_ms)
                 : policy.max_ref_age_ms;
 
             bool is_main = (ref_name == Iceberg::f_main);
-            bool ref_expired = !is_main && graph.hasSnapshot(ref_snap_id)
-                && (now_ms - graph.getTimestamp(ref_snap_id)) >= ref_max_ref_age;
+
+            if (!is_main && !graph.hasSnapshot(ref_snap_id))
+            {
+                LOG_WARNING(getLogger("IcebergExpireSnapshots"),
+                    "Removing invalid ref {}: snapshot {} does not exist", ref_name, ref_snap_id);
+                expired_ref_names.push_back(ref_name);
+                continue;
+            }
+
+            bool ref_expired = !is_main && (now_ms - graph.getTimestamp(ref_snap_id)) > ref_max_ref_age;
 
             if (ref_expired)
             {
@@ -859,11 +864,11 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 
             if (ref_type == Iceberg::f_branch)
             {
-                Int32 min_keep = ref_obj->has(Iceberg::f_min_snapshots_to_keep)
-                    ? ref_obj->getValue<Int32>(Iceberg::f_min_snapshots_to_keep)
+                Int32 min_keep = ref_obj->has(Iceberg::f_ref_min_snapshots_to_keep)
+                    ? ref_obj->getValue<Int32>(Iceberg::f_ref_min_snapshots_to_keep)
                     : policy.min_snapshots_to_keep;
-                Int64 max_age = ref_obj->has(Iceberg::f_max_snapshot_age_ms)
-                    ? ref_obj->getValue<Int64>(Iceberg::f_max_snapshot_age_ms)
+                Int64 max_age = ref_obj->has(Iceberg::f_ref_max_snapshot_age_ms)
+                    ? ref_obj->getValue<Int64>(Iceberg::f_ref_max_snapshot_age_ms)
                     : policy.max_snapshot_age_ms;
                 graph.walkBranchAncestors(now_ms, ref_snap_id, min_keep, max_age, retained);
                 if (is_main)
@@ -876,7 +881,6 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
         }
     }
 
-    /// Main branch always exists, even if refs map is null.
     if (!main_branch_walked)
         graph.walkBranchAncestors(now_ms, current_snapshot_id, policy.min_snapshots_to_keep, policy.max_snapshot_age_ms, retained);
 
@@ -1003,7 +1007,7 @@ static Strings collectOrphanedFiles(
 
 /// Trim snapshot-log to the suffix of entries referencing only retained snapshots.
 static void trimSnapshotLog(
-    const Poco::JSON::Object::Ptr & metadata,
+    Poco::JSON::Object::Ptr metadata,
     const std::set<Int64> & expired_snapshot_ids)
 {
     if (!metadata->has(Iceberg::f_snapshot_log))
@@ -1032,7 +1036,9 @@ struct SnapshotPartition
     std::vector<String> expired_manifest_list_paths;
 };
 
-/// Split snapshots into retained (by policy or user fuse) and expired.
+/// Split snapshots into retained and expired.
+/// A snapshot is retained if the retention policy selected it, or if the
+/// user-provided fuse timestamp protects it (snapshot newer than fuse).
 static SnapshotPartition partitionSnapshots(
     const Poco::JSON::Array::Ptr & snapshots,
     const std::set<Int64> & retention_retained_ids,
@@ -1064,7 +1070,7 @@ static SnapshotPartition partitionSnapshots(
 
 /// Mutate metadata: remove expired refs, update snapshots, trim log, bump timestamp.
 static void updateMetadataForExpiration(
-    const Poco::JSON::Object::Ptr & metadata,
+    Poco::JSON::Object::Ptr metadata,
     const Strings & expired_ref_names,
     const Poco::JSON::Array::Ptr & retained_snapshots,
     const std::set<Int64> & expired_snapshot_ids)
