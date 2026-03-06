@@ -196,7 +196,7 @@ void ThreadGroup::unlinkThread()
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for a query, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+    LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for a query, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
     const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
@@ -228,12 +228,12 @@ ThreadGroupPtr ThreadGroup::createForBackgroundOps(ContextPtr task_context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for background operations, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for background operations, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
         res_group = std::make_shared<ThreadGroup>(current_group);
     }
     else
     {
-        LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for background operations, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for background operations, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
         res_group = create(task_context);
     }
     res_group->memory_tracker.setDescription("Background process (mutate/merge)");
@@ -246,12 +246,12 @@ ThreadGroupPtr ThreadGroup::createForScope()
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for scope, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for scope, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
         res_group = std::make_shared<ThreadGroup>(current_group);
     }
     else
     {
-        LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for scope, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for scope, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
         auto query_context = Context::createCopy(Context::getGlobalContextInstance());
         query_context->makeQueryContext();
         res_group = create(query_context);
@@ -263,7 +263,7 @@ ThreadGroupPtr ThreadGroup::createForScope()
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group)
 {
-    LOG_DEBUG(getLogger("ThreadGroup"), "Creating new thread group for flushing async insert query, inheriting from flush query thread group with master_thread_id {}", flush_query_thread_group->master_thread_id);
+    LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for flushing async insert query, inheriting from flush query thread group with master_thread_id {}", flush_query_thread_group->master_thread_id);
     auto res_group = std::make_shared<ThreadGroup>(query_context, flush_query_thread_group);
     res_group->memory_tracker.setDescription("FlushAsyncInsertQuery");
     return res_group;
@@ -326,7 +326,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 
         CurrentThread::attachToGroup(thread_group);
         setThreadName(thread_name);
-        LOG_DEBUG(getLogger("ThreadGroupSwitcher"), "Attach thread {} to thread group with master_thread_id {}", thread_name, thread_group->master_thread_id);
+        LOG_TEST(getLogger("ThreadGroupSwitcher"), "Attach thread {} to thread group with master_thread_id {}", thread_name, thread_group->master_thread_id);
     }
     catch (...)
     {
