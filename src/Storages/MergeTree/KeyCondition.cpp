@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -1098,15 +1099,21 @@ bool applyFunctionChainToColumn(
         /// (toDate returns day 65535 — the next day overflows to 0)
         auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
         auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
-        if (isDateTime64(arg_type_inner))
+        if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+            Int64 value;
+            if (isDateTime64(arg_type_inner))
+                value = (*result_column)[0].safeGet<DateTime64>().getValue();
+            else
+                value = (*result_column)[0].safeGet<Time64>().getValue();
 
             /// negative timestamps after cast -> large unsigned values
             if (value < 0)
                 return false;
 
-            UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
+            UInt32 scale = isDateTime64(arg_type_inner)
+                ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
+                : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
             Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
             /// timestamps beyond the target range -> small values
@@ -1117,7 +1124,7 @@ bool applyFunctionChainToColumn(
             if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
                 return false;
         }
-        else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner)))
+        else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
         {
             /// day numbers as Int32 -> Date only fits [0, 65535],
             /// DateTime only fits seconds up to DATE_LUT_MAX
@@ -1127,6 +1134,8 @@ bool applyFunctionChainToColumn(
             if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
                 return false;
             if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && value * 86400LL > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
                 return false;
         }
 
