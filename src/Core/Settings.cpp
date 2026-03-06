@@ -6026,7 +6026,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
-    DECLARE(Bool, async_insert, false, R"(
+    DECLARE(Bool, async_insert, true, R"(
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
@@ -7652,6 +7652,19 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
+Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel.
+Set to 0 for no limit.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
+Memory limit in bytes per WebAssembly UDF instance.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
+Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
+Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

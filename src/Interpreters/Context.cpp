@@ -41,6 +41,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -387,6 +388,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
+    extern const ServerSettingsString webassembly_udf_engine;
 }
 
 namespace ErrorCodes
@@ -3652,9 +3654,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
-    const auto & config = shared->getConfigRefWithLock(lock);
-    auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
-
+    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -3813,6 +3813,8 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
@@ -3844,6 +3846,8 @@ void Context::clearPageCache() const
     }
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3880,6 +3884,8 @@ void Context::clearMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -4020,6 +4026,8 @@ void Context::clearIndexUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -4056,6 +4064,8 @@ void Context::clearIndexMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)

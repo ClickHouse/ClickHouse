@@ -3141,6 +3141,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         {
             SortingStep::Settings sort_settings(context->getSettingsRef());
 
+            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
+            /// would produce incomplete data and cause the pipeline to get stuck.
+            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
