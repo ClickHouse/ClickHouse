@@ -2789,14 +2789,14 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     backup_file += std::to_string(bout->backup_number());
     if (rg.nextSmallNumber() < 8)
     {
-        static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
+        static const DB::Strings backupFormats = {"tar", "zip", "tzst", "tgz"};
         const String & nsuffix = rg.pickRandomly(backupFormats);
 
         backup_file += ".";
         backup_file += nsuffix;
         if (nsuffix == "tar" && rg.nextBool())
         {
-            static const DB::Strings & tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
+            static const DB::Strings tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
 
             backup_file += ".";
             backup_file += rg.pickRandomly(tarSuffixes);

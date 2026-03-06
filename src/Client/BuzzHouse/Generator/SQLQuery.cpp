@@ -1551,7 +1551,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & nullFuncs
+                static const auto nullFuncs
                     = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
@@ -1579,7 +1579,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & likeFuncs
+                static const auto likeFuncs
                     = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
@@ -1637,7 +1637,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto & inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
+                static const auto inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -2086,7 +2086,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 
         if (rg.nextSmallNumber() < 8)
         {
-            static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+            static const std::vector<uint32_t> limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
             buf += std::to_string(rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
         }
         else

@@ -20,7 +20,7 @@ const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
 static void finishSettings(SettingValues * svs)
 {
     /// Wait for mutations to finish
-    static const std::unordered_map<String, String> & toSet
+    static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},

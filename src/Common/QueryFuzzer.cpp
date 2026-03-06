@@ -2749,7 +2749,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            static const DB::Strings formats = {
+            static const Strings formats = {
                 "Values",
                 "CSV",
                 "TSV",

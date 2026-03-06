@@ -151,7 +151,7 @@ void collectColumnPaths(
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
         FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
-        static const std::unordered_map<uint32_t, DB::Strings> & qentries
+        static const std::unordered_map<uint32_t, DB::Strings> qentries
             = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
         /// Only setring a subset of the values to not add too many entries
@@ -1575,7 +1575,7 @@ void StatementGenerator::addTableColumnInternal(
         /// Use now() functions for TTL
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-        static const std::vector<SQLFunc> & ttlfuncs
+        static const std::vector<SQLFunc> ttlfuncs
             = {SQLFunc::FUNCnow, SQLFunc::FUNCnowInBlock, SQLFunc::FUNCnow64, SQLFunc::FUNCnowInBlock64};
         const SQLFunc tfunc = rg.pickRandomly(ttlfuncs);
 

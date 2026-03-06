@@ -295,7 +295,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitRandStr: {
-            static const DB::Strings & funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
+            static const DB::Strings funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
 
             lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(funcs), rg.nextStrlen()));
         }
