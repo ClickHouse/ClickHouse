@@ -64,9 +64,12 @@ def _test_name_to_basename(test_name: str) -> str:
 
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
-    # AST fuzzer targets stateless tests only.
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
     tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
+
+    logging.info("Found %d relevant tests for targeted AST fuzzer:", len(tests))
+    for test in sorted(tests):
+        logging.info("  %s", test)
 
     stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
     available_queries: dict[str, list[str]] = {}
@@ -90,7 +93,11 @@ def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[st
         targeted_queries_file = workspace_path / "ci-targeted-queries.txt"
         with open(targeted_queries_file, "w", encoding="utf-8") as f:
             f.write("\n".join(targeted_queries))
-        logging.info("Prepared %d targeted queries for AST fuzzer", len(targeted_queries))
+        logging.info(
+            "Prepared %d targeted queries for AST fuzzer:", len(targeted_queries)
+        )
+        for qf in targeted_queries:
+            logging.info("  %s", qf)
     else:
         logging.info("No targeted queries resolved for AST fuzzer")
 
@@ -103,7 +110,9 @@ def run_fuzz_job(check_name: str):
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
-    assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
+    clickhouse_binary = temp_dir / "clickhouse"
+    assert clickhouse_binary.exists(), "ClickHouse binary not found"
+    clickhouse_binary.chmod(clickhouse_binary.stat().st_mode | 0o111)
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
 
