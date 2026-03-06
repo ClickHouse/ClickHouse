@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Test composition for the distroless ClickHouse images.
 # Requires the images to be built first — see test.sh.
 

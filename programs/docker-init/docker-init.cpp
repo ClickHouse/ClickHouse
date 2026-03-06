@@ -72,7 +72,9 @@ int runCommand(const std::vector<std::string> & args)
     }
 
     int status = 0;
-    waitpid(pid, &status, 0);
+    while (waitpid(pid, &status, 0) < 0)
+        if (errno != EINTR)
+            return -1;
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
@@ -121,7 +123,9 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
     (void)close(pipefd[0]);
 
     int status = 0;
-    waitpid(pid, &status, 0);
+    while (waitpid(pid, &status, 0) < 0)
+        if (errno != EINTR)
+            return {-1, {}};
 
     /// Split output into non-empty lines.
     std::vector<std::string> lines;
@@ -175,7 +179,7 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
         (void)close(pipefd[0]);
         (void)close(pipefd[1]);
         kill(lhs_pid, SIGTERM);
-        waitpid(lhs_pid, nullptr, 0);
+        while (waitpid(lhs_pid, nullptr, 0) < 0 && errno == EINTR) {}
         return -1;
     }
     if (rhs_pid == 0)
@@ -193,8 +197,8 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
 
     int lhs_status = 0;
     int rhs_status = 0;
-    waitpid(lhs_pid, &lhs_status, 0);
-    waitpid(rhs_pid, &rhs_status, 0);
+    while (waitpid(lhs_pid, &lhs_status, 0) < 0 && errno == EINTR) {}
+    while (waitpid(rhs_pid, &rhs_status, 0) < 0 && errno == EINTR) {}
 
     return WIFEXITED(rhs_status) ? WEXITSTATUS(rhs_status) : -1;
 }
@@ -357,6 +361,13 @@ void manageClickHouseUser(
 
     if (has_custom_user || has_password || has_access_mgmt)
     {
+        if (access_management != "0" && access_management != "1")
+        {
+            std::cerr << "docker-init: error: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT must be '0' or '1', got '"
+                      << access_management << "'\n";
+            return;
+        }
+
         if (!isValidIdentifier(clickhouse_user))
         {
             std::cerr << "docker-init: error: CLICKHOUSE_USER '" << clickhouse_user
@@ -540,7 +551,7 @@ void initClickHouseDB(
         }
 
         int check_status = 0;
-        waitpid(check_pid, &check_status, 0);
+        while (waitpid(check_pid, &check_status, 0) < 0 && errno == EINTR) {}
         if (WIFEXITED(check_status) && WEXITSTATUS(check_status) == 0)
         {
             server_ready = true;
@@ -556,7 +567,7 @@ void initClickHouseDB(
     {
         std::cerr << "docker-init: ClickHouse init process timed out\n";
         kill(server_pid, SIGTERM);
-        waitpid(server_pid, nullptr, 0);
+        while (waitpid(server_pid, nullptr, 0) < 0 && errno == EINTR) {}
         return;
     }
 
@@ -601,7 +612,7 @@ void initClickHouseDB(
         {
             std::string filename = path.filename().string();
 
-            if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".sql")
+            if (filename.ends_with(".sql") && !filename.ends_with(".sql.gz"))
             {
                 std::cerr << "docker-init: running " << path << "\n";
                 std::vector<std::string> args = client_base;
@@ -609,7 +620,7 @@ void initClickHouseDB(
                 args.push_back(path.string());
                 runCommand(args);
             }
-            else if (filename.size() > 7 && filename.substr(filename.size() - 7) == ".sql.gz")
+            else if (filename.ends_with(".sql.gz"))
             {
                 std::cerr << "docker-init: running " << path << " (decompressing)\n";
                 /// Decompress via clickhouse-local (auto-detects .gz) and pipe to clickhouse-client.
@@ -620,7 +631,7 @@ void initClickHouseDB(
                     client_base
                 );
             }
-            else if (filename.size() > 3 && filename.substr(filename.size() - 3) == ".sh")
+            else if (filename.ends_with(".sh"))
             {
                 std::cerr << "docker-init: WARNING: shell scripts cannot run in a distroless "
                              "environment, skipping " << path << "\n";
@@ -635,7 +646,7 @@ void initClickHouseDB(
     /// Stop the temporary server.
     kill(server_pid, SIGTERM);
     int server_status = 0;
-    waitpid(server_pid, &server_status, 0);
+    while (waitpid(server_pid, &server_status, 0) < 0 && errno == EINTR) {}
     if (!WIFEXITED(server_status) || WEXITSTATUS(server_status) != 0)
         std::cerr << "docker-init: warning: init server did not exit cleanly\n";
 }
@@ -710,7 +721,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// For everything else (echo, date, bash, ...) let PATH resolution handle it.
     if (!extra_args.empty() && !extra_args[0].starts_with("--"))
     {
-        static const std::array<std::string_view, 18> clickhouse_tools = {
+        static constexpr std::array clickhouse_tools = {
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-keeper-client",
