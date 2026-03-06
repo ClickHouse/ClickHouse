@@ -17,14 +17,20 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: []
     name: "Config Workflow"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -55,14 +61,20 @@ jobs:
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -93,14 +105,20 @@ jobs:
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -131,14 +149,20 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
     name: "Style check"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -169,14 +193,20 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -207,14 +237,20 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |
@@ -245,14 +281,20 @@ jobs:
     needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, fast_test, style_check]
     if: ${{ always() }}
     name: "Finish Workflow"
+
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y git-lfs
+          git lfs install
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+          lfs: true
 
       - name: Prepare env script
         run: |

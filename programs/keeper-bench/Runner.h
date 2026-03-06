@@ -91,6 +91,8 @@ private:
     void runBenchmarkWithGenerator();
     void runBenchmarkFromLog();
 
+    void writeOutputString(const std::string & output_string, int64_t start_timestamp_ms);
+
     void createConnections();
     std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
     std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;

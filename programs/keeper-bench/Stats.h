@@ -9,7 +9,7 @@
 
 struct Stats
 {
-    size_t errors = 0;
+    std::atomic<size_t> errors{0};
 
     using Sampler = ReservoirSampler<double>;
     struct StatsCollector

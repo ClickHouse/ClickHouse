@@ -58,6 +58,18 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_binary, flaky check)",
 ]
 
+# Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
+
+
+def _has_changes_in_coordination(changed_files):
+    """True if any changed file is under src/Coordination."""
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if p.startswith("src/Coordination"):
+            return True
+    return False
+
 
 _info_cache = None
 
@@ -80,6 +92,15 @@ def should_skip_job(job_name):
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
+        return False, ""
+
+    # Run Keeper Stress (PR) only when there are changes in src/Coordination
+    if job_name == KEEPER_STRESS_PR_NAME:
+        if not _has_changes_in_coordination(changed_files):
+            return (
+                False, # Temporary - keep running on non-coordination changes to verify the job is working
+                "Skipped, no changes in src/Coordination (keeper stress runs only when Coordination code changes)",
+            )
         return False, ""
 
     if job_name == JobNames.PR_BODY:

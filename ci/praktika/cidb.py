@@ -2,6 +2,7 @@ import copy
 import dataclasses
 import json
 import urllib
+import os
 from typing import List, Optional
 
 from ._environment import _Environment
@@ -269,7 +270,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data=",".join(jsons),
+                    data="\n".join(jsons),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
@@ -363,6 +364,62 @@ ORDER BY day DESC
             json_rows.append(json.dumps(dataclasses.asdict(record)))
         self.insert_rows(json_rows)
         return self
+
+    def insert_keeper_metrics_from_file(
+        self,
+        file_path: str,
+        chunk_size: int = 1000,
+        retries: int = 3,
+    ):
+        metrics_db = Settings.KEEPER_STRESS_METRICS_DB_NAME
+        table = Settings.KEEPER_STRESS_METRICS_TABLE_NAME
+        if not file_path or not os.path.exists(file_path):
+            return 0, 0
+
+        insert_params = {
+            "database": metrics_db,
+            "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+
+        def _insert_chunk(lines: list) -> int:
+            if not lines:
+                return 0
+            body = "\n".join(lines)
+            last_status = None
+            for attempt in range(retries):
+                response = requests.post(
+                    url=self.url,
+                    params=insert_params,
+                    data=body,
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                last_status = response.status_code
+                if response.ok:
+                    return len(lines)
+                if attempt == retries - 1:
+                    raise RuntimeError(
+                        f"Failed to write keeper metrics, response code [{last_status}]"
+                    )
+            return 0
+
+        inserted = 0
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            chunk = []
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                chunk.append(s)
+                if len(chunk) >= chunk_size:
+                    inserted += _insert_chunk(chunk)
+                    chunk = []
+            inserted += _insert_chunk(chunk)
+
+        print(f"INFO: keeper metrics inserted: {inserted}")
+        return inserted, 0
 
     def check(self):
         # Create a session object

@@ -74,7 +74,9 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
         }
         catch (...)
         {
-            std::cout << "Got exception while trying to run benchmark: " << DB::getCurrentExceptionMessage(true) << std::endl;
+            auto msg = "Got exception while trying to run benchmark: " + DB::getCurrentExceptionMessage(true);
+            std::cout << msg << std::endl;
+            std::cerr << msg << std::endl;  // so stderr log always shows the error when stdout is empty
         }
 
         return 0;
