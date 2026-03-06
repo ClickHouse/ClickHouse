@@ -55,7 +55,8 @@ StatementGenerator::StatementGenerator(
               {0.30, 0.90}, /// SelectQuery
               {0.01, 0.10}, /// Kill
               {0.01, 0.08} /// ShowStatement
-          }}))
+          }},
+          "SQL statements"))
     , litGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -78,7 +79,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// LitJSON
               {0.01, 0.15}, /// LitNULLVal
               {0.01, 0.10} /// LitFraction
-          }}))
+          }},
+          "SQL expression literals"))
     , expGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -103,7 +105,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.15}, /// DictExpr
               {0.01, 0.15}, /// JoinExpr
               {0.01, 0.15} /// StarExpr
-          }}))
+          }},
+          "SQL expressions"))
     , predGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -118,7 +121,8 @@ StatementGenerator::StatementGenerator(
               {0.03, 0.20}, /// LikeExpr
               {0.10, 0.35}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
-          }}))
+          }},
+          "SQL predicates"))
     , queryGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -132,17 +136,19 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
-              {0.02, 0.05}, /// MergeIndexUDF
               {0.01, 0.05}, /// LoopUDF
               {0.03, 0.10}, /// ValuesUDF
               {0.01, 0.05}, /// RandomDataUDF
               {0.10, 0.30}, /// Dictionary
               {0.02, 0.10}, /// URLEncodedTable
               {0.10, 0.50}, /// TableEngineUDF
-              {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.05}, /// RandomTableUDF
+              {0.02, 0.05}, /// MergeIndexUDF
+              {0.01, 0.10}, /// MergeProjectionUDF
+              {0.01, 0.10}, /// MergeTextIndexUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
-          }}))
+          }},
+          "SQL queries"))
     , SQLMask(static_cast<size_t>(SQLOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
@@ -615,27 +621,22 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
     {
-        TableEngine * te = cv->mutable_engine();
-        const uint32_t nopt = rg.nextSmallNumber();
-
-        if (nopt < 4)
-        {
-            getNextTableEngine(rg, false, next);
-            te->set_engine(next.teng);
-        }
-        else
-        {
-            next.teng = MergeTree;
-        }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
-        const bool has_to
-            = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
+        const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
+        next.teng = MergeTree;
         if (!has_to)
         {
+            TableEngine * te = cv->mutable_engine();
+
+            if (rg.nextSmallNumber() < 4)
+            {
+                getNextTableEngine(rg, false, next);
+                te->set_engine(next.teng);
+            }
             chassert(this->entries.empty());
             for (uint32_t i = 0; i < view_ncols; i++)
             {
@@ -719,6 +720,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     setClusterInfo(rg, next);
     setClusterClause(rg, next.cluster, cv->mutable_cluster());
     sparen->set_paren(rg.nextSmallNumber() < 9);
+    /// ~30% chance to chain MV source from an existing view (MV-to-MV pattern)
+    this->chain_views = next.is_materialized && rg.nextSmallNumber() < 4;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
     generateSelect(
@@ -730,6 +733,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
+    this->chain_views = false; /// Safety clear: in case no view was available in FROM
     this->allow_in_expression_alias = true;
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -807,7 +811,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         dp->set_sync(rg.nextSmallNumber() < 3);
         if (rg.nextSmallNumber() < 3)
         {
-            generateSettingValues(rg, serverSettings, dp->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, dp->mutable_setting_values());
         }
     }
 }
@@ -930,7 +934,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
         }
         if (rg.nextSmallNumber() < 3)
         {
-            generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
         }
     }
 }
@@ -956,7 +960,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     {
         SettingValues * vals = ct->mutable_setting_values();
 
-        generateSettingValues(rg, serverSettings, vals);
+        generateSettingValues(rg, formatSettings, vals);
         if (rg.nextSmallNumber() < 3)
         {
             SetValue * sv = vals->add_other_values();
@@ -1150,7 +1154,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     {
         SettingValues * vals = dt->mutable_setting_values();
 
-        generateSettingValues(rg, serverSettings, vals);
+        generateSettingValues(rg, formatSettings, vals);
         if (rg.nextSmallNumber() < 3)
         {
             SetValue * sv = vals->add_other_values();
@@ -1223,13 +1227,11 @@ void StatementGenerator::generateInsertToTable(
                 {
                     buf += "DEFAULT";
                 }
-                else if (entry.special == ColumnSpecial::SIGN)
+                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    buf += rg.nextBool() ? "1" : "-1";
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    buf += rg.nextBool() ? "1" : "0";
+                    static const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
+
+                    buf += rg.nextBool() ? "1" : second;
                 }
                 else if (entry.path.size() > 1)
                 {
@@ -1260,13 +1262,11 @@ void StatementGenerator::generateInsertToTable(
             {
                 Expr * expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
 
-                if (entry.special == ColumnSpecial::SIGN)
+                if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
+                    const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                    expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : second);
                 }
                 else
                 {
@@ -1337,9 +1337,22 @@ void StatementGenerator::generateInsertToTable(
 
             for (const auto & entry : this->entries)
             {
-                const String nval = entry.getBottomType()->insertNumberEntry(
-                    rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
+                String nval;
 
+                if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                {
+                    const uint32_t modulo = rg.randomInt<uint32_t>(2, 31);
+                    const bool swap = rg.nextBool();
+                    const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                    nval = rg.nextBool() ? fmt::format("if(number % {} = 0, {}, {})", modulo, swap ? second : 1, swap ? 1 : second)
+                                         : (rg.nextBool() ? "1" : std::to_string(second));
+                }
+                else
+                {
+                    nval = entry.getBottomType()->insertNumberEntry(
+                        rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
+                }
                 buf += fmt::format(
                     "{}{}{}{}",
                     first ? "" : ", ",
@@ -1460,13 +1473,11 @@ void StatementGenerator::generateNextUpdate(RandomGenerator & rg, const SQLTable
                 {
                     buf = "DEFAULT";
                 }
-                else if (entry.special == ColumnSpecial::SIGN)
+                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
                 {
-                    buf = rg.nextBool() ? "1" : "-1";
-                }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
-                {
-                    buf = rg.nextBool() ? "1" : "0";
+                    static const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
+
+                    buf += rg.nextBool() ? "1" : second;
                 }
                 else
                 {
@@ -1513,7 +1524,7 @@ void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg,
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, st->mutable_setting_values());
     }
 }
 
@@ -1568,7 +1579,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     trunc->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, trunc->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, trunc->mutable_setting_values());
     }
 }
 
@@ -1656,7 +1667,7 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, exc->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, exc->mutable_setting_values());
     }
 }
 
@@ -1984,7 +1995,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
                      generateHotTableSettingsValues(rg, false, svs);
                  if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
-                     generateSettingValues(rg, serverSettings, svs);
+                     generateSettingValues(rg, formatSettings, svs);
              }},
             {5,
              [&]
@@ -1996,7 +2007,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
                      generateHotTableSettingList(rg, sl);
                  if (!sl->has_setting() || rg.nextSmallNumber() < 4)
-                     generateSettingList(rg, serverSettings, sl);
+                     generateSettingList(rg, formatSettings, sl);
              }},
             /// Projections
             {2 * static_cast<uint32_t>(no_oracle && is_mt), [&] { addTableProjection(rg, t, true, ati->mutable_add_projection()); }},
@@ -2247,7 +2258,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
     setClusterClause(rg, cluster, at->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, at->mutable_setting_values());
     }
 }
 
@@ -2310,7 +2321,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, att->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, att->mutable_setting_values());
     }
 }
 
@@ -2367,7 +2378,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     det->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, det->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, det->mutable_setting_values());
     }
 }
 
@@ -2723,7 +2734,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
 
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, st->mutable_setting_values());
     }
 }
 
@@ -3087,7 +3098,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     setClusterClause(rg, cluster, ren->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, ren->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, ren->mutable_setting_values());
     }
 }
 
@@ -3112,7 +3123,7 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
     }
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, serverSettings, kil->mutable_setting_values());
+        generateSettingValues(rg, formatSettings, kil->mutable_setting_values());
     }
 }
 
@@ -3197,7 +3208,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateAlter(rg, in_parallel, sq->mutable_alter());
             break;
         case SQLOp::SetValues:
-            generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
+            generateSettingValues(rg, formatSettings, sq->mutable_setting_values());
             break;
         case SQLOp::Attach:
             generateAttach(rg, sq->mutable_attach());

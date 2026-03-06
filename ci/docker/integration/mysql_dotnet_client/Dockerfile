@@ -1,4 +1,5 @@
 # docker build -t clickhouse/mysql_dotnet_client .
+# Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 
 FROM ubuntu:22.04
 

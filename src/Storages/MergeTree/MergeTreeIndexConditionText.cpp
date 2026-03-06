@@ -771,10 +771,11 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
         return false;
 
     const auto function = index_column_node.toFunctionNode();
-    const auto column_name = function.getArgumentAt(0).getColumnName();
 
     if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
         return false;
+
+    const auto column_name = function.getArgumentAt(0).getColumnName();
 
     if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
         return false;

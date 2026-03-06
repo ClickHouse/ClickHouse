@@ -274,8 +274,9 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     size_t read_rows = 0;
     createEmptyColumns(res_columns);
+    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
-    while (read_rows < max_rows_to_read)
+    while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
         /// When the number of rows in a part is smaller than `index_granularity`,
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
