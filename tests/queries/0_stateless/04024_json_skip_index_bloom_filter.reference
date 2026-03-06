@@ -61,6 +61,7 @@ bloom_filter IS NOT NULL nonexistent
 Skip
 Parts: 0/2
 Granules: 0/4
+bloom_filter IS NOT NULL CAST unsafe
 CAST String empty unsafe
 CAST String non-empty safe
 Skip

@@ -80,6 +80,12 @@ SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE json.nonexistent IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
+-- 2d: IS NOT NULL with CAST to non-Nullable type — unsafe, index should NOT be used
+SELECT 'tokenbf IS NOT NULL CAST unsafe';
+SELECT trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tbf WHERE isNotNull(json.a.b::Int64))
+WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
+
 -- =============================================================================
 -- Section 3: tokenbf_v1 — Sub-object ^ access
 -- =============================================================================

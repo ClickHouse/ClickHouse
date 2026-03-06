@@ -357,8 +357,14 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
         if (function_name == "isNotNull" && arguments_size == 1)
         {
-            if (auto json_info = tryMatchNodeToJSONIndex(function_node.getArgumentAt(0), index_columns))
+            auto arg = function_node.getArgumentAt(0);
+            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns))
             {
+                auto arg_type = arg.getDAGNode()->result_type;
+                /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+                if (!isDynamic(arg_type) && !arg_type->isNullable())
+                    return false;
+
                 out.key_column = json_info->header_position;
                 out.function = RPNElement::FUNCTION_EQUALS;
                 out.bloom_filter = std::make_unique<BloomFilter>(params);

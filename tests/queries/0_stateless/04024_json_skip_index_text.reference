@@ -28,6 +28,7 @@ text IS NOT NULL safe
 Skip
 Parts: 1/2
 Granules: 1/4
+text IS NOT NULL CAST unsafe
 text sub-object ^ not used
 text AND both paths
 Skip

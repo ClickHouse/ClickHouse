@@ -84,6 +84,12 @@ SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE json.a.b.:Int64 IS NOT NULL)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
+-- 3b: IS NOT NULL with CAST to non-Nullable type — unsafe, index should NOT be used
+SELECT 'text IS NOT NULL CAST unsafe';
+SELECT trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_text WHERE isNotNull(json.a.b::Int64))
+WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
+
 -- =============================================================================
 -- Section 4: Sub-object ^ access
 -- =============================================================================
