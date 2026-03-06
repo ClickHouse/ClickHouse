@@ -37,7 +37,8 @@ def get_run_command(
         f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
     if targeted_queries_file:
-        envs.append(f"-e TARGETED_QUERIES_FILE='{targeted_queries_file}'")
+        container_queries_file = f"/workspace/{targeted_queries_file.name}"
+        envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
     if compatibility_setting:
         envs.append(f"-e FUZZER_COMPATIBILITY='{compatibility_setting}'")
 
