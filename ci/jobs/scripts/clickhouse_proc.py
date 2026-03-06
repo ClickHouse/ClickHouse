@@ -779,6 +779,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
                 if Path(f"{self.aes_key}.rsa").exists():
+                    res.append(f"{self.aes_key}") #REMOVEME
                     res.append(f"{self.aes_key}.rsa")
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
