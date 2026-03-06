@@ -585,7 +585,7 @@ extern "C" void __wrap_freeaddrinfo(struct addrinfo * result) // NOLINT
                 getaddrinfo_tracked_sizes.erase(it);
             }
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch) - cannot throw from C callback
         {
         }
     }
