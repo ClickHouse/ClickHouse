@@ -57,7 +57,6 @@ private:
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
-    std::unique_ptr<Stopwatch> stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
     Priority priority;

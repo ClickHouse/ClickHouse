@@ -45,8 +45,6 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         thread_group);
 
-    stopwatch = std::make_unique<Stopwatch>();
-
     const auto & mutation_ids = merge_mutate_entry->mutation_ids;
     chassert(!mutation_ids.empty());
 
