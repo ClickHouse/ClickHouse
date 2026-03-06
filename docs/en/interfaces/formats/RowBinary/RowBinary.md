@@ -41,15 +41,15 @@ Most of the queries provided in the examples can be executed with curl with a fi
 
 ```bash
 curl -XPOST "http://localhost:8123?default_format=RowBinary" \
-  --data-binary "SELECT 42 :: UInt32" \  > out.bin
+  --data-binary "SELECT 42 :: UInt32"  > out.bin
 ```
 :::
->
-> Then, the data can be examined with a hex editor.
+
+Then, the data can be examined with a hex editor.
 
 ### Unsigned LEB128 (Little Endian Base 128) {#unsigned-leb128}
 
-An **unsigned little-endian** variable-width integer encoding used to encode the length of variable-size data types such as `String`, `Array`, `Map`, and `Tuple`. A sample implementation can be found on the [LEB128 wiki page](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer).
+An **unsigned little-endian** variable-width integer encoding used to encode the length of variable-size data types such as `String`, `Array` and `Map`. A sample implementation can be found on the [LEB128 wiki page](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer).
 
 ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256 {#integer-types}
 
@@ -294,7 +294,7 @@ Stored as `Int32` representing a time value in seconds. Negative values are vali
 Supported range of values: `[-999:59:59, 999:59:59]` (i.e., `[-3599999, 3599999]` seconds).
 
 :::note
-At the moment, the setting enable_time_time64_type must be set to 1 to use Time or Time64.
+At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
 :::
 
 Sample underlying values for `Time`:
@@ -323,7 +323,7 @@ Where `precision` is an integer from `0` to `9`. Common values: `3` (millisecond
 Supported range of values: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
 
 :::note
-At the moment, the setting enable_time_time64_type must be set to 1 to use Time or Time64.
+At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
 :::
 
 The underlying `Int64` value represents fractional seconds scaled by `10^precision`.
@@ -674,7 +674,9 @@ SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
 (
-  -- it does not matter what is the order of types in the user input  -- the types are always sorted alphabetically in the wire format  `var` Variant(
+  -- It does not matter what is the order of types in the user input;
+  -- the types are always sorted alphabetically in the wire format.
+  `var` Variant(
            Array(Int16),
            Bool,
            Date,
@@ -687,7 +689,7 @@ CREATE OR REPLACE TABLE foo
 )
 ENGINE = MergeTree
 ORDER BY ();
-INSERT INTO foo VALUES(true), ('foo'), (CAST(100, 'Int128')), (array(1,2,3));
+INSERT INTO foo VALUES (true), ('foobar' :: FixedString(6)), (100.5 :: Float64), (100 :: Int128), ([1, 2, 3] :: Array(Int16));
 SELECT * FROM foo;
 ```
 
