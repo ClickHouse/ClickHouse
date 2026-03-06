@@ -270,7 +270,7 @@ class Job:
                 container_name = (
                     "praktika_"
                     + hashlib.sha1(
-                        Path(os.getcwd()).resolve().as_posix().encode()
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
                     ).hexdigest()[:12]
                 )
                 self.timeout_shell_cleanup = f"docker rm -f {container_name}"
