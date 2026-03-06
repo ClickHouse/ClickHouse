@@ -28,6 +28,7 @@ void Stats::addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_in
 
 void Stats::addOp(Coordination::OpNum op_num, uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
+    std::lock_guard lock(mutex);
     op_collectors[op_num].add(microseconds, requests_inc, bytes_inc);
 }
 

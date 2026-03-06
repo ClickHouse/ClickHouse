@@ -15,7 +15,7 @@ struct Stats
     std::atomic<size_t> errors{0};
 
     using Sampler = ReservoirSampler<double>;
-    /// All StatsCollector access must be protected by Runner::mutex
+    /// All StatsCollector access is protected by Stats::mutex
     struct StatsCollector
     {
         size_t requests = 0;
