@@ -814,6 +814,36 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
+    /// Skip writing columns whose values are entirely type-defaults.
+    /// This saves disk space for sparse-update workloads where most columns
+    /// in each INSERT are left at their type's default.
+    /// Columns marked for sparse serialization are excluded — they are already
+    /// efficiently stored and removing them would break sparse serialization invariants.
+    /// Patch parts are excluded — they require all columns for lightweight UPDATE.
+    bool has_empty_columns = false;
+    if (!new_data_part->info.isPatch())
+    {
+        NameSet empty_columns;
+        for (const auto & col : block)
+        {
+            if (ISerialization::hasKind(infos.getKindStack(col.name), ISerialization::Kind::SPARSE))
+                continue;
+            if (col.column->hasOnlyDefaults())
+                empty_columns.insert(col.name);
+        }
+        if (!empty_columns.empty())
+        {
+            auto filtered = columns.eraseNames(empty_columns);
+            if (!filtered.empty())
+            {
+                columns = std::move(filtered);
+                has_empty_columns = true;
+                for (const auto & name : empty_columns)
+                    infos.erase(name);
+            }
+        }
+    }
+
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
@@ -894,7 +924,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/ false,
+        /*reset_columns=*/ has_empty_columns,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
