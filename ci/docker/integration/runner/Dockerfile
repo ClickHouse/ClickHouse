@@ -38,7 +38,7 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
-    openjdk-17-jdk \
+    default-jdk \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
@@ -70,19 +70,20 @@ COPY requirements.txt /
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 RUN python3 -m pip install git+https://github.com/ClickHouse/kazoo.git
 
-RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz \
-    && tar xzvf spark-4.0.0-bin-hadoop3.tgz -C / \
-    && rm spark-4.0.0-bin-hadoop3.tgz
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
+    && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
+    && rm spark-3.5.5-bin-hadoop3.tgz
 
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN packages="io.delta:delta-spark_2.13:4.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.13:1.7.1,\
+RUN packages="io.delta:delta-spark_2.12:3.1.0,\
+org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3,\
 org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-org.apache.spark:spark-avro_2.13:4.0.0"\
-    && /spark-4.0.0-bin-hadoop3/bin/spark-shell --packages "$packages" \
-    && find /root/.ivy2.5.2/ -name '*.jar' -exec ln -sf {} /spark-4.0.0-bin-hadoop3/jars/ \;
+org.apache.spark:spark-avro_2.12:3.5.1"\
+    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
+    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -106,6 +107,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
 
 EXPOSE 2375
 
-ENV SPARK_HOME="/spark-4.0.0-bin-hadoop3" \
+ENV SPARK_HOME="/spark-3.5.5-bin-hadoop3" \
     PATH="${SPARK_HOME}/bin:${PATH}" \
     JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"
