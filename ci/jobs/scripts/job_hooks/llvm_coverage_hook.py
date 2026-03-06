@@ -2,6 +2,7 @@ import json
 import traceback
 from pathlib import Path
 
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
@@ -52,8 +53,31 @@ def check():
                 f"\n[Uncovered code]({uncovered_code_url})"
             ),
         )
+
+        CIDBCluster().insert_json(
+            table="coverage_ci.coverage_data",
+            json_str={
+                "check_start_time": d["check_start_time"],
+                "pull_request_number": d["pull_request_number"],
+                "commit_sha": d["commit_sha"],
+                "base_commit_sha": d["base_commit_sha"],
+                "branch": d["branch"],
+                "base_branch": d["base_branch"],
+                "status": d["status"],
+                "baseline_line_cov": b_line_cov,
+                "baseline_func_cov": b_function_cov,
+                "baseline_branch_cov": b_branch_cov,
+                "current_line_cov": c_line_cov,
+                "current_func_cov": c_function_cov,
+                "current_branch_cov": c_branch_cov,
+                "delta_line_cov": d["delta_line_cov"],
+                "coverage_report_url": d["coverage_report_url"],
+                "diff_coverage_report_url": d["diff_coverage_report_url"],
+                "uncovered_code_url": uncovered_code_url,
+            },
+        )
     except Exception:
-        print("ERROR: Failed to post coverage comment")
+        print("ERROR: Failed to post coverage comment or insert into CIDB")
         traceback.print_exc()
 
 

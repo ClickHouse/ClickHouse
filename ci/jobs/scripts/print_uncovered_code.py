@@ -1,4 +1,5 @@
 import os
+import sys
 from ci.praktika.utils import Utils
 import re
 from collections import defaultdict
@@ -32,8 +33,16 @@ if __name__ == "__main__":
                     ranges[cur].append((start, start + ln - 1))
 
     if not ranges:
-        print("No changed-line hunks found (is your diff empty?).")
-        raise SystemExit(0)
+        msg = "No changed-line hunks found (is your diff empty?)."
+        print(msg)
+        r = Result.create_from(
+            name="Print Uncovered Code",
+            status=Result.Status.SUCCESS,
+            info=msg,
+        )
+        r.set_comment(msg)
+        r.dump()
+        sys.exit(0)
 
     # helper: does absolute SF path correspond to repo-relative path?
     def sf_matches(sf, rel):
@@ -81,10 +90,16 @@ if __name__ == "__main__":
                     uncovered.append((active_rel, ln))
 
     if total == 0:
-        print(
-            "PR changed-lines coverage: N/A (no coverable changed lines found in .info)."
+        msg = "PR changed-lines coverage: N/A (no coverable changed lines found in .info)."
+        print(msg)
+        r = Result.create_from(
+            name="Print Uncovered Code",
+            status=Result.Status.SUCCESS,
+            info=msg,
         )
-        raise SystemExit(0)
+        r.set_comment(msg)
+        r.dump()
+        sys.exit(0)
 
     pct = 100.0 * covered / total
 
@@ -152,4 +167,4 @@ if __name__ == "__main__":
         with_info_from_results=True,
     )
     r.set_comment(msg)
-    r.complete_job()
+    r.dump()

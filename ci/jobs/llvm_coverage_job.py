@@ -8,7 +8,6 @@ from pathlib import Path
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 
 CURRENT_DIR = Utils.cwd()
@@ -261,37 +260,14 @@ if __name__ == "__main__":
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
 
-            CIDBCluster().insert_json(
-                table="coverage_ci.coverage_data",
-                json_str={
-                    "check_start_time": datetime.now(timezone.utc).strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    ),
-                    "pull_request_number": pr_number,
-                    "commit_sha": current_commit_sha,
-                    "base_commit_sha": merge_base_commit_sha,
-                    "branch": branch,
-                    "base_branch": base_branch,
-                    "status": diff_res.status,
-                    "baseline_line_cov": b_line_cov,
-                    "baseline_func_cov": b_function_cov,
-                    "baseline_branch_cov": b_branch_cov,
-                    "current_line_cov": c_line_cov,
-                    "current_func_cov": c_function_cov,
-                    "current_branch_cov": c_branch_cov,
-                    "delta_line_cov": delta,
-                    "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
-                    "diff_coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index.html",
-                    "uncovered_code_url": uncovered_code_url,
-                },
-            )
-
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             _pr_changed_lines_info = print_res.ext.get("comment", "")
 
-            # Write coverage data for the post-hook to pick up and post as a GitHub comment.
-            # The hook runs on the host (outside Docker) where the GH token is available.
+            # Write coverage data for the post-hook to pick up and post as a GitHub comment
+            # and insert into CIDB. The hook runs on the host (outside Docker) where the
+            # GH token and CIDB credentials are available.
             _comment_data = {
+                # GitHub comment fields
                 "b_line_cov": b_line_cov,
                 "c_line_cov": c_line_cov,
                 "b_function_cov": b_function_cov,
@@ -301,6 +277,19 @@ if __name__ == "__main__":
                 "pr_changed_lines_info": _pr_changed_lines_info,
                 "diff_url": _diff_url,
                 "uncovered_code_url": uncovered_code_url,
+                # CIDB fields
+                "check_start_time": datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                "pull_request_number": pr_number,
+                "commit_sha": current_commit_sha,
+                "base_commit_sha": merge_base_commit_sha,
+                "branch": branch,
+                "base_branch": base_branch,
+                "status": diff_res.status,
+                "delta_line_cov": delta,
+                "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                "diff_coverage_report_url": _diff_url,
             }
             with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
                 json.dump(_comment_data, f)
