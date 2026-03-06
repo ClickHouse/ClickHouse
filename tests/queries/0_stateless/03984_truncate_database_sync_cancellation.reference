@@ -1,1 +1,2 @@
-TRUNCATE DATABASE query was cancelled successfully
+1
+TRUNCATE DATABASE LIKE path: kill was successful
