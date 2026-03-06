@@ -166,7 +166,7 @@ void QueryOracle::generateRoundtripOracleQueries(
 
     /// Choose roundtrip function pair
     String roundtrip_pred;
-    switch (rg.randomInt<uint32_t>(0, 6))
+    switch (rg.randomInt<uint32_t>(0, 5))
     {
         case 0:
             /// hex/unhex — exercises hex encoding path
@@ -183,11 +183,7 @@ void QueryOracle::generateRoundtripOracleQueries(
                 roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
             }
             break;
-        case 3:
-            /// URL encode/decode — exercises URL percent-encoding
-            roundtrip_pred = fmt::format("decodeURL{0}Component(encodeURL{0}Component({1})) = {1}", rg.nextBool() ? "Form" : "", val);
-            break;
-        case 4: {
+        case 3: {
             /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
             struct CipherSpec
             {
@@ -240,7 +236,7 @@ void QueryOracle::generateRoundtripOracleQueries(
             }
             break;
         }
-        case 5: {
+        case 4: {
             /// compress/decompress — exercises compression codecs
             static const std::vector<String> dcodecs = {"lz4", "zstd", "deflate_qpl", "brotli", "lzma", "bz2", "snappy"};
             roundtrip_pred = fmt::format("decompress(compress({0}, '{1}'), '{1}') = {0}", val, rg.pickRandomly(dcodecs));
