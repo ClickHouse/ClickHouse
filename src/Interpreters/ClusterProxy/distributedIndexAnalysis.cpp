@@ -333,7 +333,10 @@ private:
             /// (which still have the original indices valid for original_pool).
             auto statuses = remote_pool->getStatus();
             for (size_t i = 0; i < remote_replicas; ++i)
+            {
                 remote_pools[i].error_count = statuses[i].error_count;
+                remote_pools[i].slowdown_count = statuses[i].slowdown_count;
+            }
         }
 #endif
         original_pool->updateSharedError(remote_pools);
