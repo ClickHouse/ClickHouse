@@ -558,12 +558,12 @@ extern "C" int __wrap_getaddrinfo(const char * node, const char * service, const
     if (res != 0 || !result || !*result)
         return res;
 
-    size_t tracked_size = estimateGetAddrInfoSize(*result);
-    AllocationTrace trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_size));
-    trace.onAlloc(*result, tracked_size);
-
     if (likely(getaddrinfo_tracking_initialized.load(std::memory_order_acquire)))
     {
+        size_t tracked_size = estimateGetAddrInfoSize(*result);
+        AllocationTrace trace = CurrentMemoryTracker::allocNoThrow(static_cast<Int64>(tracked_size));
+        trace.onAlloc(*result, tracked_size);
+
         try
         {
             std::lock_guard lock(getaddrinfo_tracking.mutex);
