@@ -1,7 +1,7 @@
 aas	Array(Array(String))	['aas.size0','aas.size1','aas']
 as	Array(String)	['as.size0','as']
 ds	Dynamic	['ds.dynamic_structure','ds.variant_discr','ds.SharedVariant','ds.String']
-js	JSON(s String)	['js.object_structure','js.ds.dynamic_structure','js.ds.variant_discr','js.s.size','js.s','js.ds.SharedVariant','js.ds.String','js.object_shared_data.size0','js.object_shared_data%2Epaths','js.object_shared_data%2Evalues']
+js	JSON(s String)	['js.object_structure','js.ds.dynamic_structure','js.ds.variant_discr','js.s','js.ds.SharedVariant','js.ds.String','js.object_shared_data.size0','js.object_shared_data%2Epaths','js.object_shared_data%2Evalues']
 lcs	LowCardinality(String)	['lcs.dict','lcs']
 ms	Map(String, String)	['ms.size0','ms%2Ekeys','ms%2Evalues']
 nested	Map(String, Array(Tuple(value Nullable(String))))	['nested.size0','nested%2Ekeys','nested%2Evalues.size1','nested%2Evalues%2Evalue.null','nested%2Evalues%2Evalue']
