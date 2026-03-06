@@ -25,6 +25,14 @@ public:
 
     virtual ~IMergedBlockOutputStream() = default;
 
+
+    struct GatheredData
+    {
+        MergeTreeData::DataPart::Checksums checksums;
+        ColumnsSubstreams columns_substreams;
+        ColumnsStatistics statistics;
+    };
+
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 

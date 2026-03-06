@@ -356,7 +356,6 @@ public:
 
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    static void implicitValidation(const IndexDescription & index);
     void validate(const IndexDescription & index, bool attach) const;
 
     MergeTreeIndexPtr get(const IndexDescription & index) const;
@@ -403,4 +402,11 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
 void textIndexValidator(const IndexDescription & index, bool attach);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
+
+/// Check if index file exists in checksums, checking both original and hashed filenames.
+/// This supports long index names that were hashed due to replace_long_file_name_to_hash setting.
+bool indexFileExistsInChecksums(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension);
 }

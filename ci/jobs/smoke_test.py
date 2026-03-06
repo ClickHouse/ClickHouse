@@ -5,6 +5,7 @@ macOS Smoke Test
 This script runs a basic smoke test for ClickHouse on native macOS.
 It downloads the pre-built binary via public HTTP (no AWS credentials needed),
 starts the server and executes a simple query to verify the binary works.
+
 """
 
 import os

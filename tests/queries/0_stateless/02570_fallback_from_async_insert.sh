@@ -43,7 +43,14 @@ ${CLICKHOUSE_CURL} -sS -X POST \
     --data-binary @- <<< "(16) (17) (18)"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM t_async_insert_fallback ORDER BY a"
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+# Wait for text_log fallback entries.
+# There is a race between HTTP response being sent and the log entry being written.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    count=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id LIKE '%$query_id_suffix' AND message LIKE '%$message%' SETTINGS max_rows_to_read = 0")
+    [ "$count" -ge 5 ] && break
+    sleep 0.5
+done
 $CLICKHOUSE_CLIENT --query "
     SELECT 'id_' || splitByChar('_', query_id)[1] AS id FROM system.text_log
     WHERE query_id LIKE '%$query_id_suffix' AND message LIKE '%$message%'

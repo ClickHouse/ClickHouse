@@ -554,8 +554,26 @@ void BackupCoordinationStageSync::createAliveNode(Coordination::ZooKeeperWithFau
 void BackupCoordinationStageSync::resetConnectedFlag()
 {
     std::lock_guard lock{mutex};
+    auto monotonic_now = std::chrono::steady_clock::now();
+    auto now = std::chrono::system_clock::now();
     for (auto & [_, host_info] : state.hosts)
+    {
+        /// Update the last connection time only for hosts that were previously connected.
+        /// This ensures the disconnection timer in cancelQueryIfDisconnectedTooLong() starts
+        /// from the moment we first detected the issue (i.e., when we could no longer read ZooKeeper),
+        /// rather than from the time of the last successful readCurrentState() call.
+        /// Without this, when the initiator itself loses its ZooKeeper connection,
+        /// resetConnectedFlag() marks all hosts as disconnected but their last_connection_time
+        /// remains stale (from the previous sync cycle), which can cause
+        /// cancelQueryIfDisconnectedTooLong() to trigger immediately if sync_period_ms
+        /// exceeds failure_after_host_disconnected_for_seconds.
+        if (host_info.connected)
+        {
+            host_info.last_connection_time = now;
+            host_info.last_connection_time_monotonic = monotonic_now;
+        }
         host_info.connected = false;
+    }
 }
 
 

@@ -84,7 +84,8 @@ public:
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -142,9 +143,9 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual bool supportsTotalRows() const { return false; }
+    virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
-    virtual bool supportsTotalBytes() const { return false; }
+    virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
     /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.

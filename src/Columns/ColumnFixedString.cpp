@@ -461,21 +461,19 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
     return res;
 }
 
-void ColumnFixedString::getExtremes(Field & min, Field & max) const
+void ColumnFixedString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     auto cmp_less = ComparatorAscendingUnstable(*this);
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_less(i, min_idx))
             min_idx = i;

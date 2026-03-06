@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -373,6 +374,47 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
                 before_window_actions->dag.getOutputs().push_back(expression_dag_node);
                 before_window_actions_output_node_names.insert(expression_dag_node->result_name);
+            }
+        }
+    }
+
+    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
+    /// in the data flowing into window functions. But the aggregate function was created during analysis
+    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
+    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    for (auto & window_description : window_descriptions)
+    {
+        for (auto & window_function : window_description.window_functions)
+        {
+            bool types_changed = false;
+            DataTypes actual_argument_types;
+            actual_argument_types.reserve(window_function.argument_names.size());
+
+            for (size_t i = 0; i < window_function.argument_names.size(); ++i)
+            {
+                const auto * dag_node = before_window_actions->dag.tryFindInOutputs(window_function.argument_names[i]);
+                if (dag_node && !window_function.argument_types[i]->equals(*dag_node->result_type))
+                {
+                    actual_argument_types.push_back(dag_node->result_type);
+                    types_changed = true;
+                }
+                else
+                {
+                    actual_argument_types.push_back(window_function.argument_types[i]);
+                }
+            }
+
+            if (types_changed)
+            {
+                AggregateFunctionProperties properties;
+                auto new_function = AggregateFunctionFactory::instance().get(
+                    window_function.aggregate_function->getName(),
+                    NullsAction::EMPTY,
+                    actual_argument_types,
+                    window_function.function_parameters,
+                    properties);
+                window_function.aggregate_function = std::move(new_function);
+                window_function.argument_types = std::move(actual_argument_types);
             }
         }
     }

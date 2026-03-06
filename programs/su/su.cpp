@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 

@@ -148,7 +148,8 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
-    return type == MutationCommand::RENAME_COLUMN;
+    return type == MutationCommand::RENAME_COLUMN
+        || type == MutationCommand::DROP_COLUMN;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
@@ -158,6 +159,10 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     if (command.type == RENAME_COLUMN)
     {
         rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
+    }
+    else if (command.type == DROP_COLUMN)
+    {
+        dropped_columns.emplace(command.column_name);
     }
     else if (command.type == READ_COLUMN)
     {
@@ -254,6 +259,20 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
             return name_from;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
+}
+
+bool AlterConversions::isColumnDropped(const std::string & name) const
+{
+    /// Check exact match (e.g. DROP COLUMN `n.s`)
+    if (dropped_columns.contains(name))
+        return true;
+
+    /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
+    auto nested_prefix_end = name.find('.');
+    if (nested_prefix_end != std::string::npos && dropped_columns.contains(name.substr(0, nested_prefix_end)))
+        return true;
+
+    return false;
 }
 
 PrewhereExprSteps AlterConversions::getMutationSteps(

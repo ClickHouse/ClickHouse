@@ -56,6 +56,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 

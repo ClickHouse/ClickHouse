@@ -2,14 +2,18 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/Exception.h>
 #include <Core/ProtocolDefines.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 }
-
+}
 
 namespace DB
 {

@@ -319,7 +319,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 if (fixedLengthLeft() > EXCEPTION_MARKER.size())
                 {
                     // fixed length buffer drops all excess data
-                    // make sure that we send less than content-lenght bytes at the end
+                    // make sure that we send less than content-length bytes at the end
                     // the aim is to break HTTP
                     breakFixedLength();
                 }

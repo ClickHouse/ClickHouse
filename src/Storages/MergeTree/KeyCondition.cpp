@@ -28,6 +28,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -42,7 +43,6 @@
 #include <algorithm>
 #include <cassert>
 #include <stack>
-#include <limits>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -148,35 +148,14 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     return fixed_prefix;
 }
 
-namespace
-{
-bool isNaN(const Field & field)
-{
-    if (field.getType() != Field::Types::Float64)
-        return false;
-
-    const double value = field.safeGet<Float64>();
-    return std::isnan(value);
-}
-}
-
 const KeyCondition::AtomMap KeyCondition::atom_map
 {
         {
             "notEquals",
             [] (RPNElement & out, const Field & value)
             {
-                if (isNaN(value))
-                {
-                    /// Convert data <> NaN -> data IN [-INF, INF]
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range::createWholeUniverse();
-                }
-                else
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(value);
-                }
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(value);
                 return true;
             }
         },
@@ -185,15 +164,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field & value)
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                if (isNaN(value))
-                {
-                    /// Convert data = NaN -> data IN (INF, -INF)
-                    out.range = Range(POSITIVE_INFINITY, false, NEGATIVE_INFINITY, false);
-                }
-                else
-                {
-                    out.range = Range(value);
-                }
+                out.range = Range(value);
                 return true;
             }
         },
@@ -385,6 +356,31 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 String prefix = value.safeGet<String>();
                 if (prefix.empty())
+                    return false;
+
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+                out.function = RPNElement::FUNCTION_IN_RANGE;
+                out.range = !right_bound.empty()
+                    ? Range(prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix, true);
+
+                return true;
+            }
+        },
+        {
+            "startsWithUTF8",
+            [] (RPNElement & out, const Field & value)
+            {
+                if (value.getType() != Field::Types::String)
+                    return false;
+
+                String prefix = value.safeGet<String>();
+                if (prefix.empty())
+                    return false;
+
+                const bool is_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(prefix.data()), prefix.size());
+                if (is_ascii == false)
                     return false;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
@@ -1034,11 +1030,11 @@ bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    // Remove LowCardinality from input column, and convert it to regular one
+    /// Remove LowCardinality from input column, and convert it to regular one
     auto result_column = in_column->convertToFullIfNeeded();
     auto result_type = removeLowCardinality(in_data_type);
 
-    // In case function sequence is empty, return full non-LowCardinality column
+    /// In case function sequence is empty, return full non-LowCardinality column
     if (functions.empty())
     {
         out_column = result_column;
@@ -1046,13 +1042,13 @@ bool applyFunctionChainToColumn(
         return true;
     }
 
-    // If first function arguments are empty, cannot transform input column
+    /// If first function arguments are empty, cannot transform input column
     if (functions[0]->getArgumentTypes().empty())
     {
         return false;
     }
 
-    // And cast it to the argument type of the first function in the chain
+    /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
     if (canBeSafelyCast(result_type, in_argument_type))
     {
@@ -1064,10 +1060,10 @@ bool applyFunctionChainToColumn(
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
     }
-    // If column cannot be cast accurate, casting with OrNull, and in case all
-    // values has been cast (no nulls), unpacking nested column from nullable.
-    // In case any further functions require Nullable input, they'll be able
-    // to cast it.
+    /// If column cannot be cast accurate, casting with OrNull, and in case all
+    /// values has been cast (no nulls), unpacking nested column from nullable.
+    /// In case any further functions require Nullable input, they'll be able
+    /// to cast it.
     else
     {
         result_column = castColumnAccurateOrNull({result_column, result_type, ""}, in_argument_type);
@@ -1093,9 +1089,64 @@ bool applyFunctionChainToColumn(
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
+
+        /// DateTime64/Date32 are signed, but Date and DateTime are unsigned, so converting
+        /// values outside the unsigned range wraps around via static_cast, this can produce wrong pruning
+        ///
+        /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
+        /// and AFTER execution to catch boundary values where the next value would wrap
+        /// (toDate returns day 65535 — the next day overflows to 0)
+        auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
+        if (isDate(result_type_inner) || isDateTime(result_type_inner))
+        {
+            auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+            if (isDateTime64(arg_type_inner))
+            {
+                Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+
+                /// negative timestamps after cast -> large unsigned values
+                if (value < 0)
+                    return false;
+
+                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
+                Int64 seconds = value / intExp10OfSize<Int64>(scale);
+
+                /// timestamps beyond the target range -> small values
+                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                    return false;
+                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                    return false;
+            }
+            else if (isDate32(arg_type_inner))
+            {
+                /// day numbers as Int32 -> Date only fits [0, 65535],
+                /// DateTime only fits seconds up to DATE_LUT_MAX
+                auto value = (*result_column)[0].safeGet<Int32>();
+                if (value < 0)
+                    return false;
+                if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
+                    return false;
+                if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                    return false;
+            }
+        }
+
         result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
+
+        /// the result itself sits at the type's max — next value wraps so any >= / <= condition on
+        /// it would give wrong partition ranges -> this catches timezone edge cases that pre-execution check might miss
+        if (isDate(result_type_inner))
+        {
+            if (result_column->getUInt(0) >= DATE_LUT_MAX_DAY_NUM)
+                return false;
+        }
+        else if (isDateTime(result_type_inner))
+        {
+            if (result_column->get64(0) >= DATE_LUT_MAX)
+                return false;
+        }
 
         // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())
@@ -1197,15 +1248,389 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     return true;
 }
 
-/// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
-bool KeyCondition::canConstantBeWrappedByFunctions(
+/// Returns true if a deterministic sub-DAG can be extracted to compute one of the key columns
+/// from a single key subexpression (`expr_name`), without depending on any other inputs.
+/// Assumes `expr_name` matches a key subexpression name (checked by the caller).
+/// This is used to "push" a constant/IN-set through deterministic key functions so that index
+/// analysis can be done in key space.
+/// For example, for `ORDER BY cityHash64(p)` and predicate `p = 'abc'`, we can extract a DAG
+/// `p -> cityHash64(p)` and apply it to the constant `'abc'` to get `cityHash64('abc')` for key analysis.
+/// Then all key marks can be compared against the computed and stored `cityHash64('abc')` directly.
+/// This is not limited to a linear function chain; the extracted sub-DAG can represent any
+/// deterministic expression over `expr_name` (e.g. nested functions or tuples), as long as it does
+/// not depend on other inputs. For example, for `ORDER BY left(key, length(key) - length(substringIndex(key, '-', -1)) - 1)`
+bool KeyCondition::extractDeterministicFunctionsDagFromKey(
+    const String & expr_name,
+    const BuildInfo & info,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    DeterministicKeyTransformDag & out) const
+{
+    const auto & dag = info.key_expr->getActionsDAG();
+    const auto & sample_block = info.key_expr->getSampleBlock();
+
+    std::vector<const ActionsDAG::Node *> expr_nodes;
+    for (const auto & node : dag.getNodes())
+        if (node.result_name == expr_name)
+            expr_nodes.push_back(&node);
+
+    if (expr_nodes.empty())
+        return false;
+
+    const ActionsDAG::Node * rename_node = expr_nodes.front();
+
+    std::unordered_set<const ActionsDAG::Node *> expr_set;
+    expr_set.reserve(expr_nodes.size());
+    for (const auto * node : expr_nodes)
+        expr_set.insert(node);
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
+    projection_inputs.reserve(expr_nodes.size());
+    for (const auto * node : expr_nodes)
+        projection_inputs.emplace(node, rename_node);
+
+    auto can_fold_from_expr_only = [&](const ActionsDAG::Node * key_node) -> bool
+    {
+        bool uses_expr = false;
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        std::vector<const ActionsDAG::Node *> stack{key_node};
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            if (!visited.insert(node).second)
+                continue;
+
+            if (expr_set.contains(node))
+            {
+                uses_expr = true;
+                continue;
+            }
+
+            if (node->type == ActionsDAG::ActionType::INPUT)
+                return false;
+
+            if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+                return false;
+
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+
+        return uses_expr;
+    };
+
+    for (const auto & key_node : dag.getNodes())
+    {
+        auto it = key_columns.find(key_node.result_name);
+        if (it == key_columns.end())
+            continue;
+
+        if (!can_fold_from_expr_only(&key_node))
+            continue;
+
+        ActionsDAG sub = ActionsDAG::foldActionsByProjection(projection_inputs, {&key_node});
+
+        const auto required = sub.getRequiredColumns();
+        if (required.size() != 1 || required.front().name != expr_name)
+            continue;
+
+        if (sub.hasNonDeterministic() || sub.hasStatefulFunctions() || sub.hasArrayJoin())
+            continue;
+
+        out_key_column_num = it->second;
+        out_key_column_type = sample_block.getByName(key_node.result_name).type;
+
+        out.actions = std::make_shared<ExpressionActions>(std::move(sub));
+        out.output_name = key_node.result_name;
+        out.input_type = required.front().type;
+        out.input_name = required.front().name;
+        return true;
+    }
+
+    return false;
+}
+
+
+/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
+/// `out_column`/`out_type`.
+/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
+/// values can be compared against key marks directly.
+///
+/// The function is intentionally conservative and returns false if the transformation cannot be proven
+/// safe for all values in `in_column`. In particular, it will fail if:
+/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
+/// - Executing the DAG throws for some value from `in_column`.
+/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
+///
+/// If `in_type` differs from `dag.input_type`, we normally cast `in_column` to `dag.input_type` (without
+/// introducing NULLs) and then execute the DAG. However, if the extracted DAG is just a single CAST applied
+/// directly to the input, casting to `dag.input_type` first can be redundant or even unsafe. In this case,
+/// we try to apply the CAST directly to the input column to avoid a lossy round-trip through `dag.input_type`
+/// (e.g. String -> Dynamic -> String).
+///
+/// Examples:
+/// - DAG `p -> cityHash64(p)`:
+///   input:  `['abc']`  type `String`
+///   output: `[cityHash64('abc')]`  type `UInt64`
+/// - DAG `p -> CAST(p, 'UInt8')`:
+///   input:  `['123']`  type `String`
+///   output: `[123]`  type `UInt8`
+bool applyDeterministicDagToColumn(
+    const ColumnPtr & in_column,
+    const DataTypePtr & in_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag,
+    ColumnPtr & out_column,
+    DataTypePtr & out_type)
+{
+    ColumnPtr input_column = in_column->convertToFullIfNeeded();
+    DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
+
+    /// This is the final check for the output column after DAG execution:
+    /// - materialize output column (Const/LowCardinality)
+    /// - reject if any NULLs were created as a result of transformation
+    /// - strip Nullable/LowCardinality wrappers to get the actual column
+    auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
+    {
+        column = column->convertToFullIfNeeded();
+        type = recursiveRemoveLowCardinality(type);
+
+        if (column->isNullable())
+        {
+            const auto & n = assert_cast<const ColumnNullable &>(*column);
+            for (char8_t b : n.getNullMapData())
+                if (b)
+                    return false;
+            column = n.getNestedColumnPtr();
+            type = removeNullable(type);
+        }
+        return true;
+    };
+
+    /// Cast column to target_type and fail if the cast introduces NULLs.
+    auto cast_without_nulls = [&](ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type) -> bool
+    {
+        if (canBeSafelyCast(type, target_type))
+        {
+            column = castColumnAccurate({column, type, ""}, target_type);
+            type = target_type;
+            return true;
+        }
+
+        if (!target_type->isNullable() && !target_type->canBeInsideNullable())
+        {
+            /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+            return false;
+        }
+
+        column = castColumnAccurateOrNull({column, type, ""}, target_type);
+        const auto & n = assert_cast<const ColumnNullable &>(*column);
+
+        /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
+        for (char8_t b : n.getNullMapData())
+            if (b)
+                return false;
+
+        if (!target_type->isNullable())
+            column = n.getNestedColumnPtr();
+
+        type = target_type;
+        return true;
+    };
+
+    if (!input_type->equals(*dag.input_type))
+    {
+        /// Fast-path: consume leading CAST(...) that are no-op for current type
+        /// or can be applied directly to the CAST result type. This avoids the
+        /// round-trip through dag.input_type (e.g. String -> Dynamic -> String).
+        /// Additionally, some round trip might not be possible to do safely. Like String -> Dynamic -> String.
+        auto try_apply_direct_cast_fast_path = [&]() -> bool
+        {
+            const auto & actions_dag = dag.actions->getActionsDAG();
+
+            const ActionsDAG::Node * output_node = nullptr;
+            for (const auto * node : actions_dag.getOutputs())
+            {
+                if (node->result_name == dag.output_name)
+                {
+                    output_node = node;
+                    break;
+                }
+            }
+
+            if (!output_node)
+                return false;
+
+            auto skip_aliases = [](const ActionsDAG::Node * node) -> const ActionsDAG::Node *
+            {
+                while (node && node->type == ActionsDAG::ActionType::ALIAS)
+                {
+                    if (node->children.size() != 1)
+                        return nullptr;
+                    node = node->children.front();
+                }
+                return node;
+            };
+
+            output_node = skip_aliases(output_node);
+            if (!output_node)
+                return false;
+
+            /// Only handles a single CAST directly applied to the input.
+            /// Currently, only supports CAST function (e.g. `col::String`, `col::Int32`) but will not work for other
+            /// conversion functions like `toString(col)`, `toInt32(col)`, etc.
+            if (output_node->type != ActionsDAG::ActionType::FUNCTION || !output_node->function_base
+                || output_node->function_base->getName() != "CAST" || output_node->children.empty())
+                return false;
+
+            const auto * cast_arg = skip_aliases(output_node->children.front());
+            if (!cast_arg || cast_arg->type != ActionsDAG::ActionType::INPUT || cast_arg->result_name != input_name)
+                return false;
+
+            const auto cast_result_type = recursiveRemoveLowCardinality(output_node->result_type);
+
+            out_column = input_column;
+            out_type = input_type;
+
+            if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
+                return false;
+
+            return finalize_output_column_and_type(out_column, out_type);
+        };
+
+        if (try_apply_direct_cast_fast_path())
+            return true;
+
+        if (!cast_without_nulls(input_column, input_type, dag.input_type))
+            return false;
+    }
+
+    Block block;
+    block.insert({input_column, input_type, input_name});
+
+    /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
+    /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;
+    /// however, there could be other functions that can throw on some inputs.
+    try
+    {
+        dag.actions->execute(block, false, true);
+    }
+    catch (const Exception &)
+    {
+        /// If any error occurs during the execution of the DAG, we cannot transform the constant
+        return false;
+    }
+
+    const auto & res = block.getByName(dag.output_name);
+    out_column = res.column;
+    out_type = res.type;
+    return finalize_output_column_and_type(out_column, out_type);
+}
+
+
+/// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
+/// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
+/// May not catch all cases, but should be sufficient for most practical cases
+/// For example, ORDER BY (intDiv(x, 2), x % 2) is injective w.r.t. x, but this function will return false
+/// because both children of tuple are not injective individually
+static bool isDeterministicTransformInjective(const ActionsDAG & dag, const String & input_name, const String & output_name)
+{
+    const ActionsDAG::Node * output_node = nullptr;
+    for (const auto * node : dag.getOutputs())
+    {
+        if (node->result_name == output_name)
+        {
+            output_node = node;
+            break;
+        }
+    }
+
+    if (!output_node)
+        return false;
+
+    struct InjectiveInfo
+    {
+        bool depends_on_input = false;
+        bool injective = false;
+    };
+
+    /// Memoization to avoid re-computation
+    std::unordered_map<const ActionsDAG::Node *, InjectiveInfo> memo;
+    memo.reserve(dag.getNodes().size());
+
+    auto dfs = [&](const ActionsDAG::Node * node, const auto & self) -> InjectiveInfo
+    {
+        if (auto it = memo.find(node); it != memo.end())
+            return it->second;
+
+        InjectiveInfo res;
+
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT: {
+                res.depends_on_input = (node->result_name == input_name);
+                res.injective = res.depends_on_input;
+                break;
+            }
+            case ActionsDAG::ActionType::COLUMN: {
+                res.depends_on_input = false;
+                res.injective = false;
+                break;
+            }
+            case ActionsDAG::ActionType::ALIAS: {
+                if (node->children.size() != 1)
+                    break;
+                res = self(node->children.front(), self);
+                break;
+            }
+            case ActionsDAG::ActionType::FUNCTION: {
+                if (!node->function_base)
+                    break;
+
+                bool depends_on_input = false;
+                bool has_injective_argument = false;
+
+                ColumnsWithTypeAndName sample_args;
+                sample_args.reserve(node->children.size());
+
+                for (const auto * child : node->children)
+                {
+                    sample_args.push_back({child->column, child->result_type, child->result_name});
+
+                    const auto child_info = self(child, self);
+                    depends_on_input |= child_info.depends_on_input;
+                    has_injective_argument |= child_info.injective;
+                }
+
+                res.depends_on_input = depends_on_input;
+                res.injective = depends_on_input && has_injective_argument && node->function_base->isInjective(sample_args);
+                break;
+            }
+            default:
+                break;
+        }
+
+        memo.emplace(node, res);
+        return res;
+    };
+
+    return dfs(output_node, dfs).injective;
+}
+
+bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_is_injective)
 {
+    out_is_injective = false;
+
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
@@ -1218,7 +1643,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
         ///
-        /// Note: for negative values, we can filter more partitions then needed.
+        /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
@@ -1228,27 +1653,25 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    MonotonicFunctionsChain transform_functions;
-    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        transform_functions,
-        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+    /// NaN should not be present here because it is handled earlier by caller.
+    chassert(!out_value.isNaN());
 
-    if (!can_transform_constant)
+    DeterministicKeyTransformDag dag;
+
+    if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
+
+    out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
     auto const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
-    bool constant_transformed = applyFunctionChainToColumn(
+    bool constant_transformed = applyDeterministicDagToColumn(
         const_column,
         out_type,
-        transform_functions,
+        expr_name,
+        dag,
         transformed_const_column,
         transformed_const_type);
 
@@ -1260,13 +1683,14 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     return true;
 }
 
+
 void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation)
+        bool & out_relaxed)
 {
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
     {
@@ -1274,23 +1698,27 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
         std::optional<size_t> key_space_filling_curve_argument_pos;
-        MonotonicFunctionsChain set_transforming_chain;
+        DeterministicKeyTransformDag set_transforming_dag;
         if (isKeyPossiblyWrappedByMonotonicFunctions(
                 node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            set_transforming_chains.push_back(set_transforming_chain);
+            set_transforming_dags.push_back(std::nullopt);
         }
-        // For partition index, checking if set can be transformed to prune any partitions
-        else if (
-            single_point && allow_constant_transformation
-            && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
+        else
         {
-            indexes_mapping.push_back(index_mapping);
-            data_types.push_back(data_type);
-            set_transforming_chains.push_back(set_transforming_chain);
+            bool is_injective = false;
+            if (canSetValuesBeWrappedByDeterministicFunctions(
+                    node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
+            {
+                indexes_mapping.push_back(index_mapping);
+                data_types.push_back(data_type);
+                set_transforming_dags.push_back(std::move(set_transforming_dag));
+                if (!is_injective)
+                    out_relaxed = true;
+            }
         }
     };
 
@@ -1320,11 +1748,10 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
-    const std::vector<KeyCondition::MonotonicFunctionsChain> & set_transforming_chains,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count,
-    bool & is_constant_transformed)
+    size_t args_count)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -1358,7 +1785,6 @@ bool tryPrepareSetColumnsForIndex(
     chassert(set_types.size() == set_columns.size());
 
     Columns transformed_set_columns = set_columns;
-    is_constant_transformed = false;
 
     IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
     bool filter_used = false;
@@ -1370,21 +1796,22 @@ bool tryPrepareSetColumnsForIndex(
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
 
-        if (!set_transforming_chains[indexes_mapping_index].empty())
+        if (set_transforming_dags[indexes_mapping_index].has_value())
         {
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
-            if (!applyFunctionChainToColumn(
+            const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+            if (!applyDeterministicDagToColumn(
                     set_column,
                     set_element_type,
-                    set_transforming_chains[indexes_mapping_index],
+                    set_transforming_dag.input_name,
+                    set_transforming_dag,
                     transformed_set_column,
                     transformed_set_type))
                 return false;
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
-            is_constant_transformed = true;
         }
 
         if (canBeSafelyCast(set_element_type, key_column_type))
@@ -1473,23 +1900,22 @@ bool tryPrepareSetColumnsForIndex(
 bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPNElement & out,
-    bool allow_constant_transformation)
+    RPNElement & out)
 {
     const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<MonotonicFunctionsChain> set_transforming_chains;
+    std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
     DataTypes data_types;
     size_t left_args_count = 0;
 
     analyzeKeyExpressionForSetIndex(
         left_arg,
         indexes_mapping,
-        set_transforming_chains,
+        set_transforming_dags,
         data_types,
         left_args_count,
         info,
-        allow_constant_transformation);
+        out.relaxed);
 
     if (indexes_mapping.empty())
         return false;
@@ -1537,9 +1963,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
-    bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, left_args_count, is_constant_transformed))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -1560,11 +1985,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    key ranges (used by partition pruning and minmax), otherwise `NOT IN` could prune incorrectly.
     ///    Example: `tuple(i, i) NOT IN (tuple(1, 2))` would effectively turn into `i NOT IN (1)`.
     ///
-    /// - `is_constant_transformed`
+    /// -  if constant is transformed, we set `out.relaxed = true` via `analyzeKeyExpressionForSetIndex()`
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size() || is_constant_transformed)
+    if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
 
     if (out.set_index->size() > 1 || out.relaxed)
@@ -1576,97 +2001,57 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 bool KeyCondition::tryPrepareSetIndexForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPNElement & out,
-    bool allow_constant_transformation)
+    RPNElement & out)
 {
     chassert(func.getFunctionName() == "has");
     chassert(func.getArgumentsSize() == 2);
 
-    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+    /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
 
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
+    DataTypes data_types;
+    size_t key_args_count = 0;
+
+    analyzeKeyExpressionForSetIndex(
+        key_arg, indexes_mapping, set_transforming_dags, data_types, key_args_count, info, out.relaxed);
+
+    if (indexes_mapping.empty())
+        return false;
+
+    /// Check if array argument is usable
+    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+
     /// First argument of has() must be a constant array
-    Field array_value;
-    DataTypePtr array_type;
-    if (!array_arg.tryGetConstant(array_value, array_type))
+    if (!array_arg.isConstant())
         return false;
 
-    if (array_value.getType() != Field::Types::Array)
+    auto column = array_arg.getConstantColumn();
+
+    const auto * array_data_type = typeid_cast<const DataTypeArray *>(column.type.get());
+    if (!array_data_type)
         return false;
 
-    const auto * array_data_type = typeid_cast<const DataTypeArray *>(array_type.get());
-    chassert(array_data_type);
+    const auto * const_column = assert_cast<const ColumnConst *>(column.column.get());
+    const auto * array_col = assert_cast<const ColumnArray *>(const_column->getDataColumnPtr().get());
 
-    const Array & values = array_value.safeGet<Array>();
-    if (values.empty())
+    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
+
+    const auto array_elements = array_col->getDataPtr();
+    if (array_elements->empty())
     {
         /// has([], x) is always false – we can mark the condition as always false
         out.function = RPNElement::ALWAYS_FALSE;
         return true;
     }
 
-    Columns set_columns;
-    DataTypes set_types;
+    /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
+    Columns set_columns = {array_elements};
+    DataTypes set_types = {array_nested_type};
 
-    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
-
-    if (isTuple(array_nested_type))
-    {
-        /// Array of tuples: Array(Tuple(...), Tuple(...), ...)
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*array_nested_type);
-        const auto & element_types = tuple_type.getElements();
-        size_t tuple_size = element_types.size();
-
-        MutableColumns tuple_columns;
-        tuple_columns.reserve(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            tuple_columns.emplace_back(element_types[i]->createColumn());
-
-        for (const auto & value : values)
-        {
-            chassert(value.getType() == Field::Types::Tuple);
-
-            const auto & tuple_value = value.safeGet<Tuple>();
-
-            chassert(tuple_value.size() == tuple_size);
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i]->insert(tuple_value[i]);
-        }
-
-        auto column_tuple = ColumnTuple::create(std::move(tuple_columns));
-        set_columns.emplace_back(std::move(column_tuple));
-        set_types.push_back(array_nested_type);
-    }
-    else
-    {
-        /// Array(T)
-        MutableColumnPtr column = array_nested_type->createColumn();
-        column->reserve(values.size());
-
-        for (const auto & value : values)
-        {
-            column->insert(value);
-        }
-
-        set_columns.emplace_back(std::move(column));
-        set_types.push_back(array_nested_type);
-    }
-
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<MonotonicFunctionsChain> set_transforming_chains;
-    DataTypes data_types;
-    size_t key_args_count = 0;
-
-    analyzeKeyExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
-
-    if (indexes_mapping.empty())
-        return false;
-
-    bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, key_args_count, is_constant_transformed))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -1687,12 +2072,12 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    key ranges (used by partition pruning and minmax), otherwise `NOT has` could prune incorrectly.
     ///    Example: `NOT has([(1, 2)], tuple(i, i))` would effectively turn into `NOT has([1], i)`.
     ///
-    /// - `is_constant_transformed`
+    /// -  if constant is transformed, we set `out.relaxed = true` via `analyzeKeyExpressionForSetIndex()`
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size() || is_constant_transformed)
+    if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
 
     if (out.set_index->size() > 1 || out.relaxed)
@@ -2145,35 +2530,41 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     return false;
 }
 
-bool KeyCondition::canSetValuesBeWrappedByFunctions(
+bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    MonotonicFunctionsChain & out_functions_chain)
+    DeterministicKeyTransformDag & out_transform,
+    bool & out_is_injective) const
 {
+    out_is_injective = false;
+
     // Checking if column name matches any of key subexpressions
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
             return false;
     }
 
-    return extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_res_column_type,
-        out_functions_chain,
-        [](const IFunctionBase & func, const IDataType &)
-        {
-            return func.isDeterministic();
-        });
+    if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform))
+        return false;
+
+    out_is_injective = isDeterministicTransformInjective(out_transform.actions->getActionsDAG(), out_transform.input_name, out_transform.output_name);
+    return true;
 }
 
 struct KeyCondition::RPNElement::Polygon
@@ -2232,6 +2623,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
       */
     Field const_value;
     DataTypePtr const_type;
+
     if (node.isFunction())
     {
         auto func = node.toFunctionNode();
@@ -2301,7 +2693,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
-        bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -2315,7 +2706,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         {
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndexForIn(func, info, out, allow_constant_transformation))
+                if (tryPrepareSetIndexForIn(func, info, out))
                 {
                     const auto atom_it = atom_map.find(func_name);
                     bool valid_atom = atom_it->second(out, const_value);
@@ -2329,7 +2720,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             if (func_name == "has")
             {
-                if (tryPrepareSetIndexForHas(func, info, out, allow_constant_transformation))
+                if (tryPrepareSetIndexForHas(func, info, out))
                 {
                     /// Found empty array constant in has([], x) -> always false
                     if (out.function == RPNElement::ALWAYS_FALSE)
@@ -2369,7 +2760,34 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             size_t key_arg_pos = 1 - const_arg_pos;
             auto key_arg = func.getArgumentAt(key_arg_pos);
-            bool is_constant_transformed = false;
+
+            if (const_value.isNaN())
+            {
+                /// Comparisons with NaN are special:
+                ///  - `x = NaN` is always false for non-NULL x (including NaN itself).
+                ///  - `x != NaN` is always true for non-NULL x.
+                ///
+                /// For Nullable keys we must not fold to ALWAYS_TRUE/ALWAYS_FALSE because `NULL <op> NaN` is NULL
+                if (key_arg.isNullable())
+                    return false;
+
+                if (func_name == "notEquals")
+                {
+                    out.function = RPNElement::ALWAYS_TRUE;
+                    return true;
+                }
+
+                if (func_name == "equals")
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
+                /// For other comparison operators, skip building the atom
+                return false;
+            }
+
+            bool condition_is_relaxed = false;
 
             if (isKeyPossiblyWrappedByMonotonicFunctions(
                     key_arg,
@@ -2382,17 +2800,20 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
             }
             else if (
-                allow_constant_transformation
+                !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
                     key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
-                is_constant_transformed = true;
+                condition_is_relaxed = true;
             }
-            else if (
-                single_point && func_name == "equals"
-                && canConstantBeWrappedByFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+            else if (func_name == "equals" || func_name == "notEquals")
             {
-                is_constant_transformed = true;
+                bool is_injective = false;
+                if (!canConstantBeWrappedByDeterministicFunctions(
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, is_injective))
+                    return false;
+
+                condition_is_relaxed = !is_injective;
             }
             else
                 return false;
@@ -2413,7 +2834,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     func_name = "greaterOrEquals";
                 else if (func_name == "like" || func_name == "notLike" ||
                          func_name == "ilike" || func_name == "notILike" ||
-                         func_name == "startsWith" || func_name == "match")
+                         func_name == "startsWith" || func_name == "startsWithUTF8" || func_name == "match")
                     return false;
             }
 
@@ -2440,7 +2861,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                     if (const_value.isNull())
                         return false;
-                    // No need to set is_constant_transformed because we're doing exact conversion
+                    /// No need to set condition_is_relaxed because we're doing exact conversion
                 }
                 else
                 {
@@ -2457,9 +2878,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                         const_value = converted;
 
-                        // Need to set is_constant_transformed unless we're doing exact conversion
+                        /// Need to set condition_is_relaxed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
-                            is_constant_transformed = true;
+                            condition_is_relaxed = true;
                     }
                     if (!key_expr_type_not_null->equals(*common_type))
                     {
@@ -2477,17 +2898,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 }
             }
 
-            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-            if (is_constant_transformed)
+            /// Relaxed condition must weaken strict inequalities, for example "x > 5" must weaken to "round(x) >= 5"
+            if (condition_is_relaxed)
             {
                 if (func_name == "less")
                     func_name = "lessOrEquals";
                 else if (func_name == "greater")
                     func_name = "greaterOrEquals";
 
-                relaxed = true;
+                out.relaxed = true;
             }
-
         }
         else
         {
@@ -3503,6 +3923,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
+            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
+            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
+            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+                contains = false;
+
             rpn_stack.emplace_back(intersects, !contains);
 
             // we don't create bloom_filter_data if monotonic_functions_chain is present
@@ -3650,7 +4075,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
             Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
 
-            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
                 continue;
@@ -3682,6 +4107,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
+
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
+
             if (element.function == RPNElement::FUNCTION_IS_NULL)
                 rpn_stack.back() = !rpn_stack.back();
         }

@@ -376,7 +376,7 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -394,10 +394,16 @@ public:
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    void deferFiltersAfterFinalIfNeeded();
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -425,6 +431,10 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Row policy / prewhere deferred to after FINAL, if needed
+    FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;

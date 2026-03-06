@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/StatisticsSerialization.h>
 
 
 namespace DB
@@ -26,7 +28,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
-    const ColumnsStatistics & statistics,
     CompressionCodecPtr default_codec_,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
@@ -39,16 +40,15 @@ MergedBlockOutputStream::MergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
-    , write_settings(write_settings_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
 
-    MergeTreeWriterSettings writer_settings(
+    writer_settings = MergeTreeWriterSettings(
         data_part->storage.getContext()->getSettingsRef(),
-        write_settings,
+        write_settings_,
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -76,7 +76,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         metadata_snapshot,
         data_part->storage.getVirtualsPtr(),
         skip_indices,
-        statistics,
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
@@ -179,12 +178,11 @@ MergedBlockOutputStream::Finalizer::~Finalizer()
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
+    const GatheredData & gathered_data,
     bool sync,
-    const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const NamesAndTypesList * total_columns_list)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_substreams).finish();
+    finalizePartAsync(new_part, gathered_data, sync, total_columns_list).finish();
 }
 
 void MergedBlockOutputStream::finalizeIndexGranularity()
@@ -194,17 +192,13 @@ void MergedBlockOutputStream::finalizeIndexGranularity()
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
+    const GatheredData & gathered_data,
     bool sync,
-    const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const NamesAndTypesList * total_columns_list)
 {
     /// Finish write and get checksums.
-    MergeTreeData::DataPart::Checksums checksums;
+    MergeTreeData::DataPart::Checksums checksums = gathered_data.checksums;
     NameSet checksums_to_remove;
-
-    if (additional_column_checksums)
-        checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
     writer->fillChecksums(checksums, checksums_to_remove);
@@ -215,10 +209,12 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     LOG_TRACE(getLogger("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+    {
         checksums.addFile(
             projection_name + ".proj",
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
+    }
 
     NameSet files_to_remove_after_sync;
     if (reset_columns)
@@ -234,7 +230,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    written_files = finalizePartOnDisk(new_part, checksums, additional_columns_substreams);
+    written_files = finalizePartOnDisk(new_part, checksums, gathered_data);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -243,7 +239,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -251,6 +246,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
     }
+
+    /// For constant granularity parts (non-adaptive marks), the writer's in-memory
+    /// granularity has all marks at the constant value. Fix the last mark granularity
+    /// to match the actual row count, same as done when loading parts from disk.
+    /// Note: the granularity pointer may be shared with the source part (mutations reuse it),
+    /// so we use fixedFromRowsCount which returns a new object to avoid racing with concurrent readers.
+    if (const auto * constant_granularity = dynamic_cast<const MergeTreeIndexGranularityConstant *>(new_part->index_granularity.get()))
+        new_part->index_granularity = constant_granularity->fixedFromRowsCount(rows_count);
 
     /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())
@@ -272,14 +275,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
-    ColumnsSubstreams * additional_columns_substreams)
+    const GatheredData & gathered_data)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
 
     auto write_hashed_file = [&](const auto & filename, auto && writer)
     {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, writer_settings.query_write_settings);
         HashingWriteBuffer out_hashing(*out);
         writer(out_hashing);
         out_hashing.finalize();
@@ -291,7 +294,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     auto write_plain_file = [&](const auto & filename, auto && writer)
     {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, write_settings);
+        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, writer_settings.query_write_settings);
         writer(*out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
@@ -358,6 +361,24 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         });
     }
 
+    const auto & statistics = gathered_data.statistics;
+    new_part->setEstimates(statistics.getEstimates());
+
+    if (!statistics.empty())
+    {
+        if (isFullPartStorage(new_part->getDataPartStorage()))
+        {
+            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            written_files.emplace_back(std::move(out));
+        }
+        /// Write statistics as separate compressed files in packed parts to avoid double buffering.
+        else
+        {
+            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            std::move(files.begin(), files.end(), std::back_inserter(written_files));
+        }
+    }
+
     write_plain_file("columns.txt", [&](auto & buffer)
     {
         new_part->getColumns().writeText(buffer);
@@ -371,7 +392,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     /// from writer because of expired TTL.
     auto columns_substreams = ColumnsSubstreams::merge(
         writer->getColumnsSubstreams(),
-        additional_columns_substreams ? *additional_columns_substreams : ColumnsSubstreams{},
+        gathered_data.columns_substreams,
         new_part->getColumns().getNames());
 
     if (!columns_substreams.empty())

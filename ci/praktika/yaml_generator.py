@@ -99,6 +99,7 @@ on:
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{GH_TOKEN_PERMISSIONS}
 
 jobs:
 {JOBS}\
@@ -264,10 +265,28 @@ class PullRequestPushYamlGen:
         self.parser = parser
 
     def generate(self):
+        # Propagate transitive dependencies so that GH Actions expressions like
+        # `!contains(needs.*.outputs.pipeline_status, 'failure')` see the full
+        # upstream chain. Example: A -> B -> C. If A fails then B is skipped;
+        # without transitive `needs`, C may not see A in `needs.*`.
+        _memo: dict = {}
+
+        def _all_needs(job_name: str) -> set:
+            if job_name in _memo:
+                return _memo[job_name]
+            _memo[job_name] = set()  # guard against cycles
+            result = set(self.workflow_config.job_to_config[job_name].needs)
+            for dep in list(result):
+                result |= _all_needs(dep)
+            _memo[job_name] = result
+            return result
+
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(map(Utils.normalize_string, job.needs))
+            needs = ", ".join(
+                sorted(map(Utils.normalize_string, _all_needs(job.name)))
+            )
             job_name = job.name
             job_addons = []
             for addon in job.addons:
@@ -425,7 +444,12 @@ class PullRequestPushYamlGen:
             )
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
-            format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
+            format_kwargs = {
+                "DISPATCH_INPUTS": dispatch_inputs,
+                "GH_TOKEN_PERMISSIONS": (
+                    YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                ),
+            }
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )

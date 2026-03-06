@@ -755,7 +755,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
                                             size_t, int, Permutation &, EqualRanges&) const {}
 
-void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
+void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     /// Place serialized default values into min/max.
 

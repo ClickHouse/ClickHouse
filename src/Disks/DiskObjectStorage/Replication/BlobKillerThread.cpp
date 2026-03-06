@@ -164,6 +164,9 @@ void removeBlobs(
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
+    if (blobs_to_remove.empty())
+        return;
+
     auto tasks = sliceIntoRemoveTasks(blobs_to_remove);
     ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemoveTasks, tasks.size());
     LOG_TRACE(log, "Distributed removal of {} blobs into {} tasks", blobs_to_remove.size(), tasks.size());
@@ -223,13 +226,13 @@ BlobKillerThread::BlobKillerThread(
 
 void BlobKillerThread::run()
 {
-    LOG_TRACE(log, "Starting cleanup");
+    LOG_TEST(log, "Starting cleanup");
 
     executeBlobsCleanup(metadata_request_batch.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
 
     const int64_t schedule_after_ms = DelayWithJitter(reschedule_interval_sec.load() * 1000).getDelayWithJitter(-500, 500);
     task->scheduleAfter(schedule_after_ms);
-    LOG_TRACE(log, "Scheduled after: {} ms", schedule_after_ms);
+    LOG_TEST(log, "Scheduled after: {} ms", schedule_after_ms);
 }
 
 void BlobKillerThread::startup()

@@ -46,7 +46,7 @@ struct ExternalQueryBuilder
     std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
-    std::string composeLoadIdsQuery(const std::vector<UInt64> & ids) const;
+    std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
 
     /** Generate a query to load data by set of composite keys.
       * There are three methods of specification of composite keys in WHERE:
@@ -61,7 +61,7 @@ struct ExternalQueryBuilder
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };
 
-    std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
+    std::string composeLoadKeysQuery(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
 
 
 protected:
@@ -75,7 +75,7 @@ protected:
     void composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Expression in form (x, y, ...) IN ((c1, c2, ...), ...)
-    void composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end) const;
+    void composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Expression in form (x, y, ...)
     void composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const;
@@ -87,10 +87,10 @@ protected:
     static void composeUpdateCondition(const std::string & update_field, const std::string & time_point, WriteBuffer & out);
 
     /// Compose ids condition
-    void composeIdsCondition(const std::vector<UInt64> & ids, WriteBuffer & out) const;
+    void composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const;
 
     /// Compose keys condition
-    void composeKeysCondition(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const;
+    void composeKeysCondition(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const;
 
     /// Write string with specified quoting style.
     void writeQuoted(const std::string & s, WriteBuffer & out) const;

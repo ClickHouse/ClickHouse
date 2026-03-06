@@ -20,20 +20,36 @@ private:
 
     std::uniform_int_distribution<int8_t> ints8;
 
-    std::uniform_int_distribution<uint8_t> uints8, digits, hex_digits_dist;
+    std::uniform_int_distribution<uint8_t> uints8;
+    std::uniform_int_distribution<uint8_t> digits;
+    std::uniform_int_distribution<uint8_t> hex_digits_dist;
 
     std::uniform_int_distribution<int16_t> ints16;
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32, time_hours, second_offsets;
+    std::uniform_int_distribution<int32_t> ints32;
+    std::uniform_int_distribution<int32_t> time_hours;
+    std::uniform_int_distribution<int32_t> second_offsets;
 
-    std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes, subseconds, strlens;
+    std::uniform_int_distribution<uint32_t> uints32;
+    std::uniform_int_distribution<uint32_t> dist1;
+    std::uniform_int_distribution<uint32_t> dist2;
+    std::uniform_int_distribution<uint32_t> dist3;
+    std::uniform_int_distribution<uint32_t> dist4;
+    std::uniform_int_distribution<uint32_t> date_years;
+    std::uniform_int_distribution<uint32_t> datetime_years;
+    std::uniform_int_distribution<uint32_t> datetime64_years;
+    std::uniform_int_distribution<uint32_t> months;
+    std::uniform_int_distribution<uint32_t> hours;
+    std::uniform_int_distribution<uint32_t> minutes;
+    std::uniform_int_distribution<uint32_t> subseconds;
+    std::uniform_int_distribution<uint32_t> strlens;
 
     std::uniform_int_distribution<int64_t> ints64;
 
-    std::uniform_int_distribution<uint64_t> uints64, full_range;
+    std::uniform_int_distribution<uint64_t> uints64;
+    std::uniform_int_distribution<uint64_t> full_range;
 
     std::uniform_real_distribution<double> zero_one;
 

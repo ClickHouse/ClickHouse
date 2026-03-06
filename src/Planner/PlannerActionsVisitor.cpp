@@ -588,7 +588,7 @@ public:
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
@@ -1176,7 +1176,31 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        /// When group_by_use_nulls wraps GROUP BY key constants in Nullable after aggregation,
+        /// the ActionsDAG may contain Nullable nodes where the query tree function expects
+        /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
+        /// In this case, rebuild the function via FunctionFactory with the actual argument types
+        /// so that the result type is correct.
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
+        {
+            const auto & expected_types = function_base->getArgumentTypes();
+            for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
+                argument_types_match = children[i]->result_type->equals(*expected_types[i]);
+        }
+
+        if (!argument_types_match)
+        {
+            if (auto resolver = FunctionFactory::instance().tryGet(
+                    function_node.getFunctionName(), planner_context->getQueryContext()))
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+            else
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
     }
 
     size_t actions_stack_size = actions_stack.size();

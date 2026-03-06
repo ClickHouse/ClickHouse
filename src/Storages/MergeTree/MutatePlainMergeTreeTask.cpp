@@ -117,10 +117,17 @@ bool MutatePlainMergeTreeTask::executeStep()
                     data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
-                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
-                transaction.renameParts();
-                transaction.commit();
+                /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
+                /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
+                /// result is PreActive (not yet committed): REPLACE PARTITION's
+                /// removePartsInRangeFromWorkingSet only removes Active parts and misses the PreActive
+                /// mutation result. After REPLACE releases the lock, the mutation's commit promotes
+                /// the PreActive part to Active, "resurrecting" old data.
+                {
+                    auto lock = storage.lockParts();
+                    storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
+                    transaction.commit(lock);
+                }
 
                 storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();

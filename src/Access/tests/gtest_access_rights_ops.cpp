@@ -924,6 +924,59 @@ TEST(AccessRights, ContainsWithWildcardsAndPartialRevokes)
     lhs.grantWildcard(AccessType::SELECT, "testing");
     rhs.grantWildcard(AccessType::SELECT, "test");
     ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::CREATE_ROLE);
+    lhs.grant(AccessType::ROLE_ADMIN);
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.revoke(AccessType::SELECT, "secret_db2");
+    rhs.revoke(AccessType::SELECT, "secret_db3");
+    ASSERT_TRUE(lhs.contains(rhs));
+    ASSERT_FALSE(rhs.contains(lhs));
 }
 
 TEST(AccessRights, ColumnLevelWildcardOperations)

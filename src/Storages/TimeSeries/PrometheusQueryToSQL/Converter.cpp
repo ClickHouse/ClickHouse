@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
@@ -26,6 +27,18 @@ namespace
     {
         switch (node->node_type)
         {
+            case NodeType::Scalar:
+            {
+                const auto * scalar_node = static_cast<const PQT::Scalar *>(node);
+                return fromLiteral(scalar_node, context);
+            }
+
+            case NodeType::StringLiteral:
+            {
+                const auto * string_node = static_cast<const PQT::StringLiteral *>(node);
+                return fromLiteral(string_node, context);
+            }
+
             case NodeType::InstantSelector:
             {
                 const auto * instant_selector = static_cast<const PQT::InstantSelector *>(node);

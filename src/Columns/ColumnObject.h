@@ -170,7 +170,7 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #endif
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     void reserve(size_t n) override;
     size_t capacity() const override;

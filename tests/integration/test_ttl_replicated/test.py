@@ -538,6 +538,11 @@ def test_ttl_empty_parts(started_cluster):
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
+    if node_left.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer is too slow for this timing-sensitive test"
+        )
+
     # The test times out for sanitizer/ARM builds, so we increase the timeout.
     timeout = 60
     if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \

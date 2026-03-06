@@ -123,6 +123,8 @@ public:
     /// will be just a standalone PageCacheCell not connected to the cache.
     MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
 
+    MappedPtr get(const PageCacheKey & key, bool inject_eviction);
+
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
     /// Make the cache smaller by `memory_limit - memory_usage` bytes.

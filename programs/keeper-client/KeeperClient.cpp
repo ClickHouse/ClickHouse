@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ErrnoException.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
 
@@ -355,6 +356,12 @@ void KeeperClient::runInteractiveReplxx()
     cout << std::endl;
 }
 
+/// In tests-mode, commands are read line by line from stdin.
+/// After each command, a separator (four BEL characters + newline) is written
+/// to stdout so the test harness can detect where one command's output ends.
+/// Errors from failed commands go to stderr.
+/// We must flush stderr before writing the separator to stdout, otherwise
+/// the test harness may see the separator first and miss the error.
 void KeeperClient::runInteractiveInputStream()
 {
     for (String input; std::getline(std::cin, input);)
@@ -362,8 +369,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
-        cout << "\a\a\a\a" << std::endl;
         cerr << std::flush;
+        cout << "\a\a\a\a" << std::endl;
     }
 }
 

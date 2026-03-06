@@ -487,6 +487,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ostr << ' ';
+            print_identifier(delta_kernel_tracing_level);
+            break;
+        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
@@ -503,6 +509,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     print_identifier(cur_log.first) << ".";
                 print_identifier(cur_log.second);
             }
+            break;
+        }
+
+        case Type::ALLOCATE_MEMORY:
+        {
+            ostr << ' ' << untracked_memory_size;
             break;
         }
 
@@ -611,6 +623,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:
+        case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:

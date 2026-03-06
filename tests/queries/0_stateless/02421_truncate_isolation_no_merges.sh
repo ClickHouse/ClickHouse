@@ -49,7 +49,7 @@ function concurrent_drop_before()
     tx 21 "select count() from tt"
     $CLICKHOUSE_CLIENT -q                                 "drop table tt"
     tx 21 "truncate table tt" | grep -Eo "UNKNOWN_TABLE" | uniq
-    tx 21 "rollback"
+    tx 21 "rollback" | grep -v "INVALID_TRANSACTION" ||:
 }
 
 concurrent_drop_before

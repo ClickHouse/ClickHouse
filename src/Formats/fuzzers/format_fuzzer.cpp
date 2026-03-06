@@ -21,9 +21,28 @@
 
 using namespace DB;
 
-static SharedContextHolder shared_context;
-static ContextMutablePtr context;
+static ContextMutablePtr getContext()
+{
+    static SharedContextHolder shared_context = Context::createShared();
+    static ContextMutablePtr context = Context::createGlobal(shared_context.get());
+    return context;
+}
+
+
 static std::string env_format_name;
+
+bool isMerge(int argc, const char * const * argv)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string_view arg{argv[i]};
+        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-ignore_remaining_args")
+            break;
+        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
+            return true;
+    }
+    return false;
+}
 
 static std::string getFormatNameFromEnv()
 {
@@ -33,14 +52,12 @@ static std::string getFormatNameFromEnv()
     return "";
 }
 
-extern "C" int LLVMFuzzerInitialize(int *, char ***)
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
 {
-    if (context)
-        return true;
+    // If it's a merge coordinator don't initialize anything
+    if (isMerge(*argc, *argv))
+        return 0;
 
-    shared_context = Context::createShared();
-    context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
     env_format_name = getFormatNameFromEnv();
 
     MainThreadStatus::getInstance();
@@ -115,7 +132,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         readStringUntilNewlineInto(structure, in);
         assertChar('\n', in);
 
-        ColumnsDescription description = parseColumnsListFromString(structure, context);
+        ColumnsDescription description = parseColumnsListFromString(structure, getContext());
         auto columns_info = description.getOrdinary();
 
         Block header;
@@ -128,7 +145,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             header.insert(std::move(column));
         }
 
-        InputFormatPtr input_format = context->getInputFormat(format, in, header, 13 /* small block size */);
+        InputFormatPtr input_format = getContext()->getInputFormat(format, in, header, 13 /* small block size */);
         assert(input_format->getName() == format);
 
         QueryPipeline pipeline(Pipe(std::move(input_format)));

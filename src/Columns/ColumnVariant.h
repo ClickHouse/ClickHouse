@@ -237,7 +237,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
     bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -260,6 +260,12 @@ public:
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+
+    /// Variant columns pair variant sub-columns with DataTypeVariant's sorted type list.
+    /// The default convertToFullIfNeeded recurses into sub-columns and strips LowCardinality
+    /// from variant columns, but cannot update the corresponding DataTypeVariant, creating
+    /// column/type position mismatches. Override to skip recursion.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
@@ -347,6 +353,8 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override;
+
+    void validateState() const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);

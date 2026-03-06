@@ -1287,6 +1287,36 @@ def test_url_reconnect_in_the_middle(started_cluster):
         assert result == "1000000\t3914219105369203805\n"
 
 
+def test_check_parquet_schema(started_cluster):
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    format_name = 'Parquet'
+    idx = random.randint(0, 1000000)
+    file_path = f'http://minio1:9001/root/test_parquet/test_check_parquet_schema_{idx}.parquet'
+    table_function = f"s3('{file_path}', structure='a Int32, b String', format='{format_name}')"
+    expected_lines = 15000
+    instance.query("DROP TABLE IF EXISTS t_s3_schema_test")
+    instance.query(f"""
+        CREATE TABLE t_s3_schema_test
+        (
+            a Int32,
+            b String
+        )
+        ENGINE = S3('{file_path}', '{format_name}')
+        SETTINGS s3_truncate_on_insert = 1
+    """)
+
+    exec_query_with_retry(
+        instance,
+        f"INSERT INTO t_s3_schema_test SELECT number, randomString(100) FROM numbers({expected_lines})",
+        timeout=300,
+    )
+
+    instance.query("DROP TABLE IF EXISTS test_check_parquet_schema")
+    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (a Int32, b String, c Int32) ENGINE = S3('{file_path}')")
+    instance.query_and_get_error(f"CREATE TABLE test_check_parquet_schema (d Int32, b String) ENGINE = S3('{file_path}')")
+    instance.query(f"CREATE TABLE test_check_parquet_schema (a Int32) ENGINE = S3('{file_path}')")
+
+
 # At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
 @pytest.mark.parametrize(
     "format_name,expected_bytes_read", [("Parquet", 133), ("ORC", 150)]
@@ -1862,7 +1892,7 @@ def test_schema_inference_cache(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     def test(storage_name):
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
@@ -1990,19 +2020,19 @@ def test_schema_inference_cache(started_cluster):
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_hits(instance, files, storage_name, started_cluster, bucket)
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
-        instance.query("system drop schema cache")
+        instance.query("system clear schema cache")
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.csv') select * from numbers(100) settings s3_truncate_on_insert=1"
@@ -2075,7 +2105,7 @@ def test_schema_inference_cache(started_cluster):
             instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
         )
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         res = run_count_query(
@@ -2086,7 +2116,7 @@ def test_schema_inference_cache(started_cluster):
             instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
         )
 
-        instance.query(f"system drop schema cache for {storage_name}")
+        instance.query(f"system clear schema cache for {storage_name}")
         check_cache(instance, [])
 
         instance.query(
@@ -2401,7 +2431,7 @@ def test_union_schema_inference_mode(started_cluster):
     )
 
     for engine in ["s3", "url"]:
-        instance.query("system drop schema cache for s3")
+        instance.query("system clear schema cache for s3")
 
         result = instance.query(
             f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
@@ -2421,7 +2451,7 @@ def test_union_schema_inference_mode(started_cluster):
         )
         assert result == "1\t\\N\t\\N\n" "\\N\t2\t\\N\n" "\\N\t\\N\t2\n"
 
-        instance.query(f"system drop schema cache for {engine}")
+        instance.query(f"system clear schema cache for {engine}")
         result = instance.query(
             f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_name_prefix}2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
@@ -2487,7 +2517,7 @@ def test_s3_format_detection(started_cluster):
 
         assert result == expected_result
 
-        instance.query(f"system drop schema cache for {engine}")
+        instance.query(f"system clear schema cache for {engine}")
 
         result = instance.query(
             f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_format_detection{{0,1}}', auto, 'x UInt64, y String')"
@@ -2567,7 +2597,7 @@ def test_filesystem_cache(started_cluster):
         )
     )
 
-    instance.query("SYSTEM DROP SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR SCHEMA CACHE")
 
     query_id = f"{table_name}-{uuid.uuid4()}"
     instance.query(
@@ -2631,7 +2661,7 @@ def test_page_cache(started_cluster):
     assert 0 < int(misses)
     assert 0 < int(gets)
 
-    instance.query("SYSTEM DROP SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR SCHEMA CACHE")
 
     query_id = f"{table_name}-{uuid.uuid4()}"
     assert "100\n" == instance.query(

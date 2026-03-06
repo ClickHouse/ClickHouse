@@ -1250,7 +1250,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded");
+        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), table_metadata.tracked_files_limit.load());
         return;
     }
 

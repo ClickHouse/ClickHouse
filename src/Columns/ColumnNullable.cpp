@@ -823,14 +823,14 @@ namespace
 /// The following function implements a slightly more general version
 /// of getExtremes() than the implementation from Not-Null IColumns.
 /// It takes into account the possible presence of nullable values.
-void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_array, Field & min, Field & max, bool null_last = false)
+void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_array, Field & min, Field & max, size_t start, size_t end, bool null_last = false)
 {
     size_t number_of_nulls = 0;
-    size_t n = null_array.size();
+    size_t n = end - start;
     NullMap not_null_array(n);
-    for (auto i = 0ul; i < n; ++i)
+    for (size_t i = 0; i < n; ++i)
     {
-        if (null_array[i])
+        if (null_array[start + i])
         {
             ++number_of_nulls;
             not_null_array[i] = 0;
@@ -842,7 +842,7 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
     }
     if (number_of_nulls == 0)
     {
-        nested_column.getExtremes(min, max);
+        nested_column.getExtremes(min, max, start, end);
     }
     else if (number_of_nulls == n)
     {
@@ -851,8 +851,9 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
     }
     else
     {
-        auto filtered_column = nested_column.filter(not_null_array, -1);
-        filtered_column->getExtremes(min, max);
+        auto sub_column = nested_column.cut(start, n);
+        auto filtered_column = sub_column->filter(not_null_array, -1);
+        filtered_column->getExtremes(min, max, 0, filtered_column->size());
         if (null_last)
             max = POSITIVE_INFINITY;
     }
@@ -860,15 +861,15 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
 }
 
 
-void ColumnNullable::getExtremes(Field & min, Field & max) const
+void ColumnNullable::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max);
+    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max, start, end);
 }
 
 
-void ColumnNullable::getExtremesNullLast(Field & min, Field & max) const
+void ColumnNullable::getExtremesNullLast(Field & min, Field & max, size_t start, size_t end) const
 {
-    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max, true);
+    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max, start, end, true);
 }
 
 

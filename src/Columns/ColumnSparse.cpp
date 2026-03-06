@@ -800,12 +800,21 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
     hash.update(_size);
 }
 
-void ColumnSparse::getExtremes(Field & min, Field & max) const
+void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (_size == 0)
+    if (start >= end)
     {
         values->get(0, min);
         values->get(0, max);
+        return;
+    }
+
+    /// For ColumnSparse, range-based extremes are not trivially supported
+    /// due to the sparse representation. Fall back to cut + getExtremes.
+    if (start != 0 || end != _size)
+    {
+        auto sub_column = cut(start, end - start);
+        sub_column->getExtremes(min, max, 0, end - start);
         return;
     }
 
@@ -827,7 +836,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    values->getExtremes(min, max);
+    values->getExtremes(min, max, 0, values->size());
 }
 
 void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const

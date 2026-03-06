@@ -591,24 +591,24 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
+void ColumnDecimal<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (data.empty())
+    if (start >= end)
     {
         min = NearestFieldType<T>(T(0), scale);
         max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
-    T cur_min = data[0];
-    T cur_max = data[0];
+    T cur_min = data[start];
+    T cur_max = data[start];
 
-    for (const T & x : data)
+    for (size_t i = start + 1; i < end; ++i)
     {
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        if (data[i] < cur_min)
+            cur_min = data[i];
+        else if (data[i] > cur_max)
+            cur_max = data[i];
     }
 
     min = NearestFieldType<T>(cur_min, scale);

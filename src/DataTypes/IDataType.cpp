@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IDataType::IDataType() = default;
@@ -215,6 +216,17 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
 
     return res;
+}
+
+std::unique_ptr<IDataType::SubstreamData> IDataType::getDynamicSubcolumnData(
+    std::string_view /*subcolumn_name*/,
+    const SubstreamData & /*data*/,
+    size_t /*initial_array_level*/,
+    bool throw_if_null) const
+{
+    if (throw_if_null)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
+    return nullptr;
 }
 
 bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const

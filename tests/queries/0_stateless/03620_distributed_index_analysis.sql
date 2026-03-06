@@ -38,3 +38,5 @@ where
   and has(Settings, 'allow_experimental_parallel_reading_from_replicas')
   and endsWith(log_comment, '-' || currentDatabase())
 order by event_time_microseconds;
+
+drop table test_10m;

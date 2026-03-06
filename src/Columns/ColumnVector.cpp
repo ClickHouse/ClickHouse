@@ -240,7 +240,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -324,14 +324,14 @@ void ColumnVector<T>::compareColumn(
     }
 
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
+    if (isArchSupported(TargetArch::x86_64_v4))
     {
-        compareColumnImplAVX512BW<T>(data, value, compare_results, direction, nan_direction_hint);
+        compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
         return;
     }
-    if (isArchSupported(TargetArch::AVX2))
+    if (isArchSupported(TargetArch::x86_64_v3))
     {
-        compareColumnImplAVX2<T>(data, value, compare_results, direction, nan_direction_hint);
+        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
         return;
     }
 #endif
@@ -751,7 +751,7 @@ void resize(Container & res_data, size_t reserve_size)
 }
 }
 
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
 template <size_t ELEMENT_WIDTH>
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 {
@@ -850,8 +850,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
 #if USE_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
-    if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
-        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    if (VBMI2_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
+        TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
     {
@@ -955,7 +955,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
@@ -1019,26 +1019,16 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     bool use_window = window_size > 16;
 
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
+    if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
-            replicateImplAVX512BW<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+            replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
-            replicateImplAVX512BW<T, false>(data.data(), size, window_size, offsets, res->getData().data());
-    else if (isArchSupported(TargetArch::AVX512F))
+            replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::x86_64_v3))
         if (use_window)
-            replicateImplAVX512F<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
-            replicateImplAVX512F<T, false>(data.data(), size, window_size, offsets, res->getData().data());
-    else if (isArchSupported(TargetArch::AVX2))
-        if (use_window)
-            replicateImplAVX2<T, true>(data.data(), size, window_size, offsets, res->getData().data());
-        else
-            replicateImplAVX2<T, false>(data.data(), size, window_size, offsets, res->getData().data());
-    else if (isArchSupported(TargetArch::SSE42))
-        if (use_window)
-            replicateImplSSE42<T, true>(data.data(), size, window_size, offsets, res->getData().data());
-        else
-            replicateImplSSE42<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else
 #endif
     {
@@ -1052,45 +1042,51 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <typename T>
-void ColumnVector<T>::getExtremes(Field & min, Field & max) const
+void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    size_t size = data.size();
-
-    if (size == 0)
+    if (start >= end)
     {
         min = T(0);
         max = T(0);
         return;
     }
 
-    bool has_value = false;
-
     /** Skip all NaNs in extremes calculation.
         * If all values are NaNs, then return NaN.
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
-
-    T cur_min = NaNOrZero<T>();
-    T cur_max = NaNOrZero<T>();
-
-    for (const T & x : data)
+    size_t i = start;
+    if constexpr (is_floating_point<T>)
     {
-        if (isNaN(x))
-            continue;
-
-        if (!has_value)
+        for (; i < end; i++)
         {
-            cur_min = x;
-            cur_max = x;
-            has_value = true;
-            continue;
+            if (!isNaN(data[i]))
+                break;
+        }
+        if (i == end)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+    }
+
+    T cur_min = data.data()[i];
+    T cur_max = data.data()[i];
+
+    i++;
+    for (; i < end; i++)
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (isNaN(data[i]))
+                continue;
         }
 
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        const T & x = data.data()[i];
+        cur_min = std::min(x, cur_min);
+        cur_max = std::max(x, cur_max);
     }
 
     min = NearestFieldType<T>(cur_min);
@@ -1157,7 +1153,7 @@ DECLARE_DEFAULT_CODE(
     }
 );
 
-DECLARE_AVX512VBMI_SPECIFIC_CODE(
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
     template <typename Container, typename Type>
     __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
     void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
@@ -1283,9 +1279,9 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types
-        if (isArchSupported(TargetArch::AVX512VBMI))
+        if (isArchSupported(TargetArch::x86_64_icelake))
         {
-            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
+            TargetSpecific::x86_64_icelake::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
             return res;
         }
     }

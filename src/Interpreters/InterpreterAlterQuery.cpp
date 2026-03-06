@@ -142,7 +142,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
 #if CLICKHOUSE_CLOUD
-    if (database->getEngineName() == "Shared" && SharedDatabaseCatalog::instance().shouldReplicateQuery(getContext(), query_ptr))
+    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
     {
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }

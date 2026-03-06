@@ -89,6 +89,10 @@ struct ColumnsWithRowNumbers
     std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
 
+/// Helper throw functions so Column headers don't need to include Exception.h.
+[[noreturn]] void throwCannotPopBack(size_t n, const std::string & column_name, size_t column_size);
+[[noreturn]] void throwColumnConvertNotSupported(std::string_view type_name, const char * as_type);
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -130,7 +134,32 @@ public:
 
     [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+        Ptr converted = convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+
+        Columns new_subcolumns;
+        bool any_changed = false;
+
+        converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
+        {
+            auto new_sub = subcolumn->convertToFullIfNeeded();
+            any_changed |= (new_sub.get() != subcolumn.get());
+            new_subcolumns.push_back(std::move(new_sub));
+        });
+
+        if (!any_changed)
+            return converted;
+
+        auto mutable_column = IColumn::mutate(std::move(converted));
+        size_t i = 0;
+        mutable_column->forEachMutableSubcolumn([&](WrappedPtr & subcolumn)
+        {
+            subcolumn = std::move(new_subcolumns[i++]);
+        });
+
+        return std::move(mutable_column);
     }
 
     /// Creates empty column with the same type.
@@ -506,13 +535,13 @@ public:
     /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
-    /** Computes minimum and maximum element of the column.
+    /** Computes minimum and maximum element of the column in the range [start, end).
       * In addition to numeric types, the function is completely implemented for Date and DateTime.
       * For strings and arrays function should return default value.
       *  (except for constant columns; they should return value of the constant).
-      * If column is empty function should return default value.
+      * If the range is empty the function should return default value.
       */
-    virtual void getExtremes(Field & min, Field & max) const = 0;
+    virtual void getExtremes(Field & min, Field & max, size_t start, size_t end) const = 0;
 
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).

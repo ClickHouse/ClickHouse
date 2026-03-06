@@ -194,6 +194,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/Dictionaries
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do

@@ -373,7 +373,7 @@ void ColumnLazy::protect()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method protect is not supported for {}", getName());
 }
 
-void ColumnLazy::getExtremes(Field &, Field &) const
+void ColumnLazy::getExtremes(Field &, Field &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }

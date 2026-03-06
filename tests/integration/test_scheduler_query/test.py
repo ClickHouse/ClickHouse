@@ -222,18 +222,3 @@ def test_max_waiting_queries_reached() -> None:
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
-def test_under_max_waiting_queries_limit() -> None:
-    node.query(
-        f"""
-        create resource query (query);
-        create workload all settings max_concurrent_queries=1, max_waiting_queries=6;
-        """
-    )
-
-    pool_all = QueryPool(7, "all")
-
-    pool_all.start()
-    ensure_total_concurrency(1)
-    ensure_workload_concurrency("all", 1)
-    pool_all.stop()
-    assert pool_all.last_error is None
