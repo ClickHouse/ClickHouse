@@ -209,14 +209,11 @@ def main():
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
-        # The sccache server sometimes fails to start because of issues with S3
-        # It should start before cmake, since cmake can precompile binaries during
-        # configuration stage
-        results.append(
-            Result.from_commands_run(
-                name="Start sccache server", command="sccache --start-server", retries=3
-            )
-        )
+        # The sccache server sometimes fails to start because of issues with S3.
+        # Start it explicitly with retries before cmake, since cmake can invoke
+        # the compiler during configuration. Non-fatal: build can proceed without it.
+        if not Shell.check("sccache --start-server", retries=3):
+            print("WARNING: sccache server failed to start, build will proceed without it")
         run_shell("sccache stats", "sccache --show-stats")
         results.append(
             Result.from_commands_run(
@@ -286,12 +283,13 @@ def main():
         else:
             deb_arch = "arm64"
 
-        assert Shell.check(f"rm -f {temp_dir}/*.deb")
+        assert Shell.check(f"rm -f {temp_dir}/*.deb {temp_dir}/*.rpm {temp_dir}/*.tgz {temp_dir}/*.tgz.sha512")
 
         results.append(
             Result.from_commands_run(
                 name="Build Packages",
                 command=[
+                    f"rm -rf {build_dir_normalized}/root",
                     f"DESTDIR={build_dir_normalized}/root command time -v ninja programs/install",
                     f"ln -sf {build_dir_normalized}/root {Utils.cwd()}/packages/root",
                     f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version_dict['string']} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",

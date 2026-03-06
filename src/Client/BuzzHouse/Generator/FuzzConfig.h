@@ -262,30 +262,6 @@ public:
     }
 };
 
-class Tokenizer
-{
-public:
-    String name;
-    String type;
-
-    Tokenizer()
-        : name("ngrams")
-        , type("Ngrams")
-    {
-    }
-
-    Tokenizer(const String & name_, const String & type_)
-        : name(name_)
-        , type(type_)
-    {
-    }
-
-    Tokenizer(const Tokenizer & c) = default;
-    Tokenizer(Tokenizer && c) = default;
-    Tokenizer & operator=(const Tokenizer & c) = default;
-    Tokenizer & operator=(Tokenizer && c) noexcept = default;
-};
-
 class FuzzConfig
 {
 private:
@@ -310,7 +286,7 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
-    std::vector<Tokenizer> tokenizers;
+    DB::Strings tokenizers;
 
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
@@ -391,8 +367,7 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql";
     std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
-    std::filesystem::path fuzz_client_out = client_file_path / "fuzz.data";
-    std::filesystem::path fuzz_server_out = server_file_path / "fuzz.data";
+    std::filesystem::path fuzzer_out_file = std::filesystem::temp_directory_path() / "out.data";
     std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()

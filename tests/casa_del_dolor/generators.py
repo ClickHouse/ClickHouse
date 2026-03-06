@@ -59,10 +59,13 @@ class BuzzHouseGenerator(Generator):
             args.client_binary, args.client_config, args.tmp_files_dir, ".json"
         )
 
-        tree = ET.parse(server_settings)
-        root = tree.getroot()
-        if root.tag != "clickhouse":
-            raise Exception("<clickhouse> element not found")
+        if server_settings is None:
+            root = ET.Element("clickhouse")
+        else:
+            tree = ET.parse(server_settings)
+            root = tree.getroot()
+            if root.tag != "clickhouse":
+                raise Exception("<clickhouse> element not found")
 
         # Load configuration
         buzz_config = {}

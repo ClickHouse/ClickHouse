@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 #include <AggregateFunctions/ReservoirSampler.h>
 
@@ -9,7 +10,7 @@
 
 struct Stats
 {
-    size_t errors = 0;
+    std::atomic<size_t> errors{0};
 
     using Sampler = ReservoirSampler<double>;
     struct StatsCollector
@@ -38,8 +39,8 @@ struct Stats
 
     void clear();
 
+    std::mutex mutex;
+
     void report(size_t concurrency);
     void writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp);
 };
-
-

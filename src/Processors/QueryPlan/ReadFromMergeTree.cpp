@@ -2,6 +2,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -96,6 +97,21 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
+/// check if a DAG node only depends on sorting key columns (ActionsDAG version of isExpressionOverSortingKey)
+bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
+{
+    if (sorting_key_set.contains(node->result_name))
+        return true;
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return true; // constants are fine
+    if (node->type == ActionsDAG::ActionType::INPUT)
+        return false; // already checked result_name
+    for (const auto * child : node->children)
+        if (!isNodeOverSortingKey(child, sorting_key_set))
+            return false;
+    return true;
+}
+
 bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
 {
     std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
@@ -185,6 +201,7 @@ namespace Setting
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_partition_pruning;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1885,6 +1902,30 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+namespace
+{
+
+/// Check if all columns of all useful skip indexes are also part of the primary key.
+/// When true, skip indexes cannot cause incorrect FINAL results (since PK-based filtering cannot drop parts with overlapping key ranges),
+/// so the `findPKRangesForFinalAfterSkipIndex` recovery pass can be skipped.
+bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (!primary_key_columns_set.contains(column))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -1894,7 +1935,8 @@ void ReadFromMergeTree::buildIndexes(
     [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
     const ContextPtr & query_context,
     const SelectQueryInfo & query_info_,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_)
 {
     indexes.reset();
 
@@ -1924,8 +1966,16 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
+        /// pass empty filter when skipping partition pruning so the objects exist but useless
+        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
+        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
+        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(
+            metadata_snapshot,
+            effective_filter,
+            query_context,
+            false /* strict */,
+            !settings[Setting::use_partition_pruning] /* skip_analysis */);
     }
 
     indexes->part_values
@@ -1959,8 +2009,6 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     UsefulSkipIndexes skip_indexes;
-    using Key = std::pair<String, size_t>;
-    std::map<Key, size_t> merged;
 
     for (const auto & index : all_indexes)
     {
@@ -1968,20 +2016,6 @@ void ReadFromMergeTree::buildIndexes(
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
-
-        if (index_helper->isMergeable())
-        {
-            auto [it, inserted]
-                = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
-            if (inserted)
-            {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info_, metadata_snapshot);
-            }
-
-            skip_indexes.merged_indices[it->second].addIndex(index_helper);
-            continue;
-        }
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -2027,8 +2061,7 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
-                                                        && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes,
-                                                                indexes->key_condition_rpn_template->hasOnlyConjunctions());
+                                                        && !areAllSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes);
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2121,6 +2154,27 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
         deferred_row_level_filter = query_info.row_level_filter;
     if (defer_prewhere)
         deferred_prewhere_info = query_info.prewhere_info;
+
+    /// don't prune partitions unless the partition key is determined by the sorting key
+    /// matters when FINAL merges across partitions
+    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
+    {
+        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+        const auto & partition_expr_names = partition_key.column_names;
+        bool exprs_match = std::all_of(
+            partition_expr_names.begin(), partition_expr_names.end(),
+            [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+
+        auto partition_required_columns = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        bool columns_match = std::all_of(
+            partition_required_columns.begin(), partition_required_columns.end(),
+            [&](const auto & col) { return sorting_key_set.contains(col); });
+
+        skip_partition_pruning = !exprs_match && !columns_match;
+    }
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2146,18 +2200,41 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         deferFiltersAfterFinalIfNeeded();
         if (deferred_row_level_filter || deferred_prewhere_info)
         {
-            /// build a separate DAG for index analysis, without the deferred filter nodes
+            /// exclude deferred filters from index analysis, but keep sorting-key AND atoms
             NameSet deferred_column_names;
             if (deferred_row_level_filter)
                 deferred_column_names.insert(deferred_row_level_filter->column_name);
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
+            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+            NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
             std::vector<const ActionsDAG::Node *> index_nodes;
+
+            /// collect sorting-key-only atoms from a (possibly nested) AND tree
+            std::function<void(const ActionsDAG::Node *)> collect_sorting_key_atoms =
+                [&](const ActionsDAG::Node * n)
+            {
+                if (isNodeOverSortingKey(n, sorting_key_set))
+                {
+                    index_nodes.push_back(n);
+                    return;
+                }
+                if (n->type == ActionsDAG::ActionType::FUNCTION
+                    && n->function_base && n->function_base->getName() == "and")
+                {
+                    for (const auto * child : n->children)
+                        collect_sorting_key_atoms(child);
+                }
+            };
+
             for (const auto * node : added_filter_nodes.nodes)
             {
                 if (!deferred_column_names.contains(node->result_name))
                     index_nodes.push_back(node);
+                else
+                    collect_sorting_key_atoms(node);
             }
 
             auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
@@ -2173,6 +2250,19 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
+        /// PREWHERE is evaluated at the storage level during data reading, before the
+        /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
+        /// uses DelayedPortsProcessor to ensure sets are built before the main query starts,
+        /// there is a race condition: if a downstream processor (e.g. JoiningTransform with
+        /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
+        /// the set-building pipeline before the set is ready.
+        /// Building sets synchronously here eliminates this race condition entirely.
+        if (query_info.prewhere_info)
+            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+        if (query_info.row_level_filter)
+            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+
         buildIndexes(
             indexes,
             index_filter_dag,
@@ -2182,7 +2272,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             top_k_filter_info,
             context,
             query_info,
-            storage_snapshot->metadata);
+            storage_snapshot->metadata,
+            skip_partition_pruning);
     }
 }
 
@@ -2273,7 +2364,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
-    NameSet indexes_column_names(primary_key_column_names.begin(), primary_key_column_names.end());
+    NameSet indexes_column_names;
+    /// We need not only PK columns, but source columns for this PK calculation as well
+    if (auto required_columns = primary_key.expression->getRequiredColumns(); !required_columns.empty())
+        indexes_column_names.insert(required_columns.begin(), required_columns.end());
     for (const auto & skip_index : indexes->skip_indexes.useful_indices)
     {
         const auto & skip_index_required_columns = skip_index.index->getColumnsRequiredForIndexCalc();
@@ -2476,12 +2570,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & [part_name, ranges] : analyzed_parts_ranges)
             {
                 auto part_range_info = *parts_ranges_map.at(part_name);
-                chassert(part_range_info.ranges.size() == 1);
+                /// Note: part_range_info.ranges may have been split by Query Condition Cache,
+                /// so we cannot assert ranges.size() == 1 here.
                 chassert(part_range_info.exact_ranges.empty());
 
                 part_range_info.ranges = ranges;
                 result_parts_ranges.push_back(part_range_info);
             }
+
+            /// Parts should be sorted by part_index_in_query for Query Condition Cache
+            std::sort(result_parts_ranges.begin(), result_parts_ranges.end(),
+                [](const auto & a, const auto & b) { return a.part_index_in_query < b.part_index_in_query; });
 
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
@@ -3235,7 +3334,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             if (!query_info.input_order_info)
                 return CoordinationMode::Default;
 
-            return result.read_type == ReadType::InOrder
+            if (!query_info.input_order_info->direction)
+                return CoordinationMode::Default;
+
+            return query_info.input_order_info->direction > 0
                 ? CoordinationMode::WithOrder
                 : CoordinationMode::ReverseOrder;
         };
@@ -3547,6 +3649,15 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         expression->describeActions(format_settings.out, prefix);
     }
 
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        format_settings.out << prefix << "Deferred filters (applied after FINAL)" << '\n';
+        if (deferred_row_level_filter)
+            format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
+        if (deferred_prewhere_info)
+            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
+    }
+
     if (virtual_row_conversion)
     {
         format_settings.out << prefix << "Virtual row conversions" << '\n';
@@ -3594,6 +3705,16 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (prewhere_info_map)
         map.add("Prewhere info", std::move(prewhere_info_map));
+
+    if (deferred_prewhere_info || deferred_row_level_filter)
+    {
+        auto deferred_map = std::make_unique<JSONBuilder::JSONMap>();
+        if (deferred_row_level_filter)
+            deferred_map->add("Deferred row level filter column", deferred_row_level_filter->column_name);
+        if (deferred_prewhere_info)
+            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
+        map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
+    }
 
     if (virtual_row_conversion)
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
@@ -3969,24 +4090,6 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
-/// Check if any/all columns with the given skip indexes are also part of the primary key
-bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
-{
-    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
-
-    for (const auto & skip_index : skip_indexes.useful_indices)
-    {
-        for (const auto & column : skip_index.index->index.column_names)
-        {
-            if (primary_key_columns_set.contains(column) && any_one)
-                return true;
-            else if (!primary_key_columns_set.contains(column) && !any_one)
-                return false;
-        }
-    }
-
-    return !any_one;
-}
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
