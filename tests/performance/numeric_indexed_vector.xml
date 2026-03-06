@@ -9,8 +9,8 @@
     <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-20', number, number * number from numbers(57800)</fill_query>
     <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-21', number, number from numbers(57800)</fill_query>
 
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-22', number, number * number from numbers(290000)</fill_query>
-    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-23', number, number from numbers(290000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-22', number, number * number from numbers(150000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-23', number, number from numbers(150000)</fill_query>
 
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(57800)</fill_query>
     <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(57800)</fill_query>

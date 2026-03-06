@@ -72,14 +72,14 @@
     <query>
         WITH rand64() % 1500000 as key
         SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_s{shards}', key)
-        FROM numbers(8600000)
+        FROM numbers(15000000)
         FORMAT Null
     </query>
 
     <query>
         WITH (rand64() % 1000000, toString(rand64() % 1000000)) as key
         SELECT dictHas('default.complex_key_{layout_suffix}_dictionary_s{shards}', key)
-        FROM numbers(1000000)
+        FROM numbers(2000000)
         FORMAT Null
     </query>
 

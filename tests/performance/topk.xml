@@ -19,5 +19,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT {func}({key}) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT {func}({key}) FROM hits_10m_single FORMAT Null</query>
 </test>
