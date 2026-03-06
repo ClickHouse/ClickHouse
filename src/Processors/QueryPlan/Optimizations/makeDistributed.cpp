@@ -338,7 +338,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// TODO: estimate number of buckets based on statistics and available nodes and memory
-    size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
+    const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
     if (read_from_merge_tree_step)
     {
@@ -347,10 +347,6 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
-
-        /// Avoid creating more buckets than there are parts — excess buckets would be empty
-        if (analysis_result)
-            bucket_count = std::min(bucket_count, static_cast<size_t>(read_from_merge_tree_step->getSelectedParts()));
 
         /// Move read step to a new node and set it to distributed read
         read_from_merge_tree_step->setDistributedRead(bucket_count);

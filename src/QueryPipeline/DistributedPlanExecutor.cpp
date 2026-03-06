@@ -451,10 +451,10 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-String serializeQueryPlan(const QueryPlan & query_plan, size_t worker_index = 0, size_t num_workers = 1)
+String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, worker_index, num_workers);
+    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     return out.str();
 }
 
@@ -639,13 +639,12 @@ protected:
         std::vector<std::future<void>> started_tasks;
         started_tasks.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
-        const size_t num_workers = stage.tasks.size();
-        for (size_t worker_index = 0; worker_index < num_workers; ++worker_index)
+        for (const auto & task : stage.tasks)
         {
-            task_description.task = stage.tasks[worker_index];
-            task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, worker_index, num_workers);
+            task_description.task = task;
             started_tasks.emplace_back(startTask(task_description));
         }
 
@@ -1044,21 +1043,21 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
+        std::deque<RunningTaskInfo> started_tasks;
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
-        const size_t num_workers = stage.tasks.size();
-        for (size_t worker_index = 0; worker_index < num_workers; ++worker_index)
+        for (const auto & task : stage.tasks)
         {
             checkCancelled();
 
-            task_description.task = stage.tasks[worker_index];
-            task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, worker_index, num_workers);
+            task_description.task = task;
 
             /// Add exchange destinations for output streams
             task_description.exchange_stream_sources = {};
-            for (const auto & input_stream : task_description.task.input_exchange_streams)
+            for (const auto & input_stream : task.input_exchange_streams)
             {
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
