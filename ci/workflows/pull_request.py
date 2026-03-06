@@ -162,7 +162,7 @@ workflow = Workflow.Config(
             command=JobConfigs.keeper_stress_job.command,
             run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
             digest_config=JobConfigs.keeper_stress_job.digest_config,
-            timeout=3600 * 12,
+            timeout=3600 * 15,
             requires=[ArtifactNames.CH_AMD_BINARY],
             result_name_for_cidb="Keeper Stress",
         ),

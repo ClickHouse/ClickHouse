@@ -78,10 +78,8 @@ def set_default_env():
     for k, v in {
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "true",
-        "KEEPER_MATRIX_BACKENDS": "raftkeeper",
+        "KEEPER_MATRIX_BACKENDS": "default,rocks,raftkeeper",
         "KEEPER_METRICS_INTERVAL_S": "5",
-        # Temporary: run only one scenario to isolate RaftKeeper startup failures.
-        "KEEPER_INCLUDE_IDS": "prod-mix-no-fault",
     }.items():
         os.environ.setdefault(k, v)
 
