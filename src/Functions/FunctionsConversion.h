@@ -1638,7 +1638,56 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
     const auto & vec_from = col_from->getData();
     auto & vec_to = col_to->getData();
 
-    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    /// Batch path for decimal-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, FromDataType> && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, FromDataType> && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertDecimalsBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertDecimalsBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_from->getScale(), col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Batch path for number-to-decimal (excludes DateTime64 and Time64 which need special handling)
+    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>
+        && !std::is_same_v<DataTypeDateTime64, ToDataType>
+        && !std::is_same_v<DataTypeTime64, ToDataType>)
+    {
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            auto & vec_null_map_to = col_null_map_to->getData();
+            convertToDecimalBatch<FromDataType, ToDataType, UInt8>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                vec_null_map_to.data());
+            return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
+        }
+        else
+        {
+            convertToDecimalBatch<FromDataType, ToDataType, void>(
+                vec_from.data(), vec_to.data(), input_rows_count,
+                col_to->getScale(),
+                nullptr);
+            return std::forward<ColTo>(col_to);
+        }
+    }
+    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
         ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
@@ -2562,55 +2611,8 @@ struct ConvertImpl
                                 "Conversion between numeric types and IPv6 is not supported. "
                                 "Probably the passed IPv6 is unquoted");
 
-            /// Batch decimal-to-decimal conversions (excludes DateTime64 and Time64 which need special handling)
-            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>
-                && !std::is_same_v<DataTypeDateTime64, FromDataType> && !std::is_same_v<DataTypeDateTime64, ToDataType>
-                && !std::is_same_v<DataTypeTime64, FromDataType> && !std::is_same_v<DataTypeTime64, ToDataType>)
-            {
-                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                {
-                    ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                    auto & vec_null_map_to = col_null_map_to->getData();
-                    convertDecimalsBatch<FromDataType, ToDataType, UInt8>(
-                        vec_from.data(), vec_to.data(), input_rows_count,
-                        col_from->getScale(), col_to->getScale(),
-                        vec_null_map_to.data());
-                    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-                }
-                else
-                {
-                    convertDecimalsBatch<FromDataType, ToDataType, void>(
-                        vec_from.data(), vec_to.data(), input_rows_count,
-                        col_from->getScale(), col_to->getScale(),
-                        nullptr);
-                    return std::move(col_to);
-                }
-            }
-            /// Batch number-to-decimal conversions (excludes DateTime64 and Time64 which need special handling)
-            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>
-                && !std::is_same_v<DataTypeDateTime64, ToDataType>
-                && !std::is_same_v<DataTypeTime64, ToDataType>)
-            {
-                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                {
-                    ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                    auto & vec_null_map_to = col_null_map_to->getData();
-                    convertToDecimalBatch<FromDataType, ToDataType, UInt8>(
-                        vec_from.data(), vec_to.data(), input_rows_count,
-                        col_to->getScale(),
-                        vec_null_map_to.data());
-                    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-                }
-                else
-                {
-                    convertToDecimalBatch<FromDataType, ToDataType, void>(
-                        vec_from.data(), vec_to.data(), input_rows_count,
-                        col_to->getScale(),
-                        nullptr);
-                    return std::move(col_to);
-                }
-            }
-            /// Remaining decimal conversions (decimal-to-number, DateTime64, Time64)
+            /// All decimal conversions (decimal-to-decimal, number-to-decimal, decimal-to-number)
+            /// Batch path for eligible types is handled inside convertDecimal.
             else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count);
 

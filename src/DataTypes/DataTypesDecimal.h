@@ -155,7 +155,7 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 /// 3. No function call overhead per element
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-void convertDecimalsBatch(
+NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
     const typename FromDataType::FieldType * __restrict from,
     typename ToDataType::FieldType * __restrict to,
     size_t size,
@@ -248,7 +248,7 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 /// Batch conversion from arithmetic types to decimals - optimized to hoist multiplier computation outside the loop
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-void convertToDecimalBatch(
+NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
     const typename FromDataType::FieldType * __restrict from,
     typename ToDataType::FieldType * __restrict to,
     size_t size,
