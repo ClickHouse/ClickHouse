@@ -542,7 +542,7 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return {};
 
     if (auto res = check(right_mask, left_mask))
-        right_join_type = res.value();
+        right_join_type = reverseJoinKind(res.value());
     else
         return {};
 
