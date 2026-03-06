@@ -185,11 +185,14 @@ NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
     static constexpr bool has_nullmap = !std::is_same_v<ReturnType, void>;
     static constexpr bool check_overflow = sizeof(FromFieldType) > sizeof(ToFieldType);
 
-    auto store = [&](size_t i, MaxNativeType converted_value, bool overflow)
+    auto store = [&](size_t i, MaxNativeType converted_value, bool mul_overflow)
     {
+        bool range_overflow = false;
         if constexpr (check_overflow)
-            overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
-                     || converted_value > std::numeric_limits<ToNativeType>::max();
+            range_overflow = converted_value < std::numeric_limits<ToNativeType>::min()
+                          || converted_value > std::numeric_limits<ToNativeType>::max();
+
+        bool overflow = mul_overflow | range_overflow;
 
         if constexpr (has_nullmap)
         {
@@ -198,8 +201,14 @@ NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
         }
         else
         {
-            if (overflow)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
+            if (mul_overflow)
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
+                                std::string(ToDataType::family_name), toString(from[i].value), toString(converted_value));
+            if (range_overflow)
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
+                                std::string(ToDataType::family_name), toString(converted_value),
+                                toString(std::numeric_limits<ToNativeType>::min()),
+                                toString(std::numeric_limits<ToNativeType>::max()));
             to[i] = static_cast<ToNativeType>(converted_value);
         }
     };
