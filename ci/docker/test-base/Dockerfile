@@ -96,6 +96,7 @@ RUN apt-get update \
         perl \
         pv \
         python3-requests \
+        awscli \
         ripgrep \
         zstd \
         locales \
