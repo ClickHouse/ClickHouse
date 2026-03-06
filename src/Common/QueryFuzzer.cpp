@@ -1,7 +1,9 @@
 #include <Common/QueryFuzzer.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -16,16 +18,20 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromOStream.h>
 
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -37,6 +43,7 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTWithElement.h>
@@ -712,6 +719,23 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                     children.erase(children.begin(), children.begin() + 2);
             }
         }
+
+        /// Swap between MergeTree variants that require no mandatory extra columns.
+        /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
+        /// GraphiteMergeTree requires a config name, so those are excluded.
+        if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
+        {
+            static const Strings safe_mergetree_engines = {
+                "MergeTree",
+                "AggregatingMergeTree",
+                "SummingMergeTree",
+                "ReplacingMergeTree",
+            };
+            engine_name = pickRandomly(fuzz_rand, safe_mergetree_engines);
+            /// Clear engine arguments to avoid arity mismatches with the new engine
+            if (auto & arguments = create.storage->engine->arguments)
+                arguments->children.clear();
+        }
     }
 
     /// For MergeTree family engines, inject hot table settings with low probability.
@@ -781,6 +805,51 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
         if (fuzz_rand() % 20 == 0)
             fuzz_setting("vertical_merge_algorithm_min_bytes_to_activate", UInt64(1) << (fuzz_rand() % 14));
+    }
+
+    /// Toggle CREATE ↔ CREATE OR REPLACE
+    if (fuzz_rand() % 100 == 0)
+        create.create_or_replace = !create.create_or_replace;
+
+
+    /// Drop storage clauses: each is optional and null-checked by formatImpl
+    if (create.storage)
+    {
+        /// Helper: remove a raw-pointer child from storage->children and null it
+        auto drop_storage_clause = [&](IAST *& ptr)
+        {
+            if (!ptr)
+                return;
+            auto & ch = create.storage->children;
+            ch.erase(std::remove_if(ch.begin(), ch.end(), [&](const ASTPtr & c) { return c.get() == ptr; }), ch.end());
+            ptr = nullptr;
+        };
+
+        if (fuzz_rand() % 50 == 0)
+            drop_storage_clause(create.storage->sample_by);
+        if (fuzz_rand() % 50 == 0)
+            drop_storage_clause(create.storage->primary_key);
+        if (fuzz_rand() % 50 == 0)
+            drop_storage_clause(create.storage->ttl_table);
+        /// PARTITION BY removal is rarer — changes table sharding fundamentally
+        if (fuzz_rand() % 100 == 0)
+            drop_storage_clause(create.storage->partition_by);
+    }
+
+    /// Drop a random projection (exercises projection removal path)
+    if (create.columns_list && create.columns_list->projections && !create.columns_list->projections->children.empty()
+        && fuzz_rand() % 50 == 0)
+    {
+        auto & projs = create.columns_list->projections->children;
+        projs.erase(projs.begin() + fuzz_rand() % projs.size());
+    }
+
+    /// Drop a random constraint (exercises constraint removal path)
+    if (create.columns_list && create.columns_list->constraints && !create.columns_list->constraints->children.empty()
+        && fuzz_rand() % 50 == 0)
+    {
+        auto & cons = create.columns_list->constraints->children;
+        cons.erase(cons.begin() + fuzz_rand() % cons.size());
     }
 
     auto full_name = create.getTable();
@@ -897,9 +966,22 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         DataTypes elements;
         for (const auto & element : type_tuple->getElements())
             elements.push_back(fuzzDataType(element));
-
-        return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-                                              : std::make_shared<DataTypeTuple>(elements);
+        /// Occasionally add a new alternative
+        if (elements.size() < 10 && fuzz_rand() % 10 == 0)
+            elements.push_back(getRandomType());
+        /// Occasionally drop an alternative (keep at least 1)
+        if (elements.size() > 1 && fuzz_rand() % 10 == 0)
+            elements.erase(elements.begin() + fuzz_rand() % elements.size());
+        if (type_tuple->hasExplicitNames())
+        {
+            auto names = type_tuple->getElementNames();
+            /// Pad with synthetic names if a field was added, truncate if one was dropped
+            while (names.size() < elements.size())
+                names.push_back("f" + std::to_string(names.size()));
+            names.resize(elements.size());
+            return std::make_shared<DataTypeTuple>(elements, names);
+        }
+        return std::make_shared<DataTypeTuple>(elements);
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -942,6 +1024,74 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                 return std::make_shared<DataTypeLowCardinality>(nested_type);
         }
     }
+
+    const auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(type.get());
+    if (type_fixed_string && fuzz_rand() % 4 != 0)
+    {
+        /// Mutate length by ±2 (relative) or pick a fresh random size
+        const size_t n = type_fixed_string->getN();
+        const size_t new_n = (fuzz_rand() % 4 == 0)
+            ? (fuzz_rand() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1)
+            : std::clamp<size_t>(n + fuzz_rand() % 5 - 2, 1, MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
+        return std::make_shared<DataTypeFixedString>(new_n);
+    }
+
+    const auto * type_datetime64 = typeid_cast<const DataTypeDateTime64 *>(type.get());
+    if (type_datetime64 && fuzz_rand() % 4 != 0)
+        return std::make_shared<DataTypeDateTime64>(fuzz_rand() % 10); /// scale in [0, 9]
+
+    const auto * type_dynamic = typeid_cast<const DataTypeDynamic *>(type.get());
+    if (type_dynamic && fuzz_rand() % 4 != 0)
+        return std::make_shared<DataTypeDynamic>(fuzz_rand() % 255);
+
+    const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get());
+    if (type_variant && fuzz_rand() % 4 != 0)
+    {
+        DataTypes variants;
+        for (const auto & v : type_variant->getVariants())
+            variants.push_back(fuzzDataType(v));
+        /// Occasionally add a new alternative
+        if (variants.size() < 10 && fuzz_rand() % 4 == 0)
+            variants.push_back(getRandomType());
+        /// Occasionally drop an alternative (keep at least 1)
+        if (variants.size() > 1 && fuzz_rand() % 4 == 0)
+            variants.erase(variants.begin() + fuzz_rand() % variants.size());
+        return std::make_shared<DataTypeVariant>(variants);
+    }
+
+    /// Enum types: add or remove enum values
+#define FUZZ_ENUM(INT_TYPE) \
+    if (const auto * dt_enum = typeid_cast<const DataTypeEnum<INT_TYPE> *>(type.get()); dt_enum && fuzz_rand() % 4 != 0) \
+    { \
+        auto values = dt_enum->getValues(); \
+        if (values.size() < 50 && fuzz_rand() % 3 == 0) \
+        { \
+            const auto new_val = static_cast<INT_TYPE>(fuzz_rand()); \
+            if (!dt_enum->hasValue(new_val)) \
+                values.emplace_back("e" + std::to_string(values.size()), new_val); \
+        } \
+        if (values.size() > 1 && fuzz_rand() % 3 == 0) \
+            values.erase(values.begin() + fuzz_rand() % values.size()); \
+        if (!values.empty()) \
+            return std::make_shared<DataTypeEnum<INT_TYPE>>(values); \
+    }
+    FUZZ_ENUM(Int8)
+    FUZZ_ENUM(Int16)
+#undef FUZZ_ENUM
+
+    /// Decimal types: mutate scale, and occasionally the precision tier too
+#define FUZZ_DECIMAL(DT) \
+    if (const auto * dt_dec = typeid_cast<const DataTypeDecimal<DT> *>(type.get()); dt_dec && fuzz_rand() % 4 != 0) \
+    { \
+        const UInt32 max_prec = DataTypeDecimal<DT>::maxPrecision(); \
+        const UInt32 new_prec = (fuzz_rand() % 4 == 0) ? UInt32(fuzz_rand() % max_prec + 1) : dt_dec->getPrecision(); \
+        return std::make_shared<DataTypeDecimal<DT>>(new_prec, UInt32(fuzz_rand() % (new_prec + 1))); \
+    }
+    FUZZ_DECIMAL(Decimal32)
+    FUZZ_DECIMAL(Decimal64)
+    FUZZ_DECIMAL(Decimal128)
+    FUZZ_DECIMAL(Decimal256)
+#undef FUZZ_DECIMAL
 
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
@@ -1010,10 +1160,20 @@ DataTypePtr QueryFuzzer::getRandomType()
             DISPATCH(Decimal256)
         case TypeIndex::FixedString:
             return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20 + 1);
-        case TypeIndex::Enum8:
-            return std::make_shared<DataTypeUInt8>();
-        case TypeIndex::Enum16:
-            return std::make_shared<DataTypeUInt16>();
+        case TypeIndex::Enum8: {
+            DataTypeEnum<Int8>::Values values;
+            const size_t n = fuzz_rand() % 4 + 1;
+            for (size_t i = 0; i < n; ++i)
+                values.emplace_back("v" + std::to_string(i), static_cast<Int8>(i));
+            return std::make_shared<DataTypeEnum<Int8>>(values);
+        }
+        case TypeIndex::Enum16: {
+            DataTypeEnum<Int16>::Values values;
+            const size_t n = fuzz_rand() % 4 + 1;
+            for (size_t i = 0; i < n; ++i)
+                values.emplace_back("v" + std::to_string(i), static_cast<Int16>(i));
+            return std::make_shared<DataTypeEnum<Int16>>(values);
+        }
         case TypeIndex::Dynamic:
             return std::make_shared<DataTypeDynamic>(fuzz_rand() % 20);
         default:
@@ -1500,6 +1660,30 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
         }
     }
     return tryNegateNextPredicate(predicate, negProb);
+}
+
+void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
+{
+    if (!predicate)
+        return;
+
+    ASTPtr new_pred;
+    if (fuzz_rand() % 50 == 0)
+        new_pred = generatePredicate();
+    else if (fuzz_rand() % 50 == 0)
+    {
+        auto permuted = permutePredicateClause(predicate, 10);
+        if (permuted != predicate)
+            new_pred = permuted;
+    }
+
+    if (new_pred)
+    {
+        for (auto & child : children)
+            if (child == predicate)
+                child = new_pred;
+        predicate = new_pred;
+    }
 }
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
@@ -2126,6 +2310,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
         fuzzOrderByElement(order_by_element);
+        fuzz(order_by_element->children);
     }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
@@ -2495,6 +2680,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 select->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
         }
 
+        /// Fuzz INTERPOLATE clause (used with ORDER BY ... WITH FILL)
+        if (select->interpolate())
+        {
+            if (fuzz_rand() % 100 == 0)
+                select->setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
+            else
+            {
+                auto & interpolate_children = select->interpolate()->children;
+                if (interpolate_children.size() > 1 && fuzz_rand() % 50 == 0)
+                    interpolate_children.erase(interpolate_children.begin() + fuzz_rand() % interpolate_children.size());
+            }
+        }
+
         fuzz(select->children);
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
@@ -2521,7 +2719,166 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * create_query = typeid_cast<ASTCreateQuery *>(ast.get()))
     {
+        /// Toggle CREATE ↔ ATTACH to exercise the attach path with the same schema
+        if (fuzz_rand() % 100 == 0)
+            create_query->attach = !create_query->attach;
         fuzzCreateQuery(*create_query);
+    }
+    else if (auto * drop_query = typeid_cast<ASTDropQuery *>(ast.get()))
+    {
+        /// Cycle between DROP / DETACH / TRUNCATE
+        if (fuzz_rand() % 100 == 0)
+            drop_query->kind = static_cast<ASTDropQuery::Kind>(fuzz_rand() % 3);
+        /// DETACH PERMANENTLY: object survives server restart without re-attach
+        if (drop_query->kind == ASTDropQuery::Detach && fuzz_rand() % 30 == 0)
+            drop_query->permanently = !drop_query->permanently;
+        /// DROP SYNC: wait for all mutations/merges to finish before returning
+        if (drop_query->kind == ASTDropQuery::Drop && fuzz_rand() % 20 == 0)
+            drop_query->sync = !drop_query->sync;
+    }
+    else if (auto * insert_query = typeid_cast<ASTInsertQuery *>(ast.get()))
+    {
+        /// Remove a column from the explicit column list (exercises DEFAULT filling)
+        if (insert_query->columns && insert_query->columns->children.size() > 1 && fuzz_rand() % 100 == 0)
+        {
+            insert_query->columns->children.erase(
+                insert_query->columns->children.begin() + fuzz_rand() % insert_query->columns->children.size());
+        }
+        /// Swap format string — only safe when there is no inline data
+        if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
+        {
+            static const std::vector<String> formats = {
+                "Values",
+                "CSV",
+                "TSV",
+                "TabSeparated",
+                "TabSeparatedRaw",
+                "TSKV",
+                "JSON",
+                "JSONCompact",
+                "JSONColumns",
+                "JSONColumnsWithMetadata",
+                "JSONEachRow",
+                "JSONStringsEachRow",
+                "JSONLines",
+                "JSONCompactEachRow",
+                "JSONCompactStringsEachRow",
+                "JSONObjectEachRow",
+                "JSONCompactColumns",
+                "BSONEachRow",
+                "Native",
+                "RowBinary",
+                "MsgPack",
+                "LineAsString",
+                "RawBLOB",
+                "Parquet",
+                "Arrow",
+                "ArrowStream",
+                "ORC",
+                "Avro",
+            };
+            insert_query->format = formats[fuzz_rand() % formats.size()];
+        }
+        /// Occasionally drop inline SETTINGS
+        if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
+        {
+            auto & ch = insert_query->children;
+            ch.erase(std::remove(ch.begin(), ch.end(), insert_query->settings_ast), ch.end());
+            insert_query->settings_ast = {};
+        }
+        fuzz(insert_query->children);
+    }
+    else if (auto * delete_query = typeid_cast<ASTDeleteQuery *>(ast.get()))
+    {
+        fuzzMandatoryPredicate(delete_query->predicate, delete_query->children);
+        fuzz(delete_query->children);
+    }
+    else if (auto * update_query = typeid_cast<ASTUpdateQuery *>(ast.get()))
+    {
+        fuzzMandatoryPredicate(update_query->predicate, update_query->children);
+        /// Fuzz SET assignments: remove a column assignment if multiple exist
+        if (update_query->assignments && update_query->assignments->children.size() > 1 && fuzz_rand() % 50 == 0)
+        {
+            update_query->assignments->children.erase(
+                update_query->assignments->children.begin() + fuzz_rand() % update_query->assignments->children.size());
+        }
+        fuzz(update_query->children);
+    }
+    else if (auto * alter_query = typeid_cast<ASTAlterQuery *>(ast.get()))
+    {
+        /// Remove a random command from a multi-command ALTER (exercises partial-ALTER paths)
+        if (alter_query->command_list && alter_query->command_list->children.size() > 1 && fuzz_rand() % 100 == 0)
+        {
+            auto & cmds = alter_query->command_list->children;
+            cmds.erase(cmds.begin() + fuzz_rand() % cmds.size());
+        }
+        fuzz(alter_query->children);
+    }
+    else if (auto * alter_cmd = typeid_cast<ASTAlterCommand *>(ast.get()))
+    {
+        switch (alter_cmd->type)
+        {
+            case ASTAlterCommand::DELETE:
+            case ASTAlterCommand::UPDATE:
+                /// WHERE predicate is mandatory — replace or permute, never remove
+                if (alter_cmd->predicate)
+                {
+                    for (auto & child : alter_cmd->children)
+                    {
+                        if (child.get() == alter_cmd->predicate)
+                        {
+                            fuzzMandatoryPredicate(child, alter_cmd->children);
+                            alter_cmd->predicate = child.get();
+                            break;
+                        }
+                    }
+                }
+                if (alter_cmd->type == ASTAlterCommand::UPDATE && alter_cmd->update_assignments)
+                {
+                    auto & asgns = alter_cmd->update_assignments->children;
+                    if (asgns.size() > 1 && fuzz_rand() % 50 == 0)
+                        asgns.erase(asgns.begin() + fuzz_rand() % asgns.size());
+                }
+                break;
+            case ASTAlterCommand::ADD_COLUMN:
+            case ASTAlterCommand::MODIFY_COLUMN:
+                /// fuzzColumnDeclaration is normally only called from fuzzCreateQuery;
+                /// exercise it here too so ALTER MODIFY COLUMN paths get the same coverage
+                if (alter_cmd->col_decl)
+                    if (auto * col = alter_cmd->col_decl->as<ASTColumnDeclaration>())
+                        fuzzColumnDeclaration(*col);
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->first = !alter_cmd->first;
+                break;
+            case ASTAlterCommand::DROP_COLUMN:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->clear_column = !alter_cmd->clear_column;
+                break;
+            case ASTAlterCommand::DROP_INDEX:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->clear_index = !alter_cmd->clear_index;
+                break;
+            case ASTAlterCommand::DROP_PROJECTION:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->clear_projection = !alter_cmd->clear_projection;
+                break;
+            case ASTAlterCommand::DROP_STATISTICS:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->clear_statistics = !alter_cmd->clear_statistics;
+                break;
+            case ASTAlterCommand::DROP_PARTITION:
+            case ASTAlterCommand::ATTACH_PARTITION:
+            case ASTAlterCommand::MOVE_PARTITION:
+            case ASTAlterCommand::DROP_DETACHED_PARTITION:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->detach = !alter_cmd->detach;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
+                break;
+            default:
+                break;
+        }
+        fuzz(alter_cmd->children);
     }
     else if (auto * optimize_query = typeid_cast<ASTOptimizeQuery *>(ast.get()))
     {
@@ -2570,6 +2927,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 200 == 0)
             with_elem->name = "cte_" + std::to_string(fuzz_rand() % 10);
         fuzz(with_elem->children);
+    }
+    else if (auto * interpolate_elem = typeid_cast<ASTInterpolateElement *>(ast.get()))
+    {
+        /// Occasionally rename the target column to exercise unresolved-column paths
+        if (fuzz_rand() % 200 == 0)
+            interpolate_elem->column = "col_" + std::to_string(fuzz_rand() % 10);
+        fuzz(interpolate_elem->children);
     }
     else if (auto * sample_ratio = typeid_cast<ASTSampleRatio *>(ast.get()))
     {
