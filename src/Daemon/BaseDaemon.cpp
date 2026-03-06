@@ -230,12 +230,14 @@ void BaseDaemon::closeFDs()
 
 void BaseDaemon::initialize(Application & self)
 {
-    closeFDs();
-
-    /// Remember the original working directory before any chdir calls below.
+    /// Remember the original working directory before closing file descriptors
+    /// and before any chdir calls below.
     /// This is needed to correctly resolve relative config paths later.
+    /// It must be done before closeFDs() because on macOS, closing file descriptors
+    /// may interfere with fs::current_path().
     original_working_directory = fs::current_path();
 
+    closeFDs();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
