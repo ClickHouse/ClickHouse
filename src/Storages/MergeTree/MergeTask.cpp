@@ -2259,29 +2259,20 @@ public:
         bool force_,
         const MergeTreeMutableDataPartPtr & data_part_)
         : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
-        , context(context_)
-        , metadata_snapshot(metadata_snapshot_)
-        , old_ttl_infos(old_ttl_infos_)
-        , current_time(current_time_)
-        , force(force_)
-        , data_part(data_part_)
     {
-        /// Collect subqueries eagerly in the constructor, following the same pattern as TTLStep.
-        /// transformPipeline() runs later during pipeline construction, after getSubqueries()
-        /// has already been called by createMergedStream(), so subqueries must be available now.
-        TTLDeleteFilterTransform probe(context, input_header_, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
-        subqueries_for_sets = probe.getSubqueries();
+        /// Create the transform once and reuse it in transformPipeline(), following the
+        /// same pattern as TTLStep. This ensures the FutureSet objects filled by
+        /// CreatingSetStep are the same ones used during execution.
+        transform = std::make_shared<TTLDeleteFilterTransform>(
+            context_, input_header_, metadata_snapshot_, old_ttl_infos_, current_time_, force_, data_part_);
+        subqueries_for_sets = transform->getSubqueries();
     }
 
     String getName() const override { return "TTLDeleteFilter"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<TTLDeleteFilterTransform>(
-                context, header, metadata_snapshot, old_ttl_infos, current_time, force, data_part);
-        });
+        pipeline.addTransform(transform);
     }
 
     void updateOutputHeader() override
@@ -2297,7 +2288,7 @@ private:
         return ITransformingStep::Traits
         {
             {
-                .returns_single_stream = false,
+                .returns_single_stream = true,
                 .preserves_number_of_streams = true,
                 .preserves_sorting = true,
             },
@@ -2307,12 +2298,7 @@ private:
         };
     }
 
-    ContextPtr context;
-    StorageMetadataPtr metadata_snapshot;
-    IMergeTreeDataPart::TTLInfos old_ttl_infos;
-    time_t current_time;
-    bool force;
-    MergeTreeMutableDataPartPtr data_part;
+    std::shared_ptr<TTLDeleteFilterTransform> transform;
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
