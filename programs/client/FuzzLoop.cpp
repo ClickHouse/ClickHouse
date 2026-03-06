@@ -676,7 +676,7 @@ bool Client::buzzHouse()
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t roundtrip_oracle = 10
                     * static_cast<uint32_t>(fuzz_config->allow_query_oracles
-                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t external_call
                     = 10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
@@ -881,7 +881,7 @@ bool Client::buzzHouse()
                 {
                     /// Roundtrip oracle: check that encode/decode and encrypt/decrypt preserve data
                     const auto & tbl = rg.pickRandomly(
-                        gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
+                        gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content));
 
                     sq2.Clear();
                     qo.generateRoundtripOracleQueries(rg, gen, tbl.get(), sq1, sq2);
