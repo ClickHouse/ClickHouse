@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <map>
+#include <mutex>
+#include <vector>
 
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -9,7 +12,7 @@
 
 struct Stats
 {
-    size_t errors = 0;
+    std::atomic<size_t> errors{0};
 
     using Sampler = ReservoirSampler<double>;
     /// All StatsCollector access must be protected by Runner::mutex
@@ -39,6 +42,8 @@ struct Stats
     void addOp(Coordination::OpNum op_num, uint64_t microseconds, size_t requests_inc, size_t bytes_inc);
 
     void clear();
+
+    std::mutex mutex;
 
     void report(size_t concurrency);
     void writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp);

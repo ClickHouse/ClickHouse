@@ -9,10 +9,10 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <metadata_path>/var/lib/clickhouse/disks/custom_path</metadata_path>
             </s3>
-            <hdd>
+            <hdd_disk>
                 <type>local</type>
                 <path>/</path>
-            </hdd>
+            </hdd_disk>
         </disks>
         <policies>
             <s3>
@@ -22,8 +22,25 @@
                     </main>
                 </volumes>
             </s3>
+            <hdd>
+                <volumes>
+                    <main>
+                        <disk>hdd_disk</disk>
+                    </main>
+                </volumes>
+            </hdd>
         </policies>
     </storage_configuration>
 
     <s3_retry_attempts>10</s3_retry_attempts>
+
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <storage_policy>hdd</storage_policy>
+    </query_log>
+    <merge_tree>
+        <storage_policy>hdd</storage_policy>
+    </merge_tree>
 </clickhouse>
