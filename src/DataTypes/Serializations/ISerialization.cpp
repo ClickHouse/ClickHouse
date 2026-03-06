@@ -48,6 +48,13 @@ void throwInvalidSerializationState(const ISerialization * serialization, const 
             demangle(got.name()));
 }
 
+UInt128 ISerialization::getHash() const
+{
+    if (!cached_hash)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash is not set for serialization {}", typeid(*this).name());
+    return *cached_hash;
+}
+
 SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
 {
     return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *

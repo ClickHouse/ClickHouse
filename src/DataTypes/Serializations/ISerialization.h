@@ -671,10 +671,11 @@ public:
 
     /// Returns the hash that uniquely identifies this serialization object.
     /// Set by pooled() or manually for non-pooled objects.
-    UInt128 getHash() const { return cached_hash; }
+    /// Throws LOGICAL_ERROR if the hash has not been set.
+    UInt128 getHash() const;
 
 protected:
-    UInt128 cached_hash{};
+    std::optional<UInt128> cached_hash;
 
     /// Look up the pool by hash; on cache miss call the creator to build
     /// the object.  The creator is invoked at most once and only on miss.
