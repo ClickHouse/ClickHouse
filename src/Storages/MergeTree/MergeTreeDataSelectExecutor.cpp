@@ -201,7 +201,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     LoggerPtr log)
 {
     const Settings & settings = context->getSettingsRef();
-    /// Sampling.
     MergeTreeDataSelectSamplingData sampling;
 
     RelativeSize relative_sample_size = 0;

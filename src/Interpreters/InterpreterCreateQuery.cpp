@@ -192,7 +192,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
-
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard

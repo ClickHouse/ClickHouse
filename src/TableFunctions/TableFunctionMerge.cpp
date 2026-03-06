@@ -87,7 +87,6 @@ std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTree
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
-
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Table function 'merge' requires from 1 to 2 parameters: "

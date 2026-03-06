@@ -35,7 +35,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
     node = select_query;
-
     ParserKeyword s_select(Keyword::SELECT);
     ParserKeyword s_all(Keyword::ALL);
     ParserKeyword s_distinct(Keyword::DISTINCT);

@@ -29,6 +29,7 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 {
     GenerateResult res;
     res.chunk = std::move(cur_chunk);
+
     res.is_done = true;
     return res;
 }

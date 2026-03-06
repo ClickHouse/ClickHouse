@@ -170,6 +170,7 @@ namespace
 void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 {
     ExecutionStatus result(0);
+
     for (auto & command : commands)
     {
         try

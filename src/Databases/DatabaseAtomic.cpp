@@ -150,6 +150,7 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
     assert(relative_table_path != data_path && !relative_table_path.empty());
+
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
     createDirectoriesUnlocked();

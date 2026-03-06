@@ -85,8 +85,6 @@ false
 static size_t handle_error_code(
     const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
 {
-    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
-    // Log the message before we fail.
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
         if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))

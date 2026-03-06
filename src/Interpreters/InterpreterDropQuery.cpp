@@ -79,6 +79,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
+
     ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
     for (const auto & drop_query_ptr : drops)
     {

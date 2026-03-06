@@ -97,7 +97,6 @@ public:
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
-
             if (arguments.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
 

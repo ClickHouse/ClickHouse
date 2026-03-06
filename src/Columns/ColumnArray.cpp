@@ -82,7 +82,6 @@ std::string ColumnArray::getName() const { return "Array(" + getData().getName()
 MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
 {
     auto res = ColumnArray::create(getData().cloneEmpty());
-
     if (to_size == 0)
         return res;
 

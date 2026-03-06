@@ -77,7 +77,6 @@ WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
     WeakHash32 hash(s);
-
     const T * begin = data.data();
     const T * end = begin + s;
     UInt32 * hash_data = hash.getData().data();

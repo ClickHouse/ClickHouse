@@ -272,7 +272,6 @@ void StorageBuffer::read(
     size_t num_streams)
 {
     bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
-
     if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.

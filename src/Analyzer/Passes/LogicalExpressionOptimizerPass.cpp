@@ -83,7 +83,6 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
 {
     QueryTreeNodePtrWithHashSet all_arguments;
     QueryTreeNodePtrWithHashSet is_null_arguments;
-
     for (const auto & node : nodes)
     {
         const auto * func_node = node->as<FunctionNode>();

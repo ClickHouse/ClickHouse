@@ -26,6 +26,7 @@ namespace detail
 UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 {
     const auto * arg_type = named_column.type.get();
+
     bool ok = checkAndGetDataType<DataTypeUInt64>(arg_type)
         || checkAndGetDataType<DataTypeUInt32>(arg_type)
         || checkAndGetDataType<DataTypeUInt16>(arg_type)
@@ -41,6 +42,7 @@ UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
     ColumnUInt8::MutablePtr null_map = nullptr;
+
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
     {
         null_map = ColumnUInt8::create();

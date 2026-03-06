@@ -90,7 +90,6 @@ bool Field::operator< (const Field & rhs) const
         return true;
     if (which > rhs.which)
         return false;
-
     switch (which)
     {
         case Types::Null:    return get<Null>() < rhs.get<Null>();

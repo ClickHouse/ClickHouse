@@ -65,7 +65,6 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
 MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 {
     auto res = ColumnString::create();
-
     if (to_size == 0)
         return res;
 

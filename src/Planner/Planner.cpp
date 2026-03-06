@@ -217,7 +217,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 {
     bool collect_filters = false;
     const auto & settings = query_context->getSettingsRef();
-
     bool parallel_replicas_estimation_enabled
         = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
 

@@ -61,7 +61,6 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sql_security{Keyword::SQL_SECURITY};
     ParserKeyword s_invoker{Keyword::INVOKER};
     ParserKeyword s_none{Keyword::NONE};
-
     bool is_definer_current_user = false;
     ASTPtr definer;
     std::optional<SQLSecurityType> type;
