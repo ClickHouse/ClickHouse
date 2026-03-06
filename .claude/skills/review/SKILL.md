@@ -3,7 +3,7 @@ name: review
 description: Review a ClickHouse Pull Request for correctness, safety, performance, and compliance. Use when the user wants to review a PR or diff.
 argument-hint: "[PR-number or branch-name or diff-spec]"
 disable-model-invocation: false
-allowed-tools: Agent, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
+allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 ---
 
 # ClickHouse Code Review Skill
@@ -27,7 +27,7 @@ allowed-tools: Agent, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 - Get the diff: `git diff $0`
 - Get commit messages: `git log --oneline $0`
 
-Store the diff for analysis. If the diff is very large (>5000 lines), use the Agent tool with `subagent_type=Explore` to analyze different parts in parallel.
+Store the diff for analysis. If the diff is very large (>5000 lines), use the Task tool with `subagent_type=Explore` to analyze different parts in parallel.
 
 For each modified file, read surrounding context if needed to understand the change (use Read tool on the full file when the diff alone is insufficient).
 
@@ -264,6 +264,6 @@ STYLE & CONDUCT
 
 ## Notes
 
-- For large PRs, use Agent tool with `subagent_type=Explore` to analyze different subsystems in parallel
+- For large PRs, use Task tool with `subagent_type=Explore` to analyze different subsystems in parallel
 - Read full files when diff context is insufficient to judge correctness
 - Include code suggestions as minimal diffs where helpful
