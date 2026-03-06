@@ -1,3 +1,5 @@
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_on_insert = 1;
+
 DROP TABLE IF EXISTS test_auto_stats_replacing;
 
 CREATE TABLE test_auto_stats_replacing

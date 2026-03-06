@@ -6,6 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function_name="$CLICKHOUSE_DATABASE"_02960_f1
 $CLICKHOUSE_CLIENT "
+SET optimize_trivial_insert_select = 0;
 DROP FUNCTION IF EXISTS $function_name;
 CREATE FUNCTION $function_name AS (x) -> x;
 

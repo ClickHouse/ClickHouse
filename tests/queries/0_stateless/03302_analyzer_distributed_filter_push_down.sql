@@ -4,8 +4,12 @@
 set enable_analyzer=1;
 set serialize_query_plan = 0;
 set enable_parallel_replicas = 0;
+set optimize_on_insert = 1;
 set prefer_localhost_replica=1;
 set optimize_aggregation_in_order=0, optimize_read_in_order=0;
+set query_plan_optimize_prewhere=1;
+set optimize_move_to_prewhere=1;
+set optimize_skip_unused_shards=0;
 
 select '============ #66878';
 

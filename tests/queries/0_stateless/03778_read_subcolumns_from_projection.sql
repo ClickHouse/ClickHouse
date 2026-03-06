@@ -2,6 +2,7 @@
 -- Tag no-parallel-replicas: output of explain is different
 
 SET enable_analyzer=1;
+SET optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (

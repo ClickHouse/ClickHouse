@@ -1,4 +1,7 @@
 -- Tags: no-parallel-replicas
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS data_02771;
 

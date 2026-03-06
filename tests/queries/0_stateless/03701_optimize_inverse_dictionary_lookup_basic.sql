@@ -4,6 +4,7 @@
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_or_like_chain = 0;
+SET optimize_multiif_to_if = 1;
 
 DROP DICTIONARY IF EXISTS colors;
 DROP TABLE IF EXISTS ref_colors;

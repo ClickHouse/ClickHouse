@@ -2,6 +2,7 @@
 set log_queries=1;
 set log_queries_min_type='QUERY_FINISH';
 set optimize_use_implicit_projections=1;
+SET optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t;
 

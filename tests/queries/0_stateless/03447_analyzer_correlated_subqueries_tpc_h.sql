@@ -89,6 +89,8 @@ ORDER BY (l_orderkey, l_linenumber);
 -- "Quantifying TPC-H Choke Points and Their Optimizations":
 -- ORDER BY (l_shipdate, l_orderkey, l_linenumber);
 
+SET optimize_trivial_insert_select = 0;
+
 INSERT INTO nation SELECT * FROM generateRandom() LIMIT 1;
 INSERT INTO region SELECT * FROM generateRandom() LIMIT 1;
 INSERT INTO part SELECT * FROM generateRandom() LIMIT 1;
@@ -101,6 +103,7 @@ INSERT INTO lineitem SELECT * FROM generateRandom() LIMIT 1;
 set enable_analyzer = 1;
 set allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 -- Q2
 SELECT

@@ -6,6 +6,7 @@ SET log_queries = 1;
 SET log_query_settings = 1;
 SET mutations_sync = 2;
 SET max_execution_time = 60;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 -- test rely on local execution, - force parallel replicas to genearate local plan
 SET parallel_replicas_local_plan=1;

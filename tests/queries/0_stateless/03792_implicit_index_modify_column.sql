@@ -3,6 +3,8 @@
 -- Implicit indices should not prevent any ALTERs, even if `alter_column_secondary_index_mode` is set to 'throw'
 
 SET enable_analyzer=1; -- Different plan
+SET query_plan_optimize_prewhere=1;
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS test_alter;
 CREATE TABLE test_alter (

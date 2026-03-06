@@ -5,6 +5,8 @@
 -- Tests both explicit and implicit indices with compact, and wide parts
 
 SET enable_analyzer = 1; -- Old analyzer: EXPLAIN output differs
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS test_long_index_name;
 
