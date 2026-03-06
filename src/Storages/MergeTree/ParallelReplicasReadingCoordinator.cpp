@@ -571,7 +571,7 @@ void DefaultCoordinator::tryToStealFromQueues(
         for (auto replica : order)
             tryToStealFromQueue(
                 distribution_by_hash_queue[replica],
-                (scan_mode == ScanMode::TakeEverythingAvailable ? -1 : replica),
+                replica,
                 replica_num,
                 scan_mode,
                 min_number_of_marks,
@@ -819,9 +819,10 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     /// We still respect the three-phase scan mode progression for proper metrics tracking
     if (isLastReplica())
     {
-        while (true)
+        size_t before;
+        do
         {
-            size_t before = current_mark_size;
+            before = current_mark_size;
 
             /// Phase 1: Take segments assigned to this replica by hash
             size_t before_phase1 = current_mark_size;
@@ -840,11 +841,8 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
             selectPartsAndRanges(
                 request.replica_num, ScanMode::TakeEverythingAvailable, SIZE_MAX, current_mark_size, response.description);
             stolen_unassigned += current_mark_size - before_phase3;
-
-            /// If nothing was taken in this iteration, we're done
-            if (current_mark_size == before)
-                break;
         }
+        while (current_mark_size > before); /// If nothing was taken in this iteration, we're done
     }
     else
     {
