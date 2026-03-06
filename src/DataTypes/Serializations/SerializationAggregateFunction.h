@@ -22,10 +22,7 @@ public:
 
     static UInt128 getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_);
 
-    static SerializationPtr create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
-    {
-        return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
-    }
+    static SerializationPtr create(const AggregateFunctionPtr & function_, String type_name_, size_t version_);
 
     size_t allocatedBytes() const override;
 

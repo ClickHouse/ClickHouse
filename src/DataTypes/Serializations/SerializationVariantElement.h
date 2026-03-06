@@ -32,10 +32,7 @@ public:
 
     size_t allocatedBytes() const override;
 
-    static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
-    {
-        return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_); });
-    }
+    static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

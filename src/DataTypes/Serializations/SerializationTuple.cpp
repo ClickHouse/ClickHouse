@@ -153,6 +153,12 @@ void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<vo
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
 }
 
+SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
+{
+    auto hash = getHash(elems_, has_explicit_names_);
+    return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
+}
+
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe<void>(elems.size(), column, [&]

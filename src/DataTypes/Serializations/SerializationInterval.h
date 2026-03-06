@@ -17,10 +17,7 @@ private:
 public:
     static UInt128 getHash(IntervalKind kind_);
 
-    static SerializationPtr create(IntervalKind kind_)
-    {
-        return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
-    }
+    static SerializationPtr create(IntervalKind kind_);
 
     size_t allocatedBytes() const override;
 

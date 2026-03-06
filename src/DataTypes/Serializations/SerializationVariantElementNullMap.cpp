@@ -47,6 +47,11 @@ UInt128 SerializationVariantElementNullMap::getHash(const String & variant_eleme
     return hash.get128();
 }
 
+SerializationPtr SerializationVariantElementNullMap::create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+{
+    return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_); });
+}
+
 void SerializationVariantElementNullMap::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
     const DB::ISerialization::StreamCallback & callback,

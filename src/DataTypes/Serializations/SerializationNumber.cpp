@@ -237,6 +237,12 @@ UInt128 SerializationNumber<T>::getHash()
 }
 
 template <typename T>
+SerializationPtr SerializationNumber<T>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationNumber<T>(); });
+}
+
+template <typename T>
 size_t SerializationNumber<T>::allocatedBytes() const
 {
     return sizeof(*this);

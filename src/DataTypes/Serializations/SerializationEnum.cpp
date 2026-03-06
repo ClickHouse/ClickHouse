@@ -236,6 +236,18 @@ UInt128 SerializationEnum<Type>::getHash(const Values & values)
 }
 
 template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
+{
+    return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
+}
+
+template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const Values & values_)
+{
+    return ISerialization::pooled(getHash(values_), [&] { return new SerializationEnum(values_); });
+}
+
+template <typename Type>
 size_t SerializationEnum<Type>::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);

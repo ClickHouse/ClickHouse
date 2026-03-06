@@ -199,6 +199,11 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     }
 }
 
+SerializationPtr SerializationFixedString::create(size_t n_)
+{
+    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
+}
+
 
 void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

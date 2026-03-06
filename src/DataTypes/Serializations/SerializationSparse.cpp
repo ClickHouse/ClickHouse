@@ -664,9 +664,19 @@ size_t SerializationSparse::allocatedBytes() const
     return sizeof(*this);
 }
 
+SerializationPtr SerializationSparse::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationSparse(nested_); });
+}
+
 size_t SerializationSparseNullMap::allocatedBytes() const
 {
     return sizeof(*this);
+}
+
+SerializationPtr SerializationSparseNullMap::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationSparseNullMap(); });
 }
 
 }

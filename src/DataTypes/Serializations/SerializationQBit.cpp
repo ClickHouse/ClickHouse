@@ -619,6 +619,11 @@ void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __
     return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
 }
 
+SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+{
+    return ISerialization::pooled(getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
+}
+
 
 template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);

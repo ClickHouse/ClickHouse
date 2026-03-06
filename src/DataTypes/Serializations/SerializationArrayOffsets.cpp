@@ -13,6 +13,11 @@ UInt128 SerializationArrayOffsets::getHash()
     return hash.get128();
 }
 
+SerializationPtr SerializationArrayOffsets::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationArrayOffsets(); });
+}
+
 void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,

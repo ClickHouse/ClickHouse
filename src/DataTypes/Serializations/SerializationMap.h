@@ -19,10 +19,7 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
 
-    static SerializationPtr create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_)
-    {
-        return ISerialization::pooled(getHash(nested_), [&] { return new SerializationMap(key_type_, value_type_, nested_); });
-    }
+    static SerializationPtr create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_);
 
     size_t allocatedBytes() const override;
 

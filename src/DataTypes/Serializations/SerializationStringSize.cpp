@@ -22,6 +22,11 @@ UInt128 SerializationStringSize::getHash(MergeTreeStringSerializationVersion ver
     return hash.get128();
 }
 
+SerializationPtr SerializationStringSize::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
+}
+
 void SerializationStringSize::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {

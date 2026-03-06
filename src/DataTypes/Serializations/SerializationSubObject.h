@@ -22,10 +22,7 @@ private:
 public:
     static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_);
 
-    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type)
-    {
-        return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type); });
-    }
+    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
 
     size_t allocatedBytes() const override;
 

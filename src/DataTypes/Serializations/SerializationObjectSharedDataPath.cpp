@@ -50,6 +50,11 @@ UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nest
     return hash.get128();
 }
 
+SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket)
+{
+    return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket); });
+}
+
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;

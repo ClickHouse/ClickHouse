@@ -14,10 +14,7 @@ private:
 public:
     static UInt128 getHash(UInt32 scale_, const TimezoneMixin & time_zone_);
 
-    static SerializationPtr create(UInt32 scale_, const TimezoneMixin & time_zone_)
-    {
-        return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
-    }
+    static SerializationPtr create(UInt32 scale_, const TimezoneMixin & time_zone_);
 
     size_t allocatedBytes() const override;
 

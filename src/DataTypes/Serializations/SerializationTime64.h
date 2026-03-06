@@ -19,15 +19,9 @@ private:
 public:
     static UInt128 getHash(UInt32 scale_);
 
-    static SerializationPtr create(UInt32 scale_)
-    {
-        return ISerialization::pooled(getHash(scale_), [=] { return new SerializationTime64(scale_); });
-    }
+    static SerializationPtr create(UInt32 scale_);
 
-    static SerializationPtr create(UInt32 scale_, const DataTypeTime64 & time_type)
-    {
-        return ISerialization::pooled(getHash(scale_), [&] { return new SerializationTime64(scale_, time_type); });
-    }
+    static SerializationPtr create(UInt32 scale_, const DataTypeTime64 & time_type);
 
     size_t allocatedBytes() const override;
 

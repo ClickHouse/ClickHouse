@@ -38,6 +38,11 @@ UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
     return hash.get128();
 }
 
+SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
+}
+
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 

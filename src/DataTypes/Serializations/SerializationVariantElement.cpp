@@ -26,6 +26,11 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     return hash.get128();
 }
 
+SerializationPtr SerializationVariantElement::create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+{
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_); });
+}
+
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
 {
     /// During deserialization discriminators and variant streams can be shared.

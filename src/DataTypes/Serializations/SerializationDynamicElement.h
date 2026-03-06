@@ -26,10 +26,7 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_);
 
-    static SerializationPtr create(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
-    {
-        return ISerialization::pooled(getHash(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_), [&] { return new SerializationDynamicElement(nested_, dynamic_element_name_, nested_subcolumn_, is_null_map_subcolumn_); });
-    }
+    static SerializationPtr create(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false);
 
     size_t allocatedBytes() const override;
 

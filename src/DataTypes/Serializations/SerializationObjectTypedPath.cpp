@@ -24,6 +24,11 @@ UInt128 SerializationObjectTypedPath::getHash(const SerializationPtr & nested_, 
     return hash.get128();
 }
 
+SerializationPtr SerializationObjectTypedPath::create(const SerializationPtr & nested_, const String & path_)
+{
+    return ISerialization::pooled(getHash(nested_, path_), [&] { return new SerializationObjectTypedPath(nested_, path_); });
+}
+
 void SerializationObjectTypedPath::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
     const DB::ISerialization::StreamCallback & callback,

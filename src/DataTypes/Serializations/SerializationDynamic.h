@@ -19,10 +19,7 @@ private:
 public:
     static UInt128 getHash(size_t max_dynamic_types_);
 
-    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
-    {
-        return ISerialization::pooled(getHash(max_dynamic_types_), [=] { return new SerializationDynamic(max_dynamic_types_); });
-    }
+    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
 
     size_t allocatedBytes() const override;
 

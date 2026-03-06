@@ -930,6 +930,11 @@ static void serializeTextImpl(
     }
 }
 
+SerializationPtr SerializationDynamic::create(size_t max_dynamic_types_)
+{
+    return ISerialization::pooled(getHash(max_dynamic_types_), [=] { return new SerializationDynamic(max_dynamic_types_); });
+}
+
 void SerializationDynamic::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)

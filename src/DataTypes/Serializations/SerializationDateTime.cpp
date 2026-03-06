@@ -99,6 +99,16 @@ SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
 {
 }
 
+SerializationPtr SerializationDateTime::create(const TimezoneMixin & time_zone_)
+{
+    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDateTime(time_zone_); });
+}
+
+SerializationPtr SerializationTime::create(const DataTypeTime & time_type)
+{
+    return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
+}
+
 void SerializationDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];

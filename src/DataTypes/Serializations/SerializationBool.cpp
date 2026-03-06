@@ -440,6 +440,11 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     return ReturnType(true);
 }
 
+SerializationPtr SerializationBool::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationBool(nested_); });
+}
+
 void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextQuotedImpl<void>(column, istr, settings);

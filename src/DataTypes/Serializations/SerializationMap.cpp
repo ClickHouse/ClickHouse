@@ -131,6 +131,11 @@ void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> &
     }
 }
 
+SerializationPtr SerializationMap::create(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationMap(key_type_, value_type_, nested_); });
+}
+
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,

@@ -255,6 +255,11 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
     column_concrete.getData().push_back(place);
 }
 
+SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+{
+    return ISerialization::pooled(getHash(function_, type_name_, version_), [&] { return new SerializationAggregateFunction(function_, std::move(type_name_), version_); });
+}
+
 void SerializationAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num, version), ostr);

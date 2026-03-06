@@ -34,10 +34,7 @@ private:
 public:
     static UInt128 getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
 
-    static SerializationPtr create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
-    {
-        return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_); });
-    }
+    static SerializationPtr create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
 
     size_t allocatedBytes() const override;
 

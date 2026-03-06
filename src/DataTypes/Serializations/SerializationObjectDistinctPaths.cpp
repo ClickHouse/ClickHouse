@@ -31,6 +31,11 @@ UInt128 SerializationObjectDistinctPaths::getHash(const std::vector<String> & ty
     return hash.get128();
 }
 
+SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<String> & typed_paths_)
+{
+    return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
+}
+
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
     /// State of the whole Object column structure.

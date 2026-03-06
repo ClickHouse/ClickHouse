@@ -194,6 +194,12 @@ UInt128 SerializationIP<IPv>::getHash()
 }
 
 template <typename IPv>
+SerializationPtr SerializationIP<IPv>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationIP<IPv>(); });
+}
+
+template <typename IPv>
 size_t SerializationIP<IPv>::allocatedBytes() const
 {
     return sizeof(*this);

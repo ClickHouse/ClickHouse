@@ -945,6 +945,11 @@ void SerializationNullable::serializeNullXML(DB::WriteBuffer & ostr)
     writeCString("\\N", ostr);
 }
 
+SerializationPtr SerializationNullable::create(const SerializationPtr & nested_, bool use_default_null_map_)
+{
+    return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
+}
+
 size_t SerializationNullable::allocatedBytes() const
 {
     return sizeof(*this);

@@ -17,10 +17,7 @@ public:
 
     static UInt128 getHash(UInt32 precision_, UInt32 scale_);
 
-    static SerializationPtr create(UInt32 precision_, UInt32 scale_)
-    {
-        return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
-    }
+    static SerializationPtr create(UInt32 precision_, UInt32 scale_);
 
     size_t allocatedBytes() const override;
 

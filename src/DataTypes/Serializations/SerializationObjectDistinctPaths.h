@@ -21,10 +21,7 @@ private:
 public:
     static UInt128 getHash(const std::vector<String> & typed_paths_);
 
-    static SerializationPtr create(const std::vector<String> & typed_paths_)
-    {
-        return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
-    }
+    static SerializationPtr create(const std::vector<String> & typed_paths_);
 
     size_t allocatedBytes() const override;
 

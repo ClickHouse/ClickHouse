@@ -25,10 +25,7 @@ private:
 public:
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
 
-    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM)
-    {
-        return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
-    }
+    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
     size_t allocatedBytes() const override;
 

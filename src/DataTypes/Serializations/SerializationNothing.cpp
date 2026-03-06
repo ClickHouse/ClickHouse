@@ -20,6 +20,11 @@ UInt128 SerializationNothing::getHash()
     return hash.get128();
 }
 
+SerializationPtr SerializationNothing::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationNothing(); });
+}
+
 void SerializationNothing::throwNoSerialization()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for type Nothing");

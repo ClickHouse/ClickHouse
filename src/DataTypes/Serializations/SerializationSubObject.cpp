@@ -43,6 +43,11 @@ UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std:
     return hash.get128();
 }
 
+SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type)
+{
+    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type); });
+}
+
 struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeBinaryBulkState
 {
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;

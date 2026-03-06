@@ -53,6 +53,11 @@ UInt128 SerializationInterval::getHash(IntervalKind kind_)
     return hash.get128();
 }
 
+SerializationPtr SerializationInterval::create(IntervalKind kind_)
+{
+    return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
+}
+
 void SerializationInterval::serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     switch (settings.interval_output_format)

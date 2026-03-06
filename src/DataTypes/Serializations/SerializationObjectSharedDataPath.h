@@ -15,10 +15,7 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket_);
 
-    static SerializationPtr create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket)
-    {
-        return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, subcolumn_type_, bucket); });
-    }
+    static SerializationPtr create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket);
 
     size_t allocatedBytes() const override;
 

@@ -143,6 +143,12 @@ UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
 }
 
 template <typename T>
+SerializationPtr SerializationDecimal<T>::create(UInt32 precision_, UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
+}
+
+template <typename T>
 size_t SerializationDecimal<T>::allocatedBytes() const
 {
     return sizeof(*this);

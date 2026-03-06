@@ -97,6 +97,11 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB should be converted to a regular column before usage");
 }
 
+SerializationPtr SerializationDetached::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationDetached(nested_); });
+}
+
 size_t SerializationDetached::allocatedBytes() const
 {
     return sizeof(*this);

@@ -144,6 +144,11 @@ SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_
 {
 }
 
+SerializationPtr SerializationDate32::create(const DateLUTImpl & time_zone_)
+{
+    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate32(time_zone_); });
+}
+
 size_t SerializationDate32::allocatedBytes() const
 {
     return sizeof(*this);

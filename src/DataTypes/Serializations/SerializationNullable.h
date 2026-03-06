@@ -23,10 +23,7 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
 
-    static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false)
-    {
-        return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
-    }
+    static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
 
     size_t allocatedBytes() const override;
 

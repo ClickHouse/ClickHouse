@@ -116,6 +116,11 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
     }
 }
 
+SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
+{
+    return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
+}
+
 
 bool SerializationDateTime64::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

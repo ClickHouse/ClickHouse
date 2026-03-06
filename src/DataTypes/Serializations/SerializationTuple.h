@@ -21,11 +21,7 @@ private:
 public:
     static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
 
-    static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_)
-    {
-        auto hash = getHash(elems_, has_explicit_names_);
-        return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
-    }
+    static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_);
 
     size_t allocatedBytes() const override;
 

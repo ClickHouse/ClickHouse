@@ -38,6 +38,11 @@ UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version
     return hash.get128();
 }
 
+SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();

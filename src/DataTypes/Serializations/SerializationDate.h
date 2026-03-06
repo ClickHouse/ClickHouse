@@ -14,10 +14,7 @@ private:
 public:
     static UInt128 getHash(const DateLUTImpl & time_zone_);
 
-    static SerializationPtr create(const DateLUTImpl & time_zone_ = DateLUT::instance())
-    {
-        return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate(time_zone_); });
-    }
+    static SerializationPtr create(const DateLUTImpl & time_zone_ = DateLUT::instance());
 
     size_t allocatedBytes() const override;
 

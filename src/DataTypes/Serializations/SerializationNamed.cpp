@@ -32,6 +32,11 @@ UInt128 SerializationNamed::getHash(const SerializationPtr & nested_, const Stri
     return hash.get128();
 }
 
+SerializationPtr SerializationNamed::create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_)
+{
+    return ISerialization::pooled(getHash(nested_, name_, substream_type_), [&] { return new SerializationNamed(nested_, name_, substream_type_); });
+}
+
 void SerializationNamed::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

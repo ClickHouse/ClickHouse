@@ -18,6 +18,11 @@ UInt128 SerializationUUID::getHash()
     return hash.get128();
 }
 
+SerializationPtr SerializationUUID::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationUUID(); });
+}
+
 void SerializationUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(assert_cast<const ColumnUUID &>(column).getData()[row_num], ostr);

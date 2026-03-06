@@ -16,10 +16,7 @@ private:
 public:
     static UInt128 getHash();
 
-    static SerializationPtr create()
-    {
-        return ISerialization::pooled(getHash(), [] { return new SerializationIP<IPv>(); });
-    }
+    static SerializationPtr create();
 
     size_t allocatedBytes() const override;
 

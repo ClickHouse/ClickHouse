@@ -102,6 +102,16 @@ static inline bool tryReadText(
     return tryReadTime64Text(x, scale, istr);
 }
 
+SerializationPtr SerializationTime64::create(UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(scale_), [=] { return new SerializationTime64(scale_); });
+}
+
+SerializationPtr SerializationTime64::create(UInt32 scale_, const DataTypeTime64 & time_type)
+{
+    return ISerialization::pooled(getHash(scale_), [&] { return new SerializationTime64(scale_, time_type); });
+}
+
 
 bool SerializationTime64::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

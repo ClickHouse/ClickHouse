@@ -34,15 +34,8 @@ private:
 public:
     static UInt128 getHash(const Values & values);
 
-    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
-    {
-        return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
-    }
-
-    static SerializationPtr create(const Values & values_)
-    {
-        return ISerialization::pooled(getHash(values_), [&] { return new SerializationEnum(values_); });
-    }
+    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type);
+    static SerializationPtr create(const Values & values_);
 
     size_t allocatedBytes() const override;
 

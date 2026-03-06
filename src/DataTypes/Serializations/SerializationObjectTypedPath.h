@@ -20,10 +20,7 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & nested_, const String & path_);
 
-    static SerializationPtr create(const SerializationPtr & nested_, const String & path_)
-    {
-        return ISerialization::pooled(getHash(nested_, path_), [&] { return new SerializationObjectTypedPath(nested_, path_); });
-    }
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_);
 
     size_t allocatedBytes() const override;
 

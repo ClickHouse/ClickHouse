@@ -31,6 +31,11 @@ UInt128 SerializationReplicated::getHash(const SerializationPtr & nested_)
     return hash.get128();
 }
 
+SerializationPtr SerializationReplicated::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationReplicated(nested_); });
+}
+
 ISerialization::KindStack SerializationReplicated::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();
