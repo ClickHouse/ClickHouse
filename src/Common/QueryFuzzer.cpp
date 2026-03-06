@@ -18,6 +18,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -29,13 +30,16 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -2026,6 +2030,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             with_union->union_mode
                 = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
         }
+        auto & union_members = with_union->list_of_selects->children;
+        if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
+        {
+            /// Drop a random member from the UNION
+            union_members.erase(union_members.begin() + fuzz_rand() % union_members.size());
+        }
+        else if (!union_members.empty() && fuzz_rand() % 100 == 0)
+        {
+            /// Duplicate a random member (exercises UNION with identical branches)
+            union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
+        }
+
         fuzz(with_union->list_of_selects);
         /// Fuzzing SELECT query to EXPLAIN query randomly.
         /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
@@ -2070,6 +2086,33 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         fuzzTableName(*table_expr);
 
+        /// Fuzz SAMPLE clause
+        if (table_expr->sample_size)
+        {
+            /// Occasionally remove the SAMPLE clause entirely
+            if (fuzz_rand() % 50 == 0)
+            {
+                auto & ch = table_expr->children;
+                ch.erase(std::remove(ch.begin(), ch.end(), table_expr->sample_size), ch.end());
+                if (table_expr->sample_offset)
+                    ch.erase(std::remove(ch.begin(), ch.end(), table_expr->sample_offset), ch.end());
+                table_expr->sample_size = {};
+                table_expr->sample_offset = {};
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            /// Add a random SAMPLE clause
+            static const std::vector<std::pair<UInt64, UInt64>> sample_ratios = {{1, 2}, {1, 10}, {1, 100}, {1, 1000}, {1, 1}, {2, 10}};
+            const auto & [num, den] = sample_ratios[fuzz_rand() % sample_ratios.size()];
+            ASTSampleRatio::Rational r;
+            r.numerator = num;
+            r.denominator = den;
+            auto sample_node = make_intrusive<ASTSampleRatio>(r);
+            table_expr->sample_size = sample_node;
+            table_expr->children.push_back(sample_node);
+        }
+
         fuzz(table_expr->children);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
@@ -2082,7 +2125,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
-        static const std::unordered_set<String> & cast_functions = {"_CAST", "CAST", "accurateCast", "accurateCastOrNull"};
+        static const std::unordered_set<String> cast_functions = {"_CAST", "CAST", "accurateCast", "accurateCastOrNull"};
 
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
@@ -2201,6 +2244,25 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 50 == 0)
         {
             select->distinct = !select->distinct;
+        }
+
+        /// Fuzz WITH (CTE) clause
+        if (select->with())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                /// Drop the entire WITH clause
+                select->setExpression(ASTSelectQuery::Expression::WITH, {});
+            }
+            else
+            {
+                if (fuzz_rand() % 200 == 0)
+                    select->recursive_with = !select->recursive_with;
+                /// Remove a random CTE element if multiple exist
+                auto & with_children = select->with()->children;
+                if (with_children.size() > 1 && fuzz_rand() % 50 == 0)
+                    with_children.erase(with_children.begin() + fuzz_rand() % with_children.size());
+            }
         }
         if (select->tables().get())
         {
@@ -2349,11 +2411,85 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             select->order_by_all = !select->order_by_all;
         }
-        if (select->limitLength() && fuzz_rand() % 50 == 0)
+        if (select->limitLength())
         {
-            select->limit_with_ties = !select->limit_with_ties;
+            if (fuzz_rand() % 50 == 0)
+                select->limit_with_ties = !select->limit_with_ties;
+            /// Occasionally drop LIMIT (and OFFSET too)
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
+            }
+            else
+            {
+                /// Add/remove LIMIT OFFSET
+                if (select->limitOffset())
+                {
+                    if (fuzz_rand() % 50 == 0)
+                        select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
+                }
+                else if (fuzz_rand() % 50 == 0)
+                {
+                    select->setExpression(
+                        ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
+                }
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            /// Add a LIMIT clause
+            select->setExpression(
+                ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
+        }
+        /// Fuzz LIMIT BY offset/length
+        if (select->limitBy())
+        {
+            if (select->limitByLength())
+            {
+                if (fuzz_rand() % 50 == 0)
+                    select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+            }
+            else if (fuzz_rand() % 50 == 0)
+            {
+                select->setExpression(
+                    ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
+            }
+            if (select->limitByOffset())
+            {
+                if (fuzz_rand() % 50 == 0)
+                    select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+            }
+            else if (fuzz_rand() % 50 == 0)
+            {
+                select->setExpression(
+                    ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
+            }
         }
         fuzzColumnLikeExpressionList(select->limitBy().get());
+
+        /// Fuzz WINDOW clause
+        if (select->window())
+        {
+            auto & window_children = select->window()->children;
+            if (!window_children.empty() && fuzz_rand() % 100 == 0)
+            {
+                /// Drop the entire WINDOW clause
+                select->setExpression(ASTSelectQuery::Expression::WINDOW, {});
+            }
+            else if (window_children.size() > 1 && fuzz_rand() % 50 == 0)
+            {
+                /// Remove one window definition (exercises dangling window-name references)
+                window_children.erase(window_children.begin() + fuzz_rand() % window_children.size());
+            }
+        }
+
+        /// Fuzz inline SETTINGS clause
+        if (select->settings())
+        {
+            if (fuzz_rand() % 100 == 0)
+                select->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+        }
 
         fuzz(select->children);
     }
@@ -2423,6 +2559,44 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzOrderByList(wdef->order_by.get(), 0);
         fuzzWindowFrame(*wdef);
         fuzz(wdef->children);
+    }
+    else if (auto * with_elem = typeid_cast<ASTWithElement *>(ast.get()))
+    {
+        /// Occasionally rename the CTE to exercise unresolved-reference paths
+        if (fuzz_rand() % 200 == 0)
+            with_elem->name = "cte_" + std::to_string(fuzz_rand() % 10);
+        fuzz(with_elem->children);
+    }
+    else if (auto * sample_ratio = typeid_cast<ASTSampleRatio *>(ast.get()))
+    {
+        if (fuzz_rand() % 20 == 0)
+        {
+            static const std::vector<UInt64> sample_values = {1, 2, 5, 10, 100, 1000, 10000};
+            sample_ratio->ratio.numerator = sample_values[fuzz_rand() % sample_values.size()];
+        }
+        if (fuzz_rand() % 20 == 0)
+        {
+            static const std::vector<UInt64> denom_values = {1, 2, 5, 10, 100, 1000, 10000};
+            sample_ratio->ratio.denominator = denom_values[fuzz_rand() % denom_values.size()];
+        }
+    }
+    else if (auto * apply = typeid_cast<ASTColumnsApplyTransformer *>(ast.get()))
+    {
+        if (fuzz_rand() % 50 == 0)
+            apply->column_name_prefix = fuzz_rand() % 2 == 0 ? "" : "f_";
+        fuzz(apply->children);
+    }
+    else if (auto * except_transformer = typeid_cast<ASTColumnsExceptTransformer *>(ast.get()))
+    {
+        if (fuzz_rand() % 50 == 0)
+            except_transformer->is_strict = !except_transformer->is_strict;
+        fuzz(except_transformer->children);
+    }
+    else if (auto * replace_transformer = typeid_cast<ASTColumnsReplaceTransformer *>(ast.get()))
+    {
+        if (fuzz_rand() % 50 == 0)
+            replace_transformer->is_strict = !replace_transformer->is_strict;
+        fuzz(replace_transformer->children);
     }
     else
     {
