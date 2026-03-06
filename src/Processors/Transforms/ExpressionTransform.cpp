@@ -47,11 +47,12 @@ void ExpressionTransform::transform(Chunk & chunk)
         return;
     }
 
-    const auto & header = getInputPort().getHeader();
+    const auto & input_header = getInputPort().getHeader();
+    const auto & output_header = getOutputPort().getHeader();
     MutableColumns output_columns;
 
-    for (size_t i = 0; i < header.columns(); ++i)
-        output_columns.push_back(header.getByPosition(i).type->createColumn());
+    for (size_t i = 0; i < output_header.columns(); ++i)
+        output_columns.push_back(output_header.getByPosition(i).type->createColumn());
 
     Columns input_columns = chunk.getColumns();
     size_t processed = 0;
@@ -63,7 +64,7 @@ void ExpressionTransform::transform(Chunk & chunk)
         for (const auto & col : input_columns)
             batch_columns.push_back(IColumn::mutate(col->cut(processed, current_batch_size)));
 
-        auto batch_block = header.cloneWithColumns(std::move(batch_columns));
+        auto batch_block = input_header.cloneWithColumns(std::move(batch_columns));
         size_t batch_rows = current_batch_size;
         expression->execute(batch_block, batch_rows, false, false, [this]() { return isCancelled(); });
 
