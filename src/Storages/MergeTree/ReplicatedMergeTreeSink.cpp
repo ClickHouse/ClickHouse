@@ -518,7 +518,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
         PartLog::addNewPart(
             storage.getContext(),
-            PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedMs() * 1000, counters_snapshot),
+            PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs() * 1000, counters_snapshot),
             block_ids_for_log, // it is either blocks for committed part, or conflicting blocks for deduplicated part
             status);
     }
