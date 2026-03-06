@@ -38,7 +38,8 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     )
 
     # disabling async refresher to validate that the latest metadata will be pulled at SELECT
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, iceberg_metadata_async_refresh_period_ms=3_600_000)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark,
+                         iceberg_metadata_async_refresh_period_ms=3_600_000)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     # 1. Validating that SELECT will pull the latest metadata by default
@@ -82,7 +83,7 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     """).strip())
 
 
-    # 2. Validating that SELECT will pull the latest metadata by default
+    # 2. Validating that SELECT will pull the latest metadata if the cached version is stale
     write_iceberg_from_df(
         spark,
         generate_data(spark, 200, 300),

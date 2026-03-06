@@ -156,11 +156,9 @@ private:
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
-    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
-
-    /// TODO: reconsider location & initialization of it - it's temp now
-    /// TODO: think whether possible to run a single prefetcher per multiple tables - if it's safe also
     BackgroundSchedulePoolTaskHolder background_metadata_refresher_task;
+
+    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataRefresherThread();
 };
