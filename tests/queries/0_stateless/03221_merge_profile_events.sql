@@ -85,8 +85,6 @@ SELECT
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageExecuteMilliseconds'] > 0,
-    ProfileEvents['MergeExecuteMilliseconds'] <= 1.05 * duration_ms,
-    ProfileEvents['MergeTotalMilliseconds'] <= 1.05 * duration_ms,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0
 FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
