@@ -301,6 +301,11 @@ IQueryPlanStep::RemovedUnusedColumns FilterStep::removeUnusedColumns(NameMultiSe
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
 
+    /// When extra columns were absorbed from a child step that cannot reduce its output,
+    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
+    if (prevent_input_removal)
+        remove_inputs = false;
+
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "In {} cannot be more inputs in the DAG than columns in the input header", getName());
 

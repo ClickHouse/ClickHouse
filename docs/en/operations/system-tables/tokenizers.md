@@ -27,14 +27,14 @@ SELECT * FROM system.tokenizers;
 ```
 
 ```text
-┌─name────────────┬─type────────────┐
-│ ngrams          │ Ngrams          │
-│ splitByNonAlpha │ SplitByNonAlpha │
-│ sparseGrams     │ SparseGrams     │
-│ tokenbf_v1      │ SplitByNonAlpha │
-│ ngrambf_v1      │ Ngrams          │
-│ array           │ Array           │
-│ splitByString   │ SplitByString   │
-│ sparse_grams    │ SparseGrams     │
-└─────────────────┴─────────────────┘
+┌─name────────────┐
+│ ngrams          │
+│ splitByNonAlpha │
+│ sparseGrams     │
+│ tokenbf_v1      │
+│ ngrambf_v1      │
+│ array           │
+│ splitByString   │
+│ sparse_grams    │
+└─────────────────┘
 ```

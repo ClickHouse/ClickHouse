@@ -5,6 +5,8 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
@@ -89,6 +91,9 @@ void MutatePlainMergeTreeTask::finish()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
+
+    /// Make out memory tracker a parent of current thread memory tracker
     ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
@@ -164,6 +169,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
     if (mutate_task)
         mutate_task->cancel();
 

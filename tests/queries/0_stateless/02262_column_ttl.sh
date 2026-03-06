@@ -32,6 +32,7 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -m -q "
     -- OPTIMIZE TABLE x FINAL will be done in background
 
+
     optimize table ttl_02262 final;
 
     system flush logs text_log, query_log;
