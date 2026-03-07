@@ -67,22 +67,25 @@ public:
         if (value.isNull())
             return;
 
+        /// Strip LowCardinality — it is a storage optimization that does not affect
+        /// type compatibility or function semantics, and downstream checks like
+        /// WhichDataType and areTypesComparableForEquality cannot see through it.
+        auto lhs_type = removeLowCardinality(arguments[0]->getResultType());
+
         /// IN/NOT IN handle NULLs internally (useDefaultImplementationForNulls = false)
         /// and always return UInt8 (0 or 1). equals/notEquals use default NULL propagation
         /// and return NULL for NULL inputs. When x is Nullable:
         ///   - x NOT IN (v) returns 1 when x is NULL, but x != v returns NULL
         ///   - x IN (v) returns 0 when x is NULL, but x = v returns NULL
         /// So skip conversion when the left-hand side is Nullable.
-        auto lhs_type = arguments[0]->getResultType();
-        if (isNullableOrLowCardinalityNullable(lhs_type))
+        if (lhs_type->isNullable())
             return;
 
         /// IN/NOT IN silently ignore unknown enum values (treat them as non-matching),
         /// but equals/notEquals throw UNKNOWN_ELEMENT_OF_ENUM for values not in the enum definition.
         /// For example, `e NOT IN ('unknown')` returns all rows, but `e != 'unknown'` throws.
         /// Skip conversion for Enum types entirely to preserve correctness.
-        /// Unwrap LowCardinality to catch LowCardinality(Enum(...)) as well.
-        WhichDataType lhs_which(removeLowCardinality(lhs_type));
+        WhichDataType lhs_which(lhs_type);
         if (lhs_which.isEnum())
             return;
 
