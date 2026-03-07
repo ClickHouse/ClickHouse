@@ -5,6 +5,7 @@
 
 {% for analyzer in [1, 0] -%}
 SET enable_analyzer = {{ analyzer }};
+SET optimize_in_to_equal = 0;
 
 DROP TABLE IF EXISTS events;
 

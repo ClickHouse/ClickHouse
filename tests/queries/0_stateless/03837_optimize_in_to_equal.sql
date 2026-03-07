@@ -47,8 +47,25 @@ EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN (upper('a'));
 
 SELECT '---';
 
--- Nullable column: should still convert
+-- Nullable column: should NOT be converted (IN and equals have different NULL semantics)
+-- IN returns 0/1 (UInt8) for NULL inputs, equals returns NULL (Nullable(UInt8))
 SELECT * FROM test_in_to_equal WHERE z IN (1);
+
+SELECT '---';
+
+-- Verify Nullable column keeps IN in query tree
+EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE z IN (1);
+
+SELECT '---';
+
+-- Verify Nullable NOT IN also keeps notIn
+EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE z NOT IN (1);
+
+SELECT '---';
+
+-- Nullable semantics: NOT IN returns 1 for NULL, != returns NULL
+-- This verifies the optimization is correctly skipped
+SELECT z NOT IN (1) FROM test_in_to_equal ORDER BY x;
 
 SELECT '---';
 
@@ -76,5 +93,28 @@ SELECT '---';
 -- Type incompatibility: Date IN (scalar) should NOT be converted
 -- (equals rejects Date vs Number, but IN accepts it)
 SELECT toDate('2024-01-01') IN (1);
+
+SELECT '---';
+
+-- Enum: should NOT be converted (equals/notEquals throw for unknown enum values,
+-- but IN/NOT IN silently treat them as non-matching)
+DROP TABLE IF EXISTS test_enum_in;
+CREATE TABLE test_enum_in (e Enum('a' = 1, 'b' = 2)) ENGINE = Memory;
+INSERT INTO test_enum_in VALUES ('a');
+
+-- Valid enum value: IN works, equals would also work, but we skip Enum entirely for safety
+EXPLAIN QUERY TREE SELECT * FROM test_enum_in WHERE e IN ('a');
+
+SELECT '---';
+
+-- Unknown enum value: IN returns empty, equals would throw UNKNOWN_ELEMENT_OF_ENUM
+SELECT * FROM test_enum_in WHERE e IN ('c');
+
+SELECT '---';
+
+-- Unknown enum value with NOT IN: returns all rows; notEquals would throw
+SELECT * FROM test_enum_in WHERE e NOT IN ('c');
+
+DROP TABLE test_enum_in;
 
 DROP TABLE test_in_to_equal;

@@ -1,6 +1,7 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
+SET optimize_in_to_equal = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (
@@ -539,6 +540,7 @@ Expression ((Project names + Projection))
             Search Algorithm: generic exclusion search
           Ranges: 2
 SET enable_analyzer = 0;
+SET optimize_in_to_equal = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (

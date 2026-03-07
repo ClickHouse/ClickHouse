@@ -66,6 +66,24 @@ public:
         if (value.isNull())
             return;
 
+        /// IN/NOT IN handle NULLs internally (useDefaultImplementationForNulls = false)
+        /// and always return UInt8 (0 or 1). equals/notEquals use default NULL propagation
+        /// and return NULL for NULL inputs. When x is Nullable:
+        ///   - x NOT IN (v) returns 1 when x is NULL, but x != v returns NULL
+        ///   - x IN (v) returns 0 when x is NULL, but x = v returns NULL
+        /// So skip conversion when the left-hand side is Nullable.
+        auto lhs_type = arguments[0]->getResultType();
+        if (lhs_type->isNullable())
+            return;
+
+        /// IN/NOT IN silently ignore unknown enum values (treat them as non-matching),
+        /// but equals/notEquals throw UNKNOWN_ELEMENT_OF_ENUM for values not in the enum definition.
+        /// For example, `e NOT IN ('unknown')` returns all rows, but `e != 'unknown'` throws.
+        /// Skip conversion for Enum types entirely to preserve correctness.
+        WhichDataType lhs_which(lhs_type);
+        if (lhs_which.isEnum())
+            return;
+
         const String result_function_name = is_in ? "equals" : "notEquals";
 
         auto result_function = std::make_shared<FunctionNode>(result_function_name);
@@ -83,7 +101,6 @@ public:
         /// Check type compatibility before attempting to resolve equals/notEquals.
         /// IN accepts nearly any type combination, but equals has stricter rules
         /// (e.g. Date vs UInt is rejected). Skip conversion if the types are incompatible.
-        auto lhs_type = removeNullable(arguments[0]->getResultType());
         if (!areTypesComparableForEquality(lhs_type, rhs_type))
             return;
 
