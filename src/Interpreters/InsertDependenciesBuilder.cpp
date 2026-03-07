@@ -235,7 +235,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         patch.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return ptr;
     }
@@ -462,7 +462,7 @@ private:
         {
             return {true, wrapped.origin_exception};
         }
-        catch (...)
+        catch (...) // Ok: exception is not wrapped, return as-is
         {
             return {false, e};
         }

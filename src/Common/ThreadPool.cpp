@@ -384,9 +384,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 threads.emplace_front(std::move(new_thread));
                 thread_slot = threads.begin();
             }
-            catch (...)
+            catch (const std::exception &)
             {
-                /// Most likely this is a std::bad_alloc exception
                 return on_error("cannot emplace the thread in the pool");
             }
         }
@@ -412,7 +411,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 (*thread_slot)->start(thread_slot);
 
         }
-        catch (...)
+        catch (const std::exception &)
         {
             if (adding_new_thread)
                 threads.pop_front();
@@ -451,9 +450,8 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
                     // Successfully decremented, attempt to create a new thread
                     new_thread = std::make_unique<ThreadFromThreadPool>(*this);
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
-                    // Failed to create the thread, restore capacity
                     remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 }
                 break;  // Exit loop whether thread creation succeeded or not
@@ -470,7 +468,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
             threads.emplace_front(std::move(new_thread));
             thread_slot = threads.begin();
         }
-        catch (...)
+        catch (const std::exception &)
         {
             break;
         }
@@ -479,7 +477,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         {
             (*thread_slot)->start(thread_slot);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             threads.pop_front();
             break;

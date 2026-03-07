@@ -497,7 +497,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     allow_niladic_functions);
             }
-            catch (...)
+            catch (const Exception &)
             {
                 apply_constant_if_optimization = true;
             }

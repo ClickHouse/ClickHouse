@@ -477,7 +477,7 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
         }
         res &= this->cb->processTextAsSingleQuery(query);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         LOG_ERROR(log, "Error on processing query '{}': {}\n", query, DB::getCurrentExceptionMessage(false));
         res = false;
