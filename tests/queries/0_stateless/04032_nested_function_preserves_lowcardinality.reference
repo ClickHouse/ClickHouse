@@ -1,0 +1,7 @@
+nested with LowCardinality(String)
+Array(Tuple(name LowCardinality(String)))
+nested with Array(LowCardinality(String))
+Array(Array(Tuple(name LowCardinality(String))))
+ARRAY JOIN preserves LowCardinality
+Array(LowCardinality(String))
+Array(LowCardinality(String))
