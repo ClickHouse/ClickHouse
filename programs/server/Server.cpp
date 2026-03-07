@@ -2811,7 +2811,7 @@ try
 
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
-        buildLoggers(config(), logger());
+        buildLoggers(config(), logger(), "clickhouse-server");
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);

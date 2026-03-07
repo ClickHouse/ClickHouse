@@ -52,6 +52,11 @@
 
         <!-- <use_syslog>0</use_syslog> -->
         <!-- <syslog_level>trace</syslog_level> -->
+        <!--
+        <syslog>
+            <programname>clickhouse-production-scc</programname>
+        </syslog>
+        -->
 
         <!-- <stream_compress>0</stream_compress> -->
 

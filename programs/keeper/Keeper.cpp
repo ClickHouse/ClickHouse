@@ -699,7 +699,7 @@ try
     });
 
 
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), "clickhouse-keeper");
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;

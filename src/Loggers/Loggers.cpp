@@ -204,6 +204,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
 
+        const auto syslog_program_name = config.getString("logger.syslog.programname", cmd_name);
+
         if (config.has("logger.syslog.address"))
         {
             syslog_channel = new Poco::Net::RemoteSyslogChannel();
@@ -213,6 +215,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             {
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
             syslog_channel->setProperty(
                 Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
@@ -220,7 +223,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
         {
             syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
         }
