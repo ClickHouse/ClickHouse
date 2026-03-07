@@ -3,6 +3,7 @@
 #if USE_ARROW || USE_PARQUET
 
 #include <Core/DecimalFunctions.h>
+#include <Core/AccurateComparison.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -457,19 +458,42 @@ namespace DB
     }
 
     template<typename From, typename To>
+    requires (std::integral<From> && std::integral<To>)
     static PaddedPODArray<To> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
     {
         const PaddedPODArray<From> & data = assert_cast<const ColumnVector<From> *>(column.get())->getData();
         PaddedPODArray<To> result;
         result.reserve(end - start);
+
+        auto checked_cast = [](From value) -> To
+        {
+            constexpr bool always_safe =
+                // same signedness, destination has at least as many value bits
+                (std::numeric_limits<From>::is_signed == std::numeric_limits<To>::is_signed
+                && std::numeric_limits<To>::digits >= std::numeric_limits<From>::digits)
+                // unsigned -> signed is safe only if destination has strictly more value bits
+                || (!std::numeric_limits<From>::is_signed
+                    && std::numeric_limits<To>::is_signed
+                    && std::numeric_limits<To>::digits > std::numeric_limits<From>::digits);
+
+            if constexpr (always_safe)
+                return static_cast<To>(value);
+
+            To converted{};
+            if (!accurate::convertNumeric<From, To, false>(value, converted))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert index {} to target type without overflow", std::to_string(value));
+            return converted;
+        };
+
         if (shift)
-            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](From value) { return To(value) - 1; });
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [&](From value) { return checked_cast(value) - 1; });
         else
-            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](From value) { return To(value); });
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), checked_cast);
         return result;
     }
 
     template<typename To = Int64>
+    requires std::integral<To>
     static PaddedPODArray<To> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
     {
         switch (column->getDataType())

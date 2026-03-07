@@ -325,10 +325,6 @@ namespace
             {
                 return arrow::Status::Invalid(e.what());
             }
-            catch (...)
-            {
-                return arrow::Status::Invalid("Authentication failed.");
-            }
 
             if (auth)
                 token = token_storage.getToken(username, password);
@@ -1282,9 +1278,9 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
 
     auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
 
-    bool query_succeeded = false;
+    bool query_finished = false;
     SCOPE_EXIT({
-        if (query_succeeded)
+        if (query_finished)
             block_io.onFinish();
         else
             block_io.onException();
@@ -1328,7 +1324,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     else if (single_table)
         tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
 
-    query_succeeded = true;
+    query_finished = true;
 
     return std::tuple{schema, tables};
 }
@@ -1877,9 +1873,9 @@ arrow::Status ArrowFlightHandler::GetSchema(
 
                 auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
 
-                bool query_succeeded = false;
+                bool query_finished = false;
                 SCOPE_EXIT({
-                    if (query_succeeded)
+                    if (query_finished)
                         block_io.onFinish();
                     else
                         block_io.onException();
@@ -1898,7 +1894,7 @@ arrow::Status ArrowFlightHandler::GetSchema(
                     schema = status.ValueUnsafe();
                 }
 
-                query_succeeded = true;
+                query_finished = true;
             }
         }
 
@@ -2174,9 +2170,9 @@ arrow::Status ArrowFlightHandler::DoGet(
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
 
-            bool query_succeeded = false;
+            bool query_finished = false;
             SCOPE_EXIT({
-                if (query_succeeded)
+                if (query_finished)
                     block_io.onFinish();
                 else
                     block_io.onException();
@@ -2195,7 +2191,7 @@ arrow::Status ArrowFlightHandler::DoGet(
             auto ch_to_arrow_converter = createCHToArrowConverter(header);
             ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
 
-            query_succeeded = true;
+            query_finished = true;
         }
 
         auto stream_res = arrow::RecordBatchReader::MakeFromIterator(
@@ -2289,9 +2285,9 @@ arrow::Status ArrowFlightHandler::DoPut(
 
         auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
 
-        bool query_succeeded = false;
+        bool query_finished = false;
         SCOPE_EXIT({
-            if (query_succeeded)
+            if (query_finished)
                 block_io.onFinish();
             else
                 block_io.onException();
@@ -2319,6 +2315,8 @@ arrow::Status ArrowFlightHandler::DoPut(
             executor.execute();
         }
 
+        query_finished = true;
+
         arrow::flight::protocol::sql::DoPutUpdateResult update_result;
         if (auto element = query_context->getProcessListElement())
             update_result.set_record_count(element->getInfo().written_rows);
@@ -2326,8 +2324,6 @@ arrow::Status ArrowFlightHandler::DoPut(
             update_result.set_record_count(0);
 
         ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
-
-        query_succeeded = true;
 
         LOG_INFO(log, "DoPut succeeded");
 
