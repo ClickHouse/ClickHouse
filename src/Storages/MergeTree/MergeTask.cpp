@@ -2269,7 +2269,14 @@ public:
         /// transformPipeline() created new transforms that built their own expressions with
         /// different Set objects that were never filled by CreatingSetsStep.
         TTLDeleteFilterTransform canonical(context_, input_header_, metadata_snapshot_, old_ttl_infos_, current_time, force, data_part);
-        subqueries_for_sets = canonical.getSubqueries();
+
+        /// Build sets eagerly here rather than via addCreatingSetsStep.
+        /// If they were built inside the merge pipeline, the subquery progress (rows read)
+        /// would be counted in merge_list_element->rows_read, causing a mismatch with
+        /// the rows_sources file size assertion in vertical merge.
+        for (auto & subquery : canonical.getSubqueries())
+            subquery->buildSetInplace(context_);
+
         shared_entries = canonical.getEntries();
     }
 
@@ -2289,7 +2296,7 @@ public:
         output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front());
     }
 
-    PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
+    PreparedSets::Subqueries getSubqueries() { return {}; }
 
 private:
     static Traits getTraits()
@@ -2310,7 +2317,6 @@ private:
     time_t current_time;
     bool force;
     MergeTreeMutableDataPartPtr data_part;
-    PreparedSets::Subqueries subqueries_for_sets;
     std::vector<TTLDeleteFilterTransform::DeleteTTLEntry> shared_entries;
 };
 
