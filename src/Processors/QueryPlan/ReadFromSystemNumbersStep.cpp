@@ -13,6 +13,7 @@
 #include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 

@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ShufflingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
@@ -114,6 +115,9 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     }
 
     if (typeid_cast<const SortingStep *>(child.get()))
+        return 0;
+
+    if (typeid_cast<const ShufflingStep *>(child.get()))
         return 0;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
