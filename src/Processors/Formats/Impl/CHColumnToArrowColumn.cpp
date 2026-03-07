@@ -1441,10 +1441,11 @@ namespace DB
             auto column_type = header_column.type;
             auto column = chunk ? chunk->getColumns()[column_i] : header_column.column;
 
-            if (column && !settings.low_cardinality_as_dictionary)
+            if (!settings.low_cardinality_as_dictionary)
             {
-                column = recursiveRemoveLowCardinality(column);
                 column_type = recursiveRemoveLowCardinality(column_type);
+                if (column)
+                    column = recursiveRemoveLowCardinality(column);
             }
 
             bool is_column_nullable = false;

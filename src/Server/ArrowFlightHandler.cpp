@@ -1281,52 +1281,54 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     std::vector<std::shared_ptr<arrow::Table>> tables;
 
     auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-    try
+
+    bool query_succeeded = false;
+    SCOPE_EXIT({
+        if (query_succeeded)
+            block_io.onFinish();
+        else
+            block_io.onException();
+    });
+
+    ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+    ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+
+    PullingPipelineExecutor executor{block_io.pipeline};
+    schema = CHColumnToArrowColumn::calculateArrowSchema(executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+
+    if (schema_modifier)
     {
-        ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-        ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+        auto status = schema_modifier(schema);
+        ARROW_RETURN_NOT_OK(status);
+        schema = status.ValueUnsafe();
+    }
 
-        PullingPipelineExecutor executor{block_io.pipeline};
-        schema = CHColumnToArrowColumn::calculateArrowSchema(executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
-        if (schema_modifier)
+    std::optional<ColumnsWithTypeAndName> header;
+    std::vector<Chunk> chunks;
+    Block block;
+    while (executor.pull(block))
+    {
+        if (!block.empty())
         {
-            auto status = schema_modifier(schema);
-            ARROW_RETURN_NOT_OK(status);
-            schema = status.ValueUnsafe();
-        }
-
-        std::optional<ColumnsWithTypeAndName> header;
-        std::vector<Chunk> chunks;
-        Block block;
-        while (executor.pull(block))
-        {
-            if (!block.empty())
+            if (block_modifier)
+                block_modifier(block);
+            if (!header)
+                header = getHeader(block.getColumnsWithTypeAndName());
+            chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
+            if (!single_table)
             {
-                if (block_modifier)
-                    block_modifier(block);
-                if (!header)
-                    header = getHeader(block.getColumnsWithTypeAndName());
-                chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
-                if (!single_table)
-                {
-                    tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
-                    chunks.clear();
-                }
+                tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
+                chunks.clear();
             }
         }
-
-        if (!header)
-            tables.emplace_back(getEmptyArrowTable(schema));
-        else if (single_table)
-            tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
-
-        block_io.onFinish();
     }
-    catch (...)
-    {
-        block_io.onException();
-        throw;
-    }
+
+    if (!header)
+        tables.emplace_back(getEmptyArrowTable(schema));
+    else if (single_table)
+        tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
+
+    query_succeeded = true;
 
     return std::tuple{schema, tables};
 }
@@ -1691,7 +1693,7 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
         const auto type_name = (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
 
         if (type_name.starts_with("arrow.flight.protocol.sql."))
-            return arrow::Status::NotImplemented("Command is not implemented: {}", any_msg.ShortDebugString());
+            return arrow::Status::NotImplemented("Command is not implemented: ", any_msg.ShortDebugString());
     }
 
     return SQLSet{sql, schema_modifier, block_modifier};
@@ -1874,6 +1876,15 @@ arrow::Status ArrowFlightHandler::GetSchema(
                 CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
                 auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+
+                bool query_succeeded = false;
+                SCOPE_EXIT({
+                    if (query_succeeded)
+                        block_io.onFinish();
+                    else
+                        block_io.onException();
+                });
+
                 ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
                 ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
@@ -1886,6 +1897,8 @@ arrow::Status ArrowFlightHandler::GetSchema(
                     ARROW_RETURN_NOT_OK(status);
                     schema = status.ValueUnsafe();
                 }
+
+                query_succeeded = true;
             }
         }
 
@@ -1990,22 +2003,23 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             CurrentThread::attachToGroup(thread_group);
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            try
-            {
-                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
-                schema = poll_session->getSchema();
+            bool block_io_owned_here = true;
+            SCOPE_EXIT({
+                if (block_io_owned_here)
+                    block_io.onException();
+            });
 
-                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr, query_context->getCurrentQueryId());
-                next_poll_descriptor = *next_info;
-            }
-            catch (...)
-            {
-                block_io.onException();
-                throw;
-            }
+            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+
+            auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
+            block_io_owned_here = false; /// ownership moved; PollSession handles lifecycle from here
+
+            schema = poll_session->getSchema();
+
+            auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr, query_context->getCurrentQueryId());
+            next_poll_descriptor = *next_info;
         }
 
         std::vector<arrow::flight::FlightEndpoint> endpoints;
@@ -2159,27 +2173,29 @@ arrow::Status ArrowFlightHandler::DoGet(
             CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
             auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            try
-            {
-                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                PullingPipelineExecutor executor{block_io.pipeline};
+            bool query_succeeded = false;
+            SCOPE_EXIT({
+                if (query_succeeded)
+                    block_io.onFinish();
+                else
+                    block_io.onException();
+            });
 
-                Block block;
-                while (executor.pull(block))
-                    chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                auto header = executor.getHeader();
-                auto ch_to_arrow_converter = createCHToArrowConverter(header);
-                ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
-                block_io.onFinish();
-            }
-            catch (...)
-            {
-                block_io.onException();
-                throw;
-            }
+            PullingPipelineExecutor executor{block_io.pipeline};
+
+            Block block;
+            while (executor.pull(block))
+                chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+
+            auto header = executor.getHeader();
+            auto ch_to_arrow_converter = createCHToArrowConverter(header);
+            ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
+
+            query_succeeded = true;
         }
 
         auto stream_res = arrow::RecordBatchReader::MakeFromIterator(
@@ -2272,45 +2288,48 @@ arrow::Status ArrowFlightHandler::DoPut(
         CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
         auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-        try
-        {
-            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-            auto & pipeline = block_io.pipeline;
 
-            if (pipeline.pushing())
-            {
-                Block header = pipeline.getHeader();
-                auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header);
-                pipeline.complete(Pipe(std::move(input)));
-            }
-            else if (pipeline.pulling())
-            {
-                Block header = pipeline.getHeader();
-                auto output = std::make_shared<NullSink>(std::make_shared<Block>(header));
-                pipeline.complete(std::move(output));
-            }
-
-            if (pipeline.completed())
-            {
-                CompletedPipelineExecutor executor(pipeline);
-                executor.execute();
-            }
-
-            arrow::flight::protocol::sql::DoPutUpdateResult update_result;
-            if (auto element = query_context->getProcessListElement())
-                update_result.set_record_count(element->getInfo().written_rows);
+        bool query_succeeded = false;
+        SCOPE_EXIT({
+            if (query_succeeded)
+                block_io.onFinish();
             else
-                update_result.set_record_count(0);
-            ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
+                block_io.onException();
+        });
 
-            block_io.onFinish();
-            LOG_INFO(log, "DoPut succeeded");
-        }
-        catch (...)
+        ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+        auto & pipeline = block_io.pipeline;
+
+        if (pipeline.pushing())
         {
-            block_io.onException();
-            throw;
+            Block header = pipeline.getHeader();
+            auto input = std::make_shared<ArrowFlightSource>(std::move(reader), header);
+            pipeline.complete(Pipe(std::move(input)));
         }
+        else if (pipeline.pulling())
+        {
+            Block header = pipeline.getHeader();
+            auto output = std::make_shared<NullSink>(std::make_shared<Block>(header));
+            pipeline.complete(std::move(output));
+        }
+
+        if (pipeline.completed())
+        {
+            CompletedPipelineExecutor executor(pipeline);
+            executor.execute();
+        }
+
+        arrow::flight::protocol::sql::DoPutUpdateResult update_result;
+        if (auto element = query_context->getProcessListElement())
+            update_result.set_record_count(element->getInfo().written_rows);
+        else
+            update_result.set_record_count(0);
+
+        ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
+
+        query_succeeded = true;
+
+        LOG_INFO(log, "DoPut succeeded");
 
         return arrow::Status::OK();
     };
