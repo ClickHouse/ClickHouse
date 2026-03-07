@@ -11,7 +11,7 @@
 #   ALERT_COUNT=<total alerts in log>
 #   ITERATION=<NNN>
 #   ALERT_FILE=<full path to extracted alert>
-#   ALERT_TYPE=<type from SUMMARY line, e.g. "data-race", "lock-order-inversion">
+#   ALERT_TYPE=<type from SUMMARY line, e.g. "data race", "lock-order-inversion">
 #
 # Exit code: 0 on success, 1 if no alerts found.
 
@@ -53,7 +53,7 @@ if [ -z "$start_line" ] || [ -z "$end_line" ]; then
 fi
 
 # Extract alert type from SUMMARY line
-alert_type=$(sed -n "${end_line}p" "$LOG_FILE" | grep -oP 'SUMMARY: ThreadSanitizer: \K[^ ]+' || echo "unknown")
+alert_type=$(sed -n "${end_line}p" "$LOG_FILE" | grep -oP 'SUMMARY: ThreadSanitizer: \K[^(]+' | sed 's/ *$//' || echo "unknown")
 echo "ALERT_TYPE=$alert_type"
 
 # Compute next iteration number from existing subdirectories (max + 1)
