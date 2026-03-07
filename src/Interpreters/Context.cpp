@@ -355,6 +355,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
+    extern const ServerSettingsString database_namespace_separator;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
@@ -1178,6 +1179,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    database_namespace(o.database_namespace),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -1310,7 +1312,7 @@ String Context::resolveDatabase(const String & database_name) const
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
-    return res;
+    return applyDatabaseNamespace(res);
 }
 
 String Context::getPath() const
@@ -1871,6 +1873,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
+    const auto & db_namespace = user->database_namespace;
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -1884,9 +1887,17 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
+    /// Set the database namespace (must be before setCurrentDatabaseWithLock).
+    /// Assign directly since we already hold the lock.
+    if (!db_namespace.empty())
+    {
+        database_namespace = db_namespace;
+        need_recalculate_access = true;
+    }
+
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabaseWithLock(applyDatabaseNamespace(database), lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3205,7 +3216,7 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 void Context::setCurrentDatabase(const String & name)
 {
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
+    setCurrentDatabaseWithLock(applyDatabaseNamespace(name), lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3216,6 +3227,154 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
     std::lock_guard lock(mutex);
     current_database = name;
     need_recalculate_access = true;
+}
+
+String Context::getDatabaseNamespace() const
+{
+    SharedLockGuard lock(mutex);
+    return database_namespace;
+}
+
+void Context::setDatabaseNamespace(const String & ns)
+{
+    std::lock_guard lock(mutex);
+    database_namespace = ns;
+    need_recalculate_access = true;
+}
+
+/// Maps a user-visible (logical) database name to its physical name by prepending
+/// the user's namespace and the configured separator.  For example, if the user's
+/// namespace is "tenant1" and the separator is "__", logical "mydb" becomes
+/// physical "tenant1__mydb".
+///
+/// Exempt from prefixing:
+///   - predefined databases (system, INFORMATION_SCHEMA, information_schema,
+///     _temporary_and_external_tables)
+///   - the "default" database (shared across all namespaces)
+///   - names that already carry the user's prefix (prevents double-prefixing)
+///
+/// Note on pre-existing databases: databases whose names contain the separator that
+/// were created before the feature was enabled are loaded normally at startup (loadMetadata
+/// does not validate the separator).  Admin users (no namespace) can still read, write,
+/// and DROP these databases.  However, no new databases with names containing the separator
+/// can be created — validateDatabaseNameNoSeparator() in InterpreterCreateQuery rejects them.
+/// If a pre-existing database name happens to match "{namespace}{separator}{name}", a tenant
+/// user with that namespace will see it as a valid database — this is expected and should be
+/// considered during migration.
+String Context::applyDatabaseNamespace(const String & database_name) const
+{
+    if (database_namespace.empty())
+        return database_name;
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
+        return database_name;
+    if (DatabaseCatalog::isPredefinedDatabase(database_name))
+        return database_name;
+    /// The "default" database is shared across all namespaces.
+    if (database_name == "default")
+        return database_name;
+    /// Databases listed in shared_databases_across_namespaces are visible to all tenants.
+    auto shared = getSharedDatabasesAcrossNamespaces();
+    if (shared.contains(database_name))
+        return database_name;
+    /// Already prefixed — don't double-prefix.
+    String prefix = database_namespace + separator;
+    if (database_name.starts_with(prefix))
+        return database_name;
+    return prefix + database_name;
+}
+
+String Context::stripDatabaseNamespace(const String & physical_database_name) const
+{
+    if (database_namespace.empty())
+        return physical_database_name;
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
+        return physical_database_name;
+    String prefix = database_namespace + separator;
+    if (physical_database_name.starts_with(prefix))
+        return physical_database_name.substr(prefix.size());
+    return physical_database_name;
+}
+
+String Context::getDatabaseNamespaceSeparator() const
+{
+    return getServerSettings()[ServerSetting::database_namespace_separator].toString();
+}
+
+std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
+{
+    std::unordered_set<String> result;
+    String value;
+    try
+    {
+        value = getConfigRef().getString("shared_databases_across_namespaces", "");
+    }
+    catch (...)
+    {
+        return result;
+    }
+    if (value.empty())
+        return result;
+
+    /// Parse comma-separated list, trimming whitespace around each name.
+    size_t start = 0;
+    while (start < value.size())
+    {
+        size_t end = value.find(',', start);
+        if (end == String::npos)
+            end = value.size();
+        /// Trim leading whitespace.
+        size_t name_start = start;
+        while (name_start < end && value[name_start] == ' ')
+            ++name_start;
+        /// Trim trailing whitespace.
+        size_t name_end = end;
+        while (name_end > name_start && value[name_end - 1] == ' ')
+            --name_end;
+        if (name_end > name_start)
+            result.emplace(value.substr(name_start, name_end - name_start));
+        start = end + 1;
+    }
+    return result;
+}
+
+/// Rejects CREATE DATABASE when the name contains the configured separator.
+/// This is called from InterpreterCreateQuery (except for ATTACH queries, which use
+/// physical names from metadata/UNDROP).
+///
+/// The restriction applies to ALL users — including admins without a namespace.
+/// Rationale: the separator is reserved by the namespace mechanism so that any database
+/// whose name matches "{X}{separator}{Y}" is unambiguously a namespace-created database.
+/// Allowing admins to bypass this would introduce ambiguity (was this created by the
+/// namespace mechanism or manually?) and risk accidental exposure to tenants.
+///
+/// Pre-existing databases (created before the feature was enabled) are unaffected:
+/// they load normally at startup and remain fully accessible (read, write, DROP).
+/// Only new CREATE DATABASE statements are subject to this validation.
+void Context::validateDatabaseNameNoSeparator(const String & database_name) const
+{
+    String separator = getDatabaseNamespaceSeparator();
+    if (separator.empty())
+        return;
+
+    auto pos = database_name.find(separator);
+    if (pos == String::npos)
+        return;
+
+    /// Reject if separator is at the start (empty prefix) or at the end (empty suffix).
+    if (pos == 0 || pos + separator.size() >= database_name.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid database name '{}': the namespace separator '{}' cannot appear at the start or end of the name",
+            database_name, separator);
+
+    /// Separator found in the middle — not allowed when namespace feature is active.
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot create database '{}': database names cannot contain the namespace separator '{}' "
+        "when the database namespace feature is enabled (server setting database_namespace_separator)",
+        database_name, separator);
 }
 
 void Context::setCurrentQueryId(const String & query_id)
@@ -6854,6 +7013,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
     if (!storage_id.database_name.empty())
     {
+        storage_id.database_name = applyDatabaseNamespace(storage_id.database_name);
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)

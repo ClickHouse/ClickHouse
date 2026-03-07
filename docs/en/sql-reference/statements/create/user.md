@@ -21,6 +21,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
+    [DATABASE NAMESPACE namespace]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -209,6 +210,79 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 - `NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
+
+## DATABASE NAMESPACE Clause {#database-namespace-clause}
+
+Assigns a database namespace to the user for multi-tenant database isolation. When a user has a database namespace set, all non-system database references are transparently prefixed with `{namespace}{separator}` where the separator is configured by the `database_namespace_separator` server setting.
+
+**Prerequisites:** The `database_namespace_separator` server setting must be configured (non-empty) before using this clause. When the separator is not set, the feature is disabled and `DATABASE NAMESPACE` will be rejected.
+
+```xml
+<!-- In config.xml or config.d/*.xml -->
+<database_namespace_separator>__</database_namespace_separator>
+```
+
+When the separator is configured, database names containing the separator string cannot be created manually by any user (including admins without a namespace), eliminating any ambiguity between namespace-prefixed and regular databases.
+
+**Pre-existing databases:** Databases whose names contain the separator that were created *before* the feature was enabled will continue to work normally after enabling it — they load at startup and can be read, written, and dropped. Only new `CREATE DATABASE` statements are subject to the restriction. If a pre-existing database name matches the pattern `{namespace}{separator}{name}`, it will become visible to a tenant user with that namespace — plan accordingly when migrating.
+
+The namespace is a user-level property — users cannot change their own namespace at runtime.
+
+System databases (`system`, `INFORMATION_SCHEMA`, `information_schema`) and the `default` database are never prefixed.
+
+### Shared Databases {#shared-databases}
+
+Databases listed in the `shared_databases_across_namespaces` server setting are visible to all tenants without namespace prefixing, similar to system databases. This is useful for common reference databases (e.g., dictionaries, geographic data) that all tenants should share.
+
+```xml
+<shared_databases_across_namespaces>dictionaries,geo</shared_databases_across_namespaces>
+```
+
+This setting supports dynamic reload via `SYSTEM RELOAD CONFIG`. Shared databases cannot be shadowed by tenants — if `dictionaries` is shared, a tenant's `CREATE DATABASE dictionaries` will fail because the name resolves to the shared database which already exists.
+
+Examples:
+
+Create a user with a database namespace:
+
+```sql
+CREATE USER tenant1_user DATABASE NAMESPACE tenant1;
+```
+
+When `tenant1_user` connects and runs queries, database names are transparently mapped:
+
+```sql
+-- User sees "mydb", physically it's "tenant1__mydb"
+CREATE DATABASE mydb;
+CREATE TABLE mydb.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x;
+INSERT INTO mydb.t1 VALUES (1), (2), (3);
+SELECT * FROM mydb.t1;
+
+-- SHOW DATABASES only shows databases in the user's namespace
+-- (with the prefix stripped) plus system databases
+SHOW DATABASES;
+
+-- SHOW CREATE outputs use the logical name without the prefix
+SHOW CREATE DATABASE mydb;
+-- CREATE DATABASE mydb ENGINE = Atomic
+```
+
+A different tenant can use the same logical names without conflict:
+
+```sql
+CREATE USER tenant2_user DATABASE NAMESPACE tenant2;
+-- tenant2_user's "mydb" is physically "tenant2__mydb", completely separate
+```
+
+The namespace can also be set in `users.xml`:
+
+```xml
+<users>
+    <tenant1_user>
+        <password>...</password>
+        <database_namespace>tenant1</database_namespace>
+    </tenant1_user>
+</users>
+```
 
 ## Examples {#examples-1}
 

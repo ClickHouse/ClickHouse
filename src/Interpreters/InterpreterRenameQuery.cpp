@@ -62,7 +62,19 @@ BlockIO InterpreterRenameQuery::execute()
     for (const auto & elem : rename.getElements())
     {
         descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        auto & description = descriptions.back();
+
+        /// For RENAME DATABASE, validate the target name BEFORE namespace application.
+        /// The user-provided name must not contain the separator (e.g., "bad__name").
+        /// After namespace application, the name will legitimately contain the separator
+        /// (e.g., "tenant1__renamedb2"), so we must validate the raw name first.
+        if (rename.database)
+            getContext()->validateDatabaseNameNoSeparator(description.to_database_name);
+
+        if (elem.from.database)
+            description.from_database_name = getContext()->applyDatabaseNamespace(description.from_database_name);
+        if (elem.to.database)
+            description.to_database_name = getContext()->applyDatabaseNamespace(description.to_database_name);
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);
@@ -193,6 +205,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
+
     auto & catalog = DatabaseCatalog::instance();
 
     auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);

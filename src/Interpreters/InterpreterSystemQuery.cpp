@@ -305,6 +305,13 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = query.getDatabase();
+        if (!database.empty())
+            query.setDatabase(getContext()->applyDatabaseNamespace(database));
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;

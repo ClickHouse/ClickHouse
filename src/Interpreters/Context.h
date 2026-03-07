@@ -365,6 +365,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    String database_namespace;  /// Database namespace prefix for multi-tenant isolation.
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1051,6 +1052,26 @@ public:
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
+
+    /// Database namespace for multi-tenant isolation.
+    /// When set (and database_namespace_separator server setting is non-empty),
+    /// database names are transparently prefixed with "{namespace}{separator}".
+    String getDatabaseNamespace() const;
+    void setDatabaseNamespace(const String & ns);
+    /// Prepend namespace prefix to a database name (skip system databases and already-prefixed names).
+    String applyDatabaseNamespace(const String & database_name) const;
+    /// Strip namespace prefix from a physical database name for user-facing display.
+    String stripDatabaseNamespace(const String & physical_database_name) const;
+    /// Returns the database_namespace_separator server setting value.
+    String getDatabaseNamespaceSeparator() const;
+    /// Returns the set of shared databases from the shared_databases_across_namespaces setting.
+    /// These databases are visible to all tenants and excluded from namespace prefixing.
+    /// Reads from live config — supports SYSTEM RELOAD CONFIG.
+    std::unordered_set<String> getSharedDatabasesAcrossNamespaces() const;
+    /// Validate that a database name does not contain the namespace separator.
+    /// Only checked when database_namespace_separator is configured.
+    void validateDatabaseNameNoSeparator(const String & database_name) const;
+
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;

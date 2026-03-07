@@ -19,6 +19,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DATABASE NAMESPACE namespace]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -40,6 +41,14 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 - `NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
+
+## DATABASE NAMESPACE Clause {#database-namespace-clause}
+
+Sets or changes the database namespace for a user. Requires the `database_namespace_separator` server setting to be configured. See [CREATE USER — DATABASE NAMESPACE](../create/user.md#database-namespace-clause) for details on how database namespaces work, including [shared databases](../create/user.md#shared-databases) visible to all tenants.
+
+```sql
+ALTER USER tenant1_user DATABASE NAMESPACE tenant1;
+```
 
 ## Examples {#examples}
 

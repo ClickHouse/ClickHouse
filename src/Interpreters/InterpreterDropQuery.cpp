@@ -91,6 +91,14 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+
+    /// Apply database namespace for multi-tenant isolation.
+    {
+        String database = drop.getDatabase();
+        if (!database.empty())
+            drop.setDatabase(getContext()->applyDatabaseNamespace(database));
+    }
+
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;

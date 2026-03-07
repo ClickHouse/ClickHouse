@@ -40,15 +40,50 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.databases)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << "SELECT name FROM system.databases";
-
-        if (!query.like.empty())
+        String ns = getContext()->getDatabaseNamespace();
+        if (ns.empty())
         {
+            rewritten_query << "SELECT name FROM system.databases";
+
+            if (!query.like.empty())
+            {
+                rewritten_query
+                    << " WHERE name "
+                    << (query.not_like ? "NOT " : "")
+                    << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                    << DB::quote << query.like;
+            }
+        }
+        else
+        {
+            /// Wrap in subquery so LIKE filters work on the stripped (virtual) name.
+            /// Use a distinct alias `_db_name` to avoid predicate pushdown confusion
+            /// with the inner `name` column, then rename back to `name` in the outer SELECT.
+            String separator = getContext()->getDatabaseNamespaceSeparator();
+            String prefix = ns + separator;
             rewritten_query
-                << " WHERE name "
-                << (query.not_like ? "NOT " : "")
-                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
-                << DB::quote << query.like;
+                << "SELECT _db_name AS name FROM ("
+                << "SELECT if(startsWith(name, " << DB::quote << prefix
+                << "), substr(name, " << (prefix.size() + 1)
+                << "), name) AS _db_name FROM system.databases"
+                << " WHERE startsWith(name, " << DB::quote << prefix << ")"
+                << " OR name IN ('default', 'system', 'INFORMATION_SCHEMA', 'information_schema')";
+
+            /// Include shared databases visible to all tenants.
+            auto shared = getContext()->getSharedDatabasesAcrossNamespaces();
+            for (const auto & db : shared)
+                rewritten_query << " OR name = " << DB::quote << db;
+
+            rewritten_query << ") AS _sub";
+
+            if (!query.like.empty())
+            {
+                rewritten_query
+                    << " WHERE _db_name "
+                    << (query.not_like ? "NOT " : "")
+                    << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                    << DB::quote << query.like;
+            }
         }
 
         /// (*)
