@@ -1,9 +1,0 @@
-## Alert Analysis
-
-**Error Type:** Livelock (hang with 40.9% CPU)
-
-**Test:** SchedulerWorkloadResourceManager.MemoryReservationKillsOther
-
-**Root Cause:** After iteration 006 changed killAllocation to just set flags (matching MemoryReservation), the killed allocation's decrease is never enqueued. In production, syncWithMemoryTracker handles this automatically on the next memory operation. TestAllocation has no equivalent — waitKilled detects kill_reason but doesn't enqueue the decrease. The scheduler can't free the killed allocation's resources, so other allocations waiting for space hang.
-
-**Proposed Fix:** Modify TestAllocation::waitKilled to call computeSyncAction/performSyncAction after detecting kill_reason. This is the test equivalent of production's syncWithMemoryTracker. Uses the two-phase pattern (compute under lock, queue ops outside lock).
