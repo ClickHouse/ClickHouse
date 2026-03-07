@@ -66,7 +66,13 @@ std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & con
         {
             std::vector<String> result;
             for (const auto & element : expr_list->children)
-                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
+            {
+                auto evaluated = evaluateConstantExpressionAsLiteral(element, context);
+                const auto * literal = evaluated->as<ASTLiteral>();
+                if (!literal)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts array element must be a string literal, got: {}", element->formatForLogging());
+                result.push_back(literal->value.safeGet<String>());
+            }
             return result;
         }
     }
