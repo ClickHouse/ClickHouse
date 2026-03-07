@@ -399,9 +399,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             // If stats exist, perform the check
             if (build_stats)
             {
-                if (shouldDisableRuntimeFilter(build_stats, optimization_settings, build_stats->ndv))
+                const auto effective_n = (build_stats->ndv > 0)
+                    ? build_stats->ndv
+                    : build_side_row_count;
+
+                if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
                 {
-                    LOG_DEBUG(getLogger("joinRuntimeFilter"), "Saturation high (n={}), skipping key {}", build_stats->ndv, build_key_name);
+                    LOG_DEBUG(getLogger("JoinRuntimeFilter"),
+                        "Saturation Check: Disabling filter for '{}' (n={})",
+                        build_key_name, effective_n);
                     continue;
                 }
             }

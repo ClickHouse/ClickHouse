@@ -49,7 +49,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
             {"join_runtime_filter_build_saturation_threshold", 1.0, 0.9, "New setting to configure expected Bloom filter saturation probability to disable unproductive join filters"},
         });
-        });
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
