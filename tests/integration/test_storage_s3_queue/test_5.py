@@ -355,12 +355,13 @@ def test_filtering_files(started_cluster, mode):
                 f"Will skip file {file[0]}: it should be processed by"
             )
             found_2_global = found_2_global or found_2
+            assert found_1 or found_2, "Failed with file " + file[0]
         else:
             found_2 = False
+            # Ordered mode with StartAfter does not re-list processed keys,
+            # so "Skipping ... Processed" may never appear; no per-file assertion.
 
-        assert found_1 or found_2, "Failed with file " + file[0]
-
-    assert found_1_global
+    assert found_1_global or not is_unordered  # unordered must see at least one skip-by-processed
     if is_unordered:
         assert found_2_global
 
