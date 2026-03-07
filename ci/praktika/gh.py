@@ -200,6 +200,74 @@ class GH:
                 except Exception:
                     pass
 
+    '''
+    TODO: @maxknv
+    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
+    '''
+    @classmethod
+    def post_fresh_comment(
+        cls,
+        tag: str,
+        body: str,
+        pr=None,
+        repo=None,
+        verbose=True,
+    ):
+        """Delete any existing comment with the given tag and post a new one at the bottom.
+
+        Unlike post_updateable_comment, this always creates a fresh comment so it
+        appears as the most recent comment (next to the merge button).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        TAG_START = f"<!-- CI automatic comment start :{tag}: -->"
+        TAG_END = f"<!-- CI automatic comment end :{tag}: -->"
+
+        # Fetch all comments and delete those carrying our tag.
+        cmd_list = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/issues/{pr}/comments" '
+            f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
+        )
+        output = Shell.get_output(cmd_list, verbose=verbose)
+        if output:
+            try:
+                for comment in json.loads(output):
+                    if TAG_START in comment["body"] and TAG_END in comment["body"]:
+                        comment_id = comment["id"]
+                        if verbose:
+                            print(f"Deleting old coverage comment [{comment_id}]")
+                        Shell.run(
+                            f'gh api -X DELETE '
+                            f'-H "Accept: application/vnd.github.v3+json" '
+                            f'"/repos/{repo}/issues/comments/{comment_id}"',
+                            verbose=verbose,
+                        )
+            except Exception as e:
+                print(f"WARNING: Failed to delete old comment: {e}")
+
+        # Post a new comment at the bottom.
+        full_body = f"{TAG_START}\n{body}\n{TAG_END}\n"
+        temp_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".txt", encoding="utf-8"
+            ) as temp_file:
+                temp_file.write(full_body)
+                temp_file_path = temp_file.name
+            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            return cls.do_command_with_retries(cmd)
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+
     @classmethod
     def post_updateable_comment(
         cls,

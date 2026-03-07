@@ -70,7 +70,6 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_html_report,
         ArtifactConfigs.llvm_coverage_info_file,
     ],
     dockers=DOCKERS,
