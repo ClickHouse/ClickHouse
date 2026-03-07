@@ -24,7 +24,7 @@ public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool isSummable() const override { return true; }
+    bool isSummable() const override { return !this->hasCustomName(); }
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
