@@ -971,9 +971,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             else:
                 try:
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log),
-                        stderr_log=str(stderr_log),
-                        fuzzer_log="",
+                        server_logs=[server_log] if server_log else None,
+                        stderr_logs=[stderr_log] if stderr_log else None,
                     )
                     name, description, files = log_parser.parse_failure()
                     results.append(

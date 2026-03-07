@@ -50,7 +50,134 @@ def get_run_command(
     )
 
 
+def analyze_job_logs(
+    paths: list[Path],
+    server_died: bool,
+    fuzzer_exit_code: int,
+    is_sanitized: bool,
+    fuzzer_out: Path,
+    fuzzer_log: Path,
+    dmesg_log: Path,
+    server_logs: list[Path],
+    stderr_logs: list[Path],
+    fatal_logs: list[Path],
+    sw: Utils.Stopwatch,
+) -> Result:
+    # parse runner script exit status
+    status = Result.Status.FAILED
+    info = []
+    is_failed = True
+    if server_died:
+        # Server died - status will be determined after OOM checks
+        is_failed = True
+    elif fuzzer_exit_code in (-9, -15, -2, 0, 32, 130, 137, 143, 210):
+        # normal exit with timeout or OOM kill
+        is_failed = False
+        status = Result.Status.SUCCESS
+        messages = {
+            0: "Fuzzer exited with success",
+            -2: "Fuzzer killed with SIGINT",
+            -9: "Fuzzer killed with SIGKILL",
+            -15: "Fuzzer killed with SIGTERM",
+            32: "Fuzzer exited after ATTEMPT_TO_READ_AFTER_EOF error",
+            130: "Fuzzer killed with SIGINT",
+            137: "Fuzzer killed with SIGKILL",
+            143: "Fuzzer killed with SIGTERM",
+            210: "Fuzzer exited with network timeout",
+        }
+        if fuzzer_exit_code in messages:
+            info.append(messages[fuzzer_exit_code])
+        else:
+            info.append("Fuzzer exited with timeout")
+        info.append("\n")
+    elif fuzzer_exit_code in (227,):
+        # BuzzHouse exception, it means a query oracle failed, or
+        # an unwanted exception was found
+        status = Result.Status.ERROR
+        error_info = (
+            Shell.get_output(
+                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
+            )
+            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
+        )
+        info.append(f"ERROR: {error_info}")
+    else:
+        status = Result.Status.ERROR
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        info.append("Client failure (see logs)")
+        info.append("---\nFuzzer log (last 200 lines):")
+        info.extend(
+            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+        )
+
+    if is_failed:
+        if is_sanitized:
+            for i, server_log in enumerate(server_logs):
+                sanitizer_oom = Shell.get_output(
+                    f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
+                )
+                if sanitizer_oom:
+                    print(f"Sanitizer OOM on server {i}")
+                    info.append(
+                        f"WARNING: Sanitizer OOM on server {i} - test considered passed"
+                    )
+                    status = Result.Status.SUCCESS
+                    is_failed = False
+        else:
+            # Check for OOM in dmesg for non-sanitized builds
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
+                if Shell.check(
+                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    verbose=True,
+                ):
+                    info.append("ERROR: OOM in dmesg")
+                    status = Result.Status.ERROR
+            else:
+                print("WARNING: dmesg not enabled")
+
+    results = []
+    if is_failed and status != Result.Status.ERROR:
+        # died server - lets fetch failure from log
+        fuzzer_log_parser = FuzzerLogParser(
+            server_logs=server_logs,
+            stderr_logs=stderr_logs,
+            fuzzer_log=fuzzer_out,
+        )
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+
+        if parsed_name:
+            results.append(
+                Result(
+                    name=parsed_name,
+                    info=parsed_info,
+                    status=Result.StatusExtended.FAIL,
+                    files=files,
+                )
+            )
+
+    result = Result.create_from(
+        results=results, status=status if not results else None, info=info, stopwatch=sw
+    )
+
+    if is_failed:
+        # generate fatal log
+        for server_log, fatal_log in zip(server_logs, fatal_logs):
+            if not Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}"):
+                Path(fatal_log).unlink(missing_ok=True)
+
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                result.set_files(file)
+
+    return result
+
+
 def run_fuzz_job(check_name: str):
+    sw = Utils.Stopwatch()
     logging.basicConfig(level=logging.INFO)
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
@@ -120,104 +247,24 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        Result.create_from(
+            status=Result.Status.ERROR, info=error_info, stopwatch=sw
+        ).complete_job()
+        return
 
-    # parse runner script exit status
-    status = Result.Status.FAILED
-    info = []
-    is_failed = True
-    if server_died:
-        # Server died - status will be determined after OOM checks
-        is_failed = True
-    elif fuzzer_exit_code in (0, 137, 143):
-        # normal exit with timeout or OOM kill
-        is_failed = False
-        status = Result.Status.SUCCESS
-        if fuzzer_exit_code == 0:
-            info.append("Fuzzer exited with success")
-        elif fuzzer_exit_code == 137:
-            info.append("Fuzzer killed")
-        else:
-            info.append("Fuzzer exited with timeout")
-        info.append("\n")
-    elif fuzzer_exit_code in (227,):
-        # BuzzHouse exception, it means a query oracle failed, or
-        # an unwanted exception was found
-        status = Result.Status.ERROR
-        error_info = (
-            Shell.get_output(
-                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
-            )
-            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
-        )
-        info.append(f"ERROR: {error_info}")
-    else:
-        status = Result.Status.ERROR
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        info.append("Client failure (see logs)")
-        info.append("---\nFuzzer log (last 200 lines):")
-        info.extend(
-            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-        )
-
-    if is_failed:
-        if is_sanitized:
-            sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
-            )
-            if sanitizer_oom:
-                print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.SUCCESS
-                is_failed = False
-        else:
-            # Check for OOM in dmesg for non-sanitized builds
-            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                    verbose=True,
-                ):
-                    info.append("ERROR: OOM in dmesg")
-                    status = Result.Status.ERROR
-            else:
-                print("WARNING: dmesg not enabled")
-
-    results = []
-    if is_failed and status != Result.Status.ERROR:
-        # died server - lets fetch failure from log
-        fuzzer_log_parser = FuzzerLogParser(
-            server_log=str(server_log),
-            stderr_log=str(stderr_log),
-            fuzzer_log=str(
-                workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
-            ),
-        )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
-
-        if parsed_name:
-            results.append(
-                Result(
-                    name=parsed_name,
-                    info=parsed_info,
-                    status=Result.StatusExtended.FAIL,
-                    files=files,
-                )
-            )
-
-    result = Result.create_from(
-        results=results, status=status if not results else None, info=info
+    result = analyze_job_logs(
+        paths,
+        server_died,
+        fuzzer_exit_code,
+        is_sanitized,
+        workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log,
+        fuzzer_log,
+        dmesg_log,
+        [server_log],
+        [stderr_log],
+        [fatal_log],
+        sw,
     )
-
-    if is_failed:
-        # generate fatal log
-        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
-        for file in paths:
-            if file.exists() and file.stat().st_size > 0:
-                result.set_files(file)
 
     result.complete_job()
 

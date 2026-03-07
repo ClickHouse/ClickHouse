@@ -2,6 +2,8 @@ import re
 import string
 import sys
 
+from pathlib import Path
+
 sys.path.append(".")
 from ci.praktika.utils import Shell
 
@@ -46,11 +48,41 @@ class FuzzerLogParser:
         "SET",
     ]
 
-    def __init__(self, server_log, fuzzer_log="", stderr_log="", stack_trace_str=None):
-        self.server_log = server_log
+    def __init__(
+        self,
+        server_logs: list[Path] | None = None,
+        fuzzer_log: Path | None = None,
+        stderr_logs: list[Path] | None = None,
+        stack_trace_str: str | None = None,
+    ):
+        self.server_logs = server_logs or []
         self.fuzzer_log = fuzzer_log
-        self.stderr_log = stderr_log
+        self.stderr_logs = stderr_logs or []
         self.stack_trace_str = stack_trace_str
+
+        # Set by parse_failure() to track which log file matched
+        self._matched_server_log = self.server_logs[0] if self.server_logs else None
+        self._matched_stderr_log = self.stderr_logs[0] if self.stderr_logs else None
+
+    # ------------------------------------------------------------------
+    # Helpers to search across all log files
+    # ------------------------------------------------------------------
+    def _rg_first_match(self, pattern, logs, context_after=10):
+        """
+        Run ripgrep with the given pattern against each log file in *logs*
+        (in order) and return the output from the first file that matches.
+        Returns (output, matched_log_path) or (None, None).
+        """
+        for log in logs:
+            if not log:
+                continue
+            output = Shell.get_output(
+                f"rg --text -A {context_after} -o '{pattern}' {log} | head -n10",
+                strict=True,
+            )
+            if output:
+                return output, log
+        return None, None
 
     def parse_failure(self):
         files = []
@@ -90,7 +122,12 @@ class FuzzerLogParser:
         ]
 
         error_output = None
-        for name, flag_name, pattern in error_patterns:
+        # Track which log file the error was found in so downstream helpers
+        # (stack trace, failed query, etc.) search the right file.
+        matched_server_log = self.server_logs[0] if self.server_logs else None
+        matched_stderr_log = self.stderr_logs[0] if self.stderr_logs else None
+
+        for _, flag_name, pattern in error_patterns:
             output = ""
             if self.stack_trace_str:
                 output = Shell.get_output(
@@ -99,15 +136,17 @@ class FuzzerLogParser:
                 )
             else:
                 if flag_name == "is_sanitizer_error":
-                    assert self.stderr_log
-                    file = self.stderr_log
+                    if not self.stderr_logs:
+                        continue
+                    output, matched = self._rg_first_match(pattern, self.stderr_logs)
+                    if matched:
+                        matched_stderr_log = matched
                 else:
-                    assert self.server_log
-                    file = self.server_log
-                output = Shell.get_output(
-                    f"rg --text -A 10 -o '{pattern}' {file} | head -n10",
-                    strict=True,
-                )
+                    if not self.server_logs:
+                        continue
+                    output, matched = self._rg_first_match(pattern, self.server_logs)
+                    if matched:
+                        matched_server_log = matched
 
             if output:
                 error_output = output
@@ -129,6 +168,10 @@ class FuzzerLogParser:
                 "Lost connection to server. See the logs.\n",
                 files,
             )
+
+        # Store matched logs for use by helper methods
+        self._matched_server_log = matched_server_log
+        self._matched_stderr_log = matched_stderr_log
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
@@ -313,24 +356,50 @@ class FuzzerLogParser:
                         break
             return lines
 
-        lines = []
+        # Search all stderr logs, return the first one that has a trace
+        for log in self.stderr_logs:
+            if not log:
+                continue
+            lines = _extract_sanitizer_trace(log)
+            if lines:
+                return "\n".join(lines)
 
-        if self.stderr_log:
-            lines = _extract_sanitizer_trace(self.stderr_log)
-        else:
-            assert False, "No stderr log provided"
-
-        return "\n".join(lines) if lines else None
+        return None
 
     def get_stack_trace(self):
+        """
+        Search all server logs for the last Fatal stack trace.
+        Prefer the log that matched the error pattern (_matched_server_log),
+        then fall back to all server logs.
+        """
+        matched = self._matched_server_log
+        # Put the matched log first so it's preferred
+        logs_to_search = []
+        if matched:
+            logs_to_search.append(matched)
+        for log in self.server_logs:
+            if log and log != matched:
+                logs_to_search.append(log)
+
+        for log in logs_to_search:
+            trace = self._extract_stack_trace_from_log(log)
+            if trace:
+                return trace
+        return None
+
+    def _extract_stack_trace_from_log(self, log_path):
+        """Extract the last Fatal stack trace from a single log file."""
         lines = []
         stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
 
         if self.stack_trace_str:
             all_lines = self.stack_trace_str.splitlines()
         else:
-            with open(self.server_log, "r", errors="replace") as file:
-                all_lines = file.readlines()
+            try:
+                with open(log_path, "r", errors="replace") as file:
+                    all_lines = file.readlines()
+            except (FileNotFoundError, IOError):
+                return None
 
         for line in reversed(all_lines):
             if "<Fatal> BaseDaemon: Stack trace:" in line:
@@ -423,11 +492,31 @@ class FuzzerLogParser:
         return stack_trace_id
 
     def get_failed_query(self):
+        """
+        Search all server logs for the failed query, preferring the log
+        that matched the error pattern.
+        """
+        matched = self._matched_server_log
+        logs_to_search = []
+        if matched:
+            logs_to_search.append(matched)
+        for log in self.server_logs:
+            if log and log != matched:
+                logs_to_search.append(log)
+
+        for log in logs_to_search:
+            result = self._get_failed_query_from_log(log)
+            if result:
+                return result
+        return None
+
+    def _get_failed_query_from_log(self, log_path):
+        """Extract the failed query from a single server log file."""
         # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
         failure_output = Shell.get_output(
-            f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
+            f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {log_path}",
             verbose=True,
         )
         if not failure_output:
@@ -441,7 +530,7 @@ class FuzzerLogParser:
                 print("ERROR: Expected query on second line but not found")
                 return None
 
-        assert failure_output, "No failure found in server log"
+        assert failure_output, f"No failure found in server log {log_path}"
         # Find the first line that has a proper log format with query ID.
         # rg may match continuation lines (e.g. SQL comments like "-- Logical error query")
         # that lack the "] {query_id}" prefix.
@@ -451,14 +540,14 @@ class FuzzerLogParser:
                 query_id = line.split(" ] {")[1].split("}")[0]
                 break
         if not query_id:
-            print("ERROR: Query id not found")
+            print(f"ERROR: Query id not found in {log_path}")
             return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
-            f"grep -a '{query_id}' {self.server_log} | head -n1"
+            f"grep -a '{query_id}' {log_path} | grep -a 'query:' | head -n1"
         )
         if not query_command:
-            print("Query not found in server log by query id")
+            print(f"Query not found in {log_path} by query id")
             return None
         query_command = query_command.split(" (stage:")[0]
 
@@ -580,10 +669,9 @@ class FuzzerLogParser:
 
 if __name__ == "__main__":
     # Test:
-    fuzzer_log = "./asan_err/fuzzer.log"
-    server_log = "./no_stid/server.log"
-    FTG = FuzzerLogParser(server_log, fuzzer_log)
-    # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
+    fuzzer_log = Path("./asan_err/fuzzer.log")
+    server_log = Path("./no_stid/server.log")
+    FTG = FuzzerLogParser([server_log], fuzzer_log)
     result_name, info, files = FTG.parse_failure()
     print("Result name:", result_name)
     print("Info:\n", info)

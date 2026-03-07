@@ -7,12 +7,11 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 from environment import set_environment_variables
-from integration.helpers.client import CommandRequest
-from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import (
+from tests.integration.helpers.client import CommandRequest
+from tests.integration.helpers.cluster import ClickHouseInstance
+from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,
@@ -20,17 +19,8 @@ from integration.helpers.config_cluster import (
 
 
 class Generator:
-    def __init__(
-        self,
-        binary: pathlib.Path,
-        config: pathlib.Path,
-        tmpdir: pathlib.Path,
-        _suffix: Optional[str],
-    ):
-        self.binary: pathlib.Path = binary
-        self.config: pathlib.Path = config
-        if _suffix is not None:
-            self.temp = tempfile.NamedTemporaryFile(dir=tmpdir, suffix=_suffix)
+    def __init__(self):
+        pass
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
@@ -55,9 +45,8 @@ class Generator:
 
 class BuzzHouseGenerator(Generator):
     def __init__(self, args, cluster, catalog_server, server_settings):
-        super().__init__(
-            args.client_binary, args.client_config, args.tmp_files_dir, ".json"
-        )
+        super().__init__()
+        self.binary: pathlib.Path = args.client_binary
 
         if server_settings is None:
             root = ET.Element("clickhouse")
@@ -166,14 +155,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
-        if (
-            args.with_spark
-            or args.with_glue
-            or args.with_hms
-            or args.with_rest
-            or args.with_unity
-            or args.with_kafka
-        ):
+        if args.with_spark or args.with_kafka:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
@@ -216,8 +198,15 @@ class BuzzHouseGenerator(Generator):
                     "password": "",
                 }
 
-        with open(self.temp.name, "w+") as file2:
-            file2.write(json.dumps(buzz_config))
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir,
+            mode="w",
+            prefix="buzzhouse_",
+            suffix=".json",
+            delete=False,
+        ) as temp_file:
+            self.temp_name = temp_file.name
+            json.dump(buzz_config, temp_file, indent=4)
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         return [
@@ -228,8 +217,8 @@ class BuzzHouseGenerator(Generator):
             "--port",
             "9000",
             "--max_memory_usage_in_client=1000000000",
-            f"--buzz-house-config={self.temp.name}",
+            f"--buzz-house-config={self.temp_name}",
         ]
 
     def validate_exit_code(self, exit_code: int) -> bool:
-        return exit_code in (0, 137, 143)
+        return exit_code in (-9, -15, -2, 0, 32, 130, 137, 143, 210)

@@ -15,7 +15,7 @@ import sys
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
+from tests.integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
     create_spark_http_server,
@@ -26,16 +26,16 @@ from sparkserver import (
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
 from environment import set_environment_variables
-from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from integration.helpers.postgres_utility import get_postgres_conn
-from integration.helpers.s3_tools import (
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.postgres_utility import get_postgres_conn
+from tests.integration.helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
     LocalDownloader,
     prepare_s3_bucket,
 )
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
+from tests.integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
 from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas
@@ -504,7 +504,8 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-cluster.start()
+# Connection timeout should be greater then start timeout (300 sec at the moment) to avoid connection issues when server is starting
+cluster.start(300)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
@@ -543,7 +544,7 @@ if args.with_postgresql:
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator: Generator = Generator(pathlib.Path(), pathlib.Path(), pathlib.Path(), None)
+generator: Generator = Generator()
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Starting load generator")
@@ -558,35 +559,14 @@ def dolor_cleanup():
         if client.process.poll() is None:
             client.process.kill()
             client.process.wait()
-        logger.info(f"Load generator exited with code: {client.process.returncode}")
-
         try:
-            cluster.shutdown(kill=True, ignore_fatal=False)
+            cluster.shutdown(kill=True)
         except:
             pass
         close_spark_http_server(catalog_server)
-        if modified_server_settings:
-            try:
-                os.unlink(server_settings)
-            except FileNotFoundError:
-                pass
-        if modified_user_settings:
-            try:
-                os.unlink(user_settings)
-            except FileNotFoundError:
-                pass
-        try:
-            os.unlink(generator.temp.name)
-        except FileNotFoundError:
-            pass
         if args.with_minio:
             try:
                 os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        for entry in keeper_configs:
-            try:
-                os.unlink(entry)
             except FileNotFoundError:
                 pass
         everything_cleaned = True
@@ -623,7 +603,6 @@ if args.with_kafka:
 
 # This is the main loop, run while client and server are running
 all_running = True
-good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -641,24 +620,6 @@ test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
 reached_limit = False
 
 
-def explain_returncode(rc: int) -> str:
-    if rc == 0:
-        return "successfully (0)."
-    if rc < 0:
-        sig = -rc
-        try:
-            name = signal.Signals(sig).name
-        except ValueError:
-            name = f"SIG{sig}"
-        try:
-            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
-        except Exception:
-            reason = ""
-        extra = f" - {reason}" if reason else ""
-        return f"terminated by signal {sig} ({name}){extra}."
-    return f"with status {rc}."
-
-
 while all_running and (not reached_limit):
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
@@ -669,18 +630,11 @@ while all_running and (not reached_limit):
 
     while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
-            logger.info(
-                f"Load generator finished {explain_returncode(client.process.returncode)}"
-            )
             all_running = False
-            good_exit = good_exit and generator.validate_exit_code(
-                client.process.returncode
-            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
-                logger.info(f"The server {server.name} is not running")
-                all_running = good_exit = False
+                all_running = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
@@ -717,11 +671,11 @@ while all_running and (not reached_limit):
         )
 
         try:
-            next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+            next_pick.stop_clickhouse(stop_wait_sec=30, kill=kill_server)
         except Exception as ex:
             logger.error(f"Failed to stop ClickHouse: {ex}")
             logger.info(f"The server {next_pick.name} is not running")
-            all_running = good_exit = False
+            all_running = False
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
@@ -755,7 +709,7 @@ while all_running and (not reached_limit):
             except Exception as ex:
                 logger.error(f"Failed to start ClickHouse: {ex}")
                 logger.info(f"The server {next_pick.name} is not running")
-                all_running = good_exit = False
+                all_running = False
             if all_running and args.with_leak_detection and next_pick.name == "node0":
                 # Has to reset leak detector
                 leak_detector.reset_and_capture_baseline(cluster)
@@ -790,5 +744,54 @@ while all_running and (not reached_limit):
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
+
+good_exit = True
+if not all_running and not reached_limit:
+    # Check load generator first
+    if client.process.poll() is None:
+        client.process.kill()
+        client.process.wait()
+    logger.info(f"Load generator exited with code: {client.process.returncode}")
+    good_exit = generator.validate_exit_code(client.process.returncode)
+    for server in servers:
+        # First check if not running
+        pid = server.get_process_pid("clickhouse")
+        if pid is None:
+            logger.info(f"The server {server.name} is not running")
+        else:
+            server.stop_clickhouse(stop_wait_sec=30, kill=False)
+            if server.get_process_pid("clickhouse") is not None:
+                logger.warning(
+                    f"Instance {server.name} is still running after stop command"
+                )
+                good_exit = False
+        if server.clickhouse_exec_id:
+            try:
+                exec_info = cluster.docker_client.api.exec_inspect(
+                    server.clickhouse_exec_id
+                )
+                exit_code = exec_info["ExitCode"]
+                logging.info(f"The server {server.name} exited with code: {exit_code}")
+                good_exit = good_exit and exit_code in (
+                    -9,
+                    -15,
+                    0,
+                    137,
+                    143,
+                )  # 137 is SIGKILL, 143 is SIGTERM
+            except Exception as ex:
+                logging.warning(
+                    f"Could not inspect exec for {server.name} - already gone: {ex}"
+                )
+                good_exit = False
+        if server.grep_in_log("Logical error:", from_host=True):
+            logging.error(f"Logical error in instance '{server.name}'")
+            good_exit = False
+        if server.grep_in_log("<Fatal>", from_host=True):
+            logging.error(f"Crash in instance '{server.name}'")
+            good_exit = False
+        if server.grep_in_log("Sanitizer:", filename="stderr.log", from_host=True):
+            logging.error(f"Sanitizer error in instance '{server.name}'")
+            good_exit = False
 
 sys.exit(0 if good_exit else 1)

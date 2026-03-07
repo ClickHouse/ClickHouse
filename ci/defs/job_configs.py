@@ -971,21 +971,20 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
-    buzz_fuzzer_jobs = Job.Config(
-        name=JobNames.BUZZHOUSE,
+    lacasadeldolor_jobs = Job.Config(
+        name=JobNames.LACASADELDOLOR,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/buzzhouse_job.py",
+        command="python3 ./ci/jobs/lacasadeldolor_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/fuzzer",
-                "./ci/jobs/buzzhouse_job.py",
-                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/docker/integration",
                 "./ci/jobs/scripts/log_parser.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
-                "./ci/docker/fuzzer",
+                "./tests/casa_del_dolor/dolor.py",
+                # Add all other required files
             ],
         ),
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",

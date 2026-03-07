@@ -264,9 +264,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
             for replica_name, server_log_file, stderr_log in replica_log_pairs:
                 log_parser = FuzzerLogParser(
-                    server_log=server_log_file,
-                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
-                    fuzzer_log="",
+                    server_logs=[server_log_file],
+                    stderr_logs=[stderr_log] if stderr_log.exists() else None,
                 )
                 try:
                     name, description, files = log_parser.parse_failure()
