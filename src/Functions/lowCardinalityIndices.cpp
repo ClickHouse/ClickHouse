@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
@@ -9,11 +10,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace
 {
 
@@ -32,13 +28,13 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
-        if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First first argument of function lowCardinalityIndexes must be ColumnLowCardinality, "
-                            "but got {}", arguments[0]->getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
