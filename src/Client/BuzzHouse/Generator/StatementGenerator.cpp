@@ -136,15 +136,16 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
-              {0.02, 0.05}, /// MergeIndexUDF
               {0.01, 0.05}, /// LoopUDF
               {0.03, 0.10}, /// ValuesUDF
               {0.01, 0.05}, /// RandomDataUDF
               {0.10, 0.30}, /// Dictionary
               {0.02, 0.10}, /// URLEncodedTable
               {0.10, 0.50}, /// TableEngineUDF
-              {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.05}, /// RandomTableUDF
+              {0.02, 0.05}, /// MergeIndexUDF
+              {0.01, 0.10}, /// MergeProjectionUDF
+              {0.01, 0.10}, /// MergeTextIndexUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
           }},
           "SQL queries"))
@@ -620,26 +621,22 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
     {
-        TableEngine * te = cv->mutable_engine();
-        const uint32_t nopt = rg.nextSmallNumber();
-
-        if (nopt < 4)
-        {
-            getNextTableEngine(rg, false, next);
-            te->set_engine(next.teng);
-        }
-        else
-        {
-            next.teng = MergeTree;
-        }
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
+        next.teng = MergeTree;
         if (!has_to)
         {
+            TableEngine * te = cv->mutable_engine();
+
+            if (rg.nextSmallNumber() < 4)
+            {
+                getNextTableEngine(rg, false, next);
+                te->set_engine(next.teng);
+            }
             chassert(this->entries.empty());
             for (uint32_t i = 0; i < view_ncols; i++)
             {
