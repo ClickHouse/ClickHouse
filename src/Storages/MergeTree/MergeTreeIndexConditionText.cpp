@@ -1,17 +1,18 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+
+#include <Core/Settings.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/hasAnyAllTokens.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Interpreters/misc.h>
-#include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool query_plan_text_index_add_hint;
-    extern const SettingsBool use_text_index_dictionary_cache;
+    extern const SettingsBool use_text_index_tokens_cache;
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
@@ -77,10 +78,10 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
-    if (settings[Setting::use_text_index_dictionary_cache])
-        dictionary_block_cache = context_->getTextIndexDictionaryBlockCache();
+    if (settings[Setting::use_text_index_tokens_cache])
+        tokens_cache = context_->getTextIndexTokensCache();
     else
-        dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_memory_usage, 0, 1.0);
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
 
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
@@ -769,10 +770,11 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
         return false;
 
     const auto function = index_column_node.toFunctionNode();
-    const auto column_name = function.getArgumentAt(0).getColumnName();
 
     if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
         return false;
+
+    const auto column_name = function.getArgumentAt(0).getColumnName();
 
     if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
         return false;
