@@ -7,8 +7,8 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -89,6 +89,36 @@ public:
         if (lhs_which.isEnum())
             return;
 
+        /// Create a new constant with Nullable removed from the type.
+        /// The IN function wraps the constant type in Nullable during analysis,
+        /// but equals/notEquals expect the raw scalar type.
+        auto constant_type = constant_node->getResultType();
+        auto rhs_type = removeNullable(constant_type);
+
+        /// When the LHS and RHS have the same type, we can convert directly.
+        /// When they differ, we try to convert the constant to the LHS type —
+        /// mirroring how IN builds its Set (SetUtils.cpp converts each literal
+        /// to the column type via convertFieldToTypeStrict).
+        ///
+        /// This handles cases like String IN (1): the integer 1 is converted to
+        /// the string '1', producing equals(x, '1') which FunctionComparison
+        /// can execute. Without this, equals(String, UInt8) would throw
+        /// NO_COMMON_TYPE at execution time.
+        ///
+        /// If the conversion fails or produces NULL (value out of range),
+        /// IN would never match either, but we conservatively skip the
+        /// optimization to avoid changing behavior.
+        Field converted_value = value;
+        DataTypePtr result_rhs_type = rhs_type;
+        if (!lhs_type->equals(*rhs_type))
+        {
+            Field converted = tryConvertFieldToType(value, *lhs_type, rhs_type.get());
+            if (converted.isNull())
+                return;
+            converted_value = std::move(converted);
+            result_rhs_type = lhs_type;
+        }
+
         const String result_function_name = is_in ? "equals" : "notEquals";
 
         auto result_function = std::make_shared<FunctionNode>(result_function_name);
@@ -97,19 +127,7 @@ public:
         /// the convention used in ComparisonTupleEliminationPass, CNF, and other passes.
         result_function->markAsOperator();
 
-        /// Create a new constant with Nullable removed from the type.
-        /// The IN function wraps the constant type in Nullable during analysis,
-        /// but equals/notEquals expect the raw scalar type.
-        auto constant_type = constant_node->getResultType();
-        auto rhs_type = removeNullable(constant_type);
-
-        /// Check type compatibility before attempting to resolve equals/notEquals.
-        /// IN accepts nearly any type combination, but equals has stricter rules
-        /// (e.g. Date vs UInt is rejected). Skip conversion if the types are incompatible.
-        if (!areTypesComparableForEquality(lhs_type, rhs_type))
-            return;
-
-        auto new_constant = std::make_shared<ConstantNode>(value, rhs_type);
+        auto new_constant = std::make_shared<ConstantNode>(converted_value, result_rhs_type);
         if (constant_node->hasSourceExpression())
             new_constant->getSourceExpression() = constant_node->getSourceExpression();
 

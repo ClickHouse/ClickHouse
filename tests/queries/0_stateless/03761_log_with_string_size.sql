@@ -1,6 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/89909
 SET enable_analyzer=1;
-SET optimize_in_to_equal=0;
 
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 String) ENGINE = Log();

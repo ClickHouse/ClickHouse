@@ -249,3 +249,42 @@ QUERY id: 0
 0
 1
 \N
+---
+---
+QUERY id: 0
+  PROJECTION COLUMNS
+    x String
+    y Int32
+    z Nullable(Int32)
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x, result_type: String, source_id: 3
+      COLUMN id: 4, column_name: y, result_type: Int32, source_id: 3
+      COLUMN id: 5, column_name: z, result_type: Nullable(Int32), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_in_to_equal
+  WHERE
+    FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          COLUMN id: 8, column_name: x, result_type: String, source_id: 3
+          CONSTANT id: 9, constant_value: \'1\', constant_value_type: String
+---
+QUERY id: 0
+  PROJECTION COLUMNS
+    x String
+    y Int32
+    z Nullable(Int32)
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: x, result_type: String, source_id: 3
+      COLUMN id: 4, column_name: y, result_type: Int32, source_id: 3
+      COLUMN id: 5, column_name: z, result_type: Nullable(Int32), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_in_to_equal
+  WHERE
+    FUNCTION id: 6, function_name: notEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          COLUMN id: 8, column_name: x, result_type: String, source_id: 3
+          CONSTANT id: 9, constant_value: \'1\', constant_value_type: String

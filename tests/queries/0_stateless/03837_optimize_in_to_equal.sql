@@ -132,4 +132,20 @@ SELECT s NOT IN ('a') FROM test_lc_nullable ORDER BY s NULLS LAST;
 
 DROP TABLE test_lc_nullable;
 
+SELECT '---';
+
+-- Implicit type conversion: String IN (integer) should convert the integer to String
+-- and produce equals(x, '1'), not throw or skip the optimization.
+SELECT * FROM test_in_to_equal WHERE x IN (1);
+
+SELECT '---';
+
+-- Verify the query tree shows equals with the converted String constant
+EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN (1);
+
+SELECT '---';
+
+-- String NOT IN (integer): should produce notEquals(x, '1')
+EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x NOT IN (1);
+
 DROP TABLE test_in_to_equal;
