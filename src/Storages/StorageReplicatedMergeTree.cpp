@@ -321,7 +321,6 @@ void StorageReplicatedMergeTree::setZooKeeper()
     /// ZooKeeper sessions, some queries like ATTACH PARTITION FROM may have
     /// strange effects. So we always use only one session for all tables.
     /// (excluding auxiliary zookeepers)
-
     auto new_keeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_info.zookeeper_name);
     std::lock_guard lock(current_zookeeper_mutex);
     current_zookeeper = new_keeper;

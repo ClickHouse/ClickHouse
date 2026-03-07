@@ -128,7 +128,6 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
     auto current_context = getContext();
-
     if (query.table_function)
     {
         const auto & factory = TableFunctionFactory::instance();

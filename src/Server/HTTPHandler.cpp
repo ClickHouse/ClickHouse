@@ -189,7 +189,6 @@ void HTTPHandler::processQuery(
     const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
-
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (!authenticateUser(request, params, response))

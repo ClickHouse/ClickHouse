@@ -28,7 +28,6 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
 {
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
-
     for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
     {
         auto & chunk = chunks[chunk_index];

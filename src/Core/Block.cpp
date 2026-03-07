@@ -50,6 +50,7 @@ static ReturnType onError(int code [[maybe_unused]],
 static const IColumn * getActualColumn(const IColumn * column)
 {
     const IColumn * actual_column = column;
+
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
         return getActualColumn(&column_const->getDataColumn());
 

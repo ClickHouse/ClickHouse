@@ -248,7 +248,6 @@ FilterDAGInfoPtr generateFilterActions(
 try
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
-
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
 

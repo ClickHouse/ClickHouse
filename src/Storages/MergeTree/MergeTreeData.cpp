@@ -358,7 +358,6 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
 {
     if (metadata.sampling_key.column_names.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "There are no columns in sampling expression");
-
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sampling expression must be present in the primary key");

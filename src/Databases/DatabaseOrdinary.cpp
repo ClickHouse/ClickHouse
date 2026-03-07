@@ -147,7 +147,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     auto args = make_intrusive<ASTExpressionList>();
     auto engine = make_intrusive<ASTFunction>();
     String engine_name;
-
     if (replicated)
     {
         const auto & server_settings = local_context->getServerSettings();

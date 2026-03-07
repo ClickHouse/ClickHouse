@@ -78,6 +78,7 @@ BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
+
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);

@@ -27,7 +27,6 @@ namespace ErrorCodes
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
     bool first = true;
-
     for (const auto & desc : description)
     {
         if (!first)

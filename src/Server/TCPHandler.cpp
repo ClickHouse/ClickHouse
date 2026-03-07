@@ -204,7 +204,8 @@ void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo &
 void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
 {
     // Secondary query may contain different client_info.
-    // In the case of select from distributed table or 'select * from remote' from non-tcp handler. Server sends the initial client_info data.
+    // In the case of select from distributed table or 'select * from remote' from non-tcp handler.
+    // Server sends the initial client_info data.
     //
     // Example 1: curl -q -s --max-time 60 -sS "http://127.0.0.1:8123/?" -d "SELECT 1 FROM remote('127.0.0.1', system.one)"
     // HTTP handler initiates TCP connection with remote 127.0.0.1 (session on remote 127.0.0.1 use TCP interface)

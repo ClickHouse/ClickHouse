@@ -253,23 +253,25 @@ class Targeting:
 
         info = "Tests not found for lines:\n"
         for (file_, line), symbol in not_resolved_file_lines.items():
-            info += f"  {file_}:{line} -> symbol: {symbol[:70] + '...' if symbol else 'NOT FOUND'}\n"
-        info = "Tests found for lines:\n"
+            info += f"  {file_}:{line} -> symbol: {symbol[:90] + '...' if symbol else 'NOT FOUND'}\n"
+        info += "Tests found for lines:\n"
         if not resolved_file_lines:
             info += "  No updates in source code\n"
         else:
             for (file_, line), (symbol, tests) in resolved_file_lines.items():
-                info += f"  {file_}:{line} -> symbol: {symbol[:70]}...\n"
+                info += f"  {file_}:{line} -> symbol: {symbol[:90]}...\n"
                 if len(tests) > max_tests_per_symbol:
                     info += f"    skipping {len(tests)} tests (too common code)\n"
                 else:
                     selected_tests.update(tests)
-            for test in tests[:10]:
+            selected_tests_list = sorted(selected_tests)
+            for test in selected_tests_list[:10]:
                 info += f"  - {test}\n"
-            if len(tests) > 10:
-                info += f"    ... and {len(tests) - 10} more tests\n"
+            if len(selected_tests_list) > 10:
+                info += f"    ... and {len(selected_tests_list) - 10} more tests\n"
         info += f"Total unique tests: {len(selected_tests)}\n"
         selected_tests = list(selected_tests)
+        print(selected_tests)
         return selected_tests, Result(
             name="tests found by coverage", status=Result.StatusExtended.OK, info=info
         )
@@ -307,6 +309,7 @@ class Targeting:
                         info=f"Skipped: {e}",
                     )
                 )
+                raise
 
         return tests, Result(
             name="Fetch relevant tests",

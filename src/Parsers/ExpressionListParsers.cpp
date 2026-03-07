@@ -48,7 +48,6 @@ namespace ErrorCodes
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTs elements;
-
     auto parse_element = [&]
     {
         ASTPtr element;

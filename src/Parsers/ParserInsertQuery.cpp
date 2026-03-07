@@ -26,7 +26,6 @@ namespace ErrorCodes
 
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Create parsers
     ParserKeyword s_insert_into(Keyword::INSERT_INTO);
     ParserKeyword s_from_infile(Keyword::FROM_INFILE);
     ParserKeyword s_compression(Keyword::COMPRESSION);

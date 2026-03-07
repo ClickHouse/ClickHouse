@@ -51,7 +51,6 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const
 {
     chassert(min_bytes <= max_bytes);
-
     /// This is a workaround of a read past EOF bug in linux kernel with pread()
     if (file_size.has_value() && offset >= *file_size)
          return 0;

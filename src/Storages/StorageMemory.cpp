@@ -89,6 +89,7 @@ public:
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
         storage_snapshot->metadata->check(block, true);
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
