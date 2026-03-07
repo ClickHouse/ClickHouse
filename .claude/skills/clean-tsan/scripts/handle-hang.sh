@@ -18,7 +18,7 @@
 #   LLDB=<path to lldb binary>
 #   ITERATION=<NNN>
 #   STACKTRACE_FILE=<full path to stacktrace file>
-#   KILLED=1
+#   KILLED=1 (or KILLED=0 if the process could not be killed)
 #
 # Requires sudo for ptrace attach.
 # Exit code: 0 on success, 1 on error.
@@ -107,10 +107,26 @@ OUTFILE="$ARTIFACT_DIR/stacktrace-$NNN.txt"
 sudo "$LLDB" -p "$PID" -o "bt all" -o "detach" -o "quit" > "$OUTFILE" 2>&1
 echo "STACKTRACE_FILE=$OUTFILE"
 
-# Kill the hung process and wait for it to exit
+# Kill the hung process and wait for it to exit.
+# First try SIGTERM, then escalate to SIGKILL for deadlocked processes.
 kill "$PID" 2>/dev/null || true
 for _ in $(seq 1 50); do
     kill -0 "$PID" 2>/dev/null || break
     sleep 0.1
 done
-echo "KILLED=1"
+
+if kill -0 "$PID" 2>/dev/null; then
+    # SIGTERM didn't work (likely deadlocked) — escalate to SIGKILL
+    kill -9 "$PID" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+    done
+fi
+
+if ! kill -0 "$PID" 2>/dev/null; then
+    echo "KILLED=1"
+else
+    echo "KILLED=0"
+    echo "WARNING: Process $PID could not be killed" >&2
+fi

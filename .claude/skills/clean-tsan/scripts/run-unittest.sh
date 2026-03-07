@@ -99,7 +99,7 @@ done
 if kill -0 "$pid" 2>/dev/null; then
     # Process still alive — hang detected.
     # Do NOT kill: caller needs to attach lldb first.
-    cpu=$(ps -p "$pid" -o %cpu --no-headers 2>/dev/null | tr -d ' ')
+    cpu=$(ps -p "$pid" -o %cpu --no-headers 2>/dev/null | tr -d ' ' || true)
     hung_test=$(grep '^\[ RUN' "$LOG_FILE" | tail -1 || true)
     echo "HANG_DETECTED=1"
     echo "HUNG_TEST=$hung_test"
