@@ -1,11 +1,16 @@
+import glob
 import json
+import os
+import re
 import time
+
 import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
-    get_uuid_str,
     default_download_directory,
+    default_upload_directory,
+    get_uuid_str,
 )
 
 
@@ -24,15 +29,13 @@ AGGRESSIVE_RETENTION = {
 def _read_iceberg_metadata(instance, table_name):
     metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
     latest = instance.exec_in_container(
-        ["bash", "-c", f"ls -t {metadata_dir}/*.metadata.json | head -1"]
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
     ).strip()
     raw = instance.exec_in_container(["cat", latest])
     return json.loads(raw), latest
 
 
 def _write_iceberg_metadata(instance, table_name, meta, prev_path):
-    import re
-
     metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
     meta["last-updated-ms"] = int(time.time() * 1000)
     version_match = re.search(r"/v(\d+)[^/]*\.metadata\.json$", prev_path)
@@ -55,10 +58,36 @@ def update_iceberg_metadata(instance, table_name, updater_fn):
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
 
-def set_iceberg_table_properties(instance, table_name, properties):
-    def updater(meta):
-        meta.setdefault("properties", {}).update(properties)
-    update_iceberg_metadata(instance, table_name, updater)
+def _fix_version_hint_for_spark(table_name):
+    """Rewrite version-hint.text as a plain version number.
+    ClickHouse writes the full filename (e.g. 'v3.metadata.json');
+    Spark's Hadoop catalog expects just the number (e.g. '3').
+    """
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    latest = 0
+    for f in glob.glob(os.path.join(metadata_dir, "*.metadata.json")):
+        m = re.search(r"v(\d+)", os.path.basename(f))
+        if m:
+            latest = max(latest, int(m.group(1)))
+    with open(os.path.join(metadata_dir, "version-hint.text"), "w") as f:
+        f.write(str(latest))
+
+
+def spark_alter_table(cluster, spark, storage_type, table_name, *sql_fragments):
+    """Execute Spark SQL ALTER TABLE on a ClickHouse-created Iceberg table.
+
+    Downloads the table from storage to the host (so Spark can see it),
+    executes the SQL statements, then uploads the result back.
+
+    Each sql_fragment is appended to 'ALTER TABLE {table_name} '.
+    Example: spark_alter_table(..., "SET TBLPROPERTIES('key' = 'val')")
+    """
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    default_download_directory(cluster, storage_type, table_dir, table_dir)
+    _fix_version_hint_for_spark(table_name)
+    for fragment in sql_fragments:
+        spark.sql(f"ALTER TABLE {table_name} {fragment}")
+    default_upload_directory(cluster, storage_type, table_dir, table_dir)
 
 
 def create_and_populate(cluster, instance, storage_type, table_name, n_rows, format_version=2):
@@ -123,7 +152,7 @@ def make_table_name(prefix, storage_type):
 # Basic / sanity tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("storage_type", ["s3", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = make_table_name("test_expire_basic", storage_type)
@@ -146,7 +175,7 @@ def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type
     assert_data_intact(instance, TABLE_NAME, 4)
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_expire_snapshots_no_expirable(started_cluster_iceberg_with_spark, storage_type):
     """No-op when no snapshots match the criteria."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -159,7 +188,7 @@ def test_expire_snapshots_no_expirable(started_cluster_iceberg_with_spark, stora
     assert_data_intact(instance, TABLE_NAME, 1)
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_expire_snapshots_format_v1_error(started_cluster_iceberg_with_spark, storage_type):
     """expire_snapshots rejects format version 1 with BAD_ARGUMENTS."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -178,7 +207,7 @@ def test_expire_snapshots_format_v1_error(started_cluster_iceberg_with_spark, st
     assert "second version" in error, f"Expected v2-only message, got: {error}"
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_expire_snapshots_preserves_current(started_cluster_iceberg_with_spark, storage_type):
     """Current snapshot is never expired, even with a far-future timestamp."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -193,8 +222,11 @@ def test_expire_snapshots_preserves_current(started_cluster_iceberg_with_spark, 
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, storage_type):
-    """Expired snapshot files are physically removed; retained snapshot files survive."""
+    """Expired snapshot files are physically removed; retained snapshot files survive.
+    Local-only: needs direct filesystem access to verify file deletion.
+    """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_files_cleaned", storage_type)
 
     create_and_populate(
@@ -208,7 +240,11 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
         f"INSERT INTO {TABLE_NAME} VALUES (3);", settings=ICEBERG_SETTINGS
     )
 
-    set_iceberg_table_properties(instance, TABLE_NAME, AGGRESSIVE_RETENTION)
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        f"SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        f"'history.expire.min-snapshots-to-keep' = '1')",
+    )
 
     meta_before = read_iceberg_metadata(instance, TABLE_NAME)
     current_id = meta_before["current-snapshot-id"]
@@ -248,13 +284,14 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
 
 
 # ---------------------------------------------------------------------------
-# Retention policy tests (table-level properties)
+# Retention policy tests (table-level properties via Spark SQL)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_expire_snapshots_retention_min_keep(started_cluster_iceberg_with_spark, storage_type):
     """min-snapshots-to-keep prevents expiring the N most recent ancestors."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_min_keep", storage_type)
 
     create_and_populate(
@@ -262,30 +299,33 @@ def test_expire_snapshots_retention_min_keep(started_cluster_iceberg_with_spark,
     )
     assert get_history_count(instance, TABLE_NAME) == 5
 
-    set_iceberg_table_properties(instance, TABLE_NAME, {
-        "history.expire.min-snapshots-to-keep": "3",
-        "history.expire.max-snapshot-age-ms": "1",
-    })
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        "SET TBLPROPERTIES('history.expire.min-snapshots-to-keep' = '3', "
+        "'history.expire.max-snapshot-age-ms' = '1')",
+    )
     expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
 
     assert get_history_count(instance, TABLE_NAME) == 3
     assert_data_intact(instance, TABLE_NAME, 5)
 
 
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_expire_snapshots_retention_max_age(started_cluster_iceberg_with_spark, storage_type):
     """max-snapshot-age-ms preserves recent snapshots regardless of timestamp cutoff."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_max_age", storage_type)
 
     create_and_populate(
         started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 5
     )
 
-    set_iceberg_table_properties(instance, TABLE_NAME, {
-        "history.expire.min-snapshots-to-keep": "1",
-        "history.expire.max-snapshot-age-ms": str(3600 * 1000),
-    })
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        f"SET TBLPROPERTIES('history.expire.min-snapshots-to-keep' = '1', "
+        f"'history.expire.max-snapshot-age-ms' = '{3600 * 1000}')",
+    )
     expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
 
     assert get_history_count(instance, TABLE_NAME) == 5, \
@@ -293,7 +333,7 @@ def test_expire_snapshots_retention_max_age(started_cluster_iceberg_with_spark, 
     assert_data_intact(instance, TABLE_NAME, 5)
 
 
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_expire_snapshots_no_args_default_retention(started_cluster_iceberg_with_spark, storage_type):
     """No-arg expire uses default 5-day max-age; all recent snapshots survive."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -311,10 +351,11 @@ def test_expire_snapshots_no_args_default_retention(started_cluster_iceberg_with
     assert_data_intact(instance, TABLE_NAME, 3)
 
 
-@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_expire_snapshots_no_args_with_short_max_age(started_cluster_iceberg_with_spark, storage_type):
     """No-arg expire with very short max-age expires old snapshots."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_no_args_short_age", storage_type)
 
     create_and_populate(
@@ -322,7 +363,11 @@ def test_expire_snapshots_no_args_with_short_max_age(started_cluster_iceberg_wit
     )
     time.sleep(2)
 
-    set_iceberg_table_properties(instance, TABLE_NAME, AGGRESSIVE_RETENTION)
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
+    )
     expire_snapshots(instance, TABLE_NAME)
 
     assert get_history_count(instance, TABLE_NAME) == 1, \
@@ -332,26 +377,26 @@ def test_expire_snapshots_no_args_with_short_max_age(started_cluster_iceberg_wit
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_boundary_max_age(started_cluster_iceberg_with_spark, storage_type):
-    """Two-phase boundary: generous max-age retains all, then 1ms max-age expires old."""
+    """Two-phase boundary: generous max-age retains all, then 1ms max-age expires old.
+    Local-only: needs read_iceberg_metadata for snapshot timestamps.
+    """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_boundary_age", storage_type)
 
     create_and_populate(
         started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 3
     )
 
-    meta = read_iceberg_metadata(instance, TABLE_NAME)
-    snap_ts = {s["snapshot-id"]: s["timestamp-ms"] for s in meta["snapshots"]}
     snap_ids = get_snapshot_ids(instance, TABLE_NAME)
     oldest_id = snap_ids[0]
 
-    now_ms = int(time.time() * 1000)
-    generous_age = (now_ms - snap_ts[oldest_id]) + 10000
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        f"SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '{3600 * 1000}', "
+        f"'history.expire.min-snapshots-to-keep' = '1')",
+    )
 
-    set_iceberg_table_properties(instance, TABLE_NAME, {
-        "history.expire.max-snapshot-age-ms": str(generous_age),
-        "history.expire.min-snapshots-to-keep": "1",
-    })
     expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
 
     retained = get_retained_ids(instance, TABLE_NAME)
@@ -359,7 +404,11 @@ def test_expire_snapshots_boundary_max_age(started_cluster_iceberg_with_spark, s
         f"Snapshot within max-age should be retained, but {oldest_id} expired"
     assert len(retained) == 3, f"All 3 within max-age, got {len(retained)}"
 
-    set_iceberg_table_properties(instance, TABLE_NAME, AGGRESSIVE_RETENTION)
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
+    )
     expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
 
     retained = get_retained_ids(instance, TABLE_NAME)
@@ -374,8 +423,11 @@ def test_expire_snapshots_boundary_max_age(started_cluster_iceberg_with_spark, s
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_tag_retained(started_cluster_iceberg_with_spark, storage_type):
-    """A tag's snapshot is retained even when age/min-keep would otherwise expire it."""
+    """A tag's snapshot is retained even when age/min-keep would otherwise expire it.
+    Local-only: needs get_snapshot_ids / get_retained_ids which read container metadata.
+    """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = make_table_name("test_expire_tag_retained", storage_type)
 
     create_and_populate(
@@ -386,13 +438,12 @@ def test_expire_snapshots_tag_retained(started_cluster_iceberg_with_spark, stora
     current_id = snap_ids[-1]
     tag_id = snap_ids[1]
 
-    def add_tag(meta):
-        meta["refs"] = {
-            "main": {"snapshot-id": current_id, "type": "branch"},
-            "release-v1": {"snapshot-id": tag_id, "type": "tag"},
-        }
-        meta.setdefault("properties", {}).update(AGGRESSIVE_RETENTION)
-    update_iceberg_metadata(instance, TABLE_NAME, add_tag)
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
+        f"CREATE TAG `release_v1` AS OF VERSION {tag_id}",
+    )
 
     expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
 
@@ -401,8 +452,51 @@ def test_expire_snapshots_tag_retained(started_cluster_iceberg_with_spark, stora
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_branch_min_keep_override(started_cluster_iceberg_with_spark, storage_type):
+    """Branch-level min-snapshots-to-keep overrides the table default.
+    Local-only: needs get_snapshot_ids / get_retained_ids which read container metadata.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = make_table_name("test_expire_branch_min_keep", storage_type)
+
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 5
+    )
+
+    snap_ids = get_snapshot_ids(instance, TABLE_NAME)
+    current_id = snap_ids[-1]
+    branch_head_id = snap_ids[2]
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
+        f"CREATE BRANCH `feature` AS OF VERSION {branch_head_id} "
+        f"WITH SNAPSHOT RETENTION 2 SNAPSHOTS",
+    )
+
+    expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
+
+    # main: min-keep=1 → current (snap5)
+    # feature: min-keep=2 → snap3, snap2
+    expected = {current_id, branch_head_id, snap_ids[1]}
+    assert get_retained_ids(instance, TABLE_NAME) == expected, \
+        f"Expected main(1) + feature(2)"
+    assert_data_intact(instance, TABLE_NAME, 5)
+
+
+# ---------------------------------------------------------------------------
+# Tests requiring manual metadata patching
+# These cannot use Spark SQL because:
+#   - Dangling refs: Spark validates snapshot existence on CREATE BRANCH/TAG
+#   - 1ms max-ref-age-ms: Spark RETAIN clause minimum granularity is minutes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_max_ref_age(started_cluster_iceberg_with_spark, storage_type):
-    """Non-main branch ref with age > max-ref-age-ms is expired and removed."""
+    """Non-main branch ref with age > max-ref-age-ms is expired and removed.
+    Manual patching: Spark RETAIN has minute granularity; we need 1ms."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = make_table_name("test_expire_max_ref_age", storage_type)
 
@@ -436,44 +530,9 @@ def test_expire_snapshots_max_ref_age(started_cluster_iceberg_with_spark, storag
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_expire_snapshots_branch_min_keep_override(started_cluster_iceberg_with_spark, storage_type):
-    """Branch-level min-snapshots-to-keep overrides the table default."""
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    TABLE_NAME = make_table_name("test_expire_branch_min_keep", storage_type)
-
-    create_and_populate(
-        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 5
-    )
-
-    snap_ids = get_snapshot_ids(instance, TABLE_NAME)
-    current_id = snap_ids[-1]
-    branch_head_id = snap_ids[2]
-
-    def add_branch(meta):
-        meta["refs"] = {
-            "main": {"snapshot-id": current_id, "type": "branch"},
-            "feature": {
-                "snapshot-id": branch_head_id,
-                "type": "branch",
-                "min-snapshots-to-keep": 2,
-            },
-        }
-        meta.setdefault("properties", {}).update(AGGRESSIVE_RETENTION)
-    update_iceberg_metadata(instance, TABLE_NAME, add_branch)
-
-    expire_snapshots(instance, TABLE_NAME, FAR_FUTURE)
-
-    # main: min-keep=1 → current (snap5)
-    # feature: min-keep=2 → snap3, snap2
-    expected = {current_id, branch_head_id, snap_ids[1]}
-    assert get_retained_ids(instance, TABLE_NAME) == expected, \
-        f"Expected main(1) + feature(2)"
-    assert_data_intact(instance, TABLE_NAME, 5)
-
-
-@pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_dangling_ref_removed(started_cluster_iceberg_with_spark, storage_type):
-    """Refs pointing to non-existent snapshots are removed during expiration."""
+    """Refs pointing to non-existent snapshots are removed during expiration.
+    Manual patching: Spark validates snapshot existence on CREATE BRANCH/TAG."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = make_table_name("test_expire_dangling_ref", storage_type)
 
@@ -502,7 +561,8 @@ def test_expire_snapshots_dangling_ref_removed(started_cluster_iceberg_with_spar
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_expire_snapshots_boundary_max_ref_age(started_cluster_iceberg_with_spark, storage_type):
-    """Two-phase boundary: generous max-ref-age retains ref, then 1ms expires it."""
+    """Two-phase boundary: generous max-ref-age retains ref, then 1ms expires it.
+    Manual patching: Spark RETAIN has minute granularity; we need 1ms."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = make_table_name("test_expire_boundary_ref_age", storage_type)
 

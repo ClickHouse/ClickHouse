@@ -878,6 +878,10 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
             {
                 retained.insert(ref_snap_id);
             }
+            else
+            {
+                UNREACHABLE();
+            }
         }
     }
 
@@ -901,6 +905,17 @@ static void collectAllFilePaths(
 
 /// Collect all file paths (manifest lists, manifests, data/delete files)
 /// referenced by retained snapshots.
+///
+/// NOTE: We only collect files with status ADDED/EXISTING (via getFilesWithoutDeleted).
+/// Files with status DELETED are being removed by that snapshot and don't need retention
+/// from it. A DELETED entry's data file was ADDED in an earlier snapshot — if that snapshot
+/// is retained, the file is in the retained set from there; if expired, it will be collected
+/// for cleanup from that snapshot's ADDED/EXISTING entries.
+///
+/// TODO: To handle partially-failed prior expire_snapshots (where the ADDED snapshot
+/// was removed but its data files were not cleaned up), we could also traverse DELETED
+/// entries in expired manifests. This requires extending ManifestFileIterator to expose
+/// DELETED entries.
 static void collectRetainedFiles(
     const Poco::JSON::Array::Ptr & retained_snapshots,
     ObjectStoragePtr object_storage,
@@ -939,7 +954,7 @@ static void collectRetainedFiles(
 }
 
 /// Collect files from expired snapshots that are not referenced by any retained snapshot.
-static Strings collectOrphanedFiles(
+static Strings collectExpiredFiles(
     const std::vector<String> & expired_manifest_list_paths,
     const std::set<String> & retained_manifest_list_paths,
     const std::set<String> & retained_manifest_paths,
@@ -1087,7 +1102,7 @@ static void updateMetadataForExpiration(
     metadata->set(Iceberg::f_last_updated_ms, ms.count());
 }
 
-static void deleteOrphanedFiles(
+static void deleteExpiredFiles(
     const Strings & files_to_delete,
     ObjectStoragePtr object_storage,
     LoggerPtr log)
@@ -1097,7 +1112,7 @@ static void deleteOrphanedFiles(
         try
         {
             object_storage->removeObjectIfExists(StoredObject(file_path));
-            LOG_DEBUG(log, "Deleted orphaned file {}", file_path);
+            LOG_DEBUG(log, "Deleted expired file {}", file_path);
         }
         catch (...)
         {
@@ -1192,7 +1207,7 @@ void expireSnapshots(
         collectRetainedFiles(
             partition.retained_snapshots, object_storage, persistent_table_components, context, log,
             current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
-        auto files_to_delete = collectOrphanedFiles(
+        auto files_to_delete = collectExpiredFiles(
             partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
             object_storage, persistent_table_components, context, log, current_schema_id);
 
@@ -1233,8 +1248,8 @@ void expireSnapshots(
             }
         }
 
-        LOG_INFO(log, "Deleting {} orphaned files for {} expired snapshots", files_to_delete.size(), partition.expired_snapshot_ids.size());
-        deleteOrphanedFiles(files_to_delete, object_storage, log);
+        LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", files_to_delete.size(), partition.expired_snapshot_ids.size());
+        deleteExpiredFiles(files_to_delete, object_storage, log);
         LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), files_to_delete.size());
         return;
     }
