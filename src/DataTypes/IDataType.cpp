@@ -443,6 +443,7 @@ bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } 
 bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
+bool isNativeFloat(TYPE data_type) { return WhichDataType(data_type).isNativeFloat(); } \
 \
 bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
 bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
