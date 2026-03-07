@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-fasttest, no-parallel-replicas
+-- Tags: no-random-settings, no-fasttest, no-parallel-replicas, no-old-analyzer
 -- Verify that TopN aggregation rejects companion aggregates whose determining
 -- argument column differs from the ORDER BY aggregate's argument.
 -- See: https://github.com/ClickHouse/ClickHouse/issues/75098
