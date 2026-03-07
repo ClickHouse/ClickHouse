@@ -1530,11 +1530,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
-            // NaN is sorted after all normal values, similar to NULL_LAST.
-            // Replace it with POSITIVE_INFINITY so that Range comparison works correctly
-            // (Range::intersectsRange gives wrong results for NaN because IEEE 754 NaN is incomparable).
-            if (field.isNaN())
-                field = POSITIVE_INFINITY;
         };
     }
     else
@@ -1544,11 +1539,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             (*index_columns)[column].column->get(row, field);
             // NULL_LAST
             if (field.isNull())
-                field = POSITIVE_INFINITY;
-            // NaN is sorted after all normal values, similar to NULL_LAST.
-            // Replace it with POSITIVE_INFINITY so that Range comparison works correctly
-            // (Range::intersectsRange gives wrong results for NaN because IEEE 754 NaN is incomparable).
-            if (field.isNaN())
                 field = POSITIVE_INFINITY;
         };
     }
