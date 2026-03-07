@@ -117,4 +117,19 @@ SELECT * FROM test_enum_in WHERE e NOT IN ('c');
 
 DROP TABLE test_enum_in;
 
+SELECT '---';
+
+-- LowCardinality(Nullable): should NOT be converted (same NULL semantics issue)
+DROP TABLE IF EXISTS test_lc_nullable;
+CREATE TABLE test_lc_nullable (s LowCardinality(Nullable(String))) ENGINE = Memory;
+INSERT INTO test_lc_nullable VALUES ('a'), ('b'), (NULL);
+
+EXPLAIN QUERY TREE SELECT * FROM test_lc_nullable WHERE s IN ('a');
+
+SELECT '---';
+
+SELECT s NOT IN ('a') FROM test_lc_nullable ORDER BY s NULLS LAST;
+
+DROP TABLE test_lc_nullable;
+
 DROP TABLE test_in_to_equal;

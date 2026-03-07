@@ -5,6 +5,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -73,14 +74,15 @@ public:
         ///   - x IN (v) returns 0 when x is NULL, but x = v returns NULL
         /// So skip conversion when the left-hand side is Nullable.
         auto lhs_type = arguments[0]->getResultType();
-        if (lhs_type->isNullable())
+        if (isNullableOrLowCardinalityNullable(lhs_type))
             return;
 
         /// IN/NOT IN silently ignore unknown enum values (treat them as non-matching),
         /// but equals/notEquals throw UNKNOWN_ELEMENT_OF_ENUM for values not in the enum definition.
         /// For example, `e NOT IN ('unknown')` returns all rows, but `e != 'unknown'` throws.
         /// Skip conversion for Enum types entirely to preserve correctness.
-        WhichDataType lhs_which(lhs_type);
+        /// Unwrap LowCardinality to catch LowCardinality(Enum(...)) as well.
+        WhichDataType lhs_which(removeLowCardinality(lhs_type));
         if (lhs_which.isEnum())
             return;
 

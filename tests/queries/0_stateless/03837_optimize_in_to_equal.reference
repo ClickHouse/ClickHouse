@@ -230,3 +230,22 @@ QUERY id: 0
 ---
 ---
 a
+---
+QUERY id: 0
+  PROJECTION COLUMNS
+    s LowCardinality(Nullable(String))
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: s, result_type: LowCardinality(Nullable(String)), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_lc_nullable
+  WHERE
+    FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: LowCardinality(Nullable(UInt8))
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: s, result_type: LowCardinality(Nullable(String)), source_id: 3
+          CONSTANT id: 7, constant_value: \'a\', constant_value_type: String
+---
+0
+1
+\N
