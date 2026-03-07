@@ -366,6 +366,7 @@
             position: absolute;
             color: var(--error-color);
             padding: 2rem;
+            top: 2rem;
         }
 
         textarea {
@@ -1275,7 +1276,7 @@ async function draw(idx, chart, url_params, query) {
     let title_div = chart.querySelector('.title');
     if (error) {
         error_div.firstChild.data = error;
-        title_div.style.display = 'none';
+        title_div.style.display = 'block';
         error_div.style.display = 'block';
         return false;
     } else {
