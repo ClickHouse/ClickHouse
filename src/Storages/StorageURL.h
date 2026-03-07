@@ -57,6 +57,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -64,6 +65,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -73,6 +75,7 @@ public:
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
+        const String & body,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 
@@ -90,6 +93,7 @@ protected:
         const String & comment,
         const String & compression_method_,
         const HTTPHeaderEntries & headers_ = {},
+        const String & body_ = "",
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
         bool distributed_processing_ = false);
@@ -103,6 +107,7 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
+    String body;
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
@@ -148,6 +153,7 @@ private:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String& body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -242,6 +248,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    String body;
     bool need_only_count;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
@@ -310,6 +317,7 @@ public:
         const ContextPtr & context_,
         const String & compression_method_,
         const HTTPHeaderEntries & headers_ = {},
+        const std::string & body_ = "",
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
         bool distributed_processing_ = false);
@@ -339,6 +347,7 @@ public:
         std::string http_method;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
+        std::string body;
     };
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
@@ -346,7 +355,7 @@ public:
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
     /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
+    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, std::string& body_entry, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };

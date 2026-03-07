@@ -60,7 +60,8 @@ public:
         {
             /// If arguments contain headers, just remove it and add to the end of arguments later.
             HTTPHeaderEntries tmp_headers;
-            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+            std::string tmp_body;
+            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, tmp_body, context);
             ASTPtr headers_ast;
             if (count != args.size())
             {
