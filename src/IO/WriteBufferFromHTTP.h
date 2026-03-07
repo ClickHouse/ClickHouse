@@ -28,13 +28,23 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
                                  const HTTPHeaderEntries & additional_headers = {},
                                  const ConnectionTimeouts & timeouts = {},
                                  size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                                 ProxyConfiguration proxy_configuration = {});
+                                 ProxyConfiguration proxy_configuration = {},
+                                 size_t max_redirects_ = 0);
 
     // Counts the counter WriteBufferFromHTTPBytes
     void nextImpl() override;
 
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
+
+    HTTPConnectionGroupType connection_group;
+    Poco::URI initial_uri;
+    std::string content_type;
+    std::string content_encoding;
+    HTTPHeaderEntries additional_headers;
+    ConnectionTimeouts timeouts;
+    size_t buffer_size;
+    size_t max_redirects;
 
     HTTPSessionPtr session;
     Poco::Net::HTTPRequest request;
@@ -53,6 +63,7 @@ private:
     HTTPHeaderEntries additional_headers = {};
     ConnectionTimeouts timeouts = {};
     size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t max_redirects_ = 0;
 
 public:
     explicit BuilderWriteBufferFromHTTP(const Poco::URI & uri_) : uri(uri_)
@@ -75,6 +86,7 @@ public:
     setterMember(withAdditionalHeaders, additional_headers)
     setterMember(withTimeouts, timeouts)
     setterMember(withBufferSize, buffer_size_)
+    setterMember(withRedirects, max_redirects_)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

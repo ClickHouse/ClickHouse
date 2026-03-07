@@ -2194,6 +2194,10 @@ Write add http CORS header.
 Max number of HTTP GET redirects hops allowed. Ensures additional security measures are in place to prevent a malicious server from redirecting your requests to unexpected services.\n\nIt is the case when an external server redirects to another address, but that address appears to be internal to the company's infrastructure, and by sending an HTTP request to an internal server, you could request an internal API from the internal network, bypassing the auth, or even query other services, such as Redis or Memcached. When you don't have an internal infrastructure (including something running on your localhost), or you trust the server, it is safe to allow redirects. Although keep in mind, that if the URL uses HTTP instead of HTTPS, and you will have to trust not only the remote server but also your ISP and every network in the middle.
 )", 0) \
     \
+    DECLARE(UInt64, max_http_post_redirects, 0, R"(
+Max number of HTTP redirect hops allowed for POST/PUT requests (e.g. when using the URL engine for writes). By default, redirects for POST/PUT are not followed. When enabled, up to this many redirect hops will be followed, re-sending the request body to the new location. Use with caution as this may re-send data to an unexpected destination.
+)", 0) \
+    \
     DECLARE(Bool, use_client_time_zone, false, R"(
 Use client timezone for interpreting DateTime string values, instead of adopting server timezone.
 )", 0) \
