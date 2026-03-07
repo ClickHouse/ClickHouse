@@ -59,10 +59,11 @@ if ! kill -0 "$PID" 2>/dev/null; then
     exit 1
 fi
 
-# Find lldb — it is versioned (e.g. lldb-21)
-LLDB=$(ls /usr/bin/lldb-* 2>/dev/null | grep -v -E 'argdumper|dap|instr|server' | head -1 || true)
+# Find lldb matching the compiler version used for the TSan build.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LLDB=$("$SCRIPT_DIR/detect-llvm-tool.sh" lldb 2>/dev/null || true)
 if [ -z "$LLDB" ]; then
-    echo "ERROR: No lldb found in /usr/bin/" >&2
+    echo "ERROR: No lldb found matching the compiler in build_tsan/CMakeCache.txt" >&2
     exit 1
 fi
 echo "LLDB=$LLDB"

@@ -191,7 +191,8 @@ First verify a TSan-instrumented server is running. If not, instruct user to sta
 The server stderr log is `build_tsan/tsan_server_stderr.log`.
 
 ```bash
-./build_tsan/programs/clickhouse server --config-file ./programs/server/config.xml 2>build_tsan/tsan_server_stderr.log &
+TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7 external_symbolizer_path=$(.claude/skills/clean-tsan/scripts/detect-llvm-tool.sh llvm-symbolizer)" \
+    ./build_tsan/programs/clickhouse server --config-file ./programs/server/config.xml 2>build_tsan/tsan_server_stderr.log &
 ```
 
 Store this server stderr log path — it is where **server-side** TSan alerts will appear.
@@ -435,6 +436,7 @@ Helper scripts in `.claude/skills/clean-tsan/scripts/` handle mechanical steps a
 
 | Script | Purpose |
 |--------|---------|
+| `detect-llvm-tool.sh <tool> [--build-dir PATH]` | Find LLVM tool (e.g. `llvm-symbolizer`, `lldb`) matching the compiler version from `CMakeCache.txt` |
 | `run-unittest.sh <filter> <log>` | Launch gtest under TSan, monitor for hang, report outcome |
 | `handle-hang.sh <pid> <artifact_dir>` | Capture all-thread stacktraces via lldb, kill process, auto-number artifacts |
 | `extract-alert.sh <log> <artifact_dir>` | Extract first TSan alert to auto-numbered file |

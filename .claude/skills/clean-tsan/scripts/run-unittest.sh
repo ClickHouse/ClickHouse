@@ -64,8 +64,18 @@ if [ ! -x "$BINARY" ]; then
     exit 1
 fi
 
+# Find llvm-symbolizer matching the compiler version used for the TSan build.
+# Without this, TSan falls back to addr2line which is extremely slow.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SYMBOLIZER=$("$SCRIPT_DIR/detect-llvm-tool.sh" llvm-symbolizer 2>/dev/null || true)
+
+TSAN_OPTS="halt_on_error=1 second_deadlock_stack=1 history_size=7"
+if [ -n "$SYMBOLIZER" ]; then
+    TSAN_OPTS="$TSAN_OPTS external_symbolizer_path=$SYMBOLIZER"
+fi
+
 # Launch test in background
-TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7" \
+TSAN_OPTIONS="$TSAN_OPTS" \
     "$BINARY" \
     --gtest_filter="$FILTER" \
     --gtest_repeat="$REPEAT" \
