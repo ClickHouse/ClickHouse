@@ -1516,7 +1516,7 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
                             ARROW_RETURN_NOT_OK(builder_int32_append(info_name, 0));
                             break;
                         default:
-                            return arrow::Status::Invalid("CommandGetSqlInfo for info_name " + std::to_string(info_name) + " is not implemented.");
+                            return arrow::Status::Invalid("sql::CommandGetSqlInfo for info_name " + std::to_string(info_name) + " is not implemented.");
                     }
                 }
             }
@@ -1535,10 +1535,12 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
 
             return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
         }
+        else
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetSqlInfo failed.");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
     {
-        return arrow::Status::NotImplemented("CommandGetCrossReference is not supported");
+        return arrow::Status::NotImplemented("sql::CommandGetCrossReference is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
     {
@@ -1547,7 +1549,8 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetDbSchemas>())
     {
         arrow::flight::protocol::sql::CommandGetDbSchemas command;
-        any_msg.UnpackTo(&command);
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetDbSchemas failed.");
 
         std::vector<std::string> where;
         if (command.has_db_schema_filter_pattern())
@@ -1559,16 +1562,17 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetExportedKeys>())
     {
-        return arrow::Status::NotImplemented("CommandGetExportedKeys is not supported");
+        return arrow::Status::NotImplemented("sql::CommandGetExportedKeys is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetImportedKeys>())
     {
-        return arrow::Status::NotImplemented("CommandGetImportedKeys is not supported");
+        return arrow::Status::NotImplemented("sql::CommandGetImportedKeys is not supported");
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetPrimaryKeys>())
     {
         arrow::flight::protocol::sql::CommandGetPrimaryKeys command;
-        any_msg.UnpackTo(&command);
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetPrimaryKeys failed.");
 
         std::vector<std::string> where;
         where.push_back("database = " + quoteString(command.has_db_schema() ? command.db_schema() : "default"));
@@ -1589,13 +1593,14 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTables>())
     {
         arrow::flight::protocol::sql::CommandGetTables command;
-        any_msg.UnpackTo(&command);
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetTables failed.");
 
         std::vector<std::string> where;
         if (command.has_db_schema_filter_pattern())
-            where.push_back("database LIKE " + quoteString(command.db_schema_filter_pattern()));
+            where.push_back("left.database LIKE " + quoteString(command.db_schema_filter_pattern()));
         if (command.has_table_name_filter_pattern())
-            where.push_back("table LIKE " + quoteString(command.table_name_filter_pattern()));
+            where.push_back("left.table LIKE " + quoteString(command.table_name_filter_pattern()));
         auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         if (command.include_schema())
@@ -1618,7 +1623,8 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
                     "GROUP BY "
                         "database, "
                         "table"
-                ") AS right ON left.database = right.database AND left.table = right.table";
+                ") AS right ON left.database = right.database AND left.table = right.table"
+                + where_expression;
 
             schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
             {
@@ -1658,7 +1664,14 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
             };
         }
         else
-            sql = "SELECT NULL::Nullable(String) AS catalog_name, database::Nullable(String) AS db_schema_name, table AS table_name, engine AS table_type FROM system.tables" + where_expression;
+            sql =
+                "SELECT "
+                    "NULL::Nullable(String) AS catalog_name, "
+                    "database::Nullable(String) AS db_schema_name, "
+                    "table AS table_name, "
+                    "engine AS table_type "
+                "FROM system.tables AS left"
+                + where_expression;
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTableTypes>())
     {
@@ -1667,9 +1680,12 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementQuery>())
     {
         arrow::flight::protocol::sql::CommandStatementQuery command;
-        any_msg.UnpackTo(&command);
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandStatementQuery failed.");
         sql = command.query();
     }
+    else
+        return arrow::Status::NotImplemented("Command is not implemented: {}", any_msg.ShortDebugString());
 
     return SQLSet{sql, schema_modifier, block_modifier};
 }
@@ -2199,14 +2215,16 @@ arrow::Status ArrowFlightHandler::DoPut(
             if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementUpdate>())
             {
                 arrow::flight::protocol::sql::CommandStatementUpdate command;
-                any_msg.UnpackTo(&command);
+                if (!any_msg.UnpackTo(&command))
+                    return arrow::Status::SerializationError("Deserialization of sql::CommandStatementUpdate failed.");
                 sql = command.query();
             }
             else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementIngest>())
             {
                 using CommandStatementIngest = arrow::flight::protocol::sql::CommandStatementIngest;
                 CommandStatementIngest command;
-                any_msg.UnpackTo(&command);
+                if (!any_msg.UnpackTo(&command))
+                    return arrow::Status::SerializationError("Deserialization of sql::CommandStatementIngest failed.");
                 if (command.has_table_definition_options())
                 {
                     const auto & options = command.table_definition_options();
