@@ -46,9 +46,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsString cluster_for_parallel_replicas;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+extern const SettingsBool use_concurrency_control;
+extern const SettingsBool parallel_replicas_local_plan;
+extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -130,6 +131,14 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
+    if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+    {
+        LOG_TRACE(
+            logger,
+            "Setting 'allow_experimental_parallel_reading_from_replicas' is disabled. Skipping building query plan with parallel "
+            "replicas.");
+        return QueryPlanPtr{};
+    }
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
@@ -143,7 +152,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         return QueryPlanPtr{};
-    ctx->setSetting("enable_parallel_replicas", true);
+    // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
+    ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);

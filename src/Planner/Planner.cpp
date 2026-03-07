@@ -101,6 +101,8 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -1633,6 +1635,22 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findTableForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
+    /// Use getSettingsCopy (reads under shared lock) instead of getSettingsRef (no lock) to avoid
+    /// a data race when multiple Planner instances run concurrently on the same context, e.g. from
+    /// RecursiveCTESource in parallel pipeline threads. The write via setSetting is already serialized
+    /// by the context's exclusive lock; concurrent writes are idempotent (all set the same value to 0).
+    auto & mutable_context = planner_context->getMutableQueryContext();
+    const auto settings = mutable_context->getSettingsCopy();
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && settings[Setting::automatic_parallel_replicas_mode] != 0)
+    {
+        LOG_DEBUG(
+            log,
+            "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
+            "To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    }
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
