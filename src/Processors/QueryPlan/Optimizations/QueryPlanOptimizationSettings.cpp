@@ -217,8 +217,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
     join_runtime_filter_build_saturation_threshold = from[Setting::join_runtime_filter_build_saturation_threshold];
-    join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
-    join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())
