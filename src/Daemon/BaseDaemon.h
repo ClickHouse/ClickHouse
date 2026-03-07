@@ -164,7 +164,8 @@ protected:
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
 
-    /// The working directory at the time the daemon was started, before any chdir calls.
+    /// The working directory at the time the daemon object was constructed,
+    /// before Poco's beDaemon/chdir or any other directory changes.
     /// Used to resolve relative config paths correctly.
     std::string original_working_directory;
 

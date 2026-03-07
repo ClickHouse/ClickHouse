@@ -127,7 +127,10 @@ void BaseDaemon::loadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+    : original_working_directory(fs::current_path())
+{
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -230,13 +233,6 @@ void BaseDaemon::closeFDs()
 
 void BaseDaemon::initialize(Application & self)
 {
-    /// Remember the original working directory before closing file descriptors
-    /// and before any chdir calls below.
-    /// This is needed to correctly resolve relative config paths later.
-    /// It must be done before closeFDs() because on macOS, closing file descriptors
-    /// may interfere with fs::current_path().
-    original_working_directory = fs::current_path();
-
     closeFDs();
     ServerApplication::initialize(self);
 
