@@ -654,8 +654,11 @@ void FillingTransform::transformRange(
         }
     }
 
-    /// Init staleness first interval
-    filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
+    /// Init staleness first interval only for new sorting prefix.
+    /// When continuing from a previous chunk, the constraint from the last original row must be preserved
+    /// to correctly limit filling between the last row of the previous chunk and the first row of the new one.
+    if (new_sorting_prefix)
+        filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {

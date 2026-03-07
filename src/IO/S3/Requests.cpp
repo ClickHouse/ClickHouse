@@ -199,7 +199,7 @@ size_t getAttemptFromInfo(const Aws::String & request_info)
     {
         return std::stol(value, nullptr, 10);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return 1;
     }

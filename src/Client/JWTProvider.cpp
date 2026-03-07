@@ -246,7 +246,7 @@ Poco::Timestamp JWTProvider::getJwtExpiry(const std::string & token)
         auto decoded_token = jwt::decode(token);
         return Poco::Timestamp::fromEpochTime(decoded_token.get_payload_claim("exp").as_integer());
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return 0;
     }

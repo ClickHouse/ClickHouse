@@ -497,7 +497,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         else
         {
-            rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
+            rfunc->set_address(getNextTestingAddress(rg, fname == RemoteFunc::remoteSecure));
             rfunc->set_user("default");
             rfunc->set_password("");
             if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
@@ -532,7 +532,9 @@ auto StatementGenerator::getQueryTableLambda()
             /* May by replaced by a table engine */
             && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable())
             /* May require a projection */
-            && (req != TableRequirement::RequireProjection || !tt.projs.empty());
+            && (req != TableRequirement::RequireProjection || !tt.projs.empty())
+            /* May require an index */
+            && (req != TableRequirement::RequireIndex || !tt.idxs.empty());
     };
 }
 
@@ -604,6 +606,33 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
     }
 }
 
+String StatementGenerator::getNextTestingAddress(RandomGenerator & rg, const bool secure) const
+{
+    String res;
+
+    if (this->allow_not_deterministic && rg.nextSmallNumber() < 5)
+    {
+        /// Use 127.0.0.{1,2,..N} to test sharding logic in remote table functions
+        const uint32_t nshards = rg.nextBool() ? 2 : rg.randomInt<uint32_t>(1, 4);
+
+        res += "127.0.0.{";
+        for (uint32_t i = 0; i < nshards; i++)
+        {
+            if (i != 0)
+            {
+                res += ",";
+            }
+            res += std::to_string(i);
+        }
+        res += "}";
+    }
+    else
+    {
+        res = fc.getConnectionHostAndPort(secure);
+    }
+    return res;
+}
+
 String StatementGenerator::getNextRandomServerAddresses(RandomGenerator & rg, const bool secure)
 {
     /// Query any possible server
@@ -612,7 +641,7 @@ String StatementGenerator::getNextRandomServerAddresses(RandomGenerator & rg, co
 
     if (servers.empty() || rg.nextBool())
     {
-        return fc.getConnectionHostAndPort(secure);
+        return getNextTestingAddress(rg, secure);
     }
     const uint32_t nservers = (rg.nextLargeNumber() % static_cast<uint32_t>(servers.size())) + 1;
 
@@ -648,6 +677,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const auto has_mergetree_table_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
     const auto has_replaceable_table_lambda = getQueryTableLambda<TableRequirement::RequireReplaceable>();
     const auto has_projection_table_lambda = getQueryTableLambda<TableRequirement::RequireProjection>();
+    const auto has_idx_table_lambda = getQueryTableLambda<TableRequirement::RequireIndex>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
@@ -657,6 +687,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_replaceable_table = collectionHas<SQLTable>(has_replaceable_table_lambda);
     const bool has_projection_table = collectionHas<SQLTable>(has_projection_table_lambda);
+    const bool has_idx_table = collectionHas<SQLTable>(has_idx_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
@@ -670,15 +701,16 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::SystemTable)] = this->allow_not_deterministic && !systemTables.empty();
     queryMask[static_cast<size_t>(QueryOp::MergeUDF)] = this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = !under_remote && this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
-    queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::LoopUDF)] = fc.allow_infinite_tables && this->allow_engine_udf && can_recurse;
     /// queryMask[static_cast<size_t>(QueryOp::ValuesUDF)] = true;
     queryMask[static_cast<size_t>(QueryOp::RandomDataUDF)] = this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::Dictionary)] = this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary;
     queryMask[static_cast<size_t>(QueryOp::URLEncodedTable)] = this->allow_engine_udf && has_table;
     queryMask[static_cast<size_t>(QueryOp::TableEngineUDF)] = has_replaceable_table && this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_projection_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::RandomTableUDF)] = this->allow_not_deterministic && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_projection_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_idx_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
 
     queryGen.setEnabled(queryMask);
@@ -924,37 +956,6 @@ bool StatementGenerator::joinedTableOrFunction(
             }
         }
         break;
-        case QueryOp::MergeIndexUDF: {
-            std::vector<SQLRelationCol> marks;
-            MergeTreeIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mtindex();
-            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
-
-            /// mergeTreeIndex function doesn't support final
-            tt.setName(mtudf->mutable_est(), true);
-            if (rg.nextBool())
-            {
-                mtudf->set_with_marks(rg.nextBool());
-            }
-            if (rg.nextBool())
-            {
-                mtudf->set_with_minmax(rg.nextBool());
-            }
-            addTableRelation(rg, true, rel_name, tt);
-            SQLRelation & rel = this->levels.at(this->current_level).rels.back();
-
-            for (const auto & entry : rel.cols)
-            {
-                DB::Strings npath = entry.path;
-
-                npath.push_back("mark");
-                marks.emplace_back(SQLRelationCol(rel_name, npath));
-            }
-            rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"mark_number"}, size_tp.get()));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"rows_in_granule"}, size_tp.get()));
-        }
-        break;
         case QueryOp::LoopUDF: {
             /// Here don't care about the returned result
             this->depth++;
@@ -1099,6 +1100,50 @@ bool StatementGenerator::joinedTableOrFunction(
             addTableRelation(rg, true, rel_name, tt);
         }
         break;
+        case QueryOp::RandomTableUDF: {
+            /// Use a completely random table function call
+            SQLRelation rel(rel_name);
+            const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
+
+            generateTableFuncCall(rg, tof->mutable_tfunc()->mutable_func());
+            for (uint32_t i = 0; i < ncols; i++)
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
+            }
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+        break;
+        case QueryOp::MergeIndexUDF: {
+            std::vector<SQLRelationCol> marks;
+            MergeTreeIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mtindex();
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+
+            /// mergeTreeIndex function doesn't support final
+            tt.setName(mtudf->mutable_est(), true);
+            if (rg.nextBool())
+            {
+                mtudf->set_with_marks(rg.nextBool());
+            }
+            if (rg.nextBool())
+            {
+                mtudf->set_with_minmax(rg.nextBool());
+            }
+            addTableRelation(rg, true, rel_name, tt);
+            SQLRelation & rel = this->levels.at(this->current_level).rels.back();
+
+            for (const auto & entry : rel.cols)
+            {
+                DB::Strings npath = entry.path;
+
+                npath.push_back("mark");
+                marks.emplace_back(SQLRelationCol(rel_name, npath));
+            }
+            rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"mark_number"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"rows_in_granule"}, size_tp.get()));
+        }
+        break;
         case QueryOp::MergeProjectionUDF: {
             std::vector<SQLRelationCol> parents;
             MergeTreeProjectionFunc * mtudf = tof->mutable_tfunc()->mutable_mtproj();
@@ -1119,16 +1164,22 @@ bool StatementGenerator::joinedTableOrFunction(
             rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
         }
         break;
-        case QueryOp::RandomTableUDF: {
-            /// Use a completely random table function call
+        case QueryOp::MergeTextIndexUDF: {
             SQLRelation rel(rel_name);
-            const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
+            MergeTreeTextIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mttxtidx();
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_idx_table_lambda));
 
-            generateTableFuncCall(rg, tof->mutable_tfunc()->mutable_func());
-            for (uint32_t i = 0; i < ncols; i++)
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
-            }
+            tt.setName(mtudf->mutable_est(), true);
+            mtudf->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(tt.idxs)));
+
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"token"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"dictionary_compression"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"cardinality"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"num_posting_blocks"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_embedded_postings"}, uint8_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_raw_postings"}, uint8_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_compressed_postings"}, uint8_tp.get()));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;

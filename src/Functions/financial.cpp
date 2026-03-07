@@ -282,7 +282,7 @@ std::expected<double, SolverErrorCode> solver(Function && fun, Derivative && der
     {
         return std::unexpected(SolverErrorCode::CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS);
     }
-    catch (...)
+    catch (...) // Ok: return generic error for unexpected exception types
     {
         return std::unexpected(SolverErrorCode::OTHER_ERROR);
     }
