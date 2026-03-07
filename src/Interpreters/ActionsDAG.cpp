@@ -300,7 +300,8 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant)
 {
-    if (!column.column)
+    // related to https://github.com/ClickHouse/ClickHouse/issues/90363
+    if (column.type->getColumnType() == TypeIndex::Set && !column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
 
     Node node;
