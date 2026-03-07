@@ -668,7 +668,13 @@ boost::intrusive_ptr<ASTExpressionList> subqueryExpressionList(
 
 bool JoinToSubqueryTransformMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)

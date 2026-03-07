@@ -302,7 +302,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
             else
                 return false;
         }
-        catch (...)
+        catch (const Exception &)
         {
             return false;
         }

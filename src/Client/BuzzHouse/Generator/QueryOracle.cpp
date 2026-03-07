@@ -20,7 +20,7 @@ const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
 static void finishSettings(SettingValues * svs)
 {
     /// Wait for mutations to finish
-    static const std::unordered_map<String, String> & toSet
+    static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
@@ -134,6 +134,148 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+}
+
+/// Roundtrip oracle
+/// Query 1: SELECT count() FROM t WHERE col IS NOT NULL       (baseline: non-null rows)
+/// Query 2: SELECT count() FROM t WHERE roundtrip(col) = col  (must equal query 1)
+///
+/// Detects bugs where an encoding/encryption function fails to preserve data through a
+/// round-trip: if roundtrip(col) != col for any non-null row the counts diverge.
+///
+/// Roundtrip predicates evaluate to NULL when col IS NULL (NULL = x is NULL, not TRUE),
+/// so sq2's WHERE naturally excludes NULL rows just like sq1's IS NOT NULL filter.
+/// This makes the oracle correct for Nullable columns without special-casing.
+///
+/// Any insertable column type is accepted; for non-String types the predicate wraps the
+/// value in `toString` so that hex/base64 functions always receive a String argument.
+void QueryOracle::generateRoundtripOracleQueries(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false; /// Don't compare query success, queries are different
+
+    /// Collect all insertable flat column paths (including nested fields)
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+    const ColumnPathChain & entry = rg.pickRandomly(gen.entries);
+    const String col_ref = entry.columnPathRef(); /// e.g. `c0` or `c0`.`field`
+    /// For String/FixedString: apply roundtrip directly on the column.
+    /// For all other types: cast to String first so hex/base64 always receive a String argument.
+    const String val = entry.getBottomType()->getTypeClass() == SQLTypeClass::STRING ? col_ref : fmt::format("toString({})", col_ref);
+    gen.entries.clear();
+
+    /// Choose roundtrip function pair
+    String roundtrip_pred;
+    switch (rg.randomInt<uint32_t>(0, 3))
+    {
+        case 0:
+            /// hex/unhex — exercises hex encoding path
+            roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
+            break;
+        case 1:
+            /// baseEncode/Decode
+            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            break;
+        case 2:
+            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            {
+                const String rev = rg.nextBool() ? "UTF8" : "";
+                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+            }
+            break;
+        default: {
+            /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
+            struct CipherSpec
+            {
+                const char * name;
+                uint32_t key_bytes; /// 16 = aes-128, 24 = aes-192, 32 = aes-256
+                uint32_t iv_bytes; /// 0 = ECB (no IV), 16 = CBC/CFB128/OFB, 12 = GCM
+            };
+            static const std::vector<CipherSpec> ciphers = {
+                {"aes-128-ecb", 16, 0},
+                {"aes-192-ecb", 24, 0},
+                {"aes-256-ecb", 32, 0},
+                {"aes-128-cbc", 16, 16},
+                {"aes-192-cbc", 24, 16},
+                {"aes-256-cbc", 32, 16},
+                {"aes-128-cfb128", 16, 16},
+                {"aes-192-cfb128", 24, 16},
+                {"aes-256-cfb128", 32, 16},
+                {"aes-128-ofb", 16, 16},
+                {"aes-192-ofb", 24, 16},
+                {"aes-256-ofb", 32, 16},
+                {"aes-128-gcm", 16, 12},
+                {"aes-192-gcm", 24, 12},
+                {"aes-256-gcm", 32, 12},
+            };
+            const CipherSpec & spec = rg.pickRandomly(ciphers);
+
+            auto gen_hex = [&](uint32_t bytes) -> String
+            {
+                String hex;
+                for (uint32_t i = 0; i < bytes; i++)
+                    hex += fmt::format("{:02x}", rg.randomInt<uint8_t>(0, 255));
+                return hex;
+            };
+            const String key_hex = gen_hex(spec.key_bytes);
+
+            if (spec.iv_bytes == 0)
+            {
+                roundtrip_pred
+                    = fmt::format("decrypt('{2}', encrypt('{2}', {0}, unhex('{1}')), unhex('{1}')) = {0}", val, key_hex, spec.name);
+            }
+            else
+            {
+                const String iv_hex = gen_hex(spec.iv_bytes);
+                roundtrip_pred = fmt::format(
+                    "decrypt('{3}', encrypt('{3}', {0}, unhex('{1}'), unhex('{2}')), unhex('{1}'), unhex('{2}')) = {0}",
+                    val,
+                    key_hex,
+                    iv_hex,
+                    spec.name);
+            }
+            break;
+        }
+    }
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    /// Build sq1: SELECT count() FROM t WHERE col IS NOT NULL  (baseline)
+    {
+        TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+        SelectIntoFile * sif = ts->mutable_intofile();
+        Select * sel = ts->mutable_sel();
+        SelectStatementCore * ssc = sel->mutable_select_core();
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+        insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
+        jtf->set_final(t.supportsFinal());
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_func_call()
+            ->mutable_func()
+            ->set_catalog_func(FUNCcount);
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
+        finishSettings(sel->mutable_setting_values());
+        ts->set_format(OutFormat::OUT_CSV);
+        const auto err = std::filesystem::remove(qcfile);
+        UNUSED(err);
+        sif->set_path(qcfile.generic_string());
+        sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+    }
+
+    /// Build sq2: SELECT count() FROM t WHERE roundtrip(col) = col
+    /// CopyFrom clones the table reference, format, and output file from sq1.
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(roundtrip_pred);
+    }
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
 }
 
 void QueryOracle::insertOnTableOrCluster(
@@ -461,9 +603,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
 
             gen.setBackupDestination(rg, bac);
-            res->set_backup_number(bac->backup_number());
-            res->set_out(bac->out());
-            res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
@@ -1093,7 +1233,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
-    can_test_oracle_result = fc.compare_success_results;
+    can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
@@ -1127,7 +1267,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
 {
     if (other_steps_success && can_test_oracle_result)
     {
-        if (((first_errcode && !errcode) || (!first_errcode && errcode))
+        if (can_test_success && ((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(

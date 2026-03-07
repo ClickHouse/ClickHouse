@@ -232,7 +232,7 @@ class ElOraculoDeTablas:
                      UNION ALL
                     (SELECT count() x, 11 y FROM system.text_log
                      WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%'))
-                    ) tx ORDER BY y;
+                    ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
                     """
                 )
             except Exception as ex:
