@@ -74,7 +74,14 @@ def test_info(started_cluster):
     assert all(node_info['packets_received'] is not None for node_info in node_infos)
     assert all(node_info['packets_sent'] is not None for node_info in node_infos)
 
-    assert sum(node_info['is_leader'] is not None for node_info in node_infos) == 1
+    leader_infos = [n for n in node_infos if n['is_leader'] is not None]
+    assert len(leader_infos) == 1
+    leader = leader_infos[0]
+    assert int(leader['followers']) >= 0
+    synced = int(leader['synced_followers'])
+    pending = int(leader['pending_syncs'])
+    assert 0 <= synced <= int(leader['followers'])
+    assert 0 <= pending <= int(leader['followers'])
 
     assert all(int(node_info['zxid']) > 0 for node_info in node_infos)
 
