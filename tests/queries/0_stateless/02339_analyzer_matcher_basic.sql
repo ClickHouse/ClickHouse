@@ -184,3 +184,13 @@ SELECT '--';
 
 DESCRIBE (SELECT COLUMNS(id, value) EXCEPT id REPLACE (5 AS id, 6 as value) APPLY toString FROM test_table);
 SELECT COLUMNS(id, value) EXCEPT id REPLACE (5 AS id, 6 as value) APPLY toString FROM test_table;
+
+select *, 42 as number from numbers(2) format PrettyCompact;
+select *, 42 as number from (select *, 100500 as number from numbers(2)) format PrettyCompact;
+select *, 42 as number from (select *, 100500 as number from (select * , 'hello' as number from numbers(2))) format PrettyCompact;
+
+select *, 42 as number from remote('127.0.0.{1,2}', numbers(1)) format PrettyCompact;
+select *, 42 as number from (select *, 100500 as number from remote('127.0.0.{1,2}', numbers(1))) format PrettyCompact;
+select *, 42 as number from (select *, 100500 as number from (select * , 'hello' as number from remote('127.0.0.{1,2}', numbers(1)))) format PrettyCompact;
+
+select *, 42 as number, 100500 as _unqualified_number from numbers(2) format PrettyCompact;
