@@ -677,6 +677,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && !main_query_node.hasGroupBy()
         && !main_query_node.hasHaving()
         && !main_query_node.hasOrderBy()
+        && !main_query_node.isShuffle()
         && !main_query_node.hasLimitBy()
         && !select_query_info.need_aggregate
         && !select_query_info.has_window

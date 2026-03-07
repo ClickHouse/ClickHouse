@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemNumbers.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
@@ -362,9 +363,16 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length
         return false;
 
     const auto & query = query_info.query->as<ASTSelectQuery &>();
+
+
+    LOG_TRACE(getLogger("shouldPushdownLimit"), 
+        "has_order_by={}, has_shuffle={}, limit_length={}", 
+        query_info.has_order_by, query_info.has_shuffle, limit_length);
+
+
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
-    return !query.distinct && !query.limitBy() && !query_info.has_order_by
+    return !query.distinct && !query.limitBy() && !query_info.has_order_by && !query_info.has_shuffle
         && !query_info.need_aggregate
         /// For new analyzer, window will be delete from AST, so we should not use query.window()
         && !query_info.has_window && !query_info.additional_filter_ast && (limit_length > 0 && !query.limit_with_ties);
