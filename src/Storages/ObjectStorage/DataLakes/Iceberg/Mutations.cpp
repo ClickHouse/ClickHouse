@@ -888,14 +888,14 @@ static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 }
 
 static void collectAllFilePaths(
-    const ManifestFilePtr & manifest_file,
+    const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
     std::set<String> & out)
 {
-    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
         out.insert(entry->file_path);
-    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
         out.insert(entry->file_path);
-    for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
         out.insert(entry->file_path);
 }
 
@@ -907,6 +907,7 @@ static void collectRetainedFiles(
     PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
+    Int32 current_schema_id,
     std::set<String> & retained_manifest_paths,
     std::set<String> & retained_data_file_paths,
     std::set<String> & retained_manifest_list_paths)
@@ -929,10 +930,10 @@ static void collectRetainedFiles(
         for (const auto & mf_key : manifest_keys)
         {
             retained_manifest_paths.insert(mf_key.manifest_file_path);
-            auto manifest_file = getManifestFile(
+            auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
-                mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
-            collectAllFilePaths(manifest_file, retained_data_file_paths);
+                mf_key, current_schema_id);
+            collectAllFilePaths(entries_handle, retained_data_file_paths);
         }
     }
 }
@@ -946,7 +947,8 @@ static Strings collectOrphanedFiles(
     ObjectStoragePtr object_storage,
     PersistentTableComponents & persistent_table_components,
     ContextPtr context,
-    LoggerPtr log)
+    LoggerPtr log,
+    Int32 current_schema_id)
 {
     Strings files_to_delete;
     for (const auto & ml_path : expired_manifest_list_paths)
@@ -974,28 +976,27 @@ static Strings collectOrphanedFiles(
             if (retained_manifest_paths.contains(mf_key.manifest_file_path))
                 continue;
 
-            ManifestFilePtr manifest_file;
             try
             {
-                manifest_file = getManifestFile(
+                auto entries_handle = getManifestFileEntriesHandle(
                     object_storage, persistent_table_components, context, log,
-                    mf_key.manifest_file_path, mf_key.added_sequence_number, mf_key.added_snapshot_id);
+                    mf_key, current_schema_id);
+
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                        files_to_delete.push_back(entry->file_path);
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                        files_to_delete.push_back(entry->file_path);
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                        files_to_delete.push_back(entry->file_path);
             }
             catch (...)
             {
                 LOG_WARNING(log, "Failed to read manifest file {}, skipping", mf_key.manifest_file_path);
                 continue;
             }
-
-            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::DATA))
-                if (!retained_data_file_paths.contains(entry->file_path))
-                    files_to_delete.push_back(entry->file_path);
-            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                if (!retained_data_file_paths.contains(entry->file_path))
-                    files_to_delete.push_back(entry->file_path);
-            for (const auto & entry : manifest_file->getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-                if (!retained_data_file_paths.contains(entry->file_path))
-                    files_to_delete.push_back(entry->file_path);
 
             files_to_delete.push_back(mf_key.manifest_file_path);
         }
@@ -1183,15 +1184,17 @@ void expireSnapshots(
         }
         LOG_INFO(log, "Expiring {} snapshots", partition.expired_snapshot_ids.size());
 
+        Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+
         std::set<String> retained_manifest_paths;
         std::set<String> retained_data_file_paths;
         std::set<String> retained_manifest_list_paths;
         collectRetainedFiles(
             partition.retained_snapshots, object_storage, persistent_table_components, context, log,
-            retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+            current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
         auto files_to_delete = collectOrphanedFiles(
             partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
-            object_storage, persistent_table_components, context, log);
+            object_storage, persistent_table_components, context, log, current_schema_id);
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
