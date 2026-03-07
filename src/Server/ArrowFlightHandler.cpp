@@ -1685,7 +1685,14 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
         sql = command.query();
     }
     else
-        return arrow::Status::NotImplemented("Command is not implemented: {}", any_msg.ShortDebugString());
+    {
+        const auto & type_url = any_msg.type_url();
+        const auto slash_pos = type_url.find_last_of('/');
+        const auto type_name = (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
+
+        if (type_name.starts_with("arrow.flight.protocol.sql."))
+            return arrow::Status::NotImplemented("Command is not implemented: {}", any_msg.ShortDebugString());
+    }
 
     return SQLSet{sql, schema_modifier, block_modifier};
 }
@@ -2373,7 +2380,7 @@ arrow::Status ArrowFlightHandler::DoAction(
             CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
             auto visitor = overloaded {
-                [](const std::monostate &) { return std::string(); },
+                [](const std::monostate &) { return std::string("=DEFAULT"); },
                 [](const std::string & str) { return fmt::format("={}", quoteString(str)); },
                 [](bool b) { return fmt::format("={}", b ? "true" : "false"); },
                 [](const std::vector<std::string> & strings)
