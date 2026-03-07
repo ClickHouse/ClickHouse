@@ -1,7 +1,7 @@
 ---
 name: clean-tsan
 description: Detect and fix ThreadSanitizer errors (data races, deadlocks, thread leaks, etc.) by building with TSan, running a specified test, analyzing alerts, and applying fixes iteratively.
-argument-hint: <test_name>
+argument-hint: <test_name_or_filter>
 disable-model-invocation: false
 allowed-tools: Task, TaskOutput, Bash(ninja *), Bash(cd *), Bash(ls *), Bash(find *), Bash(pgrep *), Bash(ps *), Bash(pkill *), Bash(sleep *), Bash(python *), Bash(python3 *), Bash(export *), Bash(mkdir *), Bash(tail *), Bash(grep *), Bash(sed *), Bash(git diff*), Bash(wc *), Bash(./tests/clickhouse-test *), Read, Grep, Glob, Edit, Write, AskUserQuestion
 ---
@@ -12,10 +12,10 @@ Systematically detect and fix ThreadSanitizer (TSan) errors by running a specifi
 
 ## Arguments
 
-- `$ARGUMENTS` (required): Test name or filter. The skill auto-detects the test type:
+- `$ARGUMENTS` (required): Test name or gtest filter. The skill auto-detects the test type:
   - `test_something` → integration test (checked against `tests/integration/`)
   - `01234_some_test` or a number → stateless test (checked against `tests/queries/0_stateless/`)
-  - Anything else → gtest filter for unit tests (e.g., `Scheduler`, `MergeTree`)
+  - Anything else → gtest filter for unit tests, passed directly to `--gtest_filter` (e.g., `*Scheduler*`, `CoordinationTest.*`)
 
 ## Workflow Overview
 
@@ -33,10 +33,10 @@ Systematically detect and fix ThreadSanitizer (TSan) errors by running a specifi
 
 ### 1a. Validate arguments
 
-`$ARGUMENTS` is the test name. If empty, use `AskUserQuestion`:
+`$ARGUMENTS` is the test name or gtest filter. If empty, use `AskUserQuestion`:
 
 **Question: "Which test should be used to find TSan errors?"**
-- Option 1: "Unit test (gtest)" — Description: "A gtest filter, e.g. `Scheduler` or `MergeTree`"
+- Option 1: "Unit test (gtest)" — Description: "A gtest filter pattern, e.g. `*Scheduler*` or `CoordinationTest.*`"
 - Option 2: "Integration test" — Description: "An integration test name, e.g. `test_replicated_merge_tree`"
 - Option 3: "Stateless test" — Description: "A stateless test, e.g. `01234_some_test` or just `01234`"
 
@@ -46,7 +46,7 @@ Determine the test type from the test name:
 
 1. Check if `tests/integration/$ARGUMENTS/` exists → **integration test**
 2. Check if files matching `tests/queries/0_stateless/$ARGUMENTS*` exist → **stateless test**
-3. Otherwise → **unit test** (treat argument as a gtest filter)
+3. Otherwise → **unit test** (pass argument directly as `--gtest_filter` value)
 
 If auto-detection is ambiguous, confirm with `AskUserQuestion`.
 
@@ -107,7 +107,7 @@ Report log path and `tail -f build_tsan/tsan_test.log` command to user.
 **Do NOT use `run_in_background` for unit tests.** Use the `run-unittest.sh` script which handles test launch, hang detection, and structured output in one call.
 
 ```bash
-bash .claude/skills/clean-tsan/scripts/run-unittest.sh "*<test_name>*" <log_file>
+bash .claude/skills/clean-tsan/scripts/run-unittest.sh "<gtest_filter>" <log_file>
 ```
 
 The script launches the test binary with `TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 history_size=7"`, `--gtest_repeat=20`, and `--gtest_break_on_failure`. It monitors the log file for stalled output (hang detection with 10-second polling).
@@ -447,7 +447,7 @@ Both `handle-hang.sh` and `extract-alert.sh` compute the iteration number from e
 
 ## Examples
 
-- `/clean-tsan Scheduler` — unit test (gtest filter `*Scheduler*`)
+- `/clean-tsan *Scheduler*` — unit test (gtest filter passed as-is)
 - `/clean-tsan test_replicated_merge_tree` — integration test
 - `/clean-tsan 01234_some_test` — stateless test
 
