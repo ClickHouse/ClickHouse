@@ -262,6 +262,24 @@ private:
                                 [&](Array & value) { fetched_column.insert(value); },
                                 default_value_provider);
                         }
+                        else if constexpr (std::is_same_v<ValueType, Map>)
+                        {
+                            getItemsForFetchedKeys<ValueType>(
+                                attribute,
+                                fetched_columns_index,
+                                fetched_keys,
+                                [&](Map & value) { fetched_column.insert(value); },
+                                default_value_provider);
+                        }
+                        else if constexpr (std::is_same_v<ValueType, Object>)
+                        {
+                            getItemsForFetchedKeys<ValueType>(
+                                attribute,
+                                fetched_columns_index,
+                                fetched_keys,
+                                [&](Object & value) { fetched_column.insert(value); },
+                                default_value_provider);
+                        }
                         else if constexpr (std::is_same_v<ValueType, std::string_view>)
                         {
                             getItemsForFetchedKeys<ValueType>(
@@ -317,6 +335,24 @@ private:
                                 fetched_columns_index,
                                 fetched_keys,
                                 [&](Array & value) { fetched_column.insert(value); },
+                                *default_mask);
+                        }
+                        else if constexpr (std::is_same_v<ValueType, Map>)
+                        {
+                            getItemsForFetchedKeysShortCircuit<ValueType>(
+                                attribute,
+                                fetched_columns_index,
+                                fetched_keys,
+                                [&](Map & value) { fetched_column.insert(value); },
+                                *default_mask);
+                        }
+                        else if constexpr (std::is_same_v<ValueType, Object>)
+                        {
+                            getItemsForFetchedKeysShortCircuit<ValueType>(
+                                attribute,
+                                fetched_columns_index,
+                                fetched_keys,
+                                [&](Object & value) { fetched_column.insert(value); },
                                 *default_mask);
                         }
                         else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -588,7 +624,7 @@ private:
 
     template<typename ValueType>
     using ContainerType = std::conditional_t<
-        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
+        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array> || std::is_same_v<ValueType, Map> || std::is_same_v<ValueType, Object>,
         VectorWithMemoryTracking<ValueType>,
         PaddedPODArray<ValueType>>;
 
@@ -622,6 +658,8 @@ private:
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
             ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>,
             ContainerType<Field>> attribute_container;
     };
 

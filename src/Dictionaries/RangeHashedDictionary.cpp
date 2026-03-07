@@ -64,6 +64,20 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsShortCircuitImpl<ValueType, false>(
                     attribute, modified_key_columns, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, modified_key_columns, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, modified_key_columns, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
@@ -119,6 +133,32 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     attribute,
                     modified_key_columns,
                     [&](size_t, const Array & value, bool)
+                    {
+                        out->insert(value);
+                    },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t, const Map & value, bool)
+                    {
+                        out->insert(value);
+                    },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t, const Object & value, bool)
                     {
                         out->insert(value);
                     },
