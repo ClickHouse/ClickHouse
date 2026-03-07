@@ -337,7 +337,7 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
                 std::this_thread::yield();
             }
         }
-        catch (...)
+        catch (...) // Ok: intentionally catching eviction exception to verify it was thrown
         {
             exception_caught = true;
         }
@@ -363,7 +363,7 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
             // Reset tracker before destruction
             tracker.adjustWithUntrackedMemory(-50000);
         }
-        catch (...)
+        catch (...) // Ok: not expected, but FAIL() handles it
         {
             // This should not happen - the killer is smaller than the victim,
             // so the eviction policy should kill the victim, not the killer

@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include "Common/Scheduler/EventQueue.h"
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/ResourceGuard.h>
