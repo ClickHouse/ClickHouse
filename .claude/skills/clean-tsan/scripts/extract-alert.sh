@@ -1,10 +1,11 @@
 #!/bin/bash
 # Extract the first TSan alert from a log file into a numbered artifact.
 #
-# Usage: extract-alert.sh <log_file> <artifact_dir> [--progress-file PATH]
+# Usage: extract-alert.sh <log_file>
 #
 # Finds the first WARNING/SUMMARY marker pair and extracts it to
-# alert-NNN.txt. Auto-numbers based on progress file and existing artifacts.
+# _clean-tsan/NNN/alert.txt. Auto-numbers based on existing iteration
+# subdirectories in _clean-tsan/.
 #
 # Output:
 #   ALERT_COUNT=<total alerts in log>
@@ -17,32 +18,15 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <log_file> <artifact_dir> [--progress-file PATH]" >&2
+    echo "Usage: $0 <log_file>" >&2
     exit 1
 }
 
-if [ $# -lt 2 ]; then
+if [ $# -lt 1 ]; then
     usage
 fi
 
 LOG_FILE="$1"
-ARTIFACT_DIR="$2"
-shift 2
-
-PROGRESS_FILE="_clean-tsan/progress.md"
-
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --progress-file)
-            PROGRESS_FILE="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            usage
-            ;;
-    esac
-done
 
 if [ ! -f "$LOG_FILE" ]; then
     echo "ERROR: Log file not found: $LOG_FILE" >&2
@@ -72,37 +56,14 @@ fi
 alert_type=$(sed -n "${end_line}p" "$LOG_FILE" | grep -oP 'SUMMARY: ThreadSanitizer: \K[^ ]+' || echo "unknown")
 echo "ALERT_TYPE=$alert_type"
 
-# Compute next iteration number
-max_iter=0
-
-if [ -f "$PROGRESS_FILE" ]; then
-    while IFS= read -r num; do
-        num=$((10#$num))
-        if [ "$num" -gt "$max_iter" ]; then
-            max_iter=$num
-        fi
-    done < <(grep -oP '## Iteration \K[0-9]+' "$PROGRESS_FILE" 2>/dev/null || true)
-fi
-
-if [ -d "$ARTIFACT_DIR" ]; then
-    for f in "$ARTIFACT_DIR"/*.txt; do
-        [ -e "$f" ] || continue
-        num=$(echo "$f" | grep -oP '[0-9]{3}(?=\.txt$)' || true)
-        if [ -n "$num" ]; then
-            num=$((10#$num))
-            if [ "$num" -gt "$max_iter" ]; then
-                max_iter=$num
-            fi
-        fi
-    done
-fi
-
-next_iter=$((max_iter + 1))
+# Compute next iteration number from existing subdirectories (max + 1)
+max_iter=$(find _clean-tsan -maxdepth 1 -type d -regex '.*/[0-9]+' -printf '%f\n' 2>/dev/null | sort -n | tail -1)
+next_iter=$(( ${max_iter:-0} + 1 ))
 NNN=$(printf '%03d' "$next_iter")
 echo "ITERATION=$NNN"
 
-# Create artifact directory and extract
-mkdir -p "$ARTIFACT_DIR"
-OUTFILE="$ARTIFACT_DIR/alert-$NNN.txt"
+# Create iteration directory and extract
+mkdir -p "_clean-tsan/$NNN"
+OUTFILE="_clean-tsan/$NNN/alert.txt"
 sed -n "${start_line},${end_line}p" "$LOG_FILE" > "$OUTFILE"
 echo "ALERT_FILE=$OUTFILE"

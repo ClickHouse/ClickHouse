@@ -130,16 +130,16 @@ Options: `--repeat N` (default 20), `--poll-interval N` (default 10 seconds).
 When `run-unittest.sh` reports `HANG_DETECTED=1`, the process is still alive (the script does NOT kill it). Use `handle-hang.sh` to capture stacktraces and kill the process:
 
 ```bash
-bash .claude/skills/clean-tsan/scripts/handle-hang.sh <pid> _clean-tsan/<test_name>
+bash .claude/skills/clean-tsan/scripts/handle-hang.sh <pid>
 ```
 
 The script:
 1. Finds the versioned lldb binary (e.g. `lldb-21`)
-2. Computes next iteration NNN from `_clean-tsan/progress.md` and existing artifacts
-3. Captures all-thread stacktraces via `sudo lldb -o "bt all"`
-4. Kills the process
+2. Computes next iteration NNN from existing `_clean-tsan/NNN/` subdirectories
+3. Captures all-thread stacktraces via `sudo lldb -o "bt all"` to `_clean-tsan/NNN/stacktrace.txt`
+4. Kills the process (escalates to `SIGKILL` if `SIGTERM` fails)
 
-**Output:** `LLDB=<path>`, `ITERATION=<NNN>`, `STACKTRACE_FILE=<path>`, `KILLED=1`
+**Output:** `LLDB=<path>`, `ITERATION=<NNN>`, `STACKTRACE_FILE=<path>`, `KILLED=1` (or `KILLED=0` if the process could not be killed)
 
 Do NOT read the stacktrace output into the main conversation context — it can be very large. The RCA subagent (Phase 5) reads the file.
 
@@ -217,7 +217,7 @@ Both files must be checked for TSan errors.
 
 ### 3c. Check for TSan errors or hangs
 
-**If `hang_detected` is true** (unit test hang detected in 3b): skip TSan alert checks — the stacktrace artifact is already saved. Proceed directly to Phase 5 (RCA) with the `stacktrace-NNN.txt` file. Phase 4 extraction is not needed for hangs.
+**If `hang_detected` is true** (unit test hang detected in 3b): skip TSan alert checks — the stacktrace artifact is already saved. Proceed directly to Phase 5 (RCA) with the `_clean-tsan/NNN/stacktrace.txt` file. Phase 4 extraction is not needed for hangs.
 
 **Otherwise**, check for TSan alerts:
 
@@ -244,17 +244,17 @@ grep -c "SUMMARY: ThreadSanitizer:" <server_stderr_log>
 
 ## Phase 4: Extract First TSan Alert
 
-**Skip this phase if a hang was detected** — the stacktrace artifact (`stacktrace-NNN.txt`) is already saved during hang handling. Proceed directly to Phase 5.
+**Skip this phase if a hang was detected** — the stacktrace artifact (`_clean-tsan/NNN/stacktrace.txt`) is already saved during hang handling. Proceed directly to Phase 5.
 
 The skill processes alerts **one at a time**: extract the first alert, analyze it, fix it, rerun tests, and repeat until clean.
 
 ### Extract using script
 
 ```bash
-bash .claude/skills/clean-tsan/scripts/extract-alert.sh <log_file> _clean-tsan/<test_name>
+bash .claude/skills/clean-tsan/scripts/extract-alert.sh <log_file>
 ```
 
-The script finds the first `WARNING: ThreadSanitizer:` ... `SUMMARY: ThreadSanitizer:` pair, auto-numbers the output file based on `_clean-tsan/progress.md` and existing artifacts, and extracts to `alert-NNN.txt`.
+The script finds the first `WARNING: ThreadSanitizer:` ... `SUMMARY: ThreadSanitizer:` pair, computes the next iteration number from existing `_clean-tsan/NNN/` subdirectories, and extracts to `_clean-tsan/NNN/alert.txt`.
 
 **Output:** `ALERT_COUNT=<N>`, `ITERATION=<NNN>`, `ALERT_FILE=<path>`, `ALERT_TYPE=<type>`
 
@@ -266,7 +266,7 @@ For **integration tests**, you may need to run the script on multiple log files 
 
 ### Progress file format
 
-The file `_clean-tsan/progress.md` is the shared memory across subagents and sessions — every RCA and Fix subagent reads it before starting work. It lives in the root `_clean-tsan/` directory (not per-test) so knowledge accumulates across different tests. Create it on the first iteration if it does not exist; entries are appended in Phase 7c after each verify cycle.
+The file `_clean-tsan/progress.md` is the shared memory across subagents and sessions — every RCA and Fix subagent reads it before starting work. Create it on the first iteration if it does not exist; entries are appended in Phase 7c after each verify cycle.
 
 Each entry is compact (~5 lines):
 
@@ -286,7 +286,7 @@ Each entry is compact (~5 lines):
 
 ### Threading model file
 
-The file `_clean-tsan/threading-model.md` is a cumulative knowledge base about the threading architecture of the code touched across sessions. Unlike `progress.md` (which tracks what was tried), this captures the *understanding* of how the code works. It lives in the root `_clean-tsan/` directory so knowledge accumulates across different tests.
+The file `_clean-tsan/threading-model.md` is a cumulative knowledge base about the threading architecture of the code touched across sessions. Unlike `progress.md` (which tracks what was tried), this captures the *understanding* of how the code works.
 
 RCA subagents read it before analysis and **update it** with new discoveries. Fix subagents read it and **update it** when their changes alter invariants.
 
@@ -310,7 +310,7 @@ Read the prompt template from `.claude/skills/clean-tsan/assets/rca-prompt.md` a
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{ALERT_FILE}}` | Path to `_clean-tsan/<test_name>/alert-NNN.txt` **or** `_clean-tsan/<test_name>/stacktrace-NNN.txt` for hangs |
+| `{{ALERT_FILE}}` | Path to `_clean-tsan/NNN/alert.txt` **or** `_clean-tsan/NNN/stacktrace.txt` for hangs |
 | `{{HANG_TYPE}}` | For hangs: substitute with `**Hang type: deadlock** (~0% CPU)` or `**Hang type: livelock** (high CPU: N%)`. For TSan alerts: omit the entire `{{HANG_TYPE}}` line from the prompt. |
 | `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
 | `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
@@ -318,13 +318,13 @@ Read the prompt template from `.claude/skills/clean-tsan/assets/rca-prompt.md` a
 
 ### Save RCA report
 
-Save the subagent's RCA output to the per-test directory:
+Save the subagent's RCA output to the iteration directory:
 
 ```
-Write RCA to: _clean-tsan/<test_name>/rca-NNN.txt
+Write RCA to: _clean-tsan/NNN/rca.txt
 ```
 
-Where NNN matches the alert number from Phase 4.
+Where NNN matches the iteration number from Phase 4 (or from `handle-hang.sh` for hangs).
 
 Present the RCA summary to the user.
 
@@ -352,7 +352,7 @@ Launch Task with `subagent_type=general-purpose`. Read the prompt template from 
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{RCA_FILE}}` | Path to `_clean-tsan/<test_name>/rca-NNN.txt` |
+| `{{RCA_FILE}}` | Path to `_clean-tsan/NNN/rca.txt` |
 | `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
 | `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
 
@@ -424,11 +424,11 @@ Each iteration processes one alert or hang at a time. The loop continues until e
 | Build logs | `build_tsan/tsan_build.log` |
 | Test logs | `build_tsan/tsan_test.log` |
 | Server stderr (stateless) | `build_tsan/tsan_server_stderr.log` |
-| TSan alerts | `_clean-tsan/<test_name>/alert-NNN.txt` |
-| Hang stacktraces | `_clean-tsan/<test_name>/stacktrace-NNN.txt` |
-| RCA reports | `_clean-tsan/<test_name>/rca-NNN.txt` |
-| Progress log | `_clean-tsan/progress.md` (shared across tests) |
-| Threading model | `_clean-tsan/threading-model.md` (shared across tests) |
+| TSan alerts | `_clean-tsan/NNN/alert.txt` |
+| Hang stacktraces | `_clean-tsan/NNN/stacktrace.txt` |
+| RCA reports | `_clean-tsan/NNN/rca.txt` |
+| Progress log | `_clean-tsan/progress.md` |
+| Threading model | `_clean-tsan/threading-model.md` |
 
 ## Scripts
 
@@ -438,10 +438,10 @@ Helper scripts in `.claude/skills/clean-tsan/scripts/` handle mechanical steps a
 |--------|---------|
 | `detect-llvm-tool.sh <tool> [--build-dir PATH]` | Find LLVM tool (e.g. `llvm-symbolizer`, `lldb`) matching the compiler version from `CMakeCache.txt` |
 | `run-unittest.sh <filter> <log>` | Launch gtest under TSan, monitor for hang, report outcome |
-| `handle-hang.sh <pid> <artifact_dir>` | Capture all-thread stacktraces via lldb, kill process, auto-number artifacts |
-| `extract-alert.sh <log> <artifact_dir>` | Extract first TSan alert to auto-numbered file |
+| `handle-hang.sh <pid>` | Capture all-thread stacktraces via lldb, kill process, write to `_clean-tsan/NNN/stacktrace.txt` |
+| `extract-alert.sh <log>` | Extract first TSan alert to `_clean-tsan/NNN/alert.txt` |
 
-All scripts accept `--progress-file PATH` (default: `_clean-tsan/progress.md`) for iteration numbering.
+Both `handle-hang.sh` and `extract-alert.sh` compute the iteration number from existing `_clean-tsan/NNN/` subdirectories.
 
 ---
 

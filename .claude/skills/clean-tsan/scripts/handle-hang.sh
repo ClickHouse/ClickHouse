@@ -1,16 +1,16 @@
 #!/bin/bash
 # Handle a hung test process: capture all-thread stacktraces, then kill it.
 #
-# Usage: handle-hang.sh <pid> <artifact_dir> [--progress-file PATH]
+# Usage: handle-hang.sh <pid>
 #
 # Auto-detects the versioned lldb binary (e.g. lldb-21).
-# Auto-numbers the output file (stacktrace-NNN.txt) based on the highest
-# iteration number found in the progress file and existing artifacts.
+# Auto-numbers the iteration directory (_clean-tsan/NNN/) based on
+# existing subdirectories.
 #
 # Steps performed:
 #   1. Verify process is alive
 #   2. Find lldb
-#   3. Compute next iteration number (from progress file + existing artifacts)
+#   3. Compute next iteration number
 #   4. Capture all-thread stacktraces via lldb (bt all)
 #   5. Kill the process
 #
@@ -26,32 +26,15 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <pid> <artifact_dir> [--progress-file PATH]" >&2
+    echo "Usage: $0 <pid>" >&2
     exit 1
 }
 
-if [ $# -lt 2 ]; then
+if [ $# -lt 1 ]; then
     usage
 fi
 
 PID="$1"
-ARTIFACT_DIR="$2"
-shift 2
-
-PROGRESS_FILE="_clean-tsan/progress.md"
-
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --progress-file)
-            PROGRESS_FILE="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1" >&2
-            usage
-            ;;
-    esac
-done
 
 # Verify process is alive
 if ! kill -0 "$PID" 2>/dev/null; then
@@ -68,43 +51,18 @@ if [ -z "$LLDB" ]; then
 fi
 echo "LLDB=$LLDB"
 
-# Compute next iteration number.
-# Sources: progress.md ("## Iteration NNN") and existing artifact files.
-max_iter=0
-
-if [ -f "$PROGRESS_FILE" ]; then
-    while IFS= read -r num; do
-        num=$((10#$num))  # strip leading zeros
-        if [ "$num" -gt "$max_iter" ]; then
-            max_iter=$num
-        fi
-    done < <(grep -oP '## Iteration \K[0-9]+' "$PROGRESS_FILE" 2>/dev/null || true)
-fi
-
-# Also check existing artifact files in the target directory
-if [ -d "$ARTIFACT_DIR" ]; then
-    for f in "$ARTIFACT_DIR"/*.txt; do
-        [ -e "$f" ] || continue
-        num=$(echo "$f" | grep -oP '[0-9]{3}(?=\.txt$)' || true)
-        if [ -n "$num" ]; then
-            num=$((10#$num))
-            if [ "$num" -gt "$max_iter" ]; then
-                max_iter=$num
-            fi
-        fi
-    done
-fi
-
-next_iter=$((max_iter + 1))
+# Compute next iteration number from existing subdirectories (max + 1)
+max_iter=$(find _clean-tsan -maxdepth 1 -type d -regex '.*/[0-9]+' -printf '%f\n' 2>/dev/null | sort -n | tail -1)
+next_iter=$(( ${max_iter:-0} + 1 ))
 NNN=$(printf '%03d' "$next_iter")
 echo "ITERATION=$NNN"
 
-# Create artifact directory
-mkdir -p "$ARTIFACT_DIR"
+# Create iteration directory
+mkdir -p "_clean-tsan/$NNN"
 
-# Capture all-thread stacktraces
-OUTFILE="$ARTIFACT_DIR/stacktrace-$NNN.txt"
-sudo "$LLDB" -p "$PID" -o "bt all" -o "detach" -o "quit" > "$OUTFILE" 2>&1
+# Capture all-thread stacktraces (don't let lldb failure prevent killing the process)
+OUTFILE="_clean-tsan/$NNN/stacktrace.txt"
+sudo "$LLDB" -p "$PID" -o "bt all" -o "detach" -o "quit" > "$OUTFILE" 2>&1 || true
 echo "STACKTRACE_FILE=$OUTFILE"
 
 # Kill the hung process and wait for it to exit.
