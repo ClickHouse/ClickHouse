@@ -94,7 +94,7 @@ bool HTTPServerRequest::checkPeerConnected() const
     catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
     {
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return false;
     }

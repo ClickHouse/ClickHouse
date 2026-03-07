@@ -70,7 +70,7 @@ struct Test
                 << "(Error: " << ex.what() << ")\n";
             ok = false;
         }
-        catch (...)
+        catch (...) // Ok: test reports unknown failure
         {
             std::cout << "Test width=" << width << " bucket_count=" << bucket_count << " failed\n";
             ok = false;

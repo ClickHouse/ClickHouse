@@ -76,7 +76,7 @@ CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & r
         assertEOF(in);
         return committing_block_op;
     }
-    catch (...)
+    catch (const Exception &)
     {
         return CommittingBlock::Op::Unknown;
     }
