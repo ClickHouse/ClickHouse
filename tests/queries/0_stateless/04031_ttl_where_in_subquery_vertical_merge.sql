@@ -7,14 +7,16 @@
 
 DROP TABLE IF EXISTS t_ttl_in_subquery;
 
-CREATE TABLE t_ttl_in_subquery (a UInt32, timestamp DateTime)
+-- Extra column 'b' ensures there is a gathering column for vertical merge.
+-- min_bytes_for_wide_part = 0 forces wide parts so vertical merge is chosen.
+CREATE TABLE t_ttl_in_subquery (a UInt32, b String, timestamp DateTime)
 ENGINE = MergeTree ORDER BY a
 TTL timestamp + INTERVAL 1 SECOND WHERE a IN (SELECT number FROM system.numbers LIMIT 10)
-SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1;
+SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0;
 
 -- Insert data with timestamp in the past so TTL is expired
-INSERT INTO t_ttl_in_subquery SELECT number, now() - 5 FROM numbers(100);
-INSERT INTO t_ttl_in_subquery SELECT number + 100, now() - 5 FROM numbers(100);
+INSERT INTO t_ttl_in_subquery SELECT number, 'x', now() - 5 FROM numbers(100);
+INSERT INTO t_ttl_in_subquery SELECT number + 100, 'x', now() - 5 FROM numbers(100);
 
 -- Force merge which should trigger vertical TTL delete with IN subquery evaluation
 OPTIMIZE TABLE t_ttl_in_subquery FINAL;

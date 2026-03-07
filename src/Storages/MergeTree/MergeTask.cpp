@@ -2828,7 +2828,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->time_of_merge,
             ctx->force_ttl);
 
-        subqueries = ttl_step->getSubqueries();
+        auto ttl_subqueries = ttl_step->getSubqueries();
+
+        if (global_ctx->vertical_ttl_delete)
+        {
+            /// In vertical TTL delete mode, build sets eagerly rather than via
+            /// addCreatingSetsStep. Otherwise the subquery progress (rows read)
+            /// would be counted in merge_list_element->rows_read, causing a
+            /// mismatch with the rows_sources file size assertion.
+            for (auto & sq : ttl_subqueries)
+                sq->buildSetInplace(global_ctx->context);
+        }
+        else
+        {
+            subqueries = std::move(ttl_subqueries);
+        }
+
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
     }
