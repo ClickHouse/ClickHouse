@@ -92,8 +92,9 @@ ISchedulerNode::ISchedulerNode(EventQueue & event_queue_, const SchedulerNodeInf
 
 ISchedulerNode::~ISchedulerNode()
 {
-    // Make sure there is no dangling reference in activations queue
-    cancelActivation();
+    chassert(event_queue.isInSchedulerOrStopped());
+    chassert(!parent);
+    chassert(activation_event_id == 0);
 }
 
 bool ISchedulerNode::equals(ISchedulerNode * other)
@@ -116,9 +117,7 @@ String ISchedulerNode::getPath() const
 void ISchedulerNode::setParentNode(ISchedulerNode * parent_)
 {
     parent = parent_;
-    // Avoid activation of a detached node
-    if (parent == nullptr)
-        cancelActivation();
+    // Note that detached node can be activated and can be active. References to detached node can be inside EventQueue.
 }
 
 const String & ISchedulerNode::getWorkloadName() const

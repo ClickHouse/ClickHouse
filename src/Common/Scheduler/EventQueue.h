@@ -79,8 +79,8 @@ public:
     /// Removes an activation from queue and waits for any in-progress activation to complete
     void cancelActivation(ISchedulerNode & node);
 
-    /// Returns true if the current thread is the scheduler thread attached to this EventQueue
-    bool isSchedulerThread() const { return current_thread_queue == this; }
+    /// Returns true if the current thread is the scheduler thread attached to this EventQueue (or if the scheduler is stopped).
+    bool isInSchedulerOrStopped() const { return stopped.load() || current_thread_queue == this; }
 
     /// Process single event if it exists
     /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
@@ -112,7 +112,6 @@ private:
     void processPostponed(std::unique_lock<std::mutex> && lock);
 
     std::mutex mutex;
-    std::mutex activation_mutex; // Serializes activation processing with cancelActivation()
     std::condition_variable pending;
 
     // `events` and `activations` logically represent one ordered queue. To preserve the common order we use `EventId`
@@ -127,6 +126,7 @@ private:
 
     /// Thread-local pointer to the EventQueue attached to the current scheduler thread.
     static inline thread_local EventQueue * current_thread_queue = nullptr;
+    std::atomic<bool> stopped{false};
 
 public:
     /// RAII struct to attach the current thread to this EventQueue.
@@ -135,12 +135,14 @@ public:
     {
         explicit SchedulerThread(EventQueue * queue_) : queue(queue_)
         {
+            chassert(!queue->stopped.load());
             chassert(current_thread_queue == nullptr);
             current_thread_queue = queue;
         }
 
         ~SchedulerThread()
         {
+            queue->stopped.store(true);
             current_thread_queue = nullptr;
         }
 

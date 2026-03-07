@@ -63,18 +63,11 @@ void EventQueue::cancelActivation(ISchedulerNode & node)
     if (node.activation_hook.is_linked())
         activations.erase(activations.iterator_to(node));
     node.activation_event_id = 0;
-
-    // Make sure that activation processing is done before we return if we are not in the scheduler thread
-    if (current_thread_queue != this)
-    {
-        lock.unlock();
-        std::unique_lock activation_lock{activation_mutex};
-    }
 }
 
 bool EventQueue::forceProcess()
 {
-    chassert(current_thread_queue == this);
+    chassert(isInSchedulerOrStopped());
     std::unique_lock lock{mutex};
     if (!events.empty() || !activations.empty())
     {
@@ -91,7 +84,7 @@ bool EventQueue::forceProcess()
 
 bool EventQueue::tryProcess()
 {
-    chassert(current_thread_queue == this);
+    chassert(isInSchedulerOrStopped());
     std::unique_lock lock{mutex};
     if (!events.empty() || !activations.empty())
     {
@@ -111,7 +104,7 @@ bool EventQueue::tryProcess()
 
 void EventQueue::process()
 {
-    chassert(current_thread_queue == this);
+    chassert(isInSchedulerOrStopped());
     std::unique_lock lock{mutex};
     while (true)
     {
@@ -195,7 +188,6 @@ void EventQueue::processActivation(std::unique_lock<std::mutex> && lock)
     ISchedulerNode & node = activations.front();
     activations.pop_front();
     node.activation_event_id = 0;
-    std::unique_lock activation_lock{activation_mutex}; // for serialization of cancelActivation() with activation processing
     lock.unlock(); // do not hold queue mutex while processing events
     node.processActivation();
 }

@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include "Common/Scheduler/EventQueue.h"
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -127,6 +128,11 @@ public:
     {
         if (root_node)
             dequeue(); // Just to avoid any leaks of `Request` object
+    }
+
+    EventQueue & getEventQueue()
+    {
+        return event_queue;
     }
 
     template <class TClass>

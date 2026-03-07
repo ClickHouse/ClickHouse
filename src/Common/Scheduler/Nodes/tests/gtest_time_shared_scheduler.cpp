@@ -84,6 +84,7 @@ struct ResourceHolder
         t.scheduler.event_queue.enqueue([this, &p]
         {
             t.scheduler.removeChild(root_node.get());
+            root_node.reset(); // Destruct the whole node tree inside the scheduler thread
             p.set_value();
         });
         f.get();

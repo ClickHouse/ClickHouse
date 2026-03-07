@@ -76,8 +76,6 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Attach to event queue for graceful shutdown processing
-                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
