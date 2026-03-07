@@ -108,8 +108,14 @@ private:
 
         /// sorting removed, so need to update sorting traits for upstream steps
         const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
-        chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
-        for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
+
+        /// Find parent_node position in stack (skip element on top since it's the sorting which was just removed)
+        /// In some cases (e.g., parallel replicas), parent_node might not be exactly at stack.rbegin() + 1
+        auto it = stack.rbegin() + 1;
+        while (it != stack.rend() && it->node != parent_node)
+            ++it;
+
+        for (; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
             /// skip removed sorting steps
