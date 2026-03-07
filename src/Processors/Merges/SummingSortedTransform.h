@@ -24,7 +24,8 @@ public:
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        std::optional<size_t> max_dynamic_subcolumns_
+        std::optional<size_t> max_dynamic_subcolumns_,
+        bool disable_part_level_shortcut_ = false
         )
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
@@ -39,7 +40,8 @@ public:
             "sumWithOverflow",
             "sumMapWithOverflow",
             true,
-            false)
+            false,
+            disable_part_level_shortcut_)
     {
     }
 

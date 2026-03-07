@@ -35,6 +35,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(database_and_table_name);
     CLONE(table_function);
     CLONE(subquery);
+    CLONE(final_by);
     CLONE(sample_size);
     CLONE(sample_offset);
     CLONE(column_aliases);
@@ -144,6 +145,12 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     {
         ostr << settings.nl_or_ws << indent_str
             << "FINAL";
+
+        if (final_by)
+        {
+            ostr << " BY ";
+            final_by->format(ostr, settings, state, frame);
+        }
     }
 
     if (sample_size)
