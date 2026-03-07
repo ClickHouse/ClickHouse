@@ -23,9 +23,9 @@ WasmCompartment::WasmCompartment()
 }
 
 template <typename ResultType>
-ResultType WasmCompartment::invoke(std::string_view function_name, const std::vector<WasmVal> & params)
+ResultType WasmCompartment::invoke(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token)
 {
-    auto returns = invokeImpl(function_name, params);
+    auto returns = invokeImpl(function_name, params, stop_token);
 
     if constexpr (std::is_same_v<ResultType, void>)
     {
@@ -51,9 +51,9 @@ ResultType WasmCompartment::invoke(std::string_view function_name, const std::ve
     }
 }
 
-template void WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
+template void WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &, StopToken);
 
-#define M(T) template std::variant_alternative_t<std::to_underlying(WasmValKind::T), WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &);
+#define M(T) template std::variant_alternative_t<std::to_underlying(WasmValKind::T), WasmVal> WasmCompartment::invoke<>(std::string_view, const std::vector<WasmVal> &, StopToken);
 APPLY_FOR_WASM_TYPES(M)
 #undef M
 

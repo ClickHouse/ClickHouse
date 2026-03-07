@@ -26,8 +26,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -53,13 +51,12 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.empty())
-                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least one argument.", getName());
+            FunctionArgumentDescriptor variadic_args{
+                "json1",isString, nullptr, "String"
+            };
+            FunctionArgumentDescriptors mandatory_args{variadic_args};
 
-            for (const auto & arg : arguments)
-                if (!isString(arg.type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires string arguments", getName());
-
+            validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
             return std::make_shared<DataTypeString>();
         }
 

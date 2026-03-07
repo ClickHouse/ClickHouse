@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -17,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -44,28 +44,15 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (!isString(arguments[0]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}, String expected",
-                    arguments[0]->getName(),
-                    getName());
+            FunctionArgumentDescriptors mandatory_args{
+                {"s", &isString, nullptr, "String"},
+                {"delim", &isString, nullptr, "String"},
+                {"count", &isNativeInteger, nullptr, "UInt or Int"}
+            };
 
-            if (!isString(arguments[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}, String expected",
-                    arguments[1]->getName(),
-                    getName());
-
-            if (!isNativeInteger(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}, Integer expected",
-                    arguments[2]->getName(),
-                    getName());
+            validateFunctionArguments(*this, arguments, mandatory_args);
 
             return std::make_shared<DataTypeString>();
         }
