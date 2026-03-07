@@ -134,7 +134,7 @@ public:
 
 private:
     ShuffleCursorRawPtrs queue;
-    std::mt19937 rng;
+    std::mt19937 rng{std::random_device{}()};
 
     size_t generateRandomIndex()
     {
