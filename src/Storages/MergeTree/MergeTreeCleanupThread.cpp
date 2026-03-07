@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeCleanupThread.h>
 
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMergeTree.h>
 
@@ -29,6 +30,7 @@ void MergeTreeCleanupThread::start()
 
 Float32 MergeTreeCleanupThread::iterate()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeCleanupThread");
     size_t cleaned_other = 0;
     size_t cleaned_part_like = 0;
     size_t cleaned_parts = 0;
