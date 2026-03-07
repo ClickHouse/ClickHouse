@@ -96,26 +96,27 @@ public:
         auto rhs_type = removeNullable(constant_type);
 
         /// When the LHS and RHS have the same type, we can convert directly.
-        /// When they differ, we try to convert the constant to the LHS type —
-        /// mirroring how IN builds its Set (SetUtils.cpp converts each literal
-        /// to the column type via convertFieldToTypeStrict).
+        /// When they differ, we convert the constant to the LHS type using
+        /// convertFieldToTypeStrict — the same function that IN uses in
+        /// SetUtils.cpp to build its Set. This rejects lossy conversions
+        /// (e.g. Decimal(9,2) → Decimal(9,1) losing precision, or
+        /// Float64 1.5551 → Decimal(9,3) truncating to 1.555).
         ///
-        /// This handles cases like String IN (1): the integer 1 is converted to
-        /// the string '1', producing equals(x, '1') which FunctionComparison
-        /// can execute. Without this, equals(String, UInt8) would throw
-        /// NO_COMMON_TYPE at execution time.
+        /// This also handles cases like String IN (1): the integer 1 is
+        /// converted to the string '1', producing equals(x, '1') which
+        /// FunctionComparison can execute. Without this, equals(String, UInt8)
+        /// would throw NO_COMMON_TYPE at execution time.
         ///
-        /// If the conversion fails or produces NULL (value out of range),
-        /// IN would never match either, but we conservatively skip the
-        /// optimization to avoid changing behavior.
+        /// If the conversion fails or is lossy, IN would never match either,
+        /// but we conservatively skip the optimization to avoid changing behavior.
         Field converted_value = value;
         DataTypePtr result_rhs_type = rhs_type;
         if (!lhs_type->equals(*rhs_type))
         {
-            Field converted = tryConvertFieldToType(value, *lhs_type, rhs_type.get());
-            if (converted.isNull())
+            auto converted = convertFieldToTypeStrict(value, *rhs_type, *lhs_type);
+            if (!converted.has_value())
                 return;
-            converted_value = std::move(converted);
+            converted_value = std::move(converted.value());
             result_rhs_type = lhs_type;
         }
 
