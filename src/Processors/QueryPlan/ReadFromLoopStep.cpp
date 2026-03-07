@@ -5,8 +5,10 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -125,11 +127,39 @@ public:
         else
         {
             auto storage_snapshot_ = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
+
+            /// Unwrap the `loop` wrapper from the query AST so the inner storage
+            /// sees a query with its own table function (e.g. `urlCluster(...)` instead of `loop(urlCluster(...))`).
+            /// This is needed because cluster storages extract the table function from the query
+            /// and expect it to match their own name.
+            auto modified_query_info = query_info;
+            if (modified_query_info.query)
+            {
+                modified_query_info.query = modified_query_info.query->clone();
+                auto * select_query = modified_query_info.query->as<ASTSelectQuery>();
+                if (select_query && select_query->tables())
+                {
+                    auto * tables = select_query->tables()->as<ASTTablesInSelectQuery>();
+                    if (tables && !tables->children.empty())
+                    {
+                        auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
+                        if (table_expression && table_expression->table_function)
+                        {
+                            auto * func = table_expression->table_function->as<ASTFunction>();
+                            if (func && func->arguments && func->arguments->children.size() == 1)
+                            {
+                                table_expression->table_function = func->arguments->children[0];
+                            }
+                        }
+                    }
+                }
+            }
+
             inner_storage->read(
                     plan,
                     column_names,
                     storage_snapshot_,
-                    query_info,
+                    modified_query_info,
                     context,
                     processed_stage,
                     max_block_size,
