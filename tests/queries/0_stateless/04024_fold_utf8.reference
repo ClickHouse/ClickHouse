@@ -3,6 +3,7 @@ hello world
 strasse
 héllo
 ffi
+viii	ⅷ
 -- caseFoldUTF8 conservative
 hello world
 strasse
@@ -16,6 +17,7 @@ pinata
 cafe resume
 hello world
 strasse
+dzefficient	ǆefficient
 -- foldUTF8 conservative
 cafe resume
 hello world

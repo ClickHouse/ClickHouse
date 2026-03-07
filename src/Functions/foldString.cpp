@@ -180,7 +180,7 @@ struct FullFoldImpl
 {
     static constexpr auto name = "foldUTF8";
 
-    static void init(FoldContext & ctx, bool aggressive, bool /* exclude_special_i */)
+    static void init(FoldContext & ctx, bool aggressive, bool exclude_special_i)
     {
         UErrorCode err = U_ZERO_ERROR;
         ctx.aggressive = aggressive;
@@ -201,6 +201,8 @@ struct FullFoldImpl
             if (U_FAILURE(err))
                 throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Failed to get NFKC_Casefold normalizer: {}", u_errorName(err));
         }
+
+        ctx.fold_options = exclude_special_i ? U_FOLD_CASE_EXCLUDE_SPECIAL_I : U_FOLD_CASE_DEFAULT;
     }
 
     /// Result is left in buf1.
@@ -322,7 +324,7 @@ template <typename Impl>
 class FunctionFoldUTF8 : public IFunction
 {
     static constexpr bool has_method_arg = std::is_same_v<Impl, CaseFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
-    static constexpr bool has_special_i_arg = std::is_same_v<Impl, CaseFoldImpl>;
+    static constexpr bool has_special_i_arg = std::is_same_v<Impl, CaseFoldImpl> || std::is_same_v<Impl, FullFoldImpl>;
     static constexpr size_t max_args = 1 + has_method_arg + has_special_i_arg;
 
 public:
@@ -464,7 +466,12 @@ Two methods are available:
   Unicode compatibility equivalences — for example, ligatures like `ﬃ` are decomposed to `ffi`, and
   circled numbers like `①` become `1`. This is faster as it uses a single ICU normalization pass.
 - 'conservative': applies NFC normalization followed by standard Unicode case folding, preserving the
-  visual form of compatibility characters (e.g. ligatures remain intact). This requires multiple ICU passes.
+  visual form of compatibility characters (e.g. ligatures remain intact). This requires an extra final normalization pass.
+
+"Special I" handling. The parameter `exclude_special_I` (default 0) controls whether to exclude Turkish/Azerbaijani special I from folding.
+It prevents `I` (U+0049) from folding down to `i`, because in Turkish/Azerbaijani the lowercase of `I` is `ı` (dotless i, U+0131) not i.
+When set to 0 (false), `I` folds to `i` which is wrong for these languages. When set to 1 (true), `I` is left alone so it doesn't get incorrectly merged with the dotted-i pair.
+
 )";
     FunctionDocumentation::Syntax case_syntax = "caseFoldUTF8(str[, method][, exclude_special_I])";
     FunctionDocumentation::Arguments case_args = {
@@ -484,12 +491,21 @@ Two methods are available:
 )"
     },
     {
-        "Aggressive vs conservative — ligature handling",
-        "SELECT caseFoldUTF8('ﬃ') AS aggressive, caseFoldUTF8('ﬃ', 'conservative') AS conservative",
+        "Aggressive vs conservative — Roman numeral handling",
+        "SELECT caseFoldUTF8('Ⅷ') AS aggressive, caseFoldUTF8('Ⅷ', 'conservative') AS conservative",
         R"(
 ┌─aggressive─┬─conservative─┐
-│ ffi        │ ﬃ            │
+│ viii       │ ⅷ            │
 └────────────┴──────────────┘
+)"
+    },
+    {
+        "Turkish I handling with exclude_special_I",
+        "SELECT caseFoldUTF8('İstanbul', 'conservative', 0) AS default_fold, caseFoldUTF8('İstanbul', 'conservative', 1) AS exclude_special_I",
+        R"(
+┌─default_fold─┬─exclude_special_I─┐
+│ i̇stanbul     │ istanbul           │
+└──────────────┴────────────────────┘
 )"
     }};
     FunctionDocumentation::IntroducedIn intro = {26, 3};
@@ -528,14 +544,17 @@ Two methods are available:
 - 'conservative': applies NFC, case fold, NFD, strip combining marks, then NFC.
   Preserves compatibility characters like ligatures while still folding case and removing accents.
 
-See the caseFoldUTF8 and accentFoldUTF8 functions for more info on each step. The result of this function will be equivalent
-to accentFoldUTF8(caseFoldUTF8(input)) however foldUTF8(input) will be slightly faster due to avoiding a redundant normalization step.
-Note that there is no exclude_special_I parameter since the special I would be stripped of any accents anyway.
+See the `caseFoldUTF8` and `accentFoldUTF8` functions for more info on each step. The result of this function will be equivalent
+to `accentFoldUTF8(caseFoldUTF8(input))` however `foldUTF8(input)` will be slightly faster due to avoiding a redundant normalization step.
+
+The `exclude_special_I` parameter works the same as in `caseFoldUTF8`. It is useful for Turkish/Azerbaijani
+because the dotless `ı` (U+0131) produced by special I folding is a base character that survives accent stripping.
 )";
-    FunctionDocumentation::Syntax fold_syntax = "foldUTF8(str[, case_fold_method])";
+    FunctionDocumentation::Syntax fold_syntax = "foldUTF8(str[, case_fold_method][, exclude_special_I])";
     FunctionDocumentation::Arguments fold_args = {
         {"str", "UTF-8 encoded input string.", {"String"}},
-        {"case_fold_method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}}
+        {"case_fold_method", "Optional. 'aggressive' (default) or 'conservative'.", {"String"}},
+        {"exclude_special_I", "Optional. 1 to exclude Turkish/Azerbaijani special I mapping (U_FOLD_CASE_EXCLUDE_SPECIAL_I). Default 0. Only valid with 'conservative' method.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue fold_ret = {"Case-folded and accent-stripped UTF-8 string.", {"String"}};
     FunctionDocumentation::Examples fold_examples = {
@@ -549,11 +568,11 @@ Note that there is no exclude_special_I parameter since the special I would be s
 )"
     },
     {
-        "Aggressive vs conservative — ligature with accents",
+        "Aggressive vs conservative. Note that some special characters are expanded while others are simply lowercased, see https://www.unicode.org/reports/tr30/tr30-2.html#_Toc52 for more info.",
         "SELECT foldUTF8('Ǆeﬃcient') AS aggressive, foldUTF8('Ǆeﬃcient', 'conservative') AS conservative",
         R"(
-┌─aggressive─┬─conservative─┐
-│ dzefficient │ dzeﬃcient   │
+┌─aggressive──┬─conservative─┐
+│ dzefficient │ ǆefficient   │
 └─────────────┴──────────────┘
 )"
     }};

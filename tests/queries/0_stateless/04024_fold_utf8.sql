@@ -2,7 +2,7 @@
 SELECT caseFoldUTF8(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT caseFoldUTF8('x', 'aggressive', 1, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT accentFoldUTF8('x', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT foldUTF8('x', 'aggressive', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT foldUTF8('x', 'aggressive', 1); -- { serverError BAD_ARGUMENTS}
 SELECT caseFoldUTF8(123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT caseFoldUTF8('x', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT caseFoldUTF8('x', 'aggressive', 'true'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -19,6 +19,7 @@ SELECT caseFoldUTF8('Hello World');
 SELECT caseFoldUTF8('Straße');
 SELECT caseFoldUTF8('HÉLLO');
 SELECT caseFoldUTF8('ﬃ'); -- ffi ligature: aggressive NFKC decomposes it
+SELECT caseFoldUTF8('Ⅷ') AS aggressive, caseFoldUTF8('Ⅷ', 'conservative') AS conservative; -- Roman numeral: aggressive decomposes, conservative lowercases
 
 SELECT '-- caseFoldUTF8 conservative';
 SELECT caseFoldUTF8('Hello World', 'conservative');
@@ -37,6 +38,8 @@ SELECT '-- foldUTF8 aggressive (default)';
 SELECT foldUTF8('Café Résumé');
 SELECT foldUTF8('HÉLLO Wörld');
 SELECT foldUTF8('Straße');
+
+SELECT foldUTF8('Ǆeﬃcient') AS aggressive, foldUTF8('Ǆeﬃcient', 'conservative') AS conservative; -- compatibility chars: aggressive decomposes both, conservative only decomposes ligature
 
 SELECT '-- foldUTF8 conservative';
 SELECT foldUTF8('Café Résumé', 'conservative');
