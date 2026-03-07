@@ -172,6 +172,7 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(
     bool,
     const std::optional<std::string> &) const
 {
+    /// start_after is ignored; the resume-from-key optimization is only used for S3 for now.
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 

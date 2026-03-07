@@ -288,6 +288,7 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 
 std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
 {
+    /// Returning std::nullopt is a best-effort fallback: listing proceeds from the prefix and remains correct.
     /// StartAfter is only safe for non-partitioned ordered S3 queues.
     /// With partitioned processing there is no single global last-processed key
     /// that can be used here without risking skipped files.
