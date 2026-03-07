@@ -35,6 +35,19 @@ namespace ErrorCodes
 }
 
 
+void ASTFunction::setNoEmptyArgs(bool value)
+{
+    flags<ASTFunctionFlags>().no_empty_args = value;
+    /// Also clear the empty arguments node to keep formatting round-trip consistent:
+    /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
+    if (value && arguments && arguments->children.empty())
+    {
+        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
+        arguments.reset();
+    }
+}
+
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)

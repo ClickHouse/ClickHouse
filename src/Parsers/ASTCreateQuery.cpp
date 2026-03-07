@@ -124,7 +124,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
 
 void ASTStorage::normalizeChildrenOrder()
 {
-    ASTs old_children = std::move(children);
+    children.clear();
     if (engine) children.emplace_back(engine);
     if (partition_by) children.emplace_back(partition_by);
     if (primary_key) children.emplace_back(primary_key);

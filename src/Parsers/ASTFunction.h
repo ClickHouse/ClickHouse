@@ -77,17 +77,7 @@ public:
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
-    void setNoEmptyArgs(bool value)
-    {
-        flags<ASTFunctionFlags>().no_empty_args = value;
-        /// Also clear the empty arguments node to keep formatting round-trip consistent:
-        /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
-        if (value && arguments && arguments->children.empty())
-        {
-            children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
-            arguments.reset();
-        }
-    }
+    void setNoEmptyArgs(bool value);
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
