@@ -199,9 +199,16 @@ function fuzz
         else
             QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
         fi
-        COMPATIBILITY_SETTING="${FUZZER_COMPATIBILITY:-26.1}"
-        echo "Using AST fuzzer compatibility setting: ${COMPATIBILITY_SETTING}"
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --compatibility=${COMPATIBILITY_SETTING} --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        echo $QUERIES_FILE
+
+        COMPATIBILITY_OPT=""
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]]; then
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+            COMPATIBILITY_OPT="--compatibility=${FUZZER_COMPATIBILITY}"
+        else
+            echo "AST fuzzer compatibility setting is not set"
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 ${COMPATIBILITY_OPT} --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"
