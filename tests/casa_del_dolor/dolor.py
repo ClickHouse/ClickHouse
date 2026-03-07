@@ -620,6 +620,10 @@ if args.with_redis:
     integrations.append("redis")
 if args.with_kafka:
     integrations.append("kafka")
+if args.with_sqlite:
+    integrations.append("sqlite")
+if args.with_arrowflight:
+    integrations.append("arrowflight")
 
 # This is the main loop, run while client and server are running
 all_running = True
@@ -773,6 +777,8 @@ while all_running and (not reached_limit):
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
             "kafka": ["kafka1"],
+            "sqlite": ["sqlite1"],
+            "arrowflight": ["flight_server"],
         }
 
         restart_choices = list(available_options[next_pick])

@@ -109,6 +109,8 @@ def main():
             "datalakecatalog",
             "arrowflight",
             "alias",
+            "kafka",
+            "backup",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(

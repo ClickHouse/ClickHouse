@@ -131,7 +131,7 @@ String BoolType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
 {
     if (rg.nextSmallNumber() < 8)
     {
-        const static DB::Strings & comp = {"<", "<=", ">", ">=", "=", "=", "=", "<>", "<>"};
+        const static DB::Strings comp = {"<", "<=", ">", ">=", "=", "=", "=", "<>", "<>"};
         String buf = "(number % ";
 
         buf += std::to_string(rg.randomInt<uint32_t>(1, 10));
@@ -2251,7 +2251,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
         const bool simple = nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
                + ipv4_type + ipv6_type + j_type + dynamic_type + time_type + qbit_type + geo_type + aggr_type + simple_aggr_type + 1);
-        static const std::vector<SQLFunc> & available_aggrs
+        static const std::vector<SQLFunc> available_aggrs
             = {SQLFunc::FUNCany,
                SQLFunc::FUNCanyLast,
                SQLFunc::FUNCavg,

@@ -317,7 +317,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
            {"alias", allow_alias},
-           {"kafka", allow_kafka}};
+           {"kafka", allow_kafka},
+           {"backup", allow_backup}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
@@ -763,7 +764,8 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
                 "concat('%', 'CORRUPTED', '_DATA', '%'))"
-                ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
                 fuzzer_out_file.generic_string())))
     {
         String buf;
