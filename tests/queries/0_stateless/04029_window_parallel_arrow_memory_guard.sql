@@ -2,41 +2,8 @@
 -- Regression guard for window-partition scatter memory overhead.
 -- This should pass with the fix and fail on unpatched binary under the same memory limit.
 
-DROP TABLE IF EXISTS window_parallel_arrow_memory_guard;
-
-CREATE TABLE window_parallel_arrow_memory_guard
-(
-    F001 Nullable(String),
-    F022 Nullable(UInt64),
-    F046 Nullable(String),
-    F047 Nullable(String),
-    F016 Nullable(Int64),
-    F040 Nullable(Int64),
-    F021 Nullable(Int64),
-    F028 Nullable(Float64),
-    F026 Nullable(String),
-    F025 Nullable(String)
-)
-ENGINE = File(Arrow);
-
--- Use medium Arrow record batches to keep memory pressure CI-friendly.
-SET max_block_size = 32;
-
-INSERT INTO window_parallel_arrow_memory_guard
-SELECT
-    CAST(NULL, 'Nullable(String)'),
-    CAST(NULL, 'Nullable(UInt64)'),
-    CAST(NULL, 'Nullable(String)'),
-    CAST(NULL, 'Nullable(String)'),
-    toNullable(toInt64(number % 100000)),
-    toNullable(toInt64(number % 1000)),
-    toNullable(toInt64(number % 50000)),
-    toNullable(toFloat64(number % 1000) / 10),
-    toNullable(if(number % 2 = 0, 'some', 'other')),
-    toNullable(toString(number % 100000))
-FROM numbers(100000);
-
-SET max_block_size = 65505;
+-- Avoid storage overhead in flaky checks and force tiny source blocks.
+SET max_block_size = 8;
 SET max_threads = 8, max_memory_usage = 80000000;
 
 SELECT '--- explain pipeline ---';
@@ -48,7 +15,22 @@ FROM
         LEAST(F016 - F040, F021) AS AQ,
         F028 * IF(F026 = 'some', 1, -1) AS SBP,
         SUM(AQ) OVER (PARTITION BY F047, F022, F001, F046 ORDER BY SBP ASC, F025 ASC) AS CSF
-    FROM window_parallel_arrow_memory_guard
+    FROM
+    (
+        SELECT
+            CAST(NULL, 'Nullable(String)') AS F001,
+            CAST(NULL, 'Nullable(UInt64)') AS F022,
+            CAST(NULL, 'Nullable(String)') AS F046,
+            CAST(NULL, 'Nullable(String)') AS F047,
+            toNullable(toInt64(number % 100000)) AS F016,
+            toNullable(toInt64(number % 1000)) AS F040,
+            toNullable(toInt64(number % 50000)) AS F021,
+            toNullable(toFloat64(number % 1000) / 10) AS F028,
+            toNullable(if(number % 2 = 0, 'some', 'other')) AS F026,
+            toNullable(toString(number % 100000)) AS F025
+        FROM system.numbers_mt
+        LIMIT 100000
+    )
     LIMIT 1
 )
 WHERE explain LIKE '%ScatterByPartitionTransform%';
@@ -58,10 +40,23 @@ SELECT
     LEAST(F016 - F040, F021) AS AQ,
     F028 * IF(F026 = 'some', 1, -1) AS SBP,
     SUM(AQ) OVER (PARTITION BY F047, F022, F001, F046 ORDER BY SBP ASC, F025 ASC) AS CSF
-FROM window_parallel_arrow_memory_guard
+FROM
+(
+    SELECT
+        CAST(NULL, 'Nullable(String)') AS F001,
+        CAST(NULL, 'Nullable(UInt64)') AS F022,
+        CAST(NULL, 'Nullable(String)') AS F046,
+        CAST(NULL, 'Nullable(String)') AS F047,
+        toNullable(toInt64(number % 100000)) AS F016,
+        toNullable(toInt64(number % 1000)) AS F040,
+        toNullable(toInt64(number % 50000)) AS F021,
+        toNullable(toFloat64(number % 1000) / 10) AS F028,
+        toNullable(if(number % 2 = 0, 'some', 'other')) AS F026,
+        toNullable(toString(number % 100000)) AS F025
+    FROM system.numbers_mt
+    LIMIT 100000
+)
 LIMIT 1
 FORMAT Null;
 
 SELECT 'OK';
-
-DROP TABLE window_parallel_arrow_memory_guard;
