@@ -364,12 +364,6 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length
 
     const auto & query = query_info.query->as<ASTSelectQuery &>();
 
-
-    LOG_TRACE(getLogger("shouldPushdownLimit"), 
-        "has_order_by={}, has_shuffle={}, limit_length={}", 
-        query_info.has_order_by, query_info.has_shuffle, limit_length);
-
-
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
     return !query.distinct && !query.limitBy() && !query_info.has_order_by && !query_info.has_shuffle
