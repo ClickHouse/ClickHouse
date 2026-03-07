@@ -1,25 +1,9 @@
--- EXPLAIN argMax mismatched arg (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn_mismatch)
--- EXPLAIN max mismatched arg (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn_mismatch)
--- EXPLAIN argMax same arg (should optimize)
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn_mismatch)
+-- argMax mismatched arg: no TopNAggregating
+0
+-- max mismatched arg: no TopNAggregating
+0
+-- argMax same arg: has TopNAggregating
+1
 -- correctness: mismatched companion optimized
 49	4999	p949
 48	4998	p848
@@ -32,9 +16,5 @@ Expression (Project names)
 47	4997	p2547
 46	4996	p396
 45	4995	p4245
--- EXPLAIN any companion (should optimize)
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn_mismatch)
+-- any companion: has TopNAggregating
+1

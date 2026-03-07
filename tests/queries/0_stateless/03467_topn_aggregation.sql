@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-fasttest, no-parallel-replicas, no-old-analyzer
+-- Tags: no-random-settings, no-fasttest
 
 DROP TABLE IF EXISTS t_topn;
 
@@ -58,49 +58,57 @@ ORDER BY m DESC
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 1;
 
--- EXPLAIN PLAN: verify TopNAggregating step appears
+-- EXPLAIN: verify TopNAggregating step appears (grep-based, analyzer-independent)
 
-SELECT '-- EXPLAIN PLAN';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1;
+SELECT '-- EXPLAIN PLAN: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Negative case: incompatible aggregate (count) - optimization should NOT apply
 
-SELECT '-- EXPLAIN with count (should NOT optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m, count(*) AS c
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1;
+SELECT '-- EXPLAIN with count: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m, count(*) AS c
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Negative case: WITH TIES - should NOT apply
 
-SELECT '-- EXPLAIN with WITH TIES (should NOT optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5 WITH TIES
-SETTINGS optimize_topn_aggregation = 1;
+SELECT '-- EXPLAIN WITH TIES: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5 WITH TIES
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Negative case: wrong sort direction (max + ASC) - should NOT apply
 
-SELECT '-- EXPLAIN max ASC (should NOT optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m ASC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1;
+SELECT '-- EXPLAIN max ASC: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m ASC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Edge case: K > total groups (small table, 10 groups)
 DROP TABLE IF EXISTS t_topn_small;
@@ -154,16 +162,18 @@ ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- Negative case: OFFSET should NOT optimize (correctness)
+-- Negative case: OFFSET should NOT optimize
 
-SELECT '-- EXPLAIN LIMIT OFFSET (should NOT optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5 OFFSET 10
-SETTINGS optimize_topn_aggregation = 1;
+SELECT '-- EXPLAIN LIMIT OFFSET: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5 OFFSET 10
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Nullable column with NULLS FIRST/LAST
 
@@ -228,15 +238,28 @@ ORDER BY m ASC COLLATE 'en'
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 0;
 
--- Mode 1 early termination: verify TopNAggregating is used and reads in reverse order
-SELECT '-- mode 1 EXPLAIN sorted input';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 3
-SETTINGS optimize_topn_aggregation = 1;
+-- Mode 1 early termination: verify sorted input via grep
+SELECT '-- mode 1: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 3
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
+
+SELECT '-- mode 1: sorted input true';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 3
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%Sorted input: true%';
 
 -- Mode 1: correctness with small limit
 SELECT '-- mode 1 small limit: optimized';
@@ -342,17 +365,17 @@ ORDER BY latest_ts DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- EXPLAIN: argMin falls through to standard pipeline because its output (payload)
--- has different sort order than the sort key (ts), so neither Mode 1 (early termination)
--- nor Mode 2 (threshold pruning) can safely apply.
-SELECT '-- EXPLAIN argMin (standard pipeline)';
-EXPLAIN PLAN
-SELECT grp, argMin(payload, ts) AS earliest
-FROM t_topn_argminmax
-GROUP BY grp
-ORDER BY earliest ASC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1;
+-- EXPLAIN: argMin falls through to standard pipeline (output sort != determining column)
+SELECT '-- EXPLAIN argMin: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT grp, argMin(payload, ts) AS earliest
+    FROM t_topn_argminmax
+    GROUP BY grp
+    ORDER BY earliest ASC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- ====== Threshold pruning (Mode 2) ======
 
@@ -427,56 +450,85 @@ ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- EXPLAIN at each level: verify plan differences
-SELECT '-- EXPLAIN pruning level 0';
-EXPLAIN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn_unsorted
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 0;
+-- EXPLAIN at each level: verify plan differences (grep-based)
+SELECT '-- EXPLAIN pruning level 0: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 0
+) WHERE explain LIKE '%TopNAggregating%';
 
-SELECT '-- EXPLAIN pruning level 1';
-EXPLAIN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn_unsorted
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+SELECT '-- EXPLAIN pruning level 1: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- EXPLAIN topn_aggregation_max_limit gate:
 -- large LIMIT should disable Mode 2 by default.
-SELECT '-- EXPLAIN topn max-limit gate: default (should NOT optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn_unsorted
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5000
-SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1;
+SELECT '-- EXPLAIN max-limit gate default: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5000
+    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1
+) WHERE explain LIKE '%TopNAggregating%';
 
 -- Raising topn_aggregation_max_limit should re-enable Mode 2 for the same query.
-SELECT '-- EXPLAIN topn max-limit gate: override (should optimize)';
-EXPLAIN PLAN
-SELECT trace_id, max(start_time) AS m
-FROM t_topn_unsorted
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5000
-SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1, topn_aggregation_max_limit = 10000;
+SELECT '-- EXPLAIN max-limit gate override: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5000
+    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1, topn_aggregation_max_limit = 10000
+) WHERE explain LIKE '%TopNAggregating%';
 
--- EXPLAIN: verify threshold pruning and __topKFilter prewhere on MergeTree table
--- requires use_top_k_dynamic_filtering = 1 since it defaults to off
-SELECT '-- EXPLAIN threshold pruning with prewhere';
-EXPLAIN actions=1
-SELECT trace_id, max(start_time) AS m
-FROM t_topn_unsorted
-GROUP BY trace_id
-ORDER BY m DESC
-LIMIT 5
-SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1;
+-- EXPLAIN: verify threshold pruning and __topKFilter prewhere
+SELECT '-- EXPLAIN threshold pruning: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
+) WHERE explain LIKE '%TopNAggregating%';
+
+SELECT '-- EXPLAIN threshold pruning: has Threshold pruning true';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
+) WHERE explain LIKE '%Threshold pruning: true%';
+
+SELECT '-- EXPLAIN threshold pruning: has __topKFilter prewhere';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn_unsorted
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
+) WHERE explain LIKE '%__topKFilter%';
 
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;

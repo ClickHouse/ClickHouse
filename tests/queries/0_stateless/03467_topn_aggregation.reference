@@ -26,36 +26,14 @@ trace_4	2024-01-01 00:00:04
 trace_999	2024-01-01 02:46:39	service_4
 trace_998	2024-01-01 02:46:38	service_3
 trace_997	2024-01-01 02:46:37	service_2
--- EXPLAIN PLAN
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn)
--- EXPLAIN with count (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn)
--- EXPLAIN with WITH TIES (should NOT optimize)
-Expression (Project names)
-  Limit (LIMIT WITH TIES)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn)
--- EXPLAIN max ASC (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn)
+-- EXPLAIN PLAN: has TopNAggregating
+1
+-- EXPLAIN with count: no TopNAggregating
+0
+-- EXPLAIN WITH TIES: no TopNAggregating
+0
+-- EXPLAIN max ASC: no TopNAggregating
+0
 -- K larger than groups
 trace_9	2024-01-01 00:01:39
 trace_8	2024-01-01 00:01:38
@@ -80,14 +58,8 @@ trace_98	2024-01-01 00:16:38
 trace_97	2024-01-01 00:16:37
 trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
--- EXPLAIN LIMIT OFFSET (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn)
+-- EXPLAIN LIMIT OFFSET: no TopNAggregating
+0
 -- NULLS LAST: optimized
 d	200
 f	150
@@ -112,12 +84,10 @@ f	150
 3	a
 1	ä
 5	b
--- mode 1 EXPLAIN sorted input
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn)
+-- mode 1: has TopNAggregating
+1
+-- mode 1: sorted input true
+1
 -- mode 1 small limit: optimized
 trace_999	2024-01-01 02:46:39
 trace_998	2024-01-01 02:46:38
@@ -174,14 +144,8 @@ g48	2024-01-01 00:08:18	payload_498
 g47	2024-01-01 00:08:17	payload_497
 g46	2024-01-01 00:08:16	payload_496
 g45	2024-01-01 00:08:15	payload_495
--- EXPLAIN argMin (standard pipeline)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn_argminmax)
+-- EXPLAIN argMin: no TopNAggregating
+0
 -- Mode 2 threshold pruning: max DESC
 49	4999
 48	4998
@@ -230,70 +194,17 @@ trace_98	2024-01-01 00:16:38
 trace_97	2024-01-01 00:16:37
 trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
--- EXPLAIN pruning level 0
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn_unsorted)
--- EXPLAIN pruning level 1
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (default.t_topn_unsorted)
--- EXPLAIN topn max-limit gate: default (should NOT optimize)
-Expression (Project names)
-  Limit (preliminary LIMIT)
-    Sorting (Sorting for ORDER BY)
-      Expression ((Before ORDER BY + Projection))
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ReadFromMergeTree (default.t_topn_unsorted)
--- EXPLAIN topn max-limit gate: override (should optimize)
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    TopNAggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        Expression
-          ReadFromMergeTree (default.t_topn_unsorted)
--- EXPLAIN threshold pruning with prewhere
-Expression (Project names)
-Actions: INPUT : 0 -> max(__table1.start_time) DateTime : 0
-         INPUT : 1 -> __table1.trace_id String : 1
-         ALIAS max(__table1.start_time) :: 0 -> m DateTime : 2
-         ALIAS __table1.trace_id :: 1 -> trace_id String : 0
-Positions: 0 2
-  Expression ((Before ORDER BY + Projection))
-  Actions: INPUT :: 0 -> max(__table1.start_time) DateTime : 0
-           INPUT :: 1 -> __table1.trace_id String : 1
-  Positions: 0 1
-    TopNAggregating
-    Keys: __table1.trace_id
-    Limit: 5
-    Sorted input: false
-    Threshold pruning: true
-    Sort description: max(__table1.start_time) DESC
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-      Actions: INPUT : 0 -> trace_id String : 0
-               INPUT : 1 -> start_time DateTime : 1
-               ALIAS trace_id :: 0 -> __table1.trace_id String : 2
-               ALIAS start_time :: 1 -> __table1.start_time DateTime : 0
-      Positions: 2 0
-        Expression
-        Actions: INPUT :: 0 -> start_time DateTime : 0
-                 INPUT :: 1 -> trace_id String : 1
-        Positions: 1 0
-          ReadFromMergeTree (default.t_topn_unsorted)
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-          Prewhere info
-          Need filter: 1
-            Prewhere filter
-            Prewhere filter column: __topKFilter(start_time) (removed)
-            Actions: INPUT : 0 -> start_time DateTime : 0
-                     FUNCTION __topKFilter(start_time : 0) -> __topKFilter(start_time) UInt8 : 1
-            Positions: 0 1
+-- EXPLAIN pruning level 0: no TopNAggregating
+0
+-- EXPLAIN pruning level 1: has TopNAggregating
+1
+-- EXPLAIN max-limit gate default: no TopNAggregating
+0
+-- EXPLAIN max-limit gate override: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has Threshold pruning true
+1
+-- EXPLAIN threshold pruning: has __topKFilter prewhere
+1
