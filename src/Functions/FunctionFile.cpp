@@ -11,6 +11,8 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <Functions/FunctionHelpers.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 
 namespace fs = std::filesystem;
@@ -21,9 +23,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DATABASE_ACCESS_DENIED;
+}
+
+namespace
+{
+
+bool isStringOrNull(const IDataType & type)
+{
+    return isString(type) || type.onlyNull();
+}
+
 }
 
 /// A function to read file as a string.
@@ -48,25 +58,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrNull, nullptr, "String or Null"}
+        };
 
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        if (arguments.size() == 2)
-        {
-            if (arguments[1].type->onlyNull())
-                return makeNullable(std::make_shared<DataTypeString>());
-
-            if (!isString(arguments[1].type))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} only accepts String or Null as second argument", getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

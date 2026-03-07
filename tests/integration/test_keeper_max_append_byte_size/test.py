@@ -45,7 +45,7 @@ def change_byte_limit_and_restart(node, byte_limit):
         "<max_requests_append_bytes_size>[0-9]\\+</max_requests_append_bytes_size>",
         f"<max_requests_append_bytes_size>{byte_limit}</max_requests_append_bytes_size>",
     )
-    node.restart_clickhouse(stop_start_wait_sec=10)
+    node.restart_clickhouse()
     ku.wait_until_connected(cluster, node)
 
 

@@ -1737,9 +1737,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             raw_idx = static_cast<uint32_t>(IndexType::IDX_minmax);
         return static_cast<IndexType>(raw_idx);
     };
-    const IndexType itpe = projection
-        ? IndexType::IDX_basic
-        : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : generate_idx());
+    const IndexType itpe = projection ? IndexType::IDX_basic : ((rg.nextMediumNumber() < 21) ? IndexType::IDX_text : generate_idx());
 
     chassert(!t.cols.empty());
     idef->set_type(itpe);
