@@ -115,13 +115,9 @@ The script launches the test binary with `TSAN_OPTIONS="halt_on_error=1 second_d
 **Output (key=value lines on stdout):**
 - Always: `PID=<pid>`
 - On normal exit: `EXIT_CODE=<code>` (0 = clean, non-zero = TSan error or test failure)
-- On hang: `HANG_DETECTED=1`, `HUNG_TEST=<last [ RUN ] line>`, `CPU=<percent>`
+- On hang: `HANG_DETECTED=1`, `HUNG_TEST=<last [ RUN ] line>`, `CPU_SAMPLE_1=<percent>`, `CPU_SAMPLE_2=<percent>`
 
-**Interpreting hangs:** CPU value classifies the hang:
-- **~0% CPU** → deadlock (all threads blocked on locks or condition variables)
-- **High CPU** → livelock (threads are running but making no progress)
-
-Include this classification in the report and the RCA prompt — it changes the analysis focus.
+The two CPU samples are instantaneous measurements (3-second windows each) from `/proc/PID/stat`. One or both may be absent if the process dies during measurement. Values can exceed 100% for multi-threaded processes (each core adds up to 100%). Include them in the RCA prompt as raw data — the RCA subagent classifies the hang type based on both the CPU samples and the stacktraces.
 
 Options: `--repeat N` (default 20), `--poll-interval N` (default 10 seconds).
 
@@ -143,7 +139,7 @@ The script:
 
 Do NOT read the stacktrace output into the main conversation context — it can be very large. The RCA subagent (Phase 5) reads the file.
 
-After the script completes, report to the user: "Test `<test_case>` hung (<deadlock|livelock>, CPU: <N>%). Captured all-thread stacktraces to `<STACKTRACE_FILE>`"
+After the script completes, report to the user: "Test `<test_case>` hung (CPU samples: <N1>%, <N2>%). Captured all-thread stacktraces to `<STACKTRACE_FILE>`"
 
 Set `hang_detected=true` — this flag controls branching in Phase 3c and Phase 4.
 
@@ -311,7 +307,7 @@ Read the prompt template from `.claude/skills/clean-tsan/assets/rca-prompt.md` a
 | Placeholder | Value |
 |-------------|-------|
 | `{{ALERT_FILE}}` | Path to `_clean-tsan/NNN/alert.txt` **or** `_clean-tsan/NNN/stacktrace.txt` for hangs |
-| `{{HANG_TYPE}}` | For hangs: substitute with `**Hang type: deadlock** (~0% CPU)` or `**Hang type: livelock** (high CPU: N%)`. For TSan alerts: omit the entire `{{HANG_TYPE}}` line from the prompt. |
+| `{{HANG_CPU}}` | For hangs: substitute with `**CPU samples during hang:** <N1>%, <N2>%` (values from `run-unittest.sh` output). For TSan alerts: omit the entire `{{HANG_CPU}}` line from the prompt. |
 | `{{PROGRESS_FILE}}` | Path to `_clean-tsan/progress.md` |
 | `{{THREADING_MODEL_FILE}}` | Path to `_clean-tsan/threading-model.md` |
 | `{{CLICKHOUSE_REFERENCES_FILE}}` | Path to `.claude/skills/clean-tsan/references/clickhouse-threading.md` |

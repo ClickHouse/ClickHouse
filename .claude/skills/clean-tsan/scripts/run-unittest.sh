@@ -16,7 +16,8 @@
 # Output on hang:
 #   HANG_DETECTED=1
 #   HUNG_TEST=<last [ RUN ] line>
-#   CPU=<percent>
+#   CPU_SAMPLE_1=<percent>  (may be absent if process dies mid-measurement)
+#   CPU_SAMPLE_2=<percent>  (may be absent)
 #
 # The process is left alive on hang so that the caller can attach lldb
 # before killing it. The caller is responsible for killing the process.
@@ -99,11 +100,31 @@ done
 if kill -0 "$pid" 2>/dev/null; then
     # Process still alive — hang detected.
     # Do NOT kill: caller needs to attach lldb first.
-    cpu=$(ps -p "$pid" -o %cpu --no-headers 2>/dev/null | tr -d ' ' || true)
+    #
+    # Measure instantaneous CPU usage from /proc over two 3-second windows.
+    # Unlike `ps -o %cpu` (which reports lifetime average), this captures
+    # actual current activity so the RCA subagent can classify the hang.
     hung_test=$(grep '^\[ RUN' "$LOG_FILE" | tail -1 || true)
     echo "HANG_DETECTED=1"
     echo "HUNG_TEST=$hung_test"
-    echo "CPU=$cpu"
+
+    hz=$(getconf CLK_TCK)
+    read_cpu_ticks() {
+        awk '{print $14 + $15}' "/proc/$pid/stat" 2>/dev/null || echo 0
+    }
+    t0=$(read_cpu_ticks)
+    sleep 3
+    if kill -0 "$pid" 2>/dev/null; then
+        t1=$(read_cpu_ticks)
+        cpu1=$(awk "BEGIN {printf \"%.1f\", ($t1 - $t0) / $hz / 3 * 100}")
+        echo "CPU_SAMPLE_1=$cpu1"
+        sleep 3
+        if kill -0 "$pid" 2>/dev/null; then
+            t2=$(read_cpu_ticks)
+            cpu2=$(awk "BEGIN {printf \"%.1f\", ($t2 - $t1) / $hz / 3 * 100}")
+            echo "CPU_SAMPLE_2=$cpu2"
+        fi
+    fi
 else
     # Process exited normally — capture exit code before it's lost
     exit_code=0

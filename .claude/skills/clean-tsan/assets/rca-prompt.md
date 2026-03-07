@@ -6,7 +6,7 @@ Perform root cause analysis of this ThreadSanitizer alert or test hang in ClickH
 Read from: {{ALERT_FILE}}
 (Use the Read tool to load the file contents before proceeding. This file contains either a TSan alert with stack traces, or all-thread backtraces captured from a hung process via lldb.)
 
-{{HANG_TYPE}}
+{{HANG_CPU}}
 
 ## Previous Progress
 Read the progress file from: {{PROGRESS_FILE}}
@@ -75,11 +75,17 @@ Use the Threading Model section above as a starting point — it may already hav
 2. Map stack to source.
 3. Propose fix: use only async-signal-safe functions in signal handlers, defer work to main thread.
 
-#### For test hangs (deadlock or livelock detected via all-thread stacktraces):
+#### For test hangs (detected via all-thread stacktraces):
 
 The stacktrace file contains `bt all` output from lldb — backtraces of every thread in the hung process. Each thread shows `thread #N, name = '<name>'` followed by its stack frames.
 
-**For deadlocks** (~0% CPU — all threads blocked):
+The CPU samples line above (if present) shows instantaneous CPU measurements taken over two consecutive 3-second windows. Values can exceed 100% for multi-threaded processes (e.g., 400% means 4 cores fully busy). Use these together with the stacktraces to classify the hang:
+
+**First, classify the hang type from the stacktraces:**
+- **Deadlock** — all (or all relevant) threads are blocked in kernel wait functions (`pthread_cond_wait`, `pthread_mutex_lock`, `pthread_join`, `futex_wait`, etc.). CPU samples near 0% confirm this, but the stacktraces are the ground truth.
+- **Livelock** — threads are in application code (not blocked in kernel), executing but making no forward progress. CPU samples significantly above 0% confirm this, but again the stacktraces are definitive.
+
+**For deadlocks:**
 1. Identify blocked threads — look for threads waiting on:
    - `pthread_cond_wait` / `condition_variable::wait` — what predicate are they waiting for? Who should signal?
    - `pthread_join` / `std::thread::join` — which thread are they joining? Is that thread also blocked?
@@ -92,7 +98,7 @@ The stacktrace file contains `bt all` output from lldb — backtraces of every t
    - Missing `notify_all`/`notify_one` on a code path that changes the wait predicate
 4. Propose fix: fix lock ordering, add missing notification, restructure to avoid nested waits, add `TSA_ACQUIRED_AFTER` annotations.
 
-**For livelocks** (high CPU — threads spinning but making no forward progress):
+**For livelocks:**
 1. Identify spinning threads — look for threads in application code (not blocked in kernel):
    - Tight loops retrying a failed operation
    - CAS loops that keep failing because another thread undoes the change
