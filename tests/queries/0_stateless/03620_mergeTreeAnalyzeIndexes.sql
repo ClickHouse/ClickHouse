@@ -24,3 +24,6 @@ select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193 and va
 
 -- Set
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (8193, 16385));
+
+-- Corner cases
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [materialize('all_1_1_0')]); -- { serverError BAD_ARGUMENTS }

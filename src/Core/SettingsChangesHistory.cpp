@@ -50,6 +50,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
             {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
             {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
+            {"webassembly_udf_max_fuel", 100'000, 100'000, "New setting to limit CPU instructions (fuel) per WebAssembly UDF instance execution."},
+            {"webassembly_udf_max_memory", 128_MiB, 128_MiB, "New setting to limit memory per WebAssembly UDF instance."},
+            {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
+            {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
         });
@@ -59,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
             {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
             {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
+            {"async_insert", false, true, "Enable async inserts by default."},
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
