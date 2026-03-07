@@ -60,7 +60,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT '';
 SELECT ProfileEvents['S3ListObjects'], ProfileEvents['EngineFileLikeReadFiles']
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND log_comment like '%03741_s3_glob_table_path_pushdown%'
   AND query_kind = 'Select'
   AND type = 'QueryFinish'

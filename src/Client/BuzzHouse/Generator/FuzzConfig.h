@@ -51,24 +51,25 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_qbit = (UINT64_C(1) << 34), allow_aggregate = (UINT64_C(1) << 35),
                          allow_simple_aggregate = (UINT64_C(1) << 36);
 
-const constexpr uint64_t allow_replacing_mergetree
-    = (UINT64_C(1) << 0),
-    allow_coalescing_mergetree = (UINT64_C(1) << 1), allow_summing_mergetree = (UINT64_C(1) << 2),
-    allow_aggregating_mergetree = (UINT64_C(1) << 3), allow_collapsing_mergetree = (UINT64_C(1) << 4),
-    allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5), allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7),
-    allow_setengine = (UINT64_C(1) << 8), allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10),
-    allow_stripelog = (UINT64_C(1) << 11), allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13),
-    allow_embedded_rocksdb = (UINT64_C(1) << 14), allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16),
-    allow_postgresql = (UINT64_C(1) << 17), allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19),
-    allow_redis = (UINT64_C(1) << 20), allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22),
-    allow_hudi = (UINT64_C(1) << 23), allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
-    allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27), allow_icebergAzure = (UINT64_C(1) << 28),
-    allow_icebergLocal = (UINT64_C(1) << 29), allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31),
-    allow_dictionary = (UINT64_C(1) << 32), allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
-    allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
-    allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
-    allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
-    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45);
+const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
+                         allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
+                         allow_collapsing_mergetree = (UINT64_C(1) << 4), allow_versioned_collapsing_mergetree = (UINT64_C(1) << 5),
+                         allow_file = (UINT64_C(1) << 6), allow_null = (UINT64_C(1) << 7), allow_setengine = (UINT64_C(1) << 8),
+                         allow_join = (UINT64_C(1) << 9), allow_memory = (UINT64_C(1) << 10), allow_stripelog = (UINT64_C(1) << 11),
+                         allow_log = (UINT64_C(1) << 12), allow_tinylog = (UINT64_C(1) << 13), allow_embedded_rocksdb = (UINT64_C(1) << 14),
+                         allow_buffer = (UINT64_C(1) << 15), allow_mysql = (UINT64_C(1) << 16), allow_postgresql = (UINT64_C(1) << 17),
+                         allow_sqlite = (UINT64_C(1) << 18), allow_mongodb = (UINT64_C(1) << 19), allow_redis = (UINT64_C(1) << 20),
+                         allow_S3 = (UINT64_C(1) << 21), allow_S3queue = (UINT64_C(1) << 22), allow_hudi = (UINT64_C(1) << 23),
+                         allow_deltalakeS3 = (UINT64_C(1) << 24), allow_deltalakeAzure = (UINT64_C(1) << 25),
+                         allow_deltalakelocal = (UINT64_C(1) << 26), allow_icebergS3 = (UINT64_C(1) << 27),
+                         allow_icebergAzure = (UINT64_C(1) << 28), allow_icebergLocal = (UINT64_C(1) << 29),
+                         allow_merge = (UINT64_C(1) << 30), allow_distributed = (UINT64_C(1) << 31), allow_dictionary = (UINT64_C(1) << 32),
+                         allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
+                         allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
+                         allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
+                         allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
+                         allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43),
+                         allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45), allow_backup = (UINT64_C(1) << 46);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -262,30 +263,6 @@ public:
     }
 };
 
-class Tokenizer
-{
-public:
-    String name;
-    String type;
-
-    Tokenizer()
-        : name("ngrams")
-        , type("Ngrams")
-    {
-    }
-
-    Tokenizer(const String & name_, const String & type_)
-        : name(name_)
-        , type(type_)
-    {
-    }
-
-    Tokenizer(const Tokenizer & c) = default;
-    Tokenizer(Tokenizer && c) = default;
-    Tokenizer & operator=(const Tokenizer & c) = default;
-    Tokenizer & operator=(Tokenizer && c) noexcept = default;
-};
-
 class FuzzConfig
 {
 private:
@@ -310,7 +287,7 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
-    std::vector<Tokenizer> tokenizers;
+    DB::Strings tokenizers;
 
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
@@ -391,8 +368,7 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql";
     std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
-    std::filesystem::path fuzz_client_out = client_file_path / "fuzz.data";
-    std::filesystem::path fuzz_server_out = server_file_path / "fuzz.data";
+    std::filesystem::path fuzzer_out_file = std::filesystem::temp_directory_path() / "out.data";
     std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
 
     FuzzConfig()

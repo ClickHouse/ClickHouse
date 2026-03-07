@@ -20,7 +20,7 @@ const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
 static void finishSettings(SettingValues * svs)
 {
     /// Wait for mutations to finish
-    static const std::unordered_map<String, String> & toSet
+    static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
@@ -100,8 +100,8 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    Select & sel1 = const_cast<Select &>(sq1.single_query().explain().inner_query().select().sel());
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sel1.select_core());
+    Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+    SelectStatementCore & ssc1 = *sel1.mutable_select_core();
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
@@ -115,7 +115,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
     {
-        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.groupby().having_expr().expr());
+        ExprComparisonHighProbability & expr = *ssc1.mutable_groupby()->mutable_having_expr()->mutable_expr();
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
         ssc2->set_allocated_groupby(ssc1.release_groupby());
@@ -124,7 +124,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     }
     else
     {
-        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.where().expr());
+        ExprComparisonHighProbability & expr = *ssc1.mutable_where()->mutable_expr();
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
@@ -134,6 +134,148 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+}
+
+/// Roundtrip oracle
+/// Query 1: SELECT count() FROM t WHERE col IS NOT NULL       (baseline: non-null rows)
+/// Query 2: SELECT count() FROM t WHERE roundtrip(col) = col  (must equal query 1)
+///
+/// Detects bugs where an encoding/encryption function fails to preserve data through a
+/// round-trip: if roundtrip(col) != col for any non-null row the counts diverge.
+///
+/// Roundtrip predicates evaluate to NULL when col IS NULL (NULL = x is NULL, not TRUE),
+/// so sq2's WHERE naturally excludes NULL rows just like sq1's IS NOT NULL filter.
+/// This makes the oracle correct for Nullable columns without special-casing.
+///
+/// Any insertable column type is accepted; for non-String types the predicate wraps the
+/// value in `toString` so that hex/base64 functions always receive a String argument.
+void QueryOracle::generateRoundtripOracleQueries(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false; /// Don't compare query success, queries are different
+
+    /// Collect all insertable flat column paths (including nested fields)
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+    const ColumnPathChain & entry = rg.pickRandomly(gen.entries);
+    const String col_ref = entry.columnPathRef(); /// e.g. `c0` or `c0`.`field`
+    /// For String/FixedString: apply roundtrip directly on the column.
+    /// For all other types: cast to String first so hex/base64 always receive a String argument.
+    const String val = entry.getBottomType()->getTypeClass() == SQLTypeClass::STRING ? col_ref : fmt::format("toString({})", col_ref);
+    gen.entries.clear();
+
+    /// Choose roundtrip function pair
+    String roundtrip_pred;
+    switch (rg.randomInt<uint32_t>(0, 3))
+    {
+        case 0:
+            /// hex/unhex — exercises hex encoding path
+            roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
+            break;
+        case 1:
+            /// baseEncode/Decode
+            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            break;
+        case 2:
+            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            {
+                const String rev = rg.nextBool() ? "UTF8" : "";
+                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+            }
+            break;
+        default: {
+            /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
+            struct CipherSpec
+            {
+                const char * name;
+                uint32_t key_bytes; /// 16 = aes-128, 24 = aes-192, 32 = aes-256
+                uint32_t iv_bytes; /// 0 = ECB (no IV), 16 = CBC/CFB128/OFB, 12 = GCM
+            };
+            static const std::vector<CipherSpec> ciphers = {
+                {"aes-128-ecb", 16, 0},
+                {"aes-192-ecb", 24, 0},
+                {"aes-256-ecb", 32, 0},
+                {"aes-128-cbc", 16, 16},
+                {"aes-192-cbc", 24, 16},
+                {"aes-256-cbc", 32, 16},
+                {"aes-128-cfb128", 16, 16},
+                {"aes-192-cfb128", 24, 16},
+                {"aes-256-cfb128", 32, 16},
+                {"aes-128-ofb", 16, 16},
+                {"aes-192-ofb", 24, 16},
+                {"aes-256-ofb", 32, 16},
+                {"aes-128-gcm", 16, 12},
+                {"aes-192-gcm", 24, 12},
+                {"aes-256-gcm", 32, 12},
+            };
+            const CipherSpec & spec = rg.pickRandomly(ciphers);
+
+            auto gen_hex = [&](uint32_t bytes) -> String
+            {
+                String hex;
+                for (uint32_t i = 0; i < bytes; i++)
+                    hex += fmt::format("{:02x}", rg.randomInt<uint8_t>(0, 255));
+                return hex;
+            };
+            const String key_hex = gen_hex(spec.key_bytes);
+
+            if (spec.iv_bytes == 0)
+            {
+                roundtrip_pred
+                    = fmt::format("decrypt('{2}', encrypt('{2}', {0}, unhex('{1}')), unhex('{1}')) = {0}", val, key_hex, spec.name);
+            }
+            else
+            {
+                const String iv_hex = gen_hex(spec.iv_bytes);
+                roundtrip_pred = fmt::format(
+                    "decrypt('{3}', encrypt('{3}', {0}, unhex('{1}'), unhex('{2}')), unhex('{1}'), unhex('{2}')) = {0}",
+                    val,
+                    key_hex,
+                    iv_hex,
+                    spec.name);
+            }
+            break;
+        }
+    }
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    /// Build sq1: SELECT count() FROM t WHERE col IS NOT NULL  (baseline)
+    {
+        TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+        SelectIntoFile * sif = ts->mutable_intofile();
+        Select * sel = ts->mutable_sel();
+        SelectStatementCore * ssc = sel->mutable_select_core();
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+        insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
+        jtf->set_final(t.supportsFinal());
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_func_call()
+            ->mutable_func()
+            ->set_catalog_func(FUNCcount);
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
+        finishSettings(sel->mutable_setting_values());
+        ts->set_format(OutFormat::OUT_CSV);
+        const auto err = std::filesystem::remove(qcfile);
+        UNUSED(err);
+        sif->set_path(qcfile.generic_string());
+        sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+    }
+
+    /// Build sq2: SELECT count() FROM t WHERE roundtrip(col) = col
+    /// CopyFrom clones the table reference, format, and output file from sq1.
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(roundtrip_pred);
+    }
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
 }
 
 void QueryOracle::insertOnTableOrCluster(
@@ -254,8 +396,12 @@ void QueryOracle::dumpTableContent(
         case DumpOracleStrategy::INSERT_COUNT: {
             /// In the second step, just get the total count
             sq2.CopyFrom(sq1);
-            SelectStatementCore & scc
-                = const_cast<SelectStatementCore &>(sq2.single_query().explain().inner_query().select().sel().select_core());
+            SelectStatementCore & scc = *sq2.mutable_single_query()
+                                             ->mutable_explain()
+                                             ->mutable_inner_query()
+                                             ->mutable_select()
+                                             ->mutable_sel()
+                                             ->mutable_select_core();
             scc.clear_result_columns();
             scc.add_result_columns()
                 ->mutable_eca()
@@ -395,7 +541,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             gen.generateNextOptimizeTableInternal(rg, t, true, ot);
             if (rg.nextSmallNumber() < 3)
             {
-                gen.generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
             }
             intermediate_queries.emplace_back(next);
         }
@@ -419,11 +565,11 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
             if (rg.nextSmallNumber() < 4)
             {
-                gen.generateSettingValues(rg, serverSettings, det->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, det->mutable_setting_values());
             }
             if (rg.nextSmallNumber() < 4)
             {
-                gen.generateSettingValues(rg, serverSettings, att->mutable_setting_values());
+                gen.generateSettingValues(rg, formatSettings, att->mutable_setting_values());
             }
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
@@ -457,9 +603,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
 
             gen.setBackupDestination(rg, bac);
-            res->set_backup_number(bac->backup_number());
-            res->set_out(bac->out());
-            res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
@@ -525,7 +669,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 }
                 if (rg.nextSmallNumber() < 3)
                 {
-                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+                    gen.generateSettingValues(rg, formatSettings, at->mutable_setting_values());
                 }
             }
             else
@@ -722,11 +866,6 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
         ff->set_path(qsfile.generic_string());
-        if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
-        {
-            /// ClickHouse prints server version on Parquet file, making checksum incompatible between versions
-            outf = OutFormat::OUT_CSV;
-        }
         ff->set_outformat(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = query = sparen->mutable_select();
@@ -898,8 +1037,10 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
     {
         /// Swap query parts
         std::vector<MatchHandler> rules;
-        const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
-        Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+        SQLQueryInner * sq2inner = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query();
+        Select & nsel
+            = *(measure_performance ? sq2inner->mutable_select()->mutable_sel()
+                                    : sq2inner->mutable_insert()->mutable_select()->mutable_select());
 
         rules.push_back(
             MatchHandler{
@@ -977,8 +1118,9 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
-    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+    SQLQueryInner * sq2inner = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query();
+    Select & nsel = *(
+        measure_performance ? sq2inner->mutable_select()->mutable_sel() : sq2inner->mutable_insert()->mutable_select()->mutable_select());
 
     /// Replace references
     rules.push_back(
@@ -993,8 +1135,8 @@ void QueryOracle::replaceQueryWithTablePeers(
                 if (tos && tos->has_joined_table())
                 {
                     bool res = false;
-                    JoinedTableOrFunction & jtf = const_cast<JoinedTableOrFunction &>(tos->joined_table());
-                    TableOrFunction & tf = const_cast<TableOrFunction &>(jtf.tof());
+                    JoinedTableOrFunction & jtf = *tos->mutable_joined_table();
+                    TableOrFunction & tf = *jtf.mutable_tof();
 
                     if (tf.has_est())
                     {
@@ -1033,7 +1175,13 @@ void QueryOracle::replaceQueryWithTablePeers(
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
-        FileFunc & ff = const_cast<FileFunc &>(sq2.single_query().explain().inner_query().insert().tof().tfunc().file());
+        FileFunc & ff = *sq2.mutable_single_query()
+                             ->mutable_explain()
+                             ->mutable_inner_query()
+                             ->mutable_insert()
+                             ->mutable_tof()
+                             ->mutable_tfunc()
+                             ->mutable_file();
 
         const auto err = std::filesystem::remove(qfile_peer);
         UNUSED(err);
@@ -1085,7 +1233,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
-    can_test_oracle_result = fc.compare_success_results;
+    can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
@@ -1119,7 +1267,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
 {
     if (other_steps_success && can_test_oracle_result)
     {
-        if (((first_errcode && !errcode) || (!first_errcode && errcode))
+        if (can_test_success && ((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(

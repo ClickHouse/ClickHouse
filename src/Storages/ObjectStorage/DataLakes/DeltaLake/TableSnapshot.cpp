@@ -53,6 +53,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
 
@@ -284,7 +285,7 @@ public:
                 }
             }
         }
-        catch (...)
+        catch (...) // Ok: exception saved via setScanException for later handling
         {
             setScanException();
             data_files_cv.notify_all();
@@ -727,6 +728,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
 {
     if (kernel_snapshot_state)
         return;
+
+    ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(log, "Initializing snapshot");
 

@@ -1,0 +1,405 @@
+(lldb) process attach --pid 742865
+Process 742865 stopped
+* thread #1, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #2, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x000055555f3a44c2 unit_tests_dbms`__sanitizer::internal_usleep(unsigned long long) + 66
+unit_tests_dbms`__sanitizer::internal_usleep:
+->  0x55555f3a44c2 <+66>: retq   
+    0x55555f3a44c3:       int3   
+    0x55555f3a44c4:       int3   
+    0x55555f3a44c5:       int3   
+  thread #3, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #4, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #5, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #6, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #7, name = 'TestScheduler', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #8, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #9, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #10, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #11, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #12, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #13, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #14, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #15, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #16, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #17, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+  thread #18, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+libc.so.6`___lldb_unnamed_symbol_98c90:
+->  0x7ffff7c98d71 <+225>: movl   %r13d, %edi
+    0x7ffff7c98d74 <+228>: movq   %rax, %rbx
+    0x7ffff7c98d77 <+231>: callq  0x7ffff7c985d0            ; ___lldb_unnamed_symbol_985d0
+    0x7ffff7c98d7c <+236>: jmp    0x7ffff7c98ce6            ; <+86>
+Executable binary set to "/home/ubuntu/ClickHouse4/build_tsan/src/unit_tests_dbms".
+Architecture set to: x86_64-pc-linux-gnu.
+(lldb) bt all
+* thread #1, name = 'exe', stop reason = signal SIGSTOP
+  * frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9e7a3 libc.so.6`___lldb_unnamed_symbol_9e670 + 307
+    frame #2: 0x000055555f3c57bd unit_tests_dbms`___interceptor_pthread_join + 173
+    frame #3: 0x00005555836e9a6c unit_tests_dbms`std::__1::__libcpp_thread_join[abi:se210105](__t=0x0000722000005a80) at pthread.h:190:88 [inlined]
+    frame #4: 0x00005555836e9a65 unit_tests_dbms`std::__1::thread::join(this=0x0000722000005a80) at thread.cpp:45:10
+    frame #5: 0x000055555f6c1208 unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody(this=0x00007204000098d0) at gtest_space_shared_scheduler.cpp:298:16
+    frame #6: 0x000055556c694363 unit_tests_dbms`void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(object=0x00007204000098d0, method=0x00000000000000000000000000000021, location="the test body") at gtest.cc:2653:10 [inlined]
+    frame #7: 0x000055556c69434d unit_tests_dbms`void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(object=0x00007204000098d0, method=0x00000000000000000000000000000021, location="the test body") at gtest.cc:2689:14
+    frame #8: 0x000055556c694194 unit_tests_dbms`testing::Test::Run(this=0x00007204000098d0) at gtest.cc:2728:5
+    frame #9: 0x000055556c695d24 unit_tests_dbms`testing::TestInfo::Run(this=0x0000724000011000) at gtest.cc:2874:11
+    frame #10: 0x000055556c69770a unit_tests_dbms`testing::TestSuite::Run(this=0x0000724000010d00) at gtest.cc:3052:30
+    frame #11: 0x000055556c6b4665 unit_tests_dbms`testing::internal::UnitTestImpl::RunAllTests(this=0x0000725400000280) at gtest.cc:5982:44
+    frame #12: 0x000055556c6b3a63 unit_tests_dbms`bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(object=0x0000725400000280, method=(unit_tests_dbms`testing::internal::UnitTestImpl::RunAllTests() at gtest.cc:5859), location="auxiliary test code (environments or event listeners)") at gtest.cc:2653:10 [inlined]
+    frame #13: 0x000055556c6b3a4d unit_tests_dbms`bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(object=0x0000725400000280, method=(unit_tests_dbms`testing::internal::UnitTestImpl::RunAllTests() at gtest.cc:5859), location="auxiliary test code (environments or event listeners)") at gtest.cc:2689:14
+    frame #14: 0x000055556c6b37b3 unit_tests_dbms`testing::UnitTest::Run(this=0x00005555851acd78) at gtest.cc:5561:10
+    frame #15: 0x000055555f8f7210 unit_tests_dbms`RUN_ALL_TESTS() at gtest.h:2334:73 [inlined]
+    frame #16: 0x000055555f8f7203 unit_tests_dbms`main(argc=1, argv=0x00007fffffffe268) at gtest_main.cpp:18:12
+    frame #17: 0x00007ffff7c2a1ca libc.so.6`___lldb_unnamed_symbol_2a150 + 122
+    frame #18: 0x00007ffff7c2a28b libc.so.6`__libc_start_main + 139
+    frame #19: 0x000055555f39a5ee unit_tests_dbms`_start + 46
+  thread #2, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x000055555f3a44c2 unit_tests_dbms`__sanitizer::internal_usleep(unsigned long long) + 66
+    frame #1: 0x000055555f4313eb unit_tests_dbms`__tsan::BackgroundThread(void*) + 187
+    frame #2: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #3: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #3, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x0000724800005a58, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x0000724800005a58, lk=0x00007ffff1bc56b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581d99159 unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()::'lambda0'()>(this=0x0000724800005a58, __lk=0x00007ffff1bc56b0, __pred=(unnamed class) @ 0x00007ffff1bc57a0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581d990b5 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x00007208000658a0) at ThreadPool.cpp:738:45
+    frame #9: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #10: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065980) at thread.h:168:3
+    frame #11: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #12: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #13: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #4, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x0000724800005a58, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x0000724800005a58, lk=0x00007ffff0bf46b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581d99159 unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()::'lambda0'()>(this=0x0000724800005a58, __lk=0x00007ffff0bf46b0, __pred=(unnamed class) @ 0x00007ffff0bf47a0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581d990b5 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x0000720800065aa0) at ThreadPool.cpp:738:45
+    frame #9: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #10: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065a80) at thread.h:168:3
+    frame #11: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #12: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #13: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #5, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x0000724800005a58, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x0000724800005a58, lk=0x00007fffeffbe6b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581d99159 unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()::'lambda0'()>(this=0x0000724800005a58, __lk=0x00007fffeffbe6b0, __pred=(unnamed class) @ 0x00007fffeffbe7a0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581d990b5 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x0000720800065b60) at ThreadPool.cpp:738:45
+    frame #9: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #10: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065b80) at thread.h:168:3
+    frame #11: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #12: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #13: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #6, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x0000724800005a58, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x0000724800005a58, lk=0x00007fffef3886b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581d99159 unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()::'lambda0'()>(this=0x0000724800005a58, __lk=0x00007fffef3886b0, __pred=(unnamed class) @ 0x00007fffef3887a0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581d990b5 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x0000720800065b00) at ThreadPool.cpp:738:45
+    frame #9: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #10: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065ae0) at thread.h:168:3
+    frame #11: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #12: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #13: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #7, name = 'TestScheduler', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffffffdbc8, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffffffdbc8, lk=0x00007fffee7520b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e238ed unit_tests_dbms`DB::EventQueue::process(this=0x00007fffffffdb78) at EventQueue.cpp:0:1
+    frame #7: 0x000055555f6c63d4 unit_tests_dbms`DB::SpaceSharedScheduler::schedulerThread(this=0x00007fffffffda18, name=TEST_SCHEDULER) at SpaceSharedScheduler.h:166:24
+    frame #8: 0x000055555f6c6158 unit_tests_dbms`DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()::operator()(this=<unavailable>) const at SpaceSharedScheduler.h:37:61 [inlined]
+    frame #9: 0x000055555f6c614c unit_tests_dbms`std::__1::__invoke_result_impl<void, DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&>::type std::__1::__invoke[abi:se210105]<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&>(__args=<unavailable>) at invoke.h:87:27 [inlined]
+    frame #10: 0x000055555f6c614c unit_tests_dbms`decltype(auto) std::__1::__apply_tuple_impl[abi:se210105]<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&, std::__1::tuple<>&>(__f=<unavailable>, __t=<unavailable>, (null)=<unavailable>) at tuple:1380:5 [inlined]
+    frame #11: 0x000055555f6c614c unit_tests_dbms`decltype(auto) std::__1::apply[abi:se210105]<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&, std::__1::tuple<>&>(__f=<unavailable>, __t=<unavailable>) at tuple:1384:5 [inlined]
+    frame #12: 0x000055555f6c614c unit_tests_dbms`ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()>(DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&&)::'lambda'()::operator()(this=0x0000721000032a00) at ThreadPool.h:312:13
+    frame #14: 0x000055555f6c601e unit_tests_dbms`void std::__1::__invoke_void_return_wrapper<void, true>::__call[abi:se210105]<ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()>(DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&&)::'lambda'()&>(__args=0x0000721000032a00) at invoke.h:342:5 [inlined]
+    frame #15: 0x000055555f6c601e unit_tests_dbms`DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'() std::__1::__invoke_r[abi:se210105]<void, ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()>(DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&&)::'lambda'()&>(__args=0x0000721000032a00) at invoke.h:348:10 [inlined]
+    frame #16: 0x000055555f6c601e unit_tests_dbms`void std::__1::__function::__policy_func<void ()>::__call_func[abi:se210105]<ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()>(DB::SpaceSharedScheduler::start(DB::ThreadName)::'lambda'()&&)::'lambda'()>(__buf=0x00007fffee7525a8) at function.h:450:12
+    frame #17: 0x0000555581d98ee2 unit_tests_dbms`std::__1::__function::__policy_func<void ()>::operator()[abi:se210105](this=0x00007fffee7525a8) const at function.h:508:12 [inlined]
+    frame #18: 0x0000555581d98ec9 unit_tests_dbms`std::__1::function<void ()>::operator()(this=0x00007fffee7525a8) const at function.h:772:10 [inlined]
+    frame #19: 0x0000555581d98ec9 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x0000720800065be0) at ThreadPool.cpp:811:17
+    frame #21: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #22: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065c00) at thread.h:168:3
+    frame #23: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #24: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #25: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #8, name = 'ThreadPool', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x0000724800005a58, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x0000724800005a58, lk=0x00007fffedb1c6b0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581d99159 unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()::'lambda0'()>(this=0x0000724800005a58, __lk=0x00007fffedb1c6b0, __pred=(unnamed class) @ 0x00007fffedb1c7a0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581d990b5 unit_tests_dbms`ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker(this=0x0000720800065c60) at ThreadPool.cpp:738:45
+    frame #9: 0x0000555581da48fc unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*, 2ul>(__t=size=3, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #10: 0x0000555581da48f2 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::*)(), ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool*>>(__vp=0x0000720800065c80) at thread.h:168:3
+    frame #11: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #12: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #13: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #9, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffecee6758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffecee6758, lk=0x00007fffecee65f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffecee6758, __lk=0x00007fffecee65f0, __pred=(unnamed class) @ 0x00007fffecee65d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffecee6648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056c48) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056c40) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #10, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffec2b0758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffec2b0758, lk=0x00007fffec2b05f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffec2b0758, __lk=0x00007fffec2b05f0, __pred=(unnamed class) @ 0x00007fffec2b05d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffec2b0648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056b28) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056b20) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #11, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffeb3f4758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffeb3f4758, lk=0x00007fffeb3f45f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffeb3f4758, __lk=0x00007fffeb3f45f0, __pred=(unnamed class) @ 0x00007fffeb3f45d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffeb3f4648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056ac8) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056ac0) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #12, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffea7be758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffea7be758, lk=0x00007fffea7be5f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffea7be758, __lk=0x00007fffea7be5f0, __pred=(unnamed class) @ 0x00007fffea7be5d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffea7be648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056a68) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056a60) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #13, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe9b88758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe9b88758, lk=0x00007fffe9b885f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe9b88758, __lk=0x00007fffe9b885f0, __pred=(unnamed class) @ 0x00007fffe9b885d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe9b88648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056a08) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056a00) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #14, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe8f52758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe8f52758, lk=0x00007fffe8f525f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe8f52758, __lk=0x00007fffe8f525f0, __pred=(unnamed class) @ 0x00007fffe8f525d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe8f52648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c000569a8) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c000569a0) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #15, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe831c758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe831c758, lk=0x00007fffe831c5f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe831c758, __lk=0x00007fffe831c5f0, __pred=(unnamed class) @ 0x00007fffe831c5d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe831c648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056948) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056940) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #16, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe76e6758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe76e6758, lk=0x00007fffe76e65f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe76e6758, __lk=0x00007fffe76e65f0, __pred=(unnamed class) @ 0x00007fffe76e65d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe76e6648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c000568e8) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c000568e0) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #17, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe6ab0758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe6ab0758, lk=0x00007fffe6ab05f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe6ab0758, __lk=0x00007fffe6ab05f0, __pred=(unnamed class) @ 0x00007fffe6ab05d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe6ab0648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056888) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056880) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+  thread #18, name = 'exe', stop reason = signal SIGSTOP
+    frame #0: 0x00007ffff7c98d71 libc.so.6`___lldb_unnamed_symbol_98c90 + 225
+    frame #1: 0x00007ffff7c9b7ed libc.so.6`pthread_cond_wait + 525
+    frame #2: 0x000055555f447f0c unit_tests_dbms`__tsan::call_pthread_cancel_with_cleanup(int (*)(void*), void (*)(void*), void*) + 108
+    frame #3: 0x000055555f3c623f unit_tests_dbms`___interceptor_pthread_cond_wait + 479
+    frame #4: 0x0000555583659df9 unit_tests_dbms`std::__1::__libcpp_condvar_wait[abi:se210105](__cv=0x00007fffe5e7a758, __m=<unavailable>) at pthread.h:122:10 [inlined]
+    frame #5: 0x0000555583659df1 unit_tests_dbms`std::__1::condition_variable::wait(this=0x00007fffe5e7a758, lk=0x00007fffe5e7a5f0) at condition_variable.cpp:36:12
+    frame #6: 0x0000555581e28c1b unit_tests_dbms`void std::__1::condition_variable::wait[abi:se210105]<DB::MemoryReservation::~MemoryReservation()::$_0>(this=0x00007fffe5e7a758, __lk=0x00007fffe5e7a5f0, __pred=(unnamed class) @ 0x00007fffe5e7a5d0) at condition_variable.h:112:7 [inlined]
+    frame #7: 0x0000555581e28bef unit_tests_dbms`DB::MemoryReservation::~MemoryReservation(this=0x00007fffe5e7a648) at MemoryReservation.cpp:91:16
+    frame #8: 0x000055555f6c2b7d unit_tests_dbms`SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0::operator()(this=0x0000720c00056828) const at gtest_space_shared_scheduler.cpp:289:13 [inlined]
+    frame #10: 0x000055555f6c2b68 unit_tests_dbms`void std::__1::__thread_execute[abi:se210105]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>(__t=size=2, (null)=<unavailable>) at thread.h:159:3 [inlined]
+    frame #11: 0x000055555f6c2b39 unit_tests_dbms`void* std::__1::__thread_proxy[abi:se210105]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, SchedulerSpaceShared_ConcurrentReservations_Test::TestBody()::$_0>>(__vp=0x0000720c00056820) at thread.h:168:3
+    frame #12: 0x000055555f3c53bc unit_tests_dbms`__tsan_thread_start_func + 172
+    frame #13: 0x00007ffff7c9caa4 libc.so.6`___lldb_unnamed_symbol_9c720 + 900
+    frame #14: 0x00007ffff7d29c6c libc.so.6`___lldb_unnamed_symbol_129c65 + 7
+(lldb) detach
+Process 742865 detached
+(lldb) quit

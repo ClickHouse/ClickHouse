@@ -1,0 +1,52 @@
+### Alert Analysis
+
+**Error Type:** lock-order-inversion (potential deadlock)
+
+**Threads/Mutexes Involved:**
+- M0 = AllocationQueue::mutex (std::recursive_mutex)
+- M1 = MemoryReservation::mutex (std::mutex)
+- Thread T245 'WorkloadResMgr' (scheduler thread created by WorkloadResourceManager): acquires M0 then M1
+- Thread T5 'TCPHandler' (user): acquires M1 then M0
+
+**Source Locations:**
+- M0 => M1 (WorkloadResMgr): AllocationQueue::approveIncrease (AllocationQueue.cpp:203) -> MemoryReservation::increaseApproved (MemoryReservation.cpp:175)
+- M1 => M0 (user): MemoryReservation::~MemoryReservation (MemoryReservation.cpp:65) -> AllocationQueue::decreaseAllocation (AllocationQueue.cpp:120)
+
+**Root Cause:** MemoryReservation.h documents the intended order "first queue.mutex, then allocation.mutex" but user-thread paths (~MemoryReservation, syncWithMemoryTracker) invert this: they hold M1 and then call queue.decreaseAllocation() which acquires M0.
+
+**Proposed Fix:** Defer increaseApproved()/decreaseApproved() callbacks outside the M0 scope in approveIncrease()/approveDecrease(). Copy/capture needed data under M0, release M0, then call callback.
+
+```cpp
+// Before (AllocationQueue::approveIncrease):
+{
+    std::lock_guard lock(mutex);
+    // ... manipulate data ...
+    skip_activation = true;
+    increase->allocation.increaseApproved(*increase); // holds M0, acquires M1 -- DEADLOCK RISK
+    skip_activation = false;
+    increase = nullptr;
+    setIncrease();
+}
+
+// After:
+ResourceAllocation * alloc_ptr = nullptr;
+IncreaseRequest approved;
+{
+    std::lock_guard lock(mutex);
+    // ... same data manipulation ...
+    skip_activation = true;
+    alloc_ptr = &increase->allocation;
+    approved = *increase;
+    increase = nullptr;
+    setIncrease();
+}
+alloc_ptr->increaseApproved(approved); // M0 released, safe to acquire M1
+{
+    std::lock_guard lock(mutex);
+    skip_activation = false;
+}
+```
+
+Same pattern applies to approveDecrease(). skip_activation spans the callback to prevent spurious re-activation from re-entrant increaseAllocation() calls.
+
+**Fix Explanation:** M0 is fully released before increaseApproved() (which acquires M1) is called, eliminating the M0->M1 edge from WorkloadResMgr. The user-thread path (M1->M0) is unchanged. With only one ordering active at a time, no cycle exists.

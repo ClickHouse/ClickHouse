@@ -471,7 +471,7 @@ TEST(SchedulerTimeSharedWorkloadNode, ResourceGuardException)
             request_enqueued.store(true); // Signal that the request has been enqueued
             rg.lock(); // Now wait for the resource (this will throw when the queue is destroyed)
         }
-        catch (...)
+        catch (...) // Ok: test verifies that exception is thrown
         {
             caught = true;
         }

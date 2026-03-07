@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, no-fasttest
+# no-fasttest: Too slow for fast test (~20s), covered by regular stateless runs.
 # no-async-insert: Test expects new part after connection drop
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -42,23 +43,19 @@ wait $PIPELINE_PID
 exec 2>&$_stderr {_stderr}>&-
 
 
-sleep 5
-
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
-
-
-parts_count=$(${CLICKHOUSE_CLIENT} --query "
-SELECT count(*) 
-FROM system.part_log 
-WHERE table = '${CLICKHOUSE_TABLE}' 
-  AND event_type = 'NewPart'
-  AND query_id = (
-        SELECT argMax(query_id, event_time) 
-        FROM system.query_log 
-        WHERE query LIKE CONCAT('%INSERT INTO ', '${CLICKHOUSE_TABLE}', '%') 
-          AND current_database = currentDatabase()
-    )
-")
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log;"
+    parts_count=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count()
+        FROM system.part_log
+        WHERE table = '${CLICKHOUSE_TABLE}'
+          AND event_type = 'NewPart'
+          AND database = currentDatabase()
+          AND event_time > (now() - 120)
+    ")
+    [ "${parts_count}" -ge 1 ] && break
+    sleep 0.5
+done
 
 echo "Number of parts created: ${parts_count}"
 

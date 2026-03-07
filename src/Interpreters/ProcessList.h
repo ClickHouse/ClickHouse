@@ -278,6 +278,9 @@ public:
 
     bool isKilled() const { return is_killed; }
 
+    /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+    void throwIfKilled();
+
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 

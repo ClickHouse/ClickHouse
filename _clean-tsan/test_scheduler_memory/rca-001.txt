@@ -1,0 +1,21 @@
+### Alert Analysis
+
+**Error Type:** lock-order-inversion (potential deadlock)
+
+**Threads/Mutexes Involved:**
+- Three mutexes form a cycle: M0 => M1 => M2 => M0
+  - **M0**: `AllocationQueue::mutex` (`std::recursive_mutex`)
+  - **M1**: `EventQueue::mutex` (`std::mutex`)
+  - **M2**: `EventQueue::activation_mutex` (`std::mutex`)
+- Two threads: T5 'TCPHandler' (user query), T251 'WorkloadResMgr' (scheduler)
+
+**Source Locations:**
+- M0 => M1: `AllocationQueue::insertAllocation` (AllocationQueue.cpp:42) -> `scheduleActivation` -> `EventQueue::enqueueActivation` (EventQueue.cpp:50)
+- M1 => M2: `EventQueue::process` (EventQueue.cpp:115) -> `processActivation` (EventQueue.cpp:198)
+- M2 => M0: `EventQueue::processActivation` (EventQueue.cpp:200) -> `AllocationQueue::processActivation` (AllocationQueue.cpp:289)
+
+**Root Cause:** `insertAllocation`, `increaseAllocation`, `decreaseAllocation` call `scheduleActivation()` while holding `AllocationQueue::mutex`, creating M0 => M1. The scheduler thread holds M1 => M2 => M0 through `process` -> `processActivation` -> `AllocationQueue::processActivation`.
+
+**Proposed Fix:** Defer `scheduleActivation()` calls until after `AllocationQueue::mutex` is released using `bool need_activation` pattern. This breaks the M0 => M1 edge.
+
+**Fix Explanation:** `scheduleActivation()` is idempotent and does not depend on state protected by `AllocationQueue::mutex` at the call point. The decision to schedule was already made under the lock. Redundant activations are handled gracefully by `processActivation`.
