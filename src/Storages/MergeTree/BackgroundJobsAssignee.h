@@ -72,6 +72,8 @@ public:
     bool scheduleMoveTask(ExecutableTaskPtr move_task);
     bool scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
 
+    std::size_t getAvailableMoveExecutors() const;
+
     /// Just call finish
     ~BackgroundJobsAssignee();
 

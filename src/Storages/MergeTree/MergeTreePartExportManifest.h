@@ -13,7 +13,7 @@ namespace DB
 
 class Exception;
 
-class ExportPartTask;
+class IExecutableTask;
 
 struct MergeTreePartExportManifest
 {
@@ -77,8 +77,8 @@ struct MergeTreePartExportManifest
     std::function<void(CompletionCallbackResult)> completion_callback;
 
     time_t create_time;
-    mutable bool in_progress = false;
-    mutable std::shared_ptr<ExportPartTask> task = nullptr;
+    /// Required to cancel export tasks
+    mutable std::shared_ptr<IExecutableTask> task = nullptr;
 
     bool operator<(const MergeTreePartExportManifest & rhs) const 
     {

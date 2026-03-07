@@ -97,6 +97,10 @@ bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, b
     return schedule_res;
 }
 
+std::size_t BackgroundJobsAssignee::getAvailableMoveExecutors() const
+{
+    return getContext()->getMovesExecutor()->getAvailableSlots();
+}
 
 String BackgroundJobsAssignee::toString(Type type)
 {

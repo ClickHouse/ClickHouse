@@ -101,6 +101,11 @@ ExportPartTask::ExportPartTask(MergeTreeData & storage_, const MergeTreePartExpo
 {
 }
 
+const MergeTreePartExportManifest & ExportPartTask::getManifest() const
+{
+    return manifest;
+}
+
 bool ExportPartTask::executeStep()
 {
     auto local_context = Context::createCopy(storage.getContext());
@@ -222,6 +227,11 @@ bool ExportPartTask::executeStep()
 
         exec.setCancelCallback(is_cancelled_callback, 100);
 
+        if (isCancelled())
+        {
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Export part was cancelled");
+        }
+
         exec.execute();
 
         if (isCancelled())
@@ -320,6 +330,7 @@ bool ExportPartTask::executeStep()
 
 void ExportPartTask::cancel() noexcept
 {
+    LOG_INFO(getLogger("ExportPartTask"), "Export part {} task cancel() method called", manifest.data_part->name);
     cancel_requested.store(true);
     pipeline.cancel();
 }

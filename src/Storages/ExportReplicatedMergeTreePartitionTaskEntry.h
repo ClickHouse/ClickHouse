@@ -30,7 +30,7 @@ struct ExportReplicatedMergeTreePartitionTaskEntry
     /// This is used to prevent the parts from being deleted before finishing the export operation
     /// It does not mean this replica will export all the parts
     /// There is also a chance this replica does not contain a given part and it is totally ok.
-    std::vector<DataPartPtr> part_references;
+    mutable std::vector<DataPartPtr> part_references;
 
     std::string getCompositeKey() const
     {

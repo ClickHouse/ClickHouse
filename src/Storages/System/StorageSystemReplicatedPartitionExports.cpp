@@ -10,10 +10,16 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include "Columns/ColumnString.h"
 #include "Storages/VirtualColumnUtils.h"
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool export_merge_tree_partition_system_table_prefer_remote_information;
+}
 
 ColumnsDescription StorageSystemReplicatedPartitionExports::getColumnsDescription()
 {
@@ -111,7 +117,7 @@ void StorageSystemReplicatedPartitionExports::fillData(MutableColumns & res_colu
         {
             const IStorage * storage = replicated_merge_tree_tables[database][table].get();
             if (const auto * replicated_merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage))
-                partition_exports_info = replicated_merge_tree->getPartitionExportsInfo();
+                partition_exports_info = replicated_merge_tree->getPartitionExportsInfo(context->getSettingsRef()[Setting::export_merge_tree_partition_system_table_prefer_remote_information]);
         }
 
         for (const ReplicatedPartitionExportInfo & info : partition_exports_info)

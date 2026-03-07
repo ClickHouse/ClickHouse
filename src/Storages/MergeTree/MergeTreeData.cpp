@@ -6744,7 +6744,6 @@ void MergeTreeData::exportPartToTable(
     }
 
     {
-        const auto format_settings = getFormatSettings(query_context);
         MergeTreePartExportManifest manifest(
             dest_storage,
             part,
@@ -6757,13 +6756,21 @@ void MergeTreeData::exportPartToTable(
 
         std::lock_guard lock(export_manifests_mutex);
 
-        if (!export_manifests.emplace(std::move(manifest)).second)
+        manifest.task = std::make_shared<ExportPartTask>(*this, manifest);
+
+        if (!export_manifests.emplace(manifest).second)
         {
-            throw Exception(ErrorCodes::ABORTED, "Data part '{}' is already being exported", part_name);
+            throw Exception(ErrorCodes::ABORTED, "Data part '{}' is already being exported",
+                part_name);
+        }
+
+        if (!background_moves_assignee.scheduleMoveTask(manifest.task))
+        {
+            export_manifests.erase(manifest);
+            throw Exception(ErrorCodes::ABORTED, "Failed to schedule export part task for data part '{}'. Background executor is busy",
+                            part_name);
         }
     }
-
-    background_moves_assignee.trigger();
 }
 
 void MergeTreeData::killExportPart(const String & transaction_id)
@@ -9876,46 +9883,21 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    if (!parts_mover.moves_blocker.isCancelled())
-    {
-        auto moving_tagger = selectPartsForMove();
-        if (!moving_tagger->parts_to_move.empty())
+    if (parts_mover.moves_blocker.isCancelled())
+        return false;
+
+    auto moving_tagger = selectPartsForMove();
+    if (moving_tagger->parts_to_move.empty())
+        return false;
+
+    assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
+        [this, moving_tagger] () mutable
         {
-            assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
-                [this, moving_tagger] () mutable
-                {
-                    ReadSettings read_settings = Context::getGlobalContextInstance()->getReadSettings();
-                    WriteSettings write_settings = Context::getGlobalContextInstance()->getWriteSettings();
-                    return moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ false) == MovePartsOutcome::PartsMoved;
-                }, moves_assignee_trigger, getStorageID()));
-            return true;
-        }
-    }
-
-    std::lock_guard lock(export_manifests_mutex);
-
-    for (auto & manifest : export_manifests)
-    {
-        if (manifest.in_progress)
-        {
-            continue;
-        }
-
-        auto task = std::make_shared<ExportPartTask>(*this, manifest);
-
-        manifest.in_progress = assignee.scheduleMoveTask(task);
-
-        if (!manifest.in_progress)
-        {
-            continue;
-        }
-
-        manifest.task = task;
-
-        return true;
-    }
-
-    return false;
+            ReadSettings read_settings = Context::getGlobalContextInstance()->getReadSettings();
+            WriteSettings write_settings = Context::getGlobalContextInstance()->getWriteSettings();
+            return moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ false) == MovePartsOutcome::PartsMoved;
+        }, moves_assignee_trigger, getStorageID()));
+    return true;
 }
 
 bool MergeTreeData::areBackgroundMovesNeeded() const

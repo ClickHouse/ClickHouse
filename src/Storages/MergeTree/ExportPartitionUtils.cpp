@@ -1,9 +1,18 @@
 #include <Storages/MergeTree/ExportPartitionUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include "Storages/ExportReplicatedMergeTreePartitionManifest.h"
 #include "Storages/ExportReplicatedMergeTreePartitionTaskEntry.h"
 #include <filesystem>
+
+namespace ProfileEvents
+{
+    extern const Event ExportPartitionZooKeeperRequests;
+    extern const Event ExportPartitionZooKeeperGet;
+    extern const Event ExportPartitionZooKeeperGetChildren;
+    extern const Event ExportPartitionZooKeeperSet;
+}
 
 namespace DB
 {
@@ -23,6 +32,8 @@ namespace ExportPartitionUtils
 
         const auto processed_parts_path = fs::path(export_path) / "processed";
 
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGetChildren);
         std::vector<std::string> processed_parts;
         if (Coordination::Error::ZOK != zk->tryGetChildren(processed_parts_path, processed_parts))
         {
@@ -39,6 +50,8 @@ namespace ExportPartitionUtils
         }
 
         auto responses = zk->tryGet(get_paths);
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet, get_paths.size());
 
         responses.waitForResponses();
 
@@ -90,6 +103,8 @@ namespace ExportPartitionUtils
         destination_storage->commitExportPartitionTransaction(manifest.transaction_id, manifest.partition_id, exported_paths, context);
 
         LOG_INFO(log, "ExportPartition: Committed export, mark as completed");
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperSet);
         if (Coordination::Error::ZOK == zk->trySet(fs::path(entry_path) / "status", String(magic_enum::enum_name(ExportReplicatedMergeTreePartitionTaskEntry::Status::COMPLETED)).data(), -1))
         {
             LOG_INFO(log, "ExportPartition: Marked export as completed");

@@ -2,33 +2,35 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreePartExportManifest.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ExportPartTask.h>
 
 namespace DB
 {
 
-class ExportPartTask : public IExecutableTask
+/*
+    Decorator around the ExportPartTask to lock the part inside the task
+*/
+class ExportPartFromPartitionExportTask : public IExecutableTask
 {
 public:
-    explicit ExportPartTask(
-        MergeTreeData & storage_,
+    explicit ExportPartFromPartitionExportTask(
+        StorageReplicatedMergeTree & storage_,
+        const std::string & key_,
         const MergeTreePartExportManifest & manifest_);
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() const override;
     Priority getPriority() const override;
     String getQueryId() const override;
-    const MergeTreePartExportManifest & getManifest() const;
 
     void cancel() noexcept override;
 
 private:
-    MergeTreeData & storage;
+    StorageReplicatedMergeTree & storage;
+    std::string key;
     MergeTreePartExportManifest manifest;
-    QueryPipeline pipeline;
-    std::atomic<bool> cancel_requested = false;
-
-    bool isCancelled() const;
+    std::shared_ptr<ExportPartTask> export_part_task;
 };
 
 }

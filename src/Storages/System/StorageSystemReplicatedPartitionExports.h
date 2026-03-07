@@ -23,7 +23,7 @@ struct ReplicatedPartitionExportInfo
     std::string exception_replica;
     std::string last_exception;
     std::string exception_part;
-    size_t exception_count;
+    size_t exception_count = 0;
 };
 
 class StorageSystemReplicatedPartitionExports final : public IStorageSystemOneBlock
