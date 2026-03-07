@@ -48,17 +48,17 @@ def test_insert_query_profile_events(started_cluster):
         )
 
         node.query(
-            "INSERT INTO test_insert_query_profile_events VALUES (1,'Non Async Insert')"
+            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert=0 VALUES (1,'Non Async Insert')"
         )
         node.query(
-            "INSERT INTO test_insert_query_profile_events VALUES (2,'Non Async Insert')"
+            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert=0 VALUES (2,'Non Async Insert')"
         )
 
         node.query(
-            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert = 1 VALUES (3,'Async Insert')"
+            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert=1 VALUES (3,'Async Insert')"
         )
         node.query(
-            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert = 1 VALUES (4,'Async Insert')"
+            "INSERT INTO test_insert_query_profile_events SETTINGS async_insert=1 VALUES (4,'Async Insert')"
         )
 
         insert_count = node.query(select_insert_query).strip()
