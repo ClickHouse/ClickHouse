@@ -27,13 +27,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     size_t max_redirects_
 )
     : WriteBufferFromOStream(buffer_size_)
-    , connection_group(connection_group_)
     , initial_uri(uri)
-    , content_type(content_type_)
-    , content_encoding(content_encoding_)
-    , additional_headers(additional_headers_)
-    , timeouts(timeouts_)
-    , buffer_size(buffer_size_)
     , max_redirects(max_redirects_)
     , session{makeHTTPSession(connection_group_, uri, timeouts_, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}

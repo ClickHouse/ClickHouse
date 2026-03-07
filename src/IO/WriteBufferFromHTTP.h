@@ -40,13 +40,6 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
     Poco::URI initial_uri;
     size_t max_redirects;
 
-    HTTPConnectionGroupType connection_group;
-    std::string content_type;
-    std::string content_encoding;
-    HTTPHeaderEntries additional_headers;
-    ConnectionTimeouts timeouts;
-    size_t buffer_size;
-
     HTTPSessionPtr session;
     Poco::Net::HTTPRequest request;
     Poco::Net::HTTPResponse response;
