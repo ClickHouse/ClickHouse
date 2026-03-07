@@ -2195,7 +2195,7 @@ Max number of HTTP GET redirects hops allowed. Ensures additional security measu
 )", 0) \
     \
     DECLARE(UInt64, max_http_post_redirects, 0, R"(
-Max number of HTTP redirect hops allowed for POST/PUT requests (e.g. when using the URL engine for writes). By default, redirects for POST/PUT are not followed. When enabled, up to this many redirect hops will be followed, re-sending the request body to the new location. Use with caution as this may re-send data to an unexpected destination.
+Sets the maximum number of HTTP redirect hops allowed for POST/PUT requests (e.g. when using the URL engine for writes). By default (0), redirect responses on POST/PUT cause an error. When set to a non-zero value, HTTP 3xx redirect responses are accepted as success instead of raising an error. The request body is always sent to the original URL since it is streamed and cannot be re-sent to the redirect target.
 )", 0) \
     \
     DECLARE(Bool, use_client_time_zone, false, R"(

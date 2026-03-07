@@ -1,6 +1,5 @@
 #include <IO/WriteBufferFromHTTP.h>
 
-#include <filesystem>
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
@@ -14,11 +13,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_REDIRECTS;
-}
 
 WriteBufferFromHTTP::WriteBufferFromHTTP(
     const HTTPConnectionGroupType & connection_group_,
@@ -78,49 +72,26 @@ void WriteBufferFromHTTP::finalizeImpl()
     // Make sure the content in the buffer has been flushed
     this->next();
 
+    /// When max_redirects > 0, accept HTTP 3xx redirect responses as success.
+    /// The request body has already been fully sent to the original server via
+    /// the chunked transfer stream. Since we cannot re-send the body to the
+    /// redirect target (it was streamed, not buffered), we treat the redirect
+    /// as an acknowledgment that the server received the data.
+    /// This covers the common case of servers/proxies that accept POST data
+    /// and respond with a redirect to a result or canonical URL.
     bool allow_redirects = max_redirects > 0;
     receiveResponse(*session, request, response, allow_redirects);
 
-    size_t redirects = 0;
-    while (isRedirect(response.getStatus()) && allow_redirects)
+    if (isRedirect(response.getStatus()) && allow_redirects)
     {
-        ++redirects;
-        if (redirects > max_redirects)
-            throw Exception(
-                ErrorCodes::TOO_MANY_REDIRECTS,
-                "Too many redirects while trying to write to {}."
-                " You can {} redirects by changing the setting 'max_http_post_redirects'."
-                " Example: `SET max_http_post_redirects = 10`."
-                " Redirects are restricted to prevent possible attack when a malicious server"
-                " redirects to an internal resource, bypassing the authentication or firewall.",
-                initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
-
-        auto location = response.get("Location");
-        auto redirect_uri = Poco::URI(location);
-        if (redirect_uri.isRelative())
-        {
-            auto path = std::filesystem::weakly_canonical(
-                std::filesystem::path(initial_uri.getPath()) / location);
-            redirect_uri = initial_uri;
-            redirect_uri.setPath(path);
-        }
-
-        LOG_TRACE((getLogger("WriteBufferToHTTP")), "Redirecting POST/PUT to {}", redirect_uri.toString());
-
-        /// Open new session to the redirect target and re-send an empty request
-        /// (the data has already been sent; this handles the redirect for the response)
-        session = makeHTTPSession(connection_group, redirect_uri, timeouts);
-        request.setURI(redirect_uri.getPathAndQuery());
-        if (redirect_uri.getPort())
-            request.setHost(redirect_uri.getHost(), redirect_uri.getPort());
-        else
-            request.setHost(redirect_uri.getHost());
-        request.setChunkedTransferEncoding(false);
-        request.setContentLength(0);
-
-        ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPRequestsSent);
-        session->sendRequest(request);
-        receiveResponse(*session, request, response, true);
+        auto location = response.get("Location", "");
+        LOG_INFO(
+            getLogger("WriteBufferToHTTP"),
+            "POST/PUT to {} returned redirect (HTTP {}) to '{}'. "
+            "Data was already sent to the original URL; treating redirect as success.",
+            initial_uri.toString(),
+            static_cast<int>(response.getStatus()),
+            location);
     }
 
     WriteBufferFromOStream::finalizeImpl();

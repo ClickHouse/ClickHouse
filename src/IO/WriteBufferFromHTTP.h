@@ -37,14 +37,15 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
-    HTTPConnectionGroupType connection_group;
     Poco::URI initial_uri;
+    size_t max_redirects;
+
+    HTTPConnectionGroupType connection_group;
     std::string content_type;
     std::string content_encoding;
     HTTPHeaderEntries additional_headers;
     ConnectionTimeouts timeouts;
     size_t buffer_size;
-    size_t max_redirects;
 
     HTTPSessionPtr session;
     Poco::Net::HTTPRequest request;
