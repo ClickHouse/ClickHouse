@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -48,6 +49,7 @@ void PaimonStreamState::setKeeper(zkutil::ZooKeeperPtr keeper_)
 
 std::optional<Int64> PaimonStreamState::getCommittedSnapshotId() const
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::getCommittedSnapshotId");
     auto value = readFromKeeper(fs_keeper_path / COMMITTED_SNAPSHOT_NODE);
     if (!value)
         return std::nullopt;
@@ -57,6 +59,7 @@ std::optional<Int64> PaimonStreamState::getCommittedSnapshotId() const
 
 void PaimonStreamState::acquireProcessingLock()
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::acquireProcessingLock");
     std::lock_guard lock(mutex);
 
     const auto processing_lock_path = fs_keeper_path / PROCESSING_LOCK_NODE;
@@ -78,12 +81,14 @@ void PaimonStreamState::acquireProcessingLock()
 
 void PaimonStreamState::releaseProcessingLock()
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::releaseProcessingLock");
     std::lock_guard lock(mutex);
     removeProcessingLock();
 }
 
 void PaimonStreamState::initializeKeeperNodes()
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::initializeKeeperNodes");
     std::lock_guard lock(mutex);
 
     LOG_DEBUG(log, "Initializing Paimon stream state in Keeper at {}", keeper_path);
@@ -121,6 +126,7 @@ void PaimonStreamState::initializeKeeperNodes()
 
 bool PaimonStreamState::activate()
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::activate");
     std::lock_guard lock(mutex);
 
     if (is_active && !keeper->expired())
@@ -168,6 +174,7 @@ void PaimonStreamState::deactivate()
 
 void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::setCommittedSnapshot");
     std::lock_guard lock(mutex);
 
     LOG_DEBUG(log, "Committing snapshot {} to Keeper", snapshot_id);
@@ -193,6 +200,7 @@ void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id)
 
 void PaimonStreamState::writeToKeeper(const std::filesystem::path & path, const String & value)
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::writeToKeeper");
     Coordination::Requests ops;
     keeper->checkExistsAndGetCreateAncestorsOps(path, ops);
 
@@ -209,6 +217,7 @@ void PaimonStreamState::writeToKeeper(const std::filesystem::path & path, const 
 
 std::optional<String> PaimonStreamState::readFromKeeper(const std::filesystem::path & path) const
 {
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::readFromKeeper");
     std::lock_guard lock(mutex);
 
     String result;
