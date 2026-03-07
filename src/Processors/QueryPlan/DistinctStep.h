@@ -44,6 +44,7 @@ public:
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
+    void setDisableLowCardinalityOptimization(bool value) { disable_low_cardinality_optimization = value; }
 
 private:
     void updateOutputHeader() override;
@@ -53,6 +54,7 @@ private:
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
+    bool disable_low_cardinality_optimization = false;
 };
 
 }

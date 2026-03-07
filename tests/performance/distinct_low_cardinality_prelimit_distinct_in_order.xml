@@ -1,0 +1,78 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS test_strings_200000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_strings_20000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_strings_2000</drop_query>
+
+    <create_query>
+        CREATE TABLE test_strings_200000
+        (
+            col1 LowCardinality(String),
+            col2 LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY col1;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_strings_20000
+        (
+            col1 LowCardinality(String),
+            col2 LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY col1;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_strings_2000
+        (
+            col1 LowCardinality(String),
+            col2 LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY col1;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_strings_200000
+        SELECT lc AS col1, lc AS col2
+        FROM
+        (
+            SELECT toLowCardinality(toString(number % 200000)) AS lc
+            FROM numbers(10000000)
+        );
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO test_strings_20000
+        SELECT lc AS col1, lc AS col2
+        FROM
+        (
+            SELECT toLowCardinality(toString(number % 20000)) AS lc
+            FROM numbers(10000000)
+        );
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO test_strings_2000
+        SELECT lc AS col1, lc AS col2
+        FROM
+        (
+            SELECT toLowCardinality(toString(number % 2000)) AS lc
+            FROM numbers(10000000)
+        );
+    </fill_query>
+
+    <query>SELECT DISTINCT col1 FROM test_strings_200000 FORMAT Null</query>
+    <query>SELECT DISTINCT col2 FROM test_strings_200000 FORMAT Null</query>
+
+    <query>SELECT DISTINCT col1 FROM test_strings_20000 FORMAT Null</query>
+    <query>SELECT DISTINCT col2 FROM test_strings_20000 FORMAT Null</query>
+
+    <query>SELECT DISTINCT col1 FROM test_strings_2000 FORMAT Null</query>
+    <query>SELECT DISTINCT col2 FROM test_strings_2000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_strings_200000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_strings_20000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_strings_2000</drop_query>
+</test>

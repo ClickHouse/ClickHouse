@@ -19,7 +19,8 @@ public:
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
-        const Names & columns_);
+        const Names & columns_,
+        bool disable_low_cardinality_optimization_);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -52,6 +53,7 @@ private:
 
     /// Per-dictionary state which may cover multiple IColumns.
     std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
+    const bool disable_low_cardinality_optimization;
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>

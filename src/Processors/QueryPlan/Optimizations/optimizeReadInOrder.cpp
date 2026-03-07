@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 
 #include <stack>
+#include <unordered_map>
 
 namespace DB
 {
@@ -1551,6 +1552,66 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings);
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
+}
+
+void disableLowCardinalityOptimizationForDistinctAfterPreliminaryInOrderDistinct(QueryPlan::Node & root)
+{
+    /// Post-order DFS (children first), so each node can reuse already computed state from its children.
+    Stack stack;
+    stack.push_back({.node = &root});
+
+    /// Whether this node's subtree contains preliminary DISTINCT with in-order optimization.
+    std::unordered_map<const QueryPlan::Node *, bool> subtree_has_preliminary_distinct_in_order;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+
+            /// This ensures that we process current node only after all children are processed
+            /// and corresponding state is available in subtree_has_preliminary_distinct_in_order.
+            continue;
+        }
+
+        auto * node = frame.node;
+        stack.pop_back();
+
+        /// Aggregate subtree state from direct children.
+        bool children_subtrees_have_preliminary_distinct_in_order = false;
+        for (const auto * child : node->children)
+        {
+            auto it = subtree_has_preliminary_distinct_in_order.find(child);
+            if (it != subtree_has_preliminary_distinct_in_order.end() && it->second)
+            {
+                children_subtrees_have_preliminary_distinct_in_order = true;
+                break;
+            }
+        }
+
+        /// For final DISTINCT only: disable LC optimization when input subtree already contains
+        /// preliminary in-order DISTINCT, because remaining rows are usually mostly unique.
+        if (auto * distinct_step = typeid_cast<DistinctStep *>(node->step.get()); distinct_step && !distinct_step->isPreliminary())
+            distinct_step->setDisableLowCardinalityOptimization(children_subtrees_have_preliminary_distinct_in_order);
+
+        /// Mark current node if it is itself a preliminary DISTINCT with non-empty sort description
+        /// (i.e. DISTINCT-in-order was applied at this node).
+        bool is_preliminary_distinct_in_order = false;
+        if (const auto * distinct_step = typeid_cast<const DistinctStep *>(node->step.get());
+            distinct_step && distinct_step->isPreliminary() && !distinct_step->getSortDescription().empty())
+        {
+            is_preliminary_distinct_in_order = true;
+        }
+
+        /// Update the state of the current node's subtree.
+        subtree_has_preliminary_distinct_in_order[node]
+            = children_subtrees_have_preliminary_distinct_in_order || is_preliminary_distinct_in_order;
+    }
 }
 
 /// This optimization is obsolete and will be removed.
