@@ -60,7 +60,10 @@ def get_run_command(
 
 
 def _test_name_to_basename(test_name: str) -> str:
-    return test_name[:-1] if test_name.endswith(".") else test_name
+    name = test_name[:-1] if test_name.endswith(".") else test_name
+    for ext in (".sql", ".sh"):
+        name = name.removesuffix(ext)
+    return name
 
 
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
