@@ -162,6 +162,8 @@ public:
 
     void recalculateStorageStats();
 
+    void optimizeStorage();
+
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 };
 

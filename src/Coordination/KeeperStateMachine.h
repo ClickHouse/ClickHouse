@@ -118,6 +118,7 @@ public:
     virtual uint64_t getLatestSnapshotSize() const = 0;
 
     virtual void recalculateStorageStats() = 0;
+    virtual void optimizeStorage() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
 
@@ -256,6 +257,7 @@ public:
     uint64_t getLatestSnapshotSize() const override;
 
     void recalculateStorageStats() override;
+    void optimizeStorage() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
 
