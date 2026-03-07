@@ -1,7 +1,8 @@
 #pragma once
 #include <vector>
 #include <atomic>
-#include <unordered_map>
+#include <sparsehash/dense_hash_map>
+
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
 
@@ -10,21 +11,46 @@ namespace DB
 namespace JoinStuff
 {
 
+/// Used to read used flags for a block faster.
+using UsedFlagsForColumns = std::vector<std::atomic_bool>;
+
+class UsedFlagsHolder
+{
+private:
+    bool need_flags;
+    const UsedFlagsForColumns * flags;
+
+public:
+    UsedFlagsHolder(bool need_flags_, const UsedFlagsForColumns * flags_)
+        : need_flags(need_flags_)
+        , flags(flags_)
+    {
+    }
+
+    ALWAYS_INLINE bool isUsed(size_t i) const
+    {
+        /// Equivalent to `return need_flags ? (*flags)[i].load() : true`
+        return !!need_flags * (*flags)[i].load() + !need_flags;
+    }
+};
+
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
 public:
     using RawColumnsPtr = const Columns *;
-    using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
     /// For multiple disjuncts each entry in hashmap stores flags for particular block
-    std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
+    google::dense_hash_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
     /// Index is the offset in FindResult
     UsedFlagsForColumns per_offset_flags;
 
-    bool need_flags;
+    bool need_flags = false;
+
+public:
+    JoinUsedFlags() { per_row_flags.set_empty_key(nullptr); }
 
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
@@ -71,6 +97,16 @@ public:
             return it->second[row_idx].load();
         return !need_flags;
     }
+
+    /// Get flags for block. If block is not found, return nullptr.
+    std::unique_ptr<UsedFlagsHolder> getUsedFlagsHolder(const Columns * columns) const
+    {
+        if (auto it = per_row_flags.find(columns); it != per_row_flags.end())
+            return std::make_unique<UsedFlagsHolder>(need_flags, &it->second);
+        return std::make_unique<UsedFlagsHolder>(need_flags, nullptr);
+    }
+
+    std::unique_ptr<UsedFlagsHolder> getUsedFlagsHolder() const { return std::make_unique<UsedFlagsHolder>(need_flags, &per_offset_flags); }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
     void setUsed(const FindResult & f)
