@@ -134,7 +134,7 @@ namespace
         const bool session_close_;
     };
 
-    static std::chrono::steady_clock::duration parseSessionTimeout(
+    std::chrono::steady_clock::duration parseSessionTimeout(
         const Poco::Util::AbstractConfiguration & config,
         unsigned query_session_timeout)
     {
@@ -1652,8 +1652,9 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
                     new_column->insertData(reinterpret_cast<const char *>(serialized_buffer->data()), serialized_buffer->size());
                 }
 
+                auto table_scheme_column_name = table_scheme_column.name;
                 block.erase(4);
-                block.insert(ColumnWithTypeAndName(std::move(new_column), std::make_shared<DataTypeString>(), table_scheme_column.name));
+                block.insert(ColumnWithTypeAndName(std::move(new_column), std::make_shared<DataTypeString>(), table_scheme_column_name));
             };
         }
         else

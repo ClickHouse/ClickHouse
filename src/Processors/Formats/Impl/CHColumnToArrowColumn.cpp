@@ -37,6 +37,10 @@
 #include <arrow/array/builder_binary.h>
 #include <arrow/scalar.h>
 
+#include <boost/iterator/transform_iterator.hpp>
+#include <boost/iterator/zip_iterator.hpp>
+#include <boost/tuple/tuple.hpp>
+
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(Int8, arrow::Int8Builder) \
         M(UInt16, arrow::UInt16Builder) \
@@ -120,7 +124,6 @@ namespace DB
     {
         arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
         arrow::Status status;
-
 
         for (size_t value_i = start; value_i < end; ++value_i)
         {
@@ -351,7 +354,52 @@ namespace DB
 
         const auto & column_offsets = column.getOffsets();
         arrow::Int32Builder offsets_builder;
-        status = offsets_builder.AppendValues(column_offsets.begin(), column_offsets.end());
+
+        /// column_offsets should be sanitized because NULL_DISCRIMINATOR positions in ColumnVariant
+        /// are not specified and ignored but for arrow format they are meaningful
+        if (null_bytemap)
+        {
+            auto to_arrow_offset = [](const auto & tuple) -> int32_t
+            {
+                if (boost::get<0>(tuple) == ColumnVariant::NULL_DISCRIMINATOR || static_cast<bool>(boost::get<2>(tuple)))
+                    return 0;
+                const auto offset = boost::get<1>(tuple);
+                if (offset > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build Arrow DenseUnion: offset {} is out of Int32 range", offset);
+                return static_cast<int32_t>(offset);
+            };
+
+            auto begin_it = boost::make_transform_iterator(
+                boost::make_zip_iterator(boost::make_tuple(discriminators.begin(), column_offsets.begin(), null_bytemap->begin())),
+                to_arrow_offset);
+            auto end_it = boost::make_transform_iterator(
+                boost::make_zip_iterator(boost::make_tuple(discriminators.end(), column_offsets.end(), null_bytemap->end())),
+                to_arrow_offset);
+
+            status = offsets_builder.AppendValues(begin_it, end_it);
+        }
+        else
+        {
+            auto to_arrow_offset = [](const auto & tuple) -> int32_t
+            {
+                if (boost::get<0>(tuple) == ColumnVariant::NULL_DISCRIMINATOR)
+                    return 0;
+                const auto offset = boost::get<1>(tuple);
+                if (offset > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build Arrow DenseUnion: offset {} is out of Int32 range", offset);
+                return static_cast<int32_t>(offset);
+            };
+
+            auto begin_it = boost::make_transform_iterator(
+                boost::make_zip_iterator(boost::make_tuple(discriminators.begin(), column_offsets.begin())),
+                to_arrow_offset);
+            auto end_it = boost::make_transform_iterator(
+                boost::make_zip_iterator(boost::make_tuple(discriminators.end(), column_offsets.end())),
+                to_arrow_offset);
+
+            status = offsets_builder.AppendValues(begin_it, end_it);
+        }
+
         checkStatus(status, "offsets", format_name);
         std::shared_ptr<arrow::Array> offsets_array;
         status = offsets_builder.Finish(&offsets_array);
@@ -564,10 +612,9 @@ namespace DB
         arrow::Int32Builder offsets_builder;
         status = offsets_builder.Append(0);
         checkStatus(status, column_name, format_name);
-        size_t dif = values_start;
         for (size_t i = offsets_view_start; i < offsets.size(); ++i)
         {
-            status = offsets_builder.Append(static_cast<int>(offsets[i] - dif));
+            status = offsets_builder.Append(static_cast<int>(offsets[i] - values_start));
             checkStatus(status, column_name, format_name);
         }
 
