@@ -1565,12 +1565,13 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
                 http_continue_callback();
 
-            //Increment InsertQuery for async insert with inline data 
-            ProfileEvents::increment(ProfileEvents::InsertQuery);
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
+                //Increment InsertQuery for async insert with inline data
+                ProfileEvents::increment(ProfileEvents::InsertQuery);
+
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
