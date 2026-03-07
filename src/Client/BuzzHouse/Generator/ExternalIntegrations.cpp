@@ -2097,23 +2097,20 @@ int ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String 
 std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt, const bool server) const
 {
     const ClickHouseIntegratedDatabase * next = getPeerPtr(pt);
+    const auto path = next ? next->sc.user_files_dir : (server ? fc.server_file_path : fc.client_file_path);
 
-    if (next)
-    {
-        return next->sc.user_files_dir / "fuzz.data";
-    }
-    return server ? fc.fuzz_server_out : fc.fuzz_client_out;
+    return path / "fuzz.data";
 }
 
 bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableDatabase pt, PerformanceResult & res)
 {
     String buf;
     std::error_code ec;
-    const std::filesystem::path client_out_path = this->getDatabaseDataDir(pt, false);
-    const std::filesystem::path server_out_path = this->getDatabaseDataDir(pt, true);
+    const std::filesystem::path client_out = this->getDatabaseDataDir(pt, false);
+    const std::filesystem::path server_out = this->getDatabaseDataDir(pt, true);
 
     res.metrics.clear();
-    if (!std::filesystem::remove(client_out_path, ec) && ec)
+    if (!std::filesystem::remove(client_out, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
@@ -2125,9 +2122,9 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
                 "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
                 "BY event_time_microseconds DESC LIMIT 1;",
-                server_out_path.generic_string())))
+                server_out.generic_string())))
     {
-        std::ifstream infile(client_out_path);
+        std::ifstream infile(client_out);
         if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -2164,18 +2161,13 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
     String replaced;
     std::error_code ec;
 
-    if (!std::filesystem::remove(fc.fuzz_client_out, ec) && ec)
-    {
-        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
-        return;
-    }
     if (fc.processServerQuery(
             false,
             fmt::format(
                 "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fc.fuzz_server_out.generic_string())))
+                fc.fuzzer_out_file.generic_string())))
     {
-        std::ifstream infile(fc.fuzz_client_out);
+        std::ifstream infile(fc.fuzzer_out_file);
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')

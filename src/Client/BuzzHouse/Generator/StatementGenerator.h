@@ -17,12 +17,29 @@ class SQLRelationCol
 public:
     String rel_name;
     DB::Strings path;
+    SQLType * tp = nullptr; /// Non-owning; nullptr when type is unknown (subqueries, CTEs, virtual columns)
+    ColumnSpecial special = ColumnSpecial::NONE;
 
     SQLRelationCol() = default;
 
     SQLRelationCol(const String & rname, const DB::Strings & names)
         : rel_name(rname)
         , path(names)
+    {
+    }
+
+    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t)
+        : rel_name(rname)
+        , path(names)
+        , tp(t)
+    {
+    }
+
+    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t, const ColumnSpecial sp)
+        : rel_name(rname)
+        , path(names)
+        , tp(t)
+        , special(sp)
     {
     }
 
@@ -64,6 +81,10 @@ public:
         , gexpr(g)
     {
     }
+
+    SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
+
+    ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
 };
 
 class QueryLevel
@@ -132,6 +153,7 @@ enum class TableRequirement
     RequireMergeTree = 1,
     RequireReplaceable = 2,
     RequireProjection = 3,
+    RequireIndex = 4
 };
 
 class StatementGenerator
@@ -160,6 +182,7 @@ private:
     bool allow_subqueries = true;
     bool enforce_final = false;
     bool allow_engine_udf = true;
+    bool chain_views = false; ///< When set, next joinedTableOrFunction call picks a view (for MV chaining)
 
     uint32_t depth = 0;
     uint32_t width = 0;
@@ -323,15 +346,16 @@ private:
         SystemTable,
         MergeUDF,
         ClusterUDF,
-        MergeIndexUDF,
         LoopUDF,
         ValuesUDF,
         RandomDataUDF,
         Dictionary,
         URLEncodedTable,
         TableEngineUDF,
-        MergeProjectionUDF,
         RandomTableUDF,
+        MergeIndexUDF,
+        MergeProjectionUDF,
+        MergeTextIndexUDF,
         MergeIndexAnalyzeUDF
     };
 
@@ -577,19 +601,20 @@ private:
         std::vector<GroupCol> & gcols,
         Expr * expr);
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
-    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
+    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, ColumnSpecial special, Expr * expr);
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
+    String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
-    void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
+    void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
     void generateDerivedTable(
         RandomGenerator & rg,
         SQLRelation & rel,
