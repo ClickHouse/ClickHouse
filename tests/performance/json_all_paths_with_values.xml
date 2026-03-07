@@ -1,0 +1,24 @@
+<test>
+    <!-- JSON in queries must be in a substitution so { } are not treated as parameter placeholders. -->
+    <substitutions>
+        <substitution>
+            <name>json_sample</name>
+            <values>
+                <value>'{"a": 42, "b": "hello", "c": 3.14, "nest": {"x": 1, "y": [2, 3]}, "arr": [10, 20]}'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <allow_experimental_json_all_paths_with_values>1</allow_experimental_json_all_paths_with_values>
+    </settings>
+
+    <create_query>CREATE TABLE test_json_all_paths_with_values (json JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- Varied JSON: nested, arrays, mixed types (repeated for measurable volume) -->
+    <fill_query>INSERT INTO test_json_all_paths_with_values SELECT materialize({json_sample}::JSON) FROM numbers(1000000)</fill_query>
+
+    <query>SELECT JSONAllPathsWithValues(json) FROM test_json_all_paths_with_values FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_json_all_paths_with_values</drop_query>
+</test>

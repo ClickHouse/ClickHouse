@@ -494,6 +494,7 @@ JOINed
 JOINs
 JSONAllPaths
 JSONAllPathsWithTypes
+JSONAllPathsWithValues
 JSONArrayLength
 JSONAsObject
 JSONAsString

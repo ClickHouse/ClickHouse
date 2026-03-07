@@ -854,6 +854,7 @@ Note: limit on dynamic paths cannot exceed the value specified in `max_dynamic_p
 There are several functions that can help to inspect the content of the JSON column: 
 - [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
 - [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
+- [`JSONAllPathsWithValues`](../functions/json-functions.md#JSONAllPathsWithValues) (experimental, requires `allow_experimental_json_all_paths_with_values`)
 - [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
 - [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
 - [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)

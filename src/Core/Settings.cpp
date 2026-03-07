@@ -7447,6 +7447,9 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_json_all_paths_with_values, false, R"(
+Allow the JSONAllPathsWithValues function (returns path to value as Dynamic).
+)", EXPERIMENTAL) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
