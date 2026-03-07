@@ -23,12 +23,6 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# Test 1: Verify setting exists and defaults to true
-$CLICKHOUSE_CLIENT --query "SELECT value FROM system.settings WHERE name = 'iceberg_allow_nanosecond_timestamps'" | grep -q "1" && echo "Setting exists and defaults to true: OK" || echo "Setting exists and defaults to true: FAILED"
-
-# Test 2: Verify setting can be changed
-$CLICKHOUSE_CLIENT --query "SET iceberg_allow_nanosecond_timestamps = 0; SELECT getSetting('iceberg_allow_nanosecond_timestamps')" | grep -q "false" && echo "Setting can be disabled: OK" || echo "Setting can be disabled: FAILED"
-
 # Test 3: Create minimal synthetic Iceberg v3 table with timestamp_ns
 # Note: We create the metadata structure manually since Spark doesn't support these types yet
 mkdir -p "${TEST_DIR}/metadata"
@@ -79,10 +73,4 @@ EOF
 
 # Test 4: DESCRIBE icebergLocal - verify type mappings
 echo "Type mappings (DESCRIBE icebergLocal):"
-$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE icebergLocal('${TEST_DIR}/', 'Parquet') SETTINGS iceberg_allow_nanosecond_timestamps = 1" | cut -f 1,2 | grep -E '^(id|ts_nano)' | sort
-
-# Test 5: Verify error when setting is disabled and metadata contains nanosecond types
-$CLICKHOUSE_CLIENT -m --query "
-SET iceberg_allow_nanosecond_timestamps = 0;
-SELECT * FROM icebergLocal('${TEST_DIR}/', 'Parquet') LIMIT 0;
-" 2>&1 | grep -q "nanosecond timestamp types.*are not enabled" && echo "Error detection works: OK" || echo "Error detection works: FAILED"
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE icebergLocal('${TEST_DIR}/', 'Parquet')" | cut -f 1,2 | grep -E '^(id|ts_nano)' | sort

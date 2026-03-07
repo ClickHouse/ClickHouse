@@ -368,7 +368,7 @@ bool GlueCatalog::tryGetTableMetadata(
                     continue;
 
                 String column_type = column.GetType();
-                if (column_type == "timestamp")
+                if (column_type == "timestamp" || column_type == "timestamp_nano")
                 {
                     if (!result.requiresDataLakeSpecificProperties())
                         setup_specific_properties();
@@ -447,16 +447,9 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
     if (!metadata_objects.get(metadata_uri))
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        const auto & read_settings = getContext()->getReadSettings();
-
-        DB::StoredObject metadata_stored_object(metadata_path);
-        auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
-        String metadata_file_content;
-        readStringUntilEOF(metadata_file_content, *read_buf);
-
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(metadata_file_content);
-        auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
+        auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
+        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
+            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
         metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
 

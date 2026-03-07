@@ -344,12 +344,10 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 }
 
 /**
-* Iceberg allows these primitive type conversions:
+* Iceberg allows only three types of primitive type conversion:
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P
-* timestamp -> timestamp_ns
-* timestamptz -> timestamptz_ns
 * This function checks if `old_type` and `new_type` satisfy to one of these conditions.
 **/
 bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
@@ -357,8 +355,6 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     bool allowed_type_conversion = (old_type == new_type);
     allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
     allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
-    allowed_type_conversion |= (old_type == f_timestamp) && (new_type == f_timestamp_ns);
-    allowed_type_conversion |= (old_type == f_timestamptz) && (new_type == f_timestamptz_ns);
     if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
         auto [old_precision, old_scale] = parseDecimal(old_type);

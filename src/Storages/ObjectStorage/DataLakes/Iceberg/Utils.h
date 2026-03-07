@@ -58,6 +58,8 @@ struct TransformAndArgument
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
 
+CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

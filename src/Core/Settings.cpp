@@ -5195,9 +5195,6 @@ Possible values:
     DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
 Whether to delete all iceberg files on drop or not.
 )", 0) \
-    DECLARE(Bool, iceberg_allow_nanosecond_timestamps, true, R"(
-Allow reading Iceberg tables containing nanosecond-precision timestamp types (timestamp_ns, timestamptz_ns) introduced in Iceberg format version 3. These types are mapped to DateTime64(9) and DateTime64(9, 'UTC') respectively. Disable this setting if you encounter issues with nanosecond timestamp handling.
-)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 

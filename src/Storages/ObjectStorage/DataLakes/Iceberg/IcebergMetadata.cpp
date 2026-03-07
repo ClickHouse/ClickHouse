@@ -118,7 +118,6 @@ extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool iceberg_delete_data_on_drop;
-extern const SettingsBool iceberg_allow_nanosecond_timestamps;
 }
 
 namespace
@@ -208,132 +207,12 @@ IcebergMetadata::IcebergMetadata(
 {
 }
 
-namespace
-{
-
-bool schemaContainsNanosecondTypes(const Poco::JSON::Object::Ptr & schema)
-{
-    // Handle struct types (top-level schema or nested struct)
-    if (schema->has(Iceberg::f_fields))
-    {
-        auto fields = schema->getArray(Iceberg::f_fields);
-        for (size_t i = 0; i < fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            if (!field->has(Iceberg::f_type))
-                continue;
-
-            // Check if type is a complex type (nested object) - recurse based on its type
-            if (field->isObject(Iceberg::f_type))
-            {
-                if (schemaContainsNanosecondTypes(field->getObject(Iceberg::f_type)))
-                    return true;
-                continue;
-            }
-
-            // For primitive types, check if it's a nanosecond timestamp
-            auto type_value = field->get(Iceberg::f_type);
-            if (type_value.isString())
-            {
-                const String & type_str = type_value.extract<String>();
-                if (type_str == Iceberg::f_timestamp_ns || type_str == Iceberg::f_timestamptz_ns)
-                    return true;
-            }
-        }
-        return false;
-    }
-
-    // Handle list types - check the element type
-    if (schema->has(Iceberg::f_element))
-    {
-        if (schema->isObject(Iceberg::f_element))
-            return schemaContainsNanosecondTypes(schema->getObject(Iceberg::f_element));
-
-        // Element is a primitive type string
-        auto element_value = schema->get(Iceberg::f_element);
-        if (element_value.isString())
-        {
-            const String & type_str = element_value.extract<String>();
-            if (type_str == Iceberg::f_timestamp_ns || type_str == Iceberg::f_timestamptz_ns)
-                return true;
-        }
-        return false;
-    }
-
-    // Handle map types - check both key and value types
-    if (schema->has(Iceberg::f_key) || schema->has(Iceberg::f_value))
-    {
-        // Check key type
-        if (schema->has(Iceberg::f_key))
-        {
-            if (schema->isObject(Iceberg::f_key))
-            {
-                if (schemaContainsNanosecondTypes(schema->getObject(Iceberg::f_key)))
-                    return true;
-            }
-            else
-            {
-                auto key_value = schema->get(Iceberg::f_key);
-                if (key_value.isString())
-                {
-                    const String & type_str = key_value.extract<String>();
-                    if (type_str == Iceberg::f_timestamp_ns || type_str == Iceberg::f_timestamptz_ns)
-                        return true;
-                }
-            }
-        }
-
-        // Check value type
-        if (schema->has(Iceberg::f_value))
-        {
-            if (schema->isObject(Iceberg::f_value))
-            {
-                if (schemaContainsNanosecondTypes(schema->getObject(Iceberg::f_value)))
-                    return true;
-            }
-            else
-            {
-                auto value_value = schema->get(Iceberg::f_value);
-                if (value_value.isString())
-                {
-                    const String & type_str = value_value.extract<String>();
-                    if (type_str == Iceberg::f_timestamp_ns || type_str == Iceberg::f_timestamptz_ns)
-                        return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    return false;
-}
-
-}
-
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
-    LoggerPtr metadata_logger,
-    ContextPtr context)
+    LoggerPtr metadata_logger)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
-
-    // Check if nanosecond timestamps are present and if they're disabled
-    if (context && !context->getSettingsRef()[Setting::iceberg_allow_nanosecond_timestamps])
-    {
-        auto schemas = metadata_object->getArray(Iceberg::f_schemas);
-        for (size_t i = 0; i < schemas->size(); ++i)
-        {
-            auto schema = schemas->getObject(static_cast<UInt32>(i));
-            if (schemaContainsNanosecondTypes(schema))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Iceberg nanosecond timestamp types (timestamp_ns, timestamptz_ns) are not enabled. "
-                    "Set iceberg_allow_nanosecond_timestamps = 1 to allow reading these types.");
-            }
-        }
-    }
 
     if (format_version == 2)
     {
@@ -542,7 +421,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log, local_context);
+        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
