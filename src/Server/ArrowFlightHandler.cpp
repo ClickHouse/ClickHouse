@@ -2272,7 +2272,10 @@ arrow::Status ArrowFlightHandler::DoPut(
             }
 
             arrow::flight::protocol::sql::DoPutUpdateResult update_result;
-            update_result.set_record_count(query_context->getProcessListElement()->getInfo().written_rows);
+            if (auto element = query_context->getProcessListElement())
+                update_result.set_record_count(element->getInfo().written_rows);
+            else
+                update_result.set_record_count(0);
             ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
 
             block_io.onFinish();

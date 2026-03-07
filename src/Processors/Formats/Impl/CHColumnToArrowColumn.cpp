@@ -409,41 +409,6 @@ namespace DB
     }
 
 
-    template <typename Builder>
-    static void fillArrowArrayWithArrayColumnData(
-        const String & column_name,
-        ColumnPtr & column,
-        const DataTypePtr & column_type,
-        const PaddedPODArray<UInt8> *,
-        arrow::ArrayBuilder * array_builder,
-        String format_name,
-        size_t start,
-        size_t end,
-        const CHColumnToArrowColumn::Settings & settings,
-        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
-    {
-        const auto * column_array = assert_cast<const ColumnArray *>(column.get());
-        ColumnPtr nested_column = column_array->getDataPtr();
-        DataTypePtr nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
-        const auto & offsets = column_array->getOffsets();
-
-        Builder & builder = assert_cast<Builder &>(*array_builder);
-        arrow::ArrayBuilder * value_builder = builder.value_builder();
-        arrow::Status components_status;
-
-        for (size_t array_idx = start; array_idx < end; ++array_idx)
-        {
-            /// Start new array.
-            components_status = builder.Append();
-            checkStatus(components_status, nested_column->getName(), format_name);
-
-            /// Pass null null_map, because fillArrowArray will decide whether nested_type is nullable, if nullable, it will create a new null_map from nested_column
-            /// Note that it is only needed by gluten(https://github.com/oap-project/gluten), because array type in gluten is by default nullable.
-            /// And it does not influence the original ClickHouse logic, because null_map passed to fillArrowArrayWithArrayColumnData is always nullptr for ClickHouse doesn't allow nullable complex types including array type.
-            fillArrowArray(column_name, nested_column, nested_type, nullptr, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], settings, dictionary_values);
-        }
-    }
-
     static std::shared_ptr<arrow::Array> buildArrowStructArrayWithTupleColumnData(
         const String & column_name,
         ColumnPtr & column,
@@ -1122,7 +1087,7 @@ namespace DB
                 arrow_array = buildArrowDenseUnionArrayWithVariantColumnData(
                         column_variant,
                         column_variant_type,
-                        nullptr,
+                        null_bytemap,
                         format_name,
                         0,
                         column->size(),
