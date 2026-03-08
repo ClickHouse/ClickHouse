@@ -1,0 +1,4 @@
+Type mappings (DESCRIBE icebergLocal):
+id	Nullable(Int32)
+ts_nano	Nullable(DateTime64(9))
+ts_nano_tz	Nullable(DateTime64(9, \'UTC\'))
