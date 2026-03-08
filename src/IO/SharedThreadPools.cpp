@@ -40,6 +40,9 @@ namespace CurrentMetrics
     extern const Metric FormatParsingThreads;
     extern const Metric FormatParsingThreadsActive;
     extern const Metric FormatParsingThreadsScheduled;
+    extern const Metric MergeTreeSnapshotCommitThreads;
+    extern const Metric MergeTreeSnapshotCommitThreadsActive;
+    extern const Metric MergeTreeSnapshotCommitThreadsScheduled;
 }
 
 namespace DB
@@ -181,6 +184,12 @@ StaticThreadPool & getFetchPartitionThreadPool()
 StaticThreadPool & getActivePartsLoadingThreadPool()
 {
     static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreePartsLoaderThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getSnapshotCommitThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeSnapshotCommitThreadPool", CurrentMetrics::MergeTreeSnapshotCommitThreads, CurrentMetrics::MergeTreeSnapshotCommitThreadsActive, CurrentMetrics::MergeTreeSnapshotCommitThreadsScheduled);
     return instance;
 }
 
