@@ -50,7 +50,7 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
 add_contrib (libllvmlibc-cmake llvm-project)
-add_contrib (llvm-project-cmake llvm-project)
+add_contrib (llvm-project-cmake-new llvm-project)
 
 enable_dummy_launchers_if_needed()
 enable_heavy_build_check_if_needed()
