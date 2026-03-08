@@ -21,6 +21,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -55,6 +58,28 @@ namespace ErrorCodes
 
 InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
+}
+
+/// Strip database and table qualifications from column identifiers in the predicate.
+/// This is needed because the DELETE predicate is re-formatted as a string and re-parsed
+/// in the context of an UPDATE/ALTER query, where qualified names like db.table.column
+/// cannot be resolved. See #71760.
+static void stripQualifiedNamesImpl(ASTPtr & ast, const DatabaseAndTableWithAlias & db_and_table)
+{
+    if (auto * identifier = ast->as<ASTIdentifier>())
+        IdentifierSemantic::setColumnShortName(*identifier, db_and_table);
+
+    for (auto & child : ast->children)
+        stripQualifiedNamesImpl(child, db_and_table);
+}
+
+static void stripQualifiedNames(ASTPtr & ast, const StorageID & storage_id)
+{
+    DatabaseAndTableWithAlias db_and_table;
+    db_and_table.database = storage_id.database_name;
+    db_and_table.table = storage_id.table_name;
+    db_and_table.uuid = storage_id.uuid;
+    stripQualifiedNamesImpl(ast, db_and_table);
 }
 
 BlockIO InterpreterDeleteQuery::execute()
@@ -147,12 +172,17 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "UPDATE <table> [ON CLUSTER <cluster>] SET _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto update_query_template = "UPDATE {}{} SET `_row_exists` = 0{} WHERE {}";
 
+            /// Strip qualified column names (db.table.column → column) before formatting,
+            /// because the re-parsed UPDATE query cannot resolve them. See #71760.
+            auto predicate = delete_query.predicate->clone();
+            stripQualifiedNames(predicate, table_id);
+
             String update_query = fmt::format(
                 update_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
                 delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
-                delete_query.predicate->formatWithSecretsOneLine());
+                predicate->formatWithSecretsOneLine());
 
             ParserUpdateQuery parser;
             ASTPtr update_ast = parseQuery(
@@ -172,12 +202,16 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Build "ALTER <table> [ON CLUSTER <cluster>] UPDATE _row_exists = 0 [IN PARTITION <partition_id>] WHERE <predicate>" query
             static constexpr auto alter_query_template = "ALTER TABLE {}{} UPDATE `_row_exists` = 0{} WHERE {}";
 
+            /// Strip qualified column names (db.table.column → column) before formatting. See #71760.
+            auto predicate = delete_query.predicate->clone();
+            stripQualifiedNames(predicate, table_id);
+
             String alter_query = fmt::format(
                 alter_query_template,
                 table->getStorageID().getFullTableName(),
                 delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster),
                 delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "",
-                delete_query.predicate->formatWithSecretsOneLine());
+                predicate->formatWithSecretsOneLine());
 
             ParserAlterQuery parser;
             ASTPtr alter_ast = parseQuery(
