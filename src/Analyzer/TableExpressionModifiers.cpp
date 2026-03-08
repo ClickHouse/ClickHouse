@@ -14,6 +14,9 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
     buffer << "final: " << has_final;
 
+    if (final_by)
+        buffer << ", final_by: " << final_by->formatForErrorMessage();
+
     if (sample_size_ratio)
         buffer << ", sample_size: " << ASTSampleRatio::toString(*sample_size_ratio);
 
@@ -38,6 +41,13 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
         hash_state.update(sample_offset_ratio->numerator);
         hash_state.update(sample_offset_ratio->denominator);
     }
+
+    if (final_by)
+    {
+        auto tree_hash = final_by->getTreeHash(/*ignore_aliases=*/true);
+        hash_state.update(tree_hash.low64);
+        hash_state.update(tree_hash.high64);
+    }
 }
 
 String TableExpressionModifiers::formatForErrorMessage() const
@@ -45,6 +55,12 @@ String TableExpressionModifiers::formatForErrorMessage() const
     WriteBufferFromOwnString buffer;
     if (has_final)
         buffer << "FINAL";
+
+    if (final_by)
+    {
+        chassert(has_final);
+        buffer << " BY " << final_by->formatForErrorMessage();
+    }
 
     if (sample_size_ratio)
     {

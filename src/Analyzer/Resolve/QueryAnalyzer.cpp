@@ -4985,6 +4985,57 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
+    /// Resolve FINAL BY expressions after ORDER BY (so SELECT aliases are available).
+    /// Walk the join tree to find table expressions with FINAL BY and resolve each
+    /// expression through the query scope, which enables SELECT alias substitution.
+    {
+        auto resolve_final_by_modifiers = [&](std::optional<TableExpressionModifiers> & modifiers)
+        {
+            if (modifiers && modifiers->hasFinalBy())
+            {
+                const auto & final_by_ast = modifiers->getFinalBy();
+                QueryTreeNodes resolved_nodes;
+                resolved_nodes.reserve(final_by_ast->children.size());
+
+                for (const auto & expr_ast : final_by_ast->children)
+                {
+                    auto expr_node = buildQueryTree(expr_ast, scope.context);
+                    resolveExpressionNode(expr_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                    resolved_nodes.push_back(std::move(expr_node));
+                }
+
+                modifiers->setResolvedFinalBy(std::move(resolved_nodes));
+            }
+        };
+
+        std::stack<QueryTreeNodePtr *> nodes_to_process;
+        nodes_to_process.push(&query_node_typed.getJoinTree());
+
+        while (!nodes_to_process.empty())
+        {
+            auto * node_ptr = nodes_to_process.top();
+            nodes_to_process.pop();
+            auto & node = *node_ptr;
+
+            if (auto * table_node = node->as<TableNode>())
+                resolve_final_by_modifiers(table_node->getTableExpressionModifiers());
+            else if (auto * table_function_node = node->as<TableFunctionNode>())
+                resolve_final_by_modifiers(table_function_node->getTableExpressionModifiers());
+            else if (auto * join_node = node->as<JoinNode>())
+            {
+                nodes_to_process.push(&join_node->getLeftTableExpression());
+                nodes_to_process.push(&join_node->getRightTableExpression());
+            }
+            else if (auto * array_join_node = node->as<ArrayJoinNode>())
+                nodes_to_process.push(&array_join_node->getTableExpression());
+            else if (auto * cross_join_node = node->as<CrossJoinNode>())
+            {
+                for (auto & table_expr : cross_join_node->getTableExpressions())
+                    nodes_to_process.push(&table_expr);
+            }
+        }
+    }
+
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
 

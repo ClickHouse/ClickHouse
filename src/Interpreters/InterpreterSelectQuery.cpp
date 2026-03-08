@@ -877,6 +877,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
             }
 
+            {
+                const auto table_expressions = getTableExpressions(query);
+                if (!table_expressions.empty() && table_expressions[0]->final_by)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL BY requires the new query analyzer (enable_analyzer = 1)");
+            }
+
             if (query.prewhere() && (input_pipe || !storage || !storage->supportsPrewhere()))
             {
                 if (!input_pipe && storage)

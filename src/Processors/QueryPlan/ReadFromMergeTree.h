@@ -523,6 +523,15 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+
+    /// FINAL BY: cached validation result (computed in constructor).
+    /// `use_final_by` is true only when at least one FINAL BY expression is
+    /// non-identity (i.e. differs from the corresponding sorting key column);
+    /// identity FINAL BY is equivalent to plain FINAL and skipped.
+    bool use_final_by = false;
+    std::shared_ptr<const ActionsDAG> final_by_dag;
+    std::vector<SortColumnDescription> final_by_sort_columns;
+
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
 

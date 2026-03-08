@@ -5,12 +5,13 @@
 namespace DB
 {
 
-IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_)
+IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_, bool disable_part_level_shortcut_)
     : description(std::move(description_))
     , header(std::move(header_))
     , current_inputs(num_inputs)
     , cursors(num_inputs)
     , inputs_origin_merge_tree_part_level(num_inputs)
+    , disable_part_level_shortcut(disable_part_level_shortcut_)
 {
 }
 
