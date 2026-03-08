@@ -79,6 +79,13 @@ IndentWidth: 4
 IndentWrappedFunctionNames: false
 MacroBlockBegin: ''
 MacroBlockEnd: ''
+WhitespaceSensitiveMacros:
+  - DECLARE_DEFAULT_CODE
+  - DECLARE_X86_64_V2_SPECIFIC_CODE
+  - DECLARE_X86_64_V3_SPECIFIC_CODE
+  - DECLARE_X86_64_V4_SPECIFIC_CODE
+  - DECLARE_X86_ICELAKE_SPECIFIC_CODE
+  - DECLARE_X86_SAPPHIRE_SPECIFIC_CODE
 NamespaceIndentation: None
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true

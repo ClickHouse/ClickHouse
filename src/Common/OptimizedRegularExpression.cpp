@@ -553,7 +553,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
@@ -572,7 +572,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
