@@ -1449,6 +1449,7 @@ private:
             return;
 
         auto function_node_type = function_node.getResultType();
+        auto original_node = node;
 
         // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
         if (constant_value == 0)
@@ -1471,7 +1472,13 @@ private:
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
             /// An example when it can be Nullable - using GROUP BY with GROUPING SETS and group_by_use_nulls = true
-            chassert(removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))));
+            if (!removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))))
+            {
+                /// Types differ beyond Nullable/LowCardinality wrappers (e.g. Variant types),
+                /// bail out and keep the original equals expression.
+                node = original_node;
+                return;
+            }
             node = createCastFunction(node, function_node_type, getContext());
         }
     }
