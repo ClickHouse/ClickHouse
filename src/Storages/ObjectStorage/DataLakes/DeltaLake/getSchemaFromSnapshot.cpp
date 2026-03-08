@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -140,6 +141,8 @@ private:
     /// but instead in data paths directories.
     DB::Names partition_columns;
 
+    std::exception_ptr visitor_exception;
+
     const LoggerPtr log = getLogger("SchemaVisitor");
 
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
@@ -162,6 +165,9 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
@@ -170,6 +176,9 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
@@ -178,12 +187,18 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
     static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
@@ -191,40 +206,68 @@ public:
         auto visitor = createVisitor(data);
         [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (data.visitor_exception)
+            std::rethrow_exception(data.visitor_exception);
     }
 
 private:
-    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
+    static void setVisitorException(SchemaVisitorData * state)
     {
-        ffi::EngineSchemaVisitor visitor;
-        visitor.data = &data;
-        visitor.make_field_list = &makeFieldList;
+        if (!state->visitor_exception)
+            state->visitor_exception = std::current_exception();
+    }
 
-        visitor.visit_boolean = &simpleTypeVisitor<DB::TypeIndex::Int8, true>;
-        visitor.visit_string = &simpleTypeVisitor<DB::TypeIndex::String>;
-        visitor.visit_long = &simpleTypeVisitor<DB::TypeIndex::Int64>;
-        visitor.visit_integer = &simpleTypeVisitor<DB::TypeIndex::Int32>;
-        visitor.visit_short = &simpleTypeVisitor<DB::TypeIndex::Int16>;
-        visitor.visit_byte = &simpleTypeVisitor<DB::TypeIndex::Int8>;
-        visitor.visit_float = &simpleTypeVisitor<DB::TypeIndex::Float32>;
-        visitor.visit_double = &simpleTypeVisitor<DB::TypeIndex::Float64>;
-        visitor.visit_binary = &simpleTypeVisitor<DB::TypeIndex::String>;
-        visitor.visit_date = &simpleTypeVisitor<DB::TypeIndex::Date32>;
-        visitor.visit_timestamp = &simpleTypeVisitor<DB::TypeIndex::DateTime64>;
-        visitor.visit_timestamp_ntz = &simpleTypeVisitor<DB::TypeIndex::DateTime64>;
-
-        visitor.visit_array = &arrayTypeVisitor;
-        visitor.visit_struct = &tupleTypeVisitor;
-        visitor.visit_map = &mapTypeVisitor;
-        visitor.visit_decimal = &decimalTypeVisitor;
-
-        return visitor;
+    template <auto Func, typename... Args>
+    static std::invoke_result_t<decltype(Func), void*, Args...> visitorWrapper(void * data, Args... args)
+    {
+        SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
+        if (!state->visitor_exception)
+        {
+            try
+            {
+                return Func(data, args...);
+            }
+            catch (...)
+            {
+                setVisitorException(state);
+            }
+        }
+        if constexpr (std::is_void_v<decltype(Func(data, args...))>)
+            return;
+        else
+            return {};
     }
 
     static void visitPartitionColumn(void * data, ffi::KernelStringSlice slice)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         state->partition_columns.push_back(KernelUtils::fromDeltaString(slice));
+    }
+
+    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
+    {
+        return ffi::EngineSchemaVisitor{
+            .data = &data,
+            .make_field_list = &visitorWrapper<makeFieldList>,
+            .visit_struct = &visitorWrapper<tupleTypeVisitor>,
+            .visit_array = &visitorWrapper<arrayTypeVisitor>,
+            .visit_map = &visitorWrapper<mapTypeVisitor>,
+            .visit_decimal = &visitorWrapper<decimalTypeVisitor>,
+            .visit_string = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
+            .visit_long = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int64>>,
+            .visit_integer = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int32>>,
+            .visit_short = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int16>>,
+            .visit_byte = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8>>,
+            .visit_float = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float32>>,
+            .visit_double = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float64>>,
+            .visit_boolean = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8, true>>,
+            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
+            .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
+            .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
+            .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
+            .visit_variant = &visitorWrapper<visitVariant>,
+        };
     }
 
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
@@ -345,6 +388,21 @@ private:
         uintptr_t child_list_id)
     {
         listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
+    }
+
+    static void visitVariant(
+        [[maybe_unused]] void * data,
+        [[maybe_unused]] uintptr_t sibling_list_id,
+        [[maybe_unused]] ffi::KernelStringSlice name,
+        [[maybe_unused]] bool nullable,
+        [[maybe_unused]] const ffi::CStringMap * metadata)
+    {
+        /// Not simple to support,
+        /// delta lake has its own Variant serialization.
+        const std::string column_name(name.ptr, name.len);
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unsupported Variant data type: {}", column_name);
     }
 
     template <DB::TypeIndex type>
