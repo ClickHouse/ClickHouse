@@ -1,0 +1,71 @@
+# Test composition for the distroless ClickHouse images.
+# Requires the images to be built first — see test.sh.
+
+services:
+
+  # Basic server: no user customisation, no init scripts.
+  server-basic:
+    image: clickhouse/clickhouse-server:distroless-test
+    container_name: ch-distroless-basic
+    ports:
+      - "19000:9000"
+      - "18123:8123"
+    environment:
+      CLICKHOUSE_USER: testuser
+      CLICKHOUSE_PASSWORD: testpass
+    healthcheck:
+      test: ["/usr/bin/clickhouse", "client", "--host", "127.0.0.1", "--port", "9000",
+             "-u", "testuser", "--password", "testpass", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # Server with init scripts and a custom database.
+  server-initdb:
+    image: clickhouse/clickhouse-server:distroless-test
+    container_name: ch-distroless-initdb
+    ports:
+      - "29000:9000"
+      - "28123:8123"
+    environment:
+      CLICKHOUSE_USER: testuser
+      CLICKHOUSE_PASSWORD: testpass
+      CLICKHOUSE_DB: test_db
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["/usr/bin/clickhouse", "client", "--host", "127.0.0.1", "--port", "9000",
+             "-u", "testuser", "--password", "testpass", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
+  # Keeper node.
+  keeper:
+    image: clickhouse/clickhouse-keeper:distroless-test
+    container_name: ch-distroless-keeper
+    ports:
+      - "19181:9181"
+    healthcheck:
+      test: ["/usr/bin/clickhouse", "keeper-client", "--host", "127.0.0.1",
+             "--port", "9181", "-q", "ruok"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # Debug server: should have busybox shell at /busybox/sh.
+  server-debug:
+    image: clickhouse/clickhouse-server:distroless-debug-test
+    container_name: ch-distroless-debug
+    ports:
+      - "39000:9000"
+      - "38123:8123"
+    environment:
+      CLICKHOUSE_USER: testuser
+      CLICKHOUSE_PASSWORD: testpass
+    healthcheck:
+      test: ["/usr/bin/clickhouse", "client", "--host", "127.0.0.1", "--port", "9000",
+             "-u", "testuser", "--password", "testpass", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
