@@ -1,0 +1,3 @@
+test_elan	SELECT	db	\N	database_prefix
+test_elan	SELECT	foo	bar	exact
+test_elan	SELECT	foo	bar	table_prefix

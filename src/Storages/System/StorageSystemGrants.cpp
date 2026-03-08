@@ -39,6 +39,16 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
             "1 — The row describes a partial revoke."
         },
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
+        {"grant_scope", std::make_shared<DataTypeEnum8>(
+            DataTypeEnum8::Values{
+                {"exact",            0},
+                {"database_prefix",  1},
+                {"table_prefix",     2},
+            }), "Scope type of the grant: "
+                "'exact' — exact database/table match, "
+                "'database_prefix' — database name is a wildcard prefix (e.g. db*.*), "
+                "'table_prefix' — table name is a wildcard prefix (e.g. foo.bar*)."
+        },
     };
 }
 
@@ -68,6 +78,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_column_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_is_partial_revoke = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_grant_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_grant_scope = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](const String & grantee_name,
                        AccessEntityType grantee_type,
@@ -77,7 +88,8 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
                        const String * table,
                        const String * column,
                        bool is_partial_revoke,
-                       bool grant_option)
+                       bool grant_option,
+                       Int8 grant_scope)
     {
         if (grantee_type == AccessEntityType::USER)
         {
@@ -133,6 +145,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
 
         column_is_partial_revoke.push_back(is_partial_revoke);
         column_grant_option.push_back(grant_option);
+        column_grant_scope.push_back(grant_scope);
     };
 
     auto add_rows = [&](const String & grantee_name,
@@ -148,16 +161,22 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             const auto * database = element.anyDatabase() ? nullptr : &element.database;
             const auto * table = element.anyTable() ? nullptr : &element.table;
 
+            Int8 grant_scope = 0; /// exact
+            if (!element.anyDatabase() && element.anyTable() && element.wildcard)
+                grant_scope = 1; /// database_prefix
+            else if (!element.anyTable() && element.anyColumn() && element.wildcard)
+                grant_scope = 2; /// table_prefix
+
             if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, nullptr, element.is_partial_revoke, element.grant_option, grant_scope);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, &column, element.is_partial_revoke, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, &column, element.is_partial_revoke, element.grant_option, grant_scope);
             }
         }
     };
