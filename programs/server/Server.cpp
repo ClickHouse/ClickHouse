@@ -1755,7 +1755,10 @@ try
             CancellationChecker::getInstance().terminateThread();
     });
 
-    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    if (resolveAutoPoolSize(
+            server_settings[ServerSetting::background_schedule_pool_size],
+            background_schedule_pool_auto.min_threads,
+            background_schedule_pool_auto.cores_ratio) > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
             StorageID::createEmpty(), "CancellationChecker",
@@ -2291,7 +2294,9 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
+                auto new_pool_size = resolveAutoPoolSize(
+                    new_server_settings[ServerSetting::background_pool_size],
+                    background_pool_auto.min_threads, background_pool_auto.cores_ratio);
                 const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
@@ -2299,26 +2304,40 @@ try
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                const auto & new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
+                auto new_pool_size = resolveAutoPoolSize(
+                    new_server_settings[ServerSetting::background_move_pool_size],
+                    background_move_pool_auto.min_threads, background_move_pool_auto.cores_ratio);
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                const auto & new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
+                auto new_pool_size = resolveAutoPoolSize(
+                    new_server_settings[ServerSetting::background_fetches_pool_size],
+                    background_fetches_pool_auto.min_threads, background_fetches_pool_auto.cores_ratio);
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                const auto & new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
+                auto new_pool_size = resolveAutoPoolSize(
+                    new_server_settings[ServerSetting::background_common_pool_size],
+                    background_common_pool_auto.min_threads, background_common_pool_auto.cores_ratio);
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
-            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(resolveAutoPoolSize(
+                new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+                background_buffer_flush_pool_auto.min_threads, background_buffer_flush_pool_auto.cores_ratio));
+            global_context->getSchedulePool().increaseThreadsCount(resolveAutoPoolSize(
+                new_server_settings[ServerSetting::background_schedule_pool_size],
+                background_schedule_pool_auto.min_threads, background_schedule_pool_auto.cores_ratio));
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(resolveAutoPoolSize(
+                new_server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+                background_message_broker_pool_auto.min_threads, background_message_broker_pool_auto.cores_ratio));
+            global_context->getDistributedSchedulePool().increaseThreadsCount(resolveAutoPoolSize(
+                new_server_settings[ServerSetting::background_distributed_schedule_pool_size],
+                background_distributed_pool_auto.min_threads, background_distributed_pool_auto.cores_ratio));
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);

@@ -836,8 +836,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     - `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
     - `max_min_fair` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Similar to `fair_round_robin`, but released slots are always granted to the query with the minimum number of currently allocated slots. This provides better fairness under high oversubscription, where many queries compete for limited CPU slots. Short-running queries are not penalized by long-running queries that have accumulated more slots over time.
     )", 0) \
-    DECLARE(UInt64, background_pool_size, 16, R"(
-    Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
+    DECLARE(UInt64, background_pool_size, 0, R"(
+    Sets the number of threads performing background merges and mutations for tables with MergeTree engines. A value of 0 means auto: max(16, cpu_cores / 2).
 
     :::note
     - This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start.
@@ -883,14 +883,14 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     - `round_robin` — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
     - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
     )", 0) \
-    DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
-    DECLARE(UInt64, background_schedule_pool_size, 512, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.)", 0) \
+    DECLARE(UInt64, background_move_pool_size, 0, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background. A value of 0 means auto: max(8, cpu_cores / 4).)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 0, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background. A value of 0 means auto: max(16, cpu_cores / 2).)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 0, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background. A value of 0 means auto: max(8, cpu_cores / 4).)", 0) \
+    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 0, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background. A value of 0 means auto: max(16, cpu_cores / 2).)", 0) \
+    DECLARE(UInt64, background_schedule_pool_size, 0, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates. A value of 0 means auto: max(128, cpu_cores * 4).)", 0) \
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
-    DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
-    DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
+    DECLARE(UInt64, background_message_broker_schedule_pool_size, 0, R"(The maximum number of threads that will be used for executing background operations for message streaming. A value of 0 means auto: max(16, cpu_cores / 2).)", 0) \
+    DECLARE(UInt64, background_distributed_schedule_pool_size, 0, R"(The maximum number of threads that will be used for executing distributed sends. A value of 0 means auto: max(16, cpu_cores / 2).)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
     Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 

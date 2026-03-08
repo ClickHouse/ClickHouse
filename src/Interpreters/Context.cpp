@@ -4462,7 +4462,8 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+            resolveAutoPoolSize(shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
+                background_buffer_flush_pool_auto.min_threads, background_buffer_flush_pool_auto.cores_ratio),
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
@@ -4505,15 +4506,17 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(
-        static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
     callOnce(
         shared->schedule_pool_initialized,
         [&]
         {
+            size_t pool_size = resolveAutoPoolSize(shared->server_settings[ServerSetting::background_schedule_pool_size],
+                background_schedule_pool_auto.min_threads, background_schedule_pool_auto.cores_ratio);
+            size_t max_parallel_tasks_per_type = static_cast<size_t>(
+                static_cast<double>(pool_size)
+                * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
             shared->schedule_pool = BackgroundSchedulePool::create(
-                shared->server_settings[ServerSetting::background_schedule_pool_size],
+                pool_size,
                 max_parallel_tasks_per_type,
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
@@ -4527,7 +4530,8 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+            resolveAutoPoolSize(shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
+                background_distributed_pool_auto.min_threads, background_distributed_pool_auto.cores_ratio),
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
@@ -4541,7 +4545,8 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+            resolveAutoPoolSize(shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
+                background_message_broker_pool_auto.min_threads, background_message_broker_pool_auto.cores_ratio),
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
@@ -7144,13 +7149,17 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         return;
 
     const ServerSettings & server_settings = shared->server_settings;
-    size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
+    size_t background_pool_size = resolveAutoPoolSize(server_settings[ServerSetting::background_pool_size],
+        background_pool_auto.min_threads, background_pool_auto.cores_ratio);
     auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
     size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
     String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
-    size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
-    size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
-    size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
+    size_t background_move_pool_size = resolveAutoPoolSize(server_settings[ServerSetting::background_move_pool_size],
+        background_move_pool_auto.min_threads, background_move_pool_auto.cores_ratio);
+    size_t background_fetches_pool_size = resolveAutoPoolSize(server_settings[ServerSetting::background_fetches_pool_size],
+        background_fetches_pool_auto.min_threads, background_fetches_pool_auto.cores_ratio);
+    size_t background_common_pool_size = resolveAutoPoolSize(server_settings[ServerSetting::background_common_pool_size],
+        background_common_pool_auto.min_threads, background_common_pool_auto.cores_ratio);
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
