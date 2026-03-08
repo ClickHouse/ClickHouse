@@ -72,6 +72,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DatabaseReplicator.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -1486,6 +1487,13 @@ try
     SCOPE_EXIT_SAFE({
         async_metrics->stop();
 
+        if (DatabaseReplicator::isEnabled())
+        {
+            LOG_INFO(log, "Shutting down database replicator.");
+            DatabaseReplicator::shutdown();
+            LOG_INFO(log, "Shut down database replicator.");
+        }
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -2833,6 +2841,12 @@ try
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
+
+        /// Initialize and start DatabaseReplicator if enabled.
+        /// It can be started up after databases are loaded.
+        DatabaseReplicator::init(global_context, config());
+        if (DatabaseReplicator::isEnabled())
+            DatabaseReplicator::instance().startup();
     }
     catch (...)
     {

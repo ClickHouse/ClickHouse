@@ -15,26 +15,23 @@ class AbstractConfiguration;
 namespace DB
 {
 class ASTStorage;
-struct DatabaseReplicatedSettingsImpl;
+struct DatabaseReplicatorSettingsImpl;
 
 /// List of available types supported in ReplicatedSettings object
-#define DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, Float) \
+#define DATABASE_REPLICATOR_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, String)
 
-DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_TRAIT)
+DATABASE_REPLICATOR_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatorSettings, DECLARE_SETTING_TRAIT)
 
-struct DatabaseReplicatedSettings
+struct DatabaseReplicatorSettings
 {
-    DatabaseReplicatedSettings();
-    DatabaseReplicatedSettings(const DatabaseReplicatedSettings & settings);
-    DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept;
-    ~DatabaseReplicatedSettings();
+    DatabaseReplicatorSettings();
+    DatabaseReplicatorSettings(const DatabaseReplicatorSettings & settings);
+    DatabaseReplicatorSettings(DatabaseReplicatorSettings && settings) noexcept;
+    ~DatabaseReplicatorSettings();
 
-    DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+    DATABASE_REPLICATOR_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatorSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// Access the embedded DDL replicator settings.
@@ -44,7 +41,7 @@ struct DatabaseReplicatedSettings
     String toString() const;
 
 private:
-    std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
+    std::unique_ptr<DatabaseReplicatorSettingsImpl> impl;
     DDLReplicatorSettings ddl_replicator_settings;
 };
 

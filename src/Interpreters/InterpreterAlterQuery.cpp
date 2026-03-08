@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/DatabaseReplicator.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -379,6 +380,10 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
+    /// Forward database-level DDL through DatabaseReplicator if enabled.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
+        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+
 #if CLICKHOUSE_CLOUD
     bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
     if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
@@ -414,6 +419,10 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
             }
         }
     }
+
+    /// Update DatabaseReplicator digest after successful ALTER DATABASE.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(alter.getDatabase()))
+        DatabaseReplicator::instance().commitAlterDatabase(alter.getDatabase(), getContext());
 
     return res;
 }
