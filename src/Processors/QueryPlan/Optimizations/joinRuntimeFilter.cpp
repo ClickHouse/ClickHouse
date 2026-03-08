@@ -15,6 +15,8 @@
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/tuple.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
 
@@ -172,41 +174,137 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
+    /// Compute common types for each key pair
+    DataTypes common_types;
+    common_types.reserve(join_keys_build_side.size());
+    for (size_t i = 0; i < join_keys_build_side.size(); ++i)
     {
-        /// Pass all columns on probe side
+        const auto & join_key_build_side = join_keys_build_side[i];
+        const auto & join_key_probe_side = join_keys_probe_side[i];
+
+        if (!join_key_build_side.type->equals(*join_key_probe_side.type))
+        {
+            try
+            {
+                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
+            }
+            catch (Exception & ex)
+            {
+                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                    join_key_probe_side.name, join_key_probe_side.type->getName(),
+                    join_key_build_side.name, join_key_build_side.type->getName());
+                throw;
+            }
+        }
+        else
+        {
+            common_types.push_back(join_key_build_side.type);
+        }
+    }
+
+    /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
+    /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
+    /// but the full tuple has no match in the right table.
+    /// Instead, wrap all keys into a single Tuple and build one NOT IN filter on the tuple for exact tuple membership check.
+    const bool use_tuple_filter = check_left_does_not_contain && join_keys_build_side.size() > 1;
+
+    if (use_tuple_filter)
+    {
+        const String filter_name = filter_name_prefix + "_0";
+        auto tuple_type = std::make_shared<DataTypeTuple>(common_types);
+        FunctionOverloadResolverPtr tuple_func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+
+        /// Build side: compute tuple(key1, key2, ...) and build a single runtime filter on the tuple column.
+        /// The tuple column is a temporary column that must be stripped before the join step sees the right-side header.
+        {
+            /// Remember the original header before adding the tuple column
+            auto original_build_header = build_filter_node->step->getOutputHeader();
+
+            ActionsDAG build_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+            ActionsDAG::NodeRawConstPtrs key_nodes;
+            for (size_t i = 0; i < join_keys_build_side.size(); ++i)
+            {
+                const auto * key_node = &build_tuple_dag.findInOutputs(join_keys_build_side[i].name);
+                if (!join_keys_build_side[i].type->equals(*common_types[i]))
+                    key_node = &build_tuple_dag.addCast(*key_node, common_types[i], {}, nullptr);
+                key_nodes.push_back(key_node);
+            }
+            const auto & tuple_node = build_tuple_dag.addFunction(tuple_func, key_nodes, {});
+            build_tuple_dag.addOrReplaceInOutputs(tuple_node);
+
+            makeExpressionNodeOnTopOf(*build_filter_node, std::move(build_tuple_dag), nodes, makeDescription("Calculate right join key tuple"));
+
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from tuple of right keys and applied to tuple of left keys", filter_name);
+
+            QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
+            new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+                build_filter_node->step->getOutputHeader(),
+                tuple_node.result_name,
+                tuple_type,
+                filter_name,
+                optimization_settings.join_runtime_filter_exact_values_limit,
+                optimization_settings.join_runtime_bloom_filter_bytes,
+                optimization_settings.join_runtime_bloom_filter_hash_functions,
+                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                /*allow_to_use_not_exact_filter_=*/false);
+            new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
+            new_build_filter_node->children = {build_filter_node};
+            build_filter_node = new_build_filter_node;
+
+            /// Strip the temporary tuple column so the join step sees only the original columns
+            ActionsDAG strip_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+            strip_tuple_dag.removeUnusedActions(original_build_header->getNames(), /*allow_remove_inputs=*/false);
+            makeExpressionNodeOnTopOf(*build_filter_node, std::move(strip_tuple_dag), nodes, makeDescription("Remove temporary tuple column"));
+        }
+
+        /// Apply side: compute tuple(key1, key2, ...) and apply the filter
+        {
+            ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+            ActionsDAG::NodeRawConstPtrs key_nodes;
+            for (size_t i = 0; i < join_keys_probe_side.size(); ++i)
+            {
+                const auto * key_node = &filter_dag.findInOutputs(join_keys_probe_side[i].name);
+                if (!join_keys_probe_side[i].type->equals(*common_types[i]))
+                    key_node = &filter_dag.addCast(*key_node, common_types[i], {}, nullptr);
+                key_nodes.push_back(key_node);
+            }
+            const auto & tuple_node = filter_dag.addFunction(tuple_func, key_nodes, {});
+
+            /// Build __applyFilter(filter_name, tuple_node) condition directly,
+            /// since the tuple node is freshly created and not yet in the DAG outputs
+            const auto & filter_name_node = filter_dag.addColumn(
+                ColumnWithTypeAndName(
+                    DataTypeString().createColumnConst(0, filter_name),
+                    std::make_shared<DataTypeString>(),
+                    filter_name));
+            auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
+            const auto & condition = filter_dag.addFunction(filter_function, {&filter_name_node, &tuple_node}, {});
+            filter_dag.addOrReplaceInOutputs(condition);
+
+            QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
+            new_apply_filter_node->step = std::make_unique<FilterStep>(
+                apply_filter_node->step->getOutputHeader(), std::move(filter_dag), condition.result_name, true);
+            new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
+            new_apply_filter_node->children = {apply_filter_node};
+            apply_filter_node = new_apply_filter_node;
+        }
+    }
+    else
+    {
+        /// Standard per-column runtime filters (for INNER, SEMI, RIGHT, and single-key ANTI joins)
         ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
-            /// Make unique filter name for each of the predicates. If will be used at runtime to "connect" build side and apply side
             const String filter_name = filter_name_prefix + "_" + toString(i);
 
             const auto & join_key_build_side = join_keys_build_side[i];
             const auto & join_key_probe_side = join_keys_probe_side[i];
-
-            /// If types of left and right columns do not match then we need to deduce common super type for them
-            /// and add CAST-s to this type to build and apply sides
-            DataTypePtr common_type;
-            if (!join_key_build_side.type->equals(*join_key_probe_side.type))
-            {
-                try
-                {
-                    common_type = getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
-                }
-                catch (Exception & ex)
-                {
-                    ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                        join_key_probe_side.name, join_key_probe_side.type->getName(),
-                        join_key_build_side.name, join_key_build_side.type->getName());
-                    throw;
-                }
-            }
-            else
-            {
-                common_type = join_key_build_side.type;
-            }
+            const auto & common_type = common_types[i];
 
             LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
                 filter_name, join_key_build_side.name, join_key_probe_side.name);
@@ -216,8 +314,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
             /// Add building filter to the build subtree of join
             {
-                QueryPlan::Node * new_build_filter_node = nullptr;
-                new_build_filter_node = &nodes.emplace_back();
+                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
                 new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
                     build_filter_node->step->getOutputHeader(),
                     join_key_build_side.name,
