@@ -495,13 +495,55 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
+        /// Collect orphaned nodes (nodes whose parent doesn't exist)
+        std::vector<std::string> orphaned_nodes;
+
         for (const auto & itr : storage.container)
         {
             if (itr.key != "/")
             {
                 auto parent_path = Coordination::parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                if (storage.container.find(parent_path) != storage.container.end())
+                {
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
+                else
+                {
+                    orphaned_nodes.push_back(std::string(itr.key));
+                }
+            }
+        }
+
+        /// Handle orphaned nodes - removal requires both:
+        /// 1. remove_orphaned_nodes_on_startup config option enabled (opt-in)
+        /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
+        if (!orphaned_nodes.empty())
+        {
+            const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
+            const bool can_remove = remove_enabled && !keeper_context->digestEnabled();
+
+            if (can_remove)
+            {
+                LOG_WARNING(
+                    getLogger("KeeperSnapshotManager"),
+                    "Removing {} orphaned nodes from snapshot",
+                    orphaned_nodes.size());
+
+                for (const auto & orphan : orphaned_nodes)
+                    storage.container.erase(orphan);
+            }
+            else
+            {
+                const char * reason = !remove_enabled
+                    ? "remove_orphaned_nodes_on_startup is disabled"
+                    : "digest is enabled (set digest_enabled=false)";
+
+                LOG_WARNING(
+                    getLogger("KeeperSnapshotManager"),
+                    "Found {} orphaned nodes but cannot remove: {}",
+                    orphaned_nodes.size(),
+                    reason);
             }
         }
 
