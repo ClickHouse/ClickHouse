@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <query_plan_remove_redundant_sorting>0</query_plan_remove_redundant_sorting>
+    </settings>
+
+    <!-- Compare only ORDER BY key (baseline), ORDER BY key NATURAL, ORDER BY naturalSortKey(key). No COLLATE. -->
+    <!-- Larger volumes to make the difference between NATURAL and naturalSortKey more visible. -->
+    <create_query>CREATE TABLE nvk_2m (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE nvk_10m (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE nvk_30m (key String) Engine = Memory</create_query>
+
+    <fill_query>INSERT INTO nvk_2m SELECT concat('item', toString(number)) AS key FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO nvk_10m SELECT concat('item', toString(number)) AS key FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO nvk_30m SELECT concat('item', toString(number)) AS key FROM numbers(30000000)</fill_query>
+
+    <!-- 2M rows: full sort -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_2m ORDER BY key) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_2m ORDER BY key NATURAL) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_2m ORDER BY naturalSortKey(key)) FORMAT Null</query>
+
+    <!-- 10M rows: full sort -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_10m ORDER BY key) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_10m ORDER BY key NATURAL) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_10m ORDER BY naturalSortKey(key)) FORMAT Null</query>
+
+    <!-- 30M rows: full sort -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_30m ORDER BY key) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_30m ORDER BY key NATURAL) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM nvk_30m ORDER BY naturalSortKey(key)) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS nvk_2m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nvk_10m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nvk_30m</drop_query>
+</test>

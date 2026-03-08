@@ -12,7 +12,9 @@ namespace DB
 bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool has_dir = false;
+    bool has_natural = false;
     std::vector<bool> has_directions;
+    std::vector<bool> has_naturals;
     ParserOrderByExpressionList order_list;
     ASTPtr order_expression_list;
 
@@ -31,21 +33,28 @@ bool ParserKQLSort::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (tmp == "desc" || tmp == "asc")
             has_dir = true;
 
+        if (tmp == "natural")
+            has_natural = true;
+
         if (new_pos->type == TokenType::Comma)
         {
             has_directions.push_back(has_dir);
+            has_naturals.push_back(has_natural);
             has_dir = false;
+            has_natural = false;
         }
 
         ++new_pos;
     }
     has_directions.push_back(has_dir);
+    has_naturals.push_back(has_natural);
 
     for (uint64_t i = 0; i < order_expression_list->children.size(); ++i)
     {
+        auto * order_expr = order_expression_list->children[i]->as<ASTOrderByElement>();
+        order_expr->is_natural = has_naturals[i];
         if (!has_directions[i])
         {
-            auto * order_expr = order_expression_list->children[i]->as<ASTOrderByElement>();
             order_expr->direction = -1; // default desc
             if (!order_expr->nulls_direction_was_explicitly_specified)
                 order_expr->nulls_direction = -1;
