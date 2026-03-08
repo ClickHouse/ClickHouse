@@ -44,3 +44,42 @@ def test_writes_create_version_hint(started_cluster_iceberg_with_spark, format_v
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_writes_create_version_hint_from_numeric_with_full_path(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_create_version_hint_from_numeric_with_full_path_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String, y Int64)", format_version, use_version_hint=True)
+
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    version_hint_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text"
+    instance.exec_in_container(["bash", "-c", f"printf '1' > {version_hint_path}"])
+
+    # Exercise the read path against a numeric version-hint value before the write path updates it.
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);",
+        settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t1\n'
+
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    target_suffix = b"v2.metadata.json"
+    with open(version_hint_path, "rb") as f:
+        assert f.read().strip().endswith(target_suffix)
