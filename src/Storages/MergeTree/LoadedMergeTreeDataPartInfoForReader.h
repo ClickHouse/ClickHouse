@@ -85,19 +85,19 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
-    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
+    void setSkipIndexesExtraData(const SkipIndexesExtraData & extra_data_, const NamesAndTypesList & read_columns) override
     {
         if (read_columns.contains("_distance"))
-            read_hints = read_hints_;
+            skip_indexes_extra_data = extra_data_;
     }
 
-    const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
+    const SkipIndexesExtraData & getSkipIndexesExtraData() const override { return skip_indexes_extra_data; }
 
     size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
-    RangesInDataPartReadHints read_hints;
+    SkipIndexesExtraData skip_indexes_extra_data;
 };
 
 }

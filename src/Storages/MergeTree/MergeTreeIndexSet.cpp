@@ -93,10 +93,10 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+    if (state.version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", state.version);
 
     UInt64 rows_to_read = 0;
     readBinary(rows_to_read, istr);
@@ -120,10 +120,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         auto & elem = block.getByPosition(i);
         elem.column = elem.column->cloneEmpty();
 
-        ISerialization::DeserializeBinaryBulkStatePtr state;
+        ISerialization::DeserializeBinaryBulkStatePtr deser_state;
 
-        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, deser_state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, deser_state, nullptr);
 
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
             column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());

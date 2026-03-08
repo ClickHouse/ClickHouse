@@ -26,7 +26,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         std::vector<Range> && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
 
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }

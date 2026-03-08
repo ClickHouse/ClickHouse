@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -170,23 +172,19 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
-    bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
+    bool is_vector_search = read_info->skip_indexes_extra_data.vector_search_results.has_value();
     if (is_vector_search)
-        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints, read_info->task_columns.columns);
+        new_readers.main->data_part_info_for_read->setSkipIndexesExtraData(read_info->skip_indexes_extra_data, read_info->task_columns.columns);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
         if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
         {
-            /// Do not skip marks for queries with FINAL in the reader,
-            /// because it may affect the result of the merging algorithm.
-            bool can_skip_marks = !index_read_task->is_final;
-
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                can_skip_marks));
+                read_info->skip_indexes_extra_data.index_granules));
         }
         else
         {
@@ -194,7 +192,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         }
 
         if (is_vector_search)
-            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
+            new_readers.prewhere.back()->data_part_info_for_read->setSkipIndexesExtraData(read_info->skip_indexes_extra_data, pre_columns_per_step);
     }
 
     auto create_patch_reader = [&](size_t part_idx)
@@ -311,13 +309,24 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
 
     const PaddedPODArray<UInt64> * part_rows = nullptr;
     if (lazy_materializing_rows)
-    {
         part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
-        // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
-    }
 
     if (index_read_result || lazy_materializing_rows)
     {
+        /// Inject granules from skip index read result into prewhere text index readers.
+        if (index_read_result && index_read_result->skip_index_read_result)
+        {
+            for (auto & prewhere_reader : readers.prewhere)
+            {
+                if (auto * text_reader = dynamic_cast<MergeTreeReaderTextIndex *>(prewhere_reader.get()))
+                {
+                    auto it = index_read_result->skip_index_read_result->index_granules.find(text_reader->getIndexName());
+                    if (it != index_read_result->skip_index_read_result->index_granules.end())
+                        text_reader->setGranule(it->second);
+                }
+            }
+        }
+
         bool can_read_incomplete_granules = readers.main->canReadIncompleteGranules()
             && std::ranges::all_of(readers.prewhere, [](const auto & reader)
             {

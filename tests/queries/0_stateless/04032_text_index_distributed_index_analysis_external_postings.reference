@@ -1,0 +1,8 @@
+-- { echo }
+
+-- Without distributed index analysis
+SELECT count() FROM text_idx_ext_postings WHERE hasToken(text, 'needle') SETTINGS distributed_index_analysis = 0;
+100
+-- With distributed index analysis (exercises external postings serialization)
+SELECT count() FROM text_idx_ext_postings WHERE hasToken(text, 'needle') SETTINGS distributed_index_analysis = 1;
+100

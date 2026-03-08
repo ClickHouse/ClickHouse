@@ -8,11 +8,15 @@
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
+#include <memory>
+#include <unordered_map>
 
 namespace DB
 {
 
 class IMergeTreeDataPart;
+struct IMergeTreeIndexGranule;
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// The only purpose of this struct is that serialize and deserialize methods
@@ -23,6 +27,9 @@ struct RangesInDataPartDescription
     MarkRanges ranges{};
     size_t rows = 0;
     String projection_name;
+    /// Serialized index granules from distributed analysis (index_name -> binary data).
+    /// Carried through the parallel replicas protocol so workers can receive preloaded granules.
+    std::unordered_map<String, String> serialized_index_granules;
 
     void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
     String describe() const;
@@ -77,11 +84,15 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
     }
 };
 
+using IndexGranulesMap = std::unordered_map<String, MergeTreeIndexGranulePtr>;
+
 /// A vehicle which transports additional information to optimize searches
-struct RangesInDataPartReadHints
+struct SkipIndexesExtraData
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// Preloaded index granules from planning-time analysis (index_name -> granule)
+    IndexGranulesMap index_granules;
 };
 
 struct RangesInDataPart
@@ -92,7 +103,7 @@ struct RangesInDataPart
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-    RangesInDataPartReadHints read_hints;
+    SkipIndexesExtraData skip_indexes_extra_data;
 
     /// The above "ranges" member is the selected ranges after index analysis.
     /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes

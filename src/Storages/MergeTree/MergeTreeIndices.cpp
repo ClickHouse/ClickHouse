@@ -80,7 +80,7 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
-    deserializeBinary(*stream->getDataBuffer(), state.version);
+    deserializeBinary(*stream->getDataBuffer(), state);
 }
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(

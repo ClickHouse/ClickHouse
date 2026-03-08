@@ -7,7 +7,9 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <IO/VarInt.h>
 
 template <>
@@ -39,6 +41,17 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_p
 
     if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
         writeBinary(projection_name, out);
+
+    if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_INDEX_GRANULES)
+    {
+        writeVarUInt(serialized_index_granules.size(), out);
+
+        for (const auto & [name, data] : serialized_index_granules)
+        {
+            writeBinary(name, out);
+            writeBinary(data, out);
+        }
+    }
 }
 
 String RangesInDataPartDescription::describe() const
@@ -64,6 +77,24 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_p
 
     if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
         readBinary(projection_name, in);
+
+    if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_INDEX_GRANULES)
+    {
+        size_t count = 0;
+        readVarUInt(count, in);
+
+        if (count > 1000)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many serialized index granules: {}", count);
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            String name;
+            String data;
+            readBinary(name, in);
+            readBinary(data, in);
+            serialized_index_granules[std::move(name)] = std::move(data);
+        }
+    }
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const
@@ -125,11 +156,21 @@ RangesInDataPart::RangesInDataPart(
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
+    std::unordered_map<String, String> serialized_granules;
+
+    for (const auto & [name, granule] : skip_indexes_extra_data.index_granules)
+    {
+        WriteBufferFromOwnString buf;
+        granule->serializeBinary(buf);
+        serialized_granules[name] = buf.str();
+    }
+
     return RangesInDataPartDescription{
         .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
         .ranges = ranges,
         .rows = getRowsCount(),
         .projection_name = data_part->isProjectionPart() ? data_part->name : "",
+        .serialized_index_granules = std::move(serialized_granules),
     };
 }
 

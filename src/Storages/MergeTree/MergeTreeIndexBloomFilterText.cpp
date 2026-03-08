@@ -52,10 +52,10 @@ void MergeTreeIndexGranuleBloomFilterText::serializeBinary(WriteBuffer & ostr) c
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), params.filter_size);
 }
 
-void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+    if (state.version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", state.version);
 
     for (auto & bloom_filter : bloom_filters)
     {

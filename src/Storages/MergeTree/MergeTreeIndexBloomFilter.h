@@ -29,7 +29,7 @@ public:
     size_t memoryUsageBytes() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
 
     const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 

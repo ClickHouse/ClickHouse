@@ -62,7 +62,7 @@ void sortResponseRanges(RangesInDataPartsDescription & result)
     {
         if (new_result.empty() || new_result.back().info != ranges_in_part.info)
             new_result.push_back(
-                RangesInDataPartDescription{.info = ranges_in_part.info, .projection_name = ranges_in_part.projection_name});
+                RangesInDataPartDescription{.info = ranges_in_part.info, .projection_name = ranges_in_part.projection_name, .serialized_index_granules = {}});
 
         new_result.back().ranges.insert(
             new_result.back().ranges.end(),
@@ -211,6 +211,10 @@ public:
     virtual bool isReadingCompleted() const { return false; }
     virtual bool initializedWithEmptyRanges() const { return false; }
 
+    /// Preloaded index granules per part, extracted from announcements.
+    /// Key is part-or-projection name, value is the serialized granules map.
+    std::unordered_map<String, std::unordered_map<String, String>> index_granules_per_part;
+
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
         if (++received_initial_requests > replicas_count)
@@ -221,6 +225,17 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", announcement.replica_num);
 
         replica_status[announcement.replica_num].is_announcement_received = true;
+
+        /// Extract and store serialized index granules from the announcement.
+        for (auto & desc : announcement.description)
+        {
+            if (!desc.serialized_index_granules.empty())
+            {
+                auto part_name = desc.getPartOrProjectionName();
+                if (!index_granules_per_part.contains(part_name))
+                    index_granules_per_part[std::move(part_name)] = std::move(desc.serialized_index_granules);
+            }
+        }
 
         doHandleInitialAllRangesAnnouncement(std::move(announcement));
     }
@@ -520,7 +535,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = distribution_queue.begin()->info, .projection_name = distribution_queue.begin()->projection_name};
+            result = {.info = distribution_queue.begin()->info, .projection_name = distribution_queue.begin()->projection_name, .serialized_index_granules = {}};
         }
 
         /// NOTE: this works because ranges are not considered by the comparator
@@ -621,7 +636,7 @@ void DefaultCoordinator::tryToStealFromQueue(
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = part_ranges.info, .projection_name = part_ranges.projection_name};
+            result = {.info = part_ranges.info, .projection_name = part_ranges.projection_name, .serialized_index_granules = {}};
         }
 
         if (replica_can_read_part(replica_num, part_ranges))
@@ -676,7 +691,7 @@ void DefaultCoordinator::processPartsFurther(
             return;
         }
 
-        RangesInDataPartDescription result{.info = part.description.info, .projection_name = part.description.projection_name};
+        RangesInDataPartDescription result{.info = part.description.info, .projection_name = part.description.projection_name, .serialized_index_granules = {}};
 
         auto & part_ranges = part.description.ranges;
         auto & part_description = part.description;
@@ -761,7 +776,7 @@ void DefaultCoordinator::enqueueSegment(const RangesInDataPartDescription & desc
     {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(
-            RangesInDataPartDescription{.info = description.info, .ranges = {segment}, .projection_name = description.projection_name});
+            RangesInDataPartDescription{.info = description.info, .ranges = {segment}, .projection_name = description.projection_name, .serialized_index_granules = {}});
         LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, description.getPartOrProjectionName(), owner);
     }
     else
@@ -771,7 +786,7 @@ void DefaultCoordinator::enqueueSegment(const RangesInDataPartDescription & desc
 void DefaultCoordinator::enqueueToStealerOrStealingQueue(const RangesInDataPartDescription & description, const MarkRange & segment)
 {
     auto && range = RangesInDataPartDescription{.info = description.info, .ranges = {segment},
-                                                .projection_name = description.projection_name};
+                                                .projection_name = description.projection_name, .serialized_index_granules = {}};
     const auto stealer_by_hash = computeConsistentHash(
         description.getPartOrProjectionName(),
         roundDownToMultiple(segment.begin, mark_segment_size),
@@ -860,6 +875,14 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     }
 
     sortResponseRanges(response.description);
+
+    /// Attach preloaded index granules (from distributed analysis) to each part description in the response.
+    for (auto & desc : response.description)
+    {
+        auto it = index_granules_per_part.find(desc.getPartOrProjectionName());
+        if (it != index_granules_per_part.end())
+            desc.serialized_index_granules = it->second;
+    }
 
     LOG_TRACE(
         log,
@@ -1095,6 +1118,14 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     if (!overall_number_of_marks)
         response.finish = true;
+
+    /// Attach preloaded index granules (from distributed analysis) to each part description in the response.
+    for (auto & desc : response.description)
+    {
+        auto it = index_granules_per_part.find(desc.getPartOrProjectionName());
+        if (it != index_granules_per_part.end())
+            desc.serialized_index_granules = it->second;
+    }
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += overall_number_of_marks;
