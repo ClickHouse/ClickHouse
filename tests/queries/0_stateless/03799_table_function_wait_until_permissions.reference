@@ -1,0 +1,16 @@
+--- Create table and user ---
+--- Direct SELECT (not enough privileges) ---
+1
+--- waitUntil() (also not enough privileges) ---
+1
+--- Grant to user ---
+--- Direct SELECT (has privileges) ---
+1	flag1
+2	flag2
+--- waitUntil() (also has privileges) ---
+1
+--- Create row policy to user ---
+--- Direct SELECT (row policy should filter to one row) ---
+1	flag1
+--- waitUntil() must also respect row policy ---
+1
