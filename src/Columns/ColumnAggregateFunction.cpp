@@ -459,11 +459,11 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     WeakHash32 hash(s);
     auto & hash_data = hash.getData();
 
-    std::vector<UInt8> v;
+    VectorWithMemoryTracking<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
         {
-            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+            WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> wbuf(v);
             func->serialize(data[i], wbuf, version);
         }
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
@@ -718,10 +718,10 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
-    MutableColumns columns(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
         column = createView();
 

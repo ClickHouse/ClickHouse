@@ -27,7 +27,7 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> dynamic_path_states;
     std::vector<String> dynamic_paths;
-    std::vector<String> dynamic_sub_paths;
+    VectorWithMemoryTracking<String> dynamic_sub_paths;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
 

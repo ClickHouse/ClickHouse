@@ -405,7 +405,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -571,7 +571,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());

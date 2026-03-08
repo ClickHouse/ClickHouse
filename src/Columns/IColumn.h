@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
@@ -85,8 +86,8 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
-    std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
+    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
 /// Helper throw functions so Column headers don't need to include Exception.h.
@@ -343,7 +344,7 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
@@ -355,7 +356,7 @@ public:
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -527,7 +528,7 @@ public:
       * For default implementation, see scatterImpl.
       */
     using Selector = PaddedPODArray<UInt64>;
-    [[nodiscard]] virtual std::vector<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -551,7 +552,7 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
+    virtual void prepareForSquashing(const VectorWithMemoryTracking<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
@@ -645,7 +646,7 @@ public:
             const Versions & versions;
         };
 
-        std::vector<Source> sources;
+        VectorWithMemoryTracking<Source> sources;
 
         /// Can be omitted in case of one source.
         const Offsets * src_col_indices = nullptr;
@@ -717,7 +718,7 @@ public:
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+    virtual void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
     /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
     virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
     /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
@@ -906,7 +907,7 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    MutableColumns scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
@@ -950,10 +951,10 @@ private:
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

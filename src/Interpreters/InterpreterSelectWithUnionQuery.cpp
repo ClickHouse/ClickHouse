@@ -235,7 +235,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeade
                             common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {

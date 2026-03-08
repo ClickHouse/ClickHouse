@@ -78,26 +78,26 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
 
-    using NestedColumns = std::vector<WrappedPtr>;
+    using NestedColumns = VectorWithMemoryTracking<WrappedPtr>;
 
     /// Create an empty column with provided variants.
     /// Variants are in global order.
     explicit ColumnVariant(MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    explicit ColumnVariant(MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
+    explicit ColumnVariant(MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     /// Create column from discriminators column and list of variant columns.
     /// Offsets column should be constructed according to the discriminators.
     /// Variants are in global order.
     ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
+    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     /// Create column from discriminators column, offsets column and list of variant columns.
     /// Variants are in global order.
     ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_);
     /// Variants are in local order according to provided mapping.
-    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
+    ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     ColumnVariant(const ColumnVariant &) = default;
 
@@ -106,42 +106,45 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested variants.
       */
     using Base = COWHelper<IColumnHelper<ColumnVariant>, ColumnVariant>;
-    static Ptr create(const Columns & variants_) { return create(variants_, {}); }
-    static Ptr create(const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
-    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, {}); }
-    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
-    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_) { return create(local_discriminators_, offsets_, variants_, {}); }
-    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_, const std::vector<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const Columns & variants_) { return create(variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_) { return create(local_discriminators_, variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const ColumnPtr & local_discriminators_, const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
+    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_) { return create(local_discriminators_, offsets_, variants_, VectorWithMemoryTracking<Discriminator>{}); }
+    static Ptr create(const ColumnPtr & local_discriminators_, const DB::ColumnPtr & offsets_, const Columns & variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_);
 
     static MutablePtr create(MutableColumns && variants_)
     {
         return Base::create(std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
+    static MutablePtr create(MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
         return Base::create(std::move(variants_), local_to_global_discriminators_);
     }
+
 
     static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_)
     {
         return Base::create(std::move(local_discriminators_), std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
+    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
         return Base::create(std::move(local_discriminators_), std::move(variants_), local_to_global_discriminators_);
     }
+
 
     static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_)
     {
         return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_));
     }
 
-    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_)
+    static MutablePtr create(MutableColumnPtr local_discriminators_, MutableColumnPtr offsets_, MutableColumns && variants_, const VectorWithMemoryTracking<Discriminator> & local_to_global_discriminators_)
     {
         return Base::create(std::move(local_discriminators_), std::move(offsets_), std::move(variants_), local_to_global_discriminators_);
     }
+
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Variant"; }
@@ -198,10 +201,10 @@ public:
 #endif
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
-    void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertFrom(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping);
     /// Don't insert data into variant with skip_discriminator global discriminator, it will be processed separately.
-    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator);
-    void insertManyFrom(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator);
+    void insertManyFrom(const IColumn & src_, size_t position, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> & global_discriminators_mapping);
 
     /// Methods for insertion into a specific variant.
     void insertIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t n);
@@ -230,7 +233,7 @@ public:
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
@@ -246,7 +249,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -325,7 +328,7 @@ public:
         return true;
     }
 
-    std::vector<Discriminator> getLocalToGlobalDiscriminatorsMapping() const { return local_to_global_discriminators; }
+    VectorWithMemoryTracking<Discriminator> getLocalToGlobalDiscriminatorsMapping() const { return local_to_global_discriminators; }
 
     /// Check if we have only 1 non-empty variant and no NULL values,
     /// and if so, return the discriminator of this non-empty column.
@@ -346,20 +349,20 @@ public:
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.
     /// This extension doesn't rewrite any data, just adds new empty variants and modifies global/local discriminators matching.
-    void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
+    void extend(const VectorWithMemoryTracking<Discriminator> & old_to_new_global_discriminators, VectorWithMemoryTracking<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override;
 
     void validateState() const;
 
 private:
-    void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
-    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator);
-    void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertFromImpl(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator);
+    void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);
 
     void initIdentityGlobalToLocalDiscriminatorsMapping();
     void constructOffsetsFromDiscriminators();
@@ -371,8 +374,8 @@ private:
     WrappedPtr offsets;
     NestedColumns variants;
 
-    std::vector<Discriminator> global_to_local_discriminators;
-    std::vector<Discriminator> local_to_global_discriminators;
+    VectorWithMemoryTracking<Discriminator> global_to_local_discriminators;
+    VectorWithMemoryTracking<Discriminator> local_to_global_discriminators;
 };
 
 

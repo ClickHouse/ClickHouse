@@ -249,7 +249,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 

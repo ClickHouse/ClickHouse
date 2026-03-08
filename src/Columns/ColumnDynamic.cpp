@@ -144,14 +144,14 @@ void extendVariantColumn(
     IColumn & variant_column,
     const DataTypePtr & old_variant_type,
     const DataTypePtr & new_variant_type,
-    std::unordered_map<String, UInt8> old_variant_name_to_discriminator)
+    UnorderedMapWithMemoryTracking<String, UInt8> old_variant_name_to_discriminator)
 {
     const DataTypes & current_variants =  assert_cast<const DataTypeVariant *>(old_variant_type.get())->getVariants();
     const DataTypes & new_variants = assert_cast<const DataTypeVariant *>(new_variant_type.get())->getVariants();
 
-    std::vector<std::pair<MutableColumnPtr, ColumnVariant::Discriminator>> new_variant_columns_and_discriminators_to_add;
+    VectorWithMemoryTracking<std::pair<MutableColumnPtr, ColumnVariant::Discriminator>> new_variant_columns_and_discriminators_to_add;
     new_variant_columns_and_discriminators_to_add.reserve(new_variants.size() - current_variants.size());
-    std::vector<ColumnVariant::Discriminator> current_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> current_to_new_discriminators;
     current_to_new_discriminators.resize(current_variants.size());
 
     for (ColumnVariant::Discriminator discr = 0; discr != new_variants.size(); ++discr)
@@ -175,7 +175,7 @@ void ColumnDynamic::updateVariantInfoAndExpandVariantColumn(const DataTypePtr & 
     variant_mappings_cache.clear();
 }
 
-std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const ColumnDynamic::VariantInfo & other_variant_info)
+VectorWithMemoryTracking<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const ColumnDynamic::VariantInfo & other_variant_info)
 {
     /// Check if we already have global discriminators mapping for other Variant in cache.
     /// It's used to not calculate the same mapping each call of insertFrom with the same columns.
@@ -216,7 +216,7 @@ std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const
     }
 
     /// Create a global discriminators mapping for other variant.
-    std::vector<ColumnVariant::Discriminator> other_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(other_variants.size());
     for (size_t i = 0; i != other_variants.size(); ++i)
         other_to_new_discriminators.push_back(variant_info.variant_name_to_discriminator[other_variant_info.variant_names[i]]);
@@ -489,7 +489,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     /// all other variants will be inserted into shared variant.
     const auto & src_variants = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants();
     /// Mapping from global discriminators of src_variant to the new variant we will create.
-    std::vector<ColumnVariant::Discriminator> other_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(dynamic_src.variant_info.variant_names.size());
 
     /// Check if we cannot add any more new variants. In this case we will insert all new variants into shared variant.
@@ -509,7 +509,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     else
     {
         /// Create list of pairs <size, discriminator> and sort it.
-        std::vector<std::pair<size_t, ColumnVariant::Discriminator>> new_variants_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, ColumnVariant::Discriminator>> new_variants_with_sizes;
         new_variants_with_sizes.reserve(dynamic_src.variant_info.variant_names.size());
         const auto & src_variant_column = dynamic_src.getVariantColumn();
         for (const auto & [name, discr] : dynamic_src.variant_info.variant_name_to_discriminator)
@@ -1024,7 +1024,7 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
 
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+    UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
     return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
@@ -1119,7 +1119,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1142,7 +1142,7 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t f
     prepareVariantsForSquashing(source_columns, factor);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1150,7 +1150,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     /// exceed the limit, in this case we will choose the most frequent variants.
 
     /// Collect all variants and their total sizes.
-    std::unordered_map<String, size_t> total_variant_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> total_variant_sizes;
     DataTypes all_variants;
 
     auto add_variants = [&](const ColumnDynamic & source_dynamic)
@@ -1199,7 +1199,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
             result_variants.push_back(variant);
 
         /// Create list of remaining variants with their sizes and sort it.
-        std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(all_variants.size() - variant_info.variant_names.size());
         for (const auto & variant : all_variants)
         {
@@ -1233,7 +1233,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        Columns source_variant_columns;
+        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
         {
@@ -1258,7 +1258,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
@@ -1276,7 +1276,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// We want to construct resulting variant with most frequent variants from source columns and convert the rarest
     /// variants to single String variant if we exceed the limit of variants.
     /// First, collect all variants from all source columns and calculate total sizes.
-    std::unordered_map<String, size_t> total_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> total_sizes;
     DataTypes all_variants;
     /// Add shared variant type in advance;
     all_variants.push_back(getSharedVariantDataType());
@@ -1337,7 +1337,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     if (!canAddNewVariants(0, all_variants.size()))
     {
         /// Create a list of variants with their sizes and names and then sort it.
-        std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+        VectorWithMemoryTracking<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(all_variants.size());
         for (const auto & variant : all_variants)
         {
@@ -1387,7 +1387,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// Variants can also contain Dynamic columns inside, we should collect
     /// all source variants that will be used in the resulting merged column
     /// and call takeDynamicStructureFromSourceColumns on all resulting variants.
-    std::vector<Columns> variants_source_columns;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
     variants_source_columns.resize(variant_info.variant_names.size());
     for (const auto & source_column : source_columns)
     {

@@ -416,7 +416,7 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                std::vector<char *> memories(rows);
+                VectorWithMemoryTracking<char *> memories(rows);
                 serialized_keys.resize(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {

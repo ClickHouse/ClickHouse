@@ -1187,7 +1187,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
         size_t num_old_variants = column_variant.getNumVariants();
         Columns new_variant_columns;
         new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-        std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
+        VectorWithMemoryTracking<ColumnVariant::Discriminator> new_local_to_global_discriminators;
         new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
         for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
         {
