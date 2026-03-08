@@ -1,0 +1,41 @@
+-- caseFoldUTF8 aggressive (default)
+hello world
+strasse
+héllo
+ffi
+viii	ⅷ
+-- caseFoldUTF8 conservative
+hello world
+strasse
+héllo
+ffi
+-- accentFoldUTF8
+cafe resume naive
+Angstrom
+pinata
+-- foldUTF8 aggressive (default)
+cafe resume
+hello world
+strasse
+dzefficient	ǆefficient
+-- foldUTF8 conservative
+cafe resume
+hello world
+-- caseFoldUTF8 with special I handling
+i̇stanbul
+istanbul
+-- empty strings
+
+
+
+-- ASCII only
+abc
+abc
+abc
+-- table test
+			
+Hello World	hello world	Hello World	hello world
+HÉLLO	héllo	HELLO	hello
+Straße	strasse	Straße	strasse
+café résumé	café résumé	cafe resume	cafe resume
+ﬃ	ffi	ﬃ	ffi
