@@ -2119,6 +2119,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupFormat
 groupNumericIndexedVector
 groupUniqArray
 grouparray
