@@ -149,15 +149,22 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
+    /// Use pre-captured context and settings from extras when available (captured at read pool
+    /// construction time when the storage was guaranteed to be alive). This avoids accessing
+    /// `data_part->storage` which is a bare reference that can become dangling if the storage is
+    /// destroyed while a query is still reading (e.g., DROP TABLE concurrent with SELECT).
+    auto context = extras.context ? extras.context : read_info->data_part->storage.getContext();
+    auto settings = extras.storage_settings ? extras.storage_settings : read_info->data_part->storage.getSettings();
+
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
+        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions, context);
 
         return createMergeTreeReader(
             part_info,
             columns_to_read,
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            settings,
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -203,7 +210,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            settings,
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,

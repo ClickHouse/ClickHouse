@@ -56,6 +56,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
+    , storage_settings(!parts_ranges.empty() ? parts_ranges.front().data_part->storage.getSettings() : nullptr)
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
@@ -423,6 +424,8 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .patch_join_cache = patch_join_cache.get(),
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
+        .context = getContext(),
+        .storage_settings = storage_settings,
         .profile_callback = profile_callback,
     };
 }

@@ -137,6 +137,8 @@ public:
         PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings;
         StorageSnapshotPtr storage_snapshot{};
+        ContextPtr context{};
+        MergeTreeSettingsPtr storage_settings{};
         ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
     };
