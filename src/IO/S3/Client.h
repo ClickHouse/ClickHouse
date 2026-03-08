@@ -77,11 +77,15 @@ public:
     void registerClient(const std::shared_ptr<ClientCache> & client_cache);
     void unregisterClient(ClientCache * client);
     void clearCacheForAll();
+    std::shared_ptr<ClientCache> getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket);
+
 private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
+    std::unordered_map<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
+    std::mutex cache_by_key_mutex;
+    std::unordered_map<std::string, std::weak_ptr<ClientCache>> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -128,7 +132,8 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            const ClientSettings & client_settings);
+            const ClientSettings & client_settings,
+            const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     std::unique_ptr<Client> clone() const;
 
@@ -240,6 +245,9 @@ public:
 
     const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
+    /// For testing purposes only
+    ClientCache * getRawCache() const { return cache.get(); }
+
 protected:
     // visible for testing
     Client(size_t max_redirects_,
@@ -247,7 +255,8 @@ protected:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           const ClientSettings & client_settings_);
+           const ClientSettings & client_settings_,
+           const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
 private:
     Client(
@@ -346,7 +355,8 @@ public:
         ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
-        const String & session_token = "");
+        const String & session_token = "",
+        const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

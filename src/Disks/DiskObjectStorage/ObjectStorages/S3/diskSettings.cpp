@@ -218,6 +218,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             LOG_DEBUG(getLogger("getClient"), "Got new access tokens {} {} {}", access_key_id, secret_access_key, session_token);
         }
     }
+    auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
     return S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
@@ -227,7 +228,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         auth_settings.server_side_encryption_kms_config,
         auth_settings.getHeaders(),
         credentials_configuration,
-        session_token);
+        session_token,
+        shared_cache);
 }
 
 }
