@@ -231,10 +231,9 @@ private:
 
         auto remap_store = [this, &new_mapping](DDSketchDenseStore & old_store, std::unique_ptr<DDSketchDenseStore> & target_store)
         {
-            for (int i = 0; i < old_store.length(); ++i)
+            for (int old_index = old_store.min_key; old_index <= old_store.max_key; ++old_index)
             {
-                int old_index = i + old_store.offset;
-                Float64 old_bin_count = old_store.bins[i];
+                Float64 old_bin_count = old_store.bins[old_index - old_store.offset];
 
                 if (old_bin_count == 0)
                     continue;
