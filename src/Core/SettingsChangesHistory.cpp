@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
+            {"allow_experimental_json_all_paths_with_values", false, false, "Allow JSONAllPathsWithValues function"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -71,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
             {"enable_full_text_index", false, true, "The text index is now GA"},
             {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"allow_experimental_optimize_json_cast_to_map_access", false, false, "Allow rewriting JSONAllPathsWithValues subscript to getSubcolumn for pushdown"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},

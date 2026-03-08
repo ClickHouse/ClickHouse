@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Storages/IStorage.h>
 
@@ -25,6 +27,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
@@ -39,10 +42,109 @@ namespace Setting
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
+    extern const SettingsBool allow_experimental_optimize_json_cast_to_map_access;
 }
 
 namespace
 {
+
+/** Rewrite JSONAllPathsWithValues(json)['key'] and JSONAllPathsWithValues(json)::Map(String, T)['key']
+  * to getSubcolumn(json, 'key') [wrapped in CAST to T when a Map value type is requested]
+  * for pushdown.
+  */
+  class OptimizeJsonAllPathsSubscriptVisitor
+  : public InDepthQueryTreeVisitorWithContext<OptimizeJsonAllPathsSubscriptVisitor>
+{
+public:
+  using Base = InDepthQueryTreeVisitorWithContext<OptimizeJsonAllPathsSubscriptVisitor>;
+  using Base::Base;
+
+  void leaveImpl(QueryTreeNodePtr & node)
+  {
+      auto * func = node->as<FunctionNode>();
+      if (!func || (func->getFunctionName() != "mapElement" && func->getFunctionName() != "arrayElement"))
+          return;
+
+      auto & args = func->getArguments().getNodes();
+      if (args.size() != 2) 
+          return;
+
+      auto * key_const = args[1]->as<ConstantNode>();
+      if (!key_const || key_const->getValue().getType() != Field::Types::String) 
+          return;
+
+      auto json_node = tryExtractJsonSource(args[0]);
+      if (!json_node)
+          return;
+          
+      auto new_node = std::make_shared<FunctionNode>("getSubcolumn");
+      new_node->getArguments().getNodes() = { json_node->clone(), key_const->clone() };
+      resolveOrdinaryFunctionNodeByName(*new_node, "getSubcolumn", getContext());
+
+      QueryTreeNodePtr result_node = new_node;
+      auto original_type = node->getResultType();
+
+      // Crucial: Ensure the substituted node has EXACTLY the same type to prevent ValidationChecker aborts.
+      if (original_type && result_node->getResultType() && !result_node->getResultType()->equals(*original_type))
+          result_node = buildCastFunction(result_node, original_type, getContext());
+
+      if (node->hasAlias())
+          result_node->setAlias(node->getAlias());
+
+      node = result_node;
+  }
+
+private:
+  /**
+   * Unified alias and cast resolution loop.
+   * Replaces repetitive AST traversal functions with a single, fast state machine.
+   */
+  static QueryTreeNodePtr peelNode(QueryTreeNodePtr node, bool strip_casts)
+  {
+      while (node)
+      {
+          if (auto * column = node->as<ColumnNode>())
+          {
+              if (column->hasExpression() && column->getExpression() && column->getExpression() != node)
+              {
+                  node = column->getExpression();
+                  continue;
+              }
+              
+              if (auto src = column->getColumnSourceOrNull(); src && src != node && 
+                 (src->as<FunctionNode>() || src->as<ColumnNode>() || src->as<ConstantNode>()))
+              {
+                  node = src;
+                  continue;
+              }
+          }
+          else if (strip_casts)
+          {
+              if (auto * f = node->as<FunctionNode>())
+              {
+                  const auto & name = f->getFunctionName();
+                  if ((name == "CAST" || name == "_CAST" || name == "cast") && !f->getArguments().getNodes().empty())
+                  {
+                      node = f->getArguments().getNodes()[0];
+                      continue;
+                  }
+              }
+          }
+          break;
+      }
+      return node;
+  }
+
+  static QueryTreeNodePtr tryExtractJsonSource(QueryTreeNodePtr node)
+  {
+      auto * func = peelNode(std::move(node), true)->as<FunctionNode>();
+      if (!func || func->getFunctionName() != "JSONAllPathsWithValues" || func->getArguments().getNodes().empty())
+          return nullptr;
+
+      auto source_node = peelNode(func->getArguments().getNodes()[0], false);
+      return source_node->as<ColumnNode>() ? source_node : nullptr;
+  }
+};
 
 struct ColumnContext
 {
@@ -756,6 +858,14 @@ public:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    // Execute the JSON Map Element Pushdown first to expand mapElement -> getSubcolumn
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_optimize_json_cast_to_map_access])
+    {
+        OptimizeJsonAllPathsSubscriptVisitor json_visitor(context);
+        json_visitor.visit(query_tree_node);
+    }
+
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
     auto identifiers_to_optimize = first_visitor.getIdentifiersToOptimize();

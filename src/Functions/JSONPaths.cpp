@@ -6,11 +6,15 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -22,6 +26,12 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_json_all_paths_with_values;
 }
 
 namespace
@@ -39,6 +49,7 @@ struct JSONAllPathsImpl
     static constexpr auto name = "JSONAllPaths";
     static constexpr auto paths_mode = PathsMode::ALL_PATHS;
     static constexpr auto with_types = false;
+    static constexpr auto with_values = false;
 };
 
 struct JSONAllPathsWithTypesImpl
@@ -46,6 +57,15 @@ struct JSONAllPathsWithTypesImpl
     static constexpr auto name = "JSONAllPathsWithTypes";
     static constexpr auto paths_mode = PathsMode::ALL_PATHS;
     static constexpr auto with_types = true;
+    static constexpr auto with_values = false;
+};
+
+struct JSONAllPathsWithValuesImpl
+{
+    static constexpr auto name = "JSONAllPathsWithValues";
+    static constexpr auto paths_mode = PathsMode::ALL_PATHS;
+    static constexpr auto with_types = false;
+    static constexpr auto with_values = true;
 };
 
 struct JSONDynamicPathsImpl
@@ -53,6 +73,7 @@ struct JSONDynamicPathsImpl
     static constexpr auto name = "JSONDynamicPaths";
     static constexpr auto paths_mode = PathsMode::DYNAMIC_PATHS;
     static constexpr auto with_types = false;
+    static constexpr auto with_values = false;
 };
 
 struct JSONDynamicPathsWithTypesImpl
@@ -60,6 +81,7 @@ struct JSONDynamicPathsWithTypesImpl
     static constexpr auto name = "JSONDynamicPathsWithTypes";
     static constexpr auto paths_mode = PathsMode::DYNAMIC_PATHS;
     static constexpr auto with_types = true;
+    static constexpr auto with_values = false;
 };
 
 struct JSONSharedDataPathsImpl
@@ -67,6 +89,7 @@ struct JSONSharedDataPathsImpl
     static constexpr auto name = "JSONSharedDataPaths";
     static constexpr auto paths_mode = PathsMode::SHARED_DATA_PATHS;
     static constexpr auto with_types = false;
+    static constexpr auto with_values = false;
 };
 
 struct JSONSharedDataPathsWithTypesImpl
@@ -74,6 +97,7 @@ struct JSONSharedDataPathsWithTypesImpl
     static constexpr auto name = "JSONSharedDataPathsWithTypes";
     static constexpr auto paths_mode = PathsMode::SHARED_DATA_PATHS;
     static constexpr auto with_types = true;
+    static constexpr auto with_values = false;
 };
 
 /// Implements functions that extracts paths and types from JSON object column.
@@ -103,6 +127,8 @@ public:
         if (data_types[0]->getTypeId() != TypeIndex::Object)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires argument with type JSON, got: {}", getName(),data_types[0]->getName());
 
+        if constexpr (Impl::with_values)
+            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeDynamic>(0));
         if constexpr (Impl::with_types)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -116,6 +142,8 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected column type in function {}. Expected Object column, got {}", getName(), elem.column->getName());
 
         const auto & type_object = assert_cast<const DataTypeObject &>(*elem.type);
+        if constexpr (Impl::with_values)
+            return executeWithValues(*column_object, type_object);
         if constexpr (Impl::with_types)
             return executeWithTypes(*column_object, type_object);
         return executeWithoutTypes(*column_object);
@@ -209,6 +237,73 @@ private:
         }
 
         return res;
+    }
+
+    ColumnPtr executeWithValues(const ColumnObject & column_object, const DataTypeObject & /* type_object */) const
+    {
+        auto offsets_column = ColumnArray::ColumnOffsets::create();
+        auto & offsets = offsets_column->getData();
+        auto paths_column = ColumnString::create();
+        auto values_column = DataTypeDynamic(0).createColumn();
+        auto * values_column_dynamic = assert_cast<ColumnDynamic *>(values_column->assumeMutable().get());
+    
+        // Pre-resolve: Map paths to pointers once to eliminate .find() in the hot loop
+        struct Resolved { std::string_view path; const IColumn * col; bool is_dyn; };
+        std::vector<Resolved> resolved_paths;
+        const auto & typed_path_columns = column_object.getTypedPaths();
+        const auto & dynamic_path_columns = column_object.getDynamicPaths();
+    
+        for (const auto & [path, col] : typed_path_columns) resolved_paths.push_back({path, col.get(), false});
+        for (const auto & [path, col] : dynamic_path_columns) resolved_paths.push_back({path, col.get(), true});
+        std::sort(resolved_paths.begin(), resolved_paths.end(), [](auto & a, auto & b) { return a.path < b.path; });
+    
+        const auto & shared_data_offsets = column_object.getSharedDataOffsets();
+        const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
+        
+        // Minimal optimization: reserve memory
+        offsets.reserve(shared_data_offsets.size());
+        paths_column->reserve(shared_data_values->size() + (shared_data_offsets.size() * resolved_paths.size()));
+    
+        Field field_tmp;
+        size_t start = 0;
+        for (size_t i = 0; i != shared_data_offsets.size(); ++i)
+        {
+            size_t end = shared_data_offsets[i];
+            size_t sorted_idx = 0;
+    
+            auto insert_resolved = [&](size_t idx) {
+                const auto & r = resolved_paths[idx];
+                if (r.is_dyn) {
+                    if (!r.col->isNullAt(i)) {
+                        paths_column->insertData(r.path.data(), r.path.size());
+                        values_column_dynamic->insertFrom(*r.col, i);
+                    }
+                } else {
+                    r.col->get(i, field_tmp);
+                    paths_column->insertData(r.path.data(), r.path.size());
+                    values_column_dynamic->insert(field_tmp);
+                }
+            };
+    
+            for (size_t j = start; j != end; ++j)
+            {
+                auto path_ref = shared_data_paths->getDataAt(j);
+                std::string_view shared_path(path_ref.data(), path_ref.size());
+                if (!getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j))) continue;
+    
+                while (sorted_idx < resolved_paths.size() && resolved_paths[sorted_idx].path < shared_path)
+                    insert_resolved(sorted_idx++);
+    
+                paths_column->insertFrom(*shared_data_paths, j);
+                ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *values_column_dynamic);
+            }
+    
+            while (sorted_idx < resolved_paths.size()) insert_resolved(sorted_idx++);
+            offsets.push_back(paths_column->size());
+            start = end;
+        }
+    
+        return ColumnMap::create(ColumnPtr(std::move(paths_column)), ColumnPtr(std::move(values_column)), ColumnPtr(std::move(offsets_column)));
     }
 
     ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
@@ -441,6 +536,46 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
+    }
+
+    /// JSONAllPathsWithValues (experimental)
+    {
+        struct FunctionJSONAllPathsWithValues : FunctionJSONPaths<JSONAllPathsWithValuesImpl>
+        {
+            static FunctionPtr create(ContextPtr context)
+            {
+                if (!context->getSettingsRef()[Setting::allow_experimental_json_all_paths_with_values])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "JSONAllPathsWithValues is experimental. Set allow_experimental_json_all_paths_with_values = 1 to use it.");
+                return std::make_shared<FunctionJSONPaths<JSONAllPathsWithValuesImpl>>();
+            }
+        };
+        FunctionDocumentation::Description description = R"(
+Returns the list of all paths and their values as Dynamic stored in each row in JSON column.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONAllPathsWithValues(json)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON column.", {"JSON"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a map of all paths and their values (as Dynamic) in the JSON column.", {"Map(String, Dynamic)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SET allow_experimental_json_all_paths_with_values = 1;
+SELECT '{"a": 42, "b": "Hi"}'::JSON AS json, JSONAllPathsWithValues(json);
+            )",
+            R"(
+┌─json────────────────┬─JSONAllPathsWithValues(json)─┐
+│ {"a":42,"b":"Hi"}   │ {'a':42,'b':'Hi'}            │
+└─────────────────────┴──────────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<FunctionJSONAllPathsWithValues>(documentation);
     }
 
     /// JSONDynamicPaths
