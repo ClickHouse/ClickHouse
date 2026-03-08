@@ -385,6 +385,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             }
         }
     }
+    else
+    {
+        /// Clear stale first_failed_task_name from previous reinitialization cycles.
+        /// If a failed task was removed from the queue before being rescheduled,
+        /// first_failed_task_name may still be set, which would incorrectly trigger
+        /// the assertion below during normal operation.
+        first_failed_task_name.reset();
+    }
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
