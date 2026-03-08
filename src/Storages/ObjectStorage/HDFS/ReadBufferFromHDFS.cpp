@@ -192,15 +192,29 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const ReadSettings & read_settings_,
         size_t read_until_position_,
         bool use_external_buffer_,
-        std::optional<size_t> file_size_)
+        std::optional<size_t> file_size_,
+        BlobStorageLogWriterPtr blob_storage_log_)
     : ReadBufferFromFileBase()
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
                hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_, file_size_))
     , use_external_buffer(use_external_buffer_)
+    , hdfs_file_path(hdfs_file_path_)
+    , blob_storage_log(std::move(blob_storage_log_))
 {
 }
 
-ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
+ReadBufferFromHDFS::~ReadBufferFromHDFS()
+{
+    if (blob_storage_log && total_bytes_read > 0)
+    {
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Read,
+            /* bucket */ {}, /* remote_path */ hdfs_file_path, /* local_path */ {},
+            total_bytes_read,
+            /* elapsed_microseconds */ 0,
+            /* error_code */ 0, /* error_message */ {});
+    }
+}
 
 std::optional<size_t> ReadBufferFromHDFS::tryGetFileSize()
 {
@@ -224,7 +238,10 @@ bool ReadBufferFromHDFS::nextImpl()
     auto result = impl->next();
 
     if (result)
+    {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
+        total_bytes_read.fetch_add(working_buffer.size(), std::memory_order_relaxed);
+    }
 
     return result;
 }
@@ -272,7 +289,9 @@ String ReadBufferFromHDFS::getFileName() const
 
 size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> &) const
 {
-    return impl->pread(buffer, size, offset);
+    size_t bytes_read = impl->pread(buffer, size, offset);
+    total_bytes_read += bytes_read;
+    return bytes_read;
 }
 
 bool ReadBufferFromHDFS::supportsReadAt()

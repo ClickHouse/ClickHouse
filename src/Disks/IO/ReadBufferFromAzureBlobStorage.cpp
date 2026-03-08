@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
@@ -45,7 +46,8 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_download_retries_,
     bool use_external_buffer_,
     bool restricted_seek_,
-    size_t read_until_position_)
+    size_t read_until_position_,
+    BlobStorageLogWriterPtr blob_storage_log_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
@@ -57,6 +59,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
     , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
+    , blob_storage_log(std::move(blob_storage_log_))
 {
     if (!use_external_buffer)
     {
@@ -253,7 +256,18 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             if (blob_container_client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
+            Stopwatch blob_log_watch;
             auto download_response = blob_client->Download(download_options, azure_context);
+            if (blob_storage_log)
+            {
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ {}, /* remote_path */ path, /* local_path */ {},
+                    length.HasValue() ? static_cast<size_t>(length.Value()) : 0,
+                    blob_log_watch.elapsedMicroseconds(),
+                    /* error_code */ 0, /* error_message */ {});
+            }
+
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
             break;
@@ -325,7 +339,19 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             download_options.Range = {static_cast<int64_t>(range_begin), n};
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
+            Stopwatch blob_log_watch;
+
             auto download_response = blob_client->Download(download_options, azure_context);
+            if (blob_storage_log)
+            {
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ {}, /* remote_path */ path, /* local_path */ {},
+                    n,
+                    blob_log_watch.elapsedMicroseconds(),
+                    /* error_code */ 0, /* error_message */ {});
+            }
+
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);

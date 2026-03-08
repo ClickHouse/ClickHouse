@@ -81,13 +81,24 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromHDFS>(
         fs::path(url_without_path) / "",
         fs::path(data_directory) / path,
         config,
         patchSettings(read_settings),
         /* read_until_position */0,
-        read_settings.remote_read_buffer_use_external_buffer);
+        read_settings.remote_read_buffer_use_external_buffer,
+        /* file_size */ std::nullopt,
+        std::move(blob_storage_log));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT

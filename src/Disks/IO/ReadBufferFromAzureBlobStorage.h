@@ -6,6 +6,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/MultiVersion.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
@@ -29,7 +30,8 @@ public:
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
-        size_t read_until_position_ = 0);
+        size_t read_until_position_ = 0,
+        BlobStorageLogWriterPtr blob_storage_log_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -87,6 +89,8 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
     /// No-way to make metadata non-mutable, because readBig method is const.
     mutable MultiVersion<std::optional<ObjectMetadata>> last_object_metadata;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

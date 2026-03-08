@@ -25,6 +25,7 @@ struct BlobStorageLogElement
         MultiPartUploadWrite = 4,
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
+        Read = 7,
     };
 
     EventType event_type;

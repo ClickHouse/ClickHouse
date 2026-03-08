@@ -9,6 +9,7 @@
 #include <hdfs/hdfs.h>
 #include <base/types.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/BlobStorageLogWriter.h>
 
 namespace Poco
 {
@@ -38,7 +39,8 @@ public:
         const ReadSettings & read_settings_,
         size_t read_until_position_ = 0,
         bool use_external_buffer = false,
-        std::optional<size_t> file_size = std::nullopt);
+        std::optional<size_t> file_size = std::nullopt,
+        BlobStorageLogWriterPtr blob_storage_log_ = {});
 
     ~ReadBufferFromHDFS() override;
 
@@ -61,6 +63,10 @@ public:
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;
+
+    String hdfs_file_path;
+    BlobStorageLogWriterPtr blob_storage_log;
+    mutable std::atomic<size_t> total_bytes_read = 0;
 };
 }
 
