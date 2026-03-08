@@ -1,0 +1,43 @@
+Point empty:	POLYGON()
+Point single:	1
+Point five (square + interior):	1
+Ring empty:	POLYGON()
+Ring single:	1
+Ring two disjoint:	1
+Polygon empty:	POLYGON()
+Polygon single with hole:	1
+Polygon two disjoint:	1
+MultiPolygon empty:	POLYGON()
+MultiPolygon single (two polys):	1
+MultiPolygon two rows:	1
+LineString two rows:	1
+MultiLineString two rows:	1
+Point type:	Ring	Ring type:	Ring	Polygon type:	Ring	MultiPolygon type:	Ring
+1	1
+2	1
+Collinear:	1
+Identical points:	1
+Single point:	1
+Triangle:	1
+Point correct=1:	1
+Point correct=0:	1
+Ring correct=1:	1
+Polygon correct mixed:	1
+MultiPolygon correct=1:	1
+Empty with correct_geometry:	POLYGON()
+1	1
+2	1
+Pentagon with interior:	1
+Polygon hole ignored:	1
+1	1
+2	1
+Geometry Points:	1
+Geometry Point+Ring:	1
+Geometry Point+Polygon:	1
+Geometry all polygon types:	1
+Geometry Point+LineString:	1
+Geometry Point+MultiLineString:	1
+Geometry all six types:	1
+Geometry with NULLs:	1
+1	1
+2	1

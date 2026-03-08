@@ -1,0 +1,25 @@
+Ring empty:	MULTIPOLYGON()
+Ring single:	1
+Ring two overlapping:	1
+Polygon empty:	MULTIPOLYGON()
+Polygon single:	1
+Polygon two overlapping:	1
+MultiPolygon empty:	MULTIPOLYGON()
+MultiPolygon single:	1
+MultiPolygon two overlapping:	1
+Ring type:	MultiPolygon	Polygon type:	MultiPolygon	MultiPolygon type:	MultiPolygon
+Disjoint:	MULTIPOLYGON()
+1	1
+2	1
+correct_geometry=1:	1
+correct_geometry=0:	1
+correct_geometry mixed:	1
+Three overlapping:	1
+Partial overlap:	1
+Small squares:	1
+Single with correct_geometry:	1
+Empty with correct_geometry:	MULTIPOLYGON()
+1	1
+2	1
+Ring with correct_geometry:	1
+MultiPolygon with correct_geometry:	1

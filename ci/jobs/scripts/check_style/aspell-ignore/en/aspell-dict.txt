@@ -2119,7 +2119,10 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupConvexHull
 groupNumericIndexedVector
+groupPolygonIntersection
+groupPolygonUnion
 groupUniqArray
 grouparray
 grouparrayinsertat

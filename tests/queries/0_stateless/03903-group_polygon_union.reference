@@ -1,0 +1,20 @@
+Ring empty:	MULTIPOLYGON()
+Ring single:	1
+Ring union:	1
+Polygon empty:	MULTIPOLYGON()
+Polygon single:	1
+Polygon union:	1
+MultiPolygon empty:	MULTIPOLYGON()
+MultiPolygon single:	1
+MultiPolygon union:	1
+Ring type:	MultiPolygon	Polygon type:	MultiPolygon	MultiPolygon type:	MultiPolygon
+Disjoint:	1
+1	1
+2	1
+correct_geometry=1:	1
+correct_geometry=0:	1
+correct_geometry mixed:	1
+1	1
+2	1
+Ring with correct_geometry:	1
+MultiPolygon with correct_geometry:	1

@@ -99,6 +99,9 @@ void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupPolygonUnion(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupConvexHull(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -210,6 +213,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
+        registerAggregateFunctionGroupPolygonUnion(factory);
+        registerAggregateFunctionGroupPolygonIntersection(factory);
+        registerAggregateFunctionGroupConvexHull(factory);
 
         registerWindowFunctions(factory);
     }
