@@ -192,8 +192,20 @@ public:
                         getName());
                 if (input_rows_count == 0)
                 {
+                    /// For zero rows, try to validate the const value if available.
+                    const auto * orig_const = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+                    if (orig_const)
+                    {
+                        String variant = orig_const->getValue<String>();
+                        if (variant != "bech32" && variant != "bech32m")
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid encoding variant '{}' for function {}, expected 'bech32' or 'bech32m'",
+                                variant,
+                                getName());
+                    }
                     have_encoding_variant = true;
-                    explicit_encoding = bech32::Encoding::BECH32;
+                    explicit_encoding = bech32::Encoding::BECH32; /// default doesn't matter for zero rows
                 }
                 else
                 {
@@ -475,7 +487,19 @@ public:
                     getName());
             if (input_rows_count == 0)
             {
-                raw_mode = true; /// doesn't matter for empty result, just skip validation
+                /// For zero rows, try to validate the const value if available.
+                const auto * orig_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+                if (orig_const)
+                {
+                    String mode = orig_const->getValue<String>();
+                    if (mode != "raw")
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid mode '{}' for function {}, expected 'raw'",
+                            mode,
+                            getName());
+                }
+                raw_mode = true; /// default doesn't matter for zero rows
             }
             else
             {
