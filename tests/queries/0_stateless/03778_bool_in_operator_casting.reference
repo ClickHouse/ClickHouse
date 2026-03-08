@@ -1,0 +1,37 @@
+Testing Bool IN operator with various numeric values:
+1
+1
+1
+1
+0
+Testing Bool false (CAST(0)) with IN operator:
+1
+0
+0
+0
+Testing Bool with multiple values in IN:
+1
+0
+1
+0
+Testing Bool with negative numbers:
+1
+1
+0
+Testing Bool with materialized values:
+1
+1
+1
+Testing Nullable(Bool) with IN operator:
+1
+1
+1
+1
+1
+0
+Testing LowCardinality(Bool) with IN operator:
+1
+1
+1
+1
+0
