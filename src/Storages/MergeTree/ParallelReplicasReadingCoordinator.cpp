@@ -376,6 +376,8 @@ private:
     bool possiblyCanReadPart(size_t replica, const RangesInDataPartDescription & description) const;
     void enqueueSegment(const RangesInDataPartDescription & description, const MarkRange & segment, size_t owner);
     void enqueueToStealerOrStealingQueue(const RangesInDataPartDescription & description, const MarkRange & segment);
+
+    bool isLastReplica() const { return (replicas_count - unavailable_replicas_count - finished_replicas) == 1; }
 };
 
 
@@ -809,22 +811,59 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
 
     ParallelReadResponse response;
     size_t current_mark_size = 0;
+    size_t assigned_to_me = 0;
+    size_t stolen_by_hash = 0;
+    size_t stolen_unassigned = 0;
 
-    /// 1. Try to select ranges meant for this replica by consistent hash
-    selectPartsAndRanges(
-        request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t assigned_to_me = current_mark_size;
+    /// Special handling for last replica: drain all queues to minimize round trips
+    /// We still respect the three-phase scan mode progression for proper metrics tracking
+    if (isLastReplica())
+    {
+        size_t before;
+        do
+        {
+            before = current_mark_size;
 
-    /// 2. Try to steal but with caching again (with different key)
-    selectPartsAndRanges(
-        request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t stolen_by_hash = current_mark_size - assigned_to_me;
+            /// Phase 1: Take segments assigned to this replica by hash
+            size_t before_phase1 = current_mark_size;
+            selectPartsAndRanges(
+                request.replica_num, ScanMode::TakeWhatsMineByHash, SIZE_MAX, current_mark_size, response.description);
+            assigned_to_me += current_mark_size - before_phase1;
 
-    /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
-    if (current_mark_size == 0)
+            /// Phase 2: Take from stealing queue (segments assigned for stealing)
+            size_t before_phase2 = current_mark_size;
+            selectPartsAndRanges(
+                request.replica_num, ScanMode::TakeWhatsMineForStealing, SIZE_MAX, current_mark_size, response.description);
+            stolen_by_hash += current_mark_size - before_phase2;
+
+            /// Phase 3: Take everything else (orphaned segments from other replicas)
+            size_t before_phase3 = current_mark_size;
+            selectPartsAndRanges(
+                request.replica_num, ScanMode::TakeEverythingAvailable, SIZE_MAX, current_mark_size, response.description);
+            stolen_unassigned += current_mark_size - before_phase3;
+        }
+        while (current_mark_size > before); /// If nothing was taken in this iteration, we're done
+    }
+    else
+    {
+        /// Normal path: three-phase scan mode progression with min_number_of_marks limit
+
+        /// 1. Try to select ranges meant for this replica by consistent hash
         selectPartsAndRanges(
-            request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
-    const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
+            request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response.description);
+        assigned_to_me = current_mark_size;
+
+        /// 2. Try to steal but with caching again (with different key)
+        selectPartsAndRanges(
+            request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response.description);
+        stolen_by_hash = current_mark_size - assigned_to_me;
+
+        /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
+        if (current_mark_size == 0)
+            selectPartsAndRanges(
+                request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
+        stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
+    }
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += current_mark_size;
