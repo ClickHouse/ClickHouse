@@ -1359,6 +1359,16 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             column_meta_name,
             backQuoteIfNeed(command.column_name));
     }
+    else if (command.type == AlterCommand::MODIFY_COLUMN
+        && (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias))
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Cannot modify {} column ({}) to {}",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name),
+            toString(command.default_kind));
+    }
 };
 
 template <typename TMustHaveDataType>
@@ -4348,11 +4358,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Some type changes for version column is allowed despite it's a part of sorting key
             if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                const IDataType * new_type = command.data_type.get();
-                const IDataType * old_type = old_types[command.column_name];
+                checkSpecialColumn("version", command);
 
-                if (new_type)
-                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                const IDataType * new_type = command.data_type.get();
+                auto it = old_types.find(command.column_name);
+
+                if (new_type && it != old_types.end())
+                    checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
