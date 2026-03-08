@@ -367,6 +367,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::DollarSign}), SpecialDelimiter::JSON_PATH_COMBINED);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -378,6 +379,18 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     Pos begin = pos;
     while (true)
     {
+        /// When the next token is an unquoted BareWord starting with '$' (e.g. `json.$path`),
+        /// the lexer produces a single BareWord token for the whole `$path` because '$' is a
+        /// word character. The `Dot+DollarSign` delimiter would not match in that case.
+        /// Detect it here so we can treat it as `JSON_PATH_COMBINED` (same as `json.$`path``).
+        /// Explicitly back-quoted identifiers like `json.`$path`` are NOT affected because their
+        /// next token type is QuotedIdentifier, not BareWord.
+        const bool is_dollar_bareword = !is_first
+            && last_special_delimiter == SpecialDelimiter::NONE
+            && pos->type == TokenType::BareWord
+            && pos->size() >= 2
+            && pos->begin[0] == char(SpecialDelimiter::JSON_PATH_COMBINED);
+
         ASTPtr element;
         if (!element_parser->parse(pos, element, expected))
         {
@@ -390,6 +403,12 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (last_special_delimiter != SpecialDelimiter::NONE)
         {
             parts.push_back(static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element)));
+        }
+        else if (is_dollar_bareword)
+        {
+            auto name = getIdentifierName(element);
+            /// `$path` after a dot → combined subcolumn for `path`, equivalent to `json.$`path``.
+            parts.push_back(String{char(SpecialDelimiter::JSON_PATH_COMBINED)} + backQuote(name.substr(1)));
         }
         else
         {
@@ -454,7 +473,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 {
     /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX) && name[0] != char(SpecialDelimiter::JSON_PATH_COMBINED))
         || name[1] != '`' || name.back() != '`')
         return std::nullopt;
 
