@@ -1,4 +1,5 @@
--- Tags: global, no-parallel
+-- Tags: global, no-parallel, no-random-detach
+-- no-random-detach: test uses Distributed tables with local tables
 CREATE DATABASE IF NOT EXISTS test_02115;
 USE test_02115;
 

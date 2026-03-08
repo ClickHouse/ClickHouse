@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test checks cache state
 -- Tag no-parallel: Messes with internal cache
 
 -- Test for issue #84508 (incorrect results caused by query condition cache when used with IN functions on non-const sets)

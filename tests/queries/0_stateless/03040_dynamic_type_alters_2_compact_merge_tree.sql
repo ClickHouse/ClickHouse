@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks mutation state
 set allow_experimental_dynamic_type = 1;
 set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;

@@ -199,9 +199,16 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        if (current_sum > deduplication_window)
+        /// Never drop the current active log — it may still be open for writing
+        if (itr->first == current_log_number)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            current_sum += itr->second.entries_count;
+            continue;
+        }
+
+        if (current_sum >= deduplication_window)
+        {
+            /// We have more logs than required, all older files (up to and including this one) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -378,6 +385,7 @@ void MergeTreeDeduplicationLog::shutdown()
         try
         {
             current_writer->finalize();
+            current_writer->sync();
             current_writer.reset();
         }
         catch (...)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-random-detach
+# no-random-detach: test checks system.parts
 # add_minmax_index_for_numeric_columns=0: Would use the index and not the projection
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

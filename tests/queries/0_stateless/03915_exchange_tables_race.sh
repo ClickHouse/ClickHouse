@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-random-detach
+# no-random-detach: test uses EXCHANGE TABLES in a race condition test
 
 set -e
 

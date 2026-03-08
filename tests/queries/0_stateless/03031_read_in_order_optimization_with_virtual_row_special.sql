@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses merge() table function
 
 -- modified from test_01155_ordinary, to test special optimization path for virtual row
 DROP DATABASE IF EXISTS test_03031;

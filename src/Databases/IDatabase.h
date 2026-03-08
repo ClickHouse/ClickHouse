@@ -327,6 +327,9 @@ public:
     /// Note: ATTACH TABLE statement actually uses createTable method.
     virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path);
 
+    /// Whether the database supports non-permanent DETACH TABLE.
+    virtual bool supportsDetachingTables() const { return true; }
+
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/);
 

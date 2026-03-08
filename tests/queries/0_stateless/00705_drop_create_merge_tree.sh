@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan, no-flaky-check, no-parallel
+# Tags: no-fasttest, no-msan, no-flaky-check, no-parallel, no-random-detach
+# no-random-detach: race condition test, DETACH/ATTACH makes it worse
 # msan: too slow
 # no-parallel: thread starvation leads to flakiness
 

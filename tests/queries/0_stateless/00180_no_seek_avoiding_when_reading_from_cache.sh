@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan
+# Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan, no-tsan, no-random-detach
+# no-random-detach: test checks filesystem cache behavior and profile events
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

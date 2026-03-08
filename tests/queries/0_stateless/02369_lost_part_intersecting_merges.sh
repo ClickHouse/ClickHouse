@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-shared-merge-tree, long
+# Tags: zookeeper, no-shared-merge-tree, long, no-random-detach
 # no-shared-merge-tree: depend on local fs
+# Tag no-random-detach: test relies on DETACH/ATTACH in specific place
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

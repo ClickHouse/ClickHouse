@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 
 create database if not exists shard_0;
 create database if not exists shard_1;

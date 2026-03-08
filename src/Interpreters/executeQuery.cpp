@@ -30,6 +30,8 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -63,6 +65,11 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Databases/IDatabase.h>
+#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
@@ -167,6 +174,8 @@ namespace Setting
     extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool reattach_tables_before_query_execution;
+    extern const SettingsFloat reattach_tables_before_query_execution_probability;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
@@ -1076,6 +1085,156 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+namespace
+{
+
+class CollectTablesInQueryMatcher
+{
+public:
+    struct Data
+    {
+        explicit Data(ContextPtr context_) : context(std::move(context_)) {}
+
+        const ContextPtr context;
+        std::vector<StorageID> tables;
+
+        void addTableIfNotEmpty(const String & database, const String & table)
+        {
+            if (table.empty())
+                return;
+
+            if (database.empty())
+                tables.emplace_back(context->getCurrentDatabase(), table);
+            else
+                tables.emplace_back(database, table);
+        }
+    };
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (const auto * select = ast->as<ASTSelectQuery>())
+            visit(*select, data);
+        else if (const auto * insert = ast->as<ASTInsertQuery>())
+            visit(*insert, data);
+        else if (const auto * backup = ast->as<ASTBackupQuery>())
+            visit(*backup, data);
+        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+            visit(*query_with_output, data);
+    }
+
+    static void visit(const ASTSelectQuery & select, Data & data)
+    {
+        for (const auto & table : getDatabaseAndTables(select, data.context->getCurrentDatabase()))
+            data.addTableIfNotEmpty(table.database, table.table);
+    }
+
+    static void visit(const ASTInsertQuery & insert, Data & data)
+    {
+        data.addTableIfNotEmpty(insert.getDatabase(), insert.getTable());
+    }
+
+    static void visit(const ASTBackupQuery & backup, Data & data)
+    {
+        for (const auto & element : backup.elements)
+            data.addTableIfNotEmpty(element.database_name, element.table_name);
+    }
+
+    static void visit(const ASTQueryWithTableAndOutput & query, Data & data)
+    {
+        data.addTableIfNotEmpty(query.getDatabase(), query.getTable());
+    }
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+};
+
+using CollectTablesInQueryVisitor = ConstInDepthNodeVisitor<CollectTablesInQueryMatcher, true>;
+
+}
+
+static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
+{
+    CollectTablesInQueryVisitor::Data data(context);
+    CollectTablesInQueryVisitor(data).visit(query);
+
+    /// Keep old settings, because they may be changed
+    /// during execution of ATTACH/DETACH queries.
+    auto old_settings = context->getSettingsCopy();
+    SCOPE_EXIT({ context->setSettings(old_settings); });
+
+    /// Suppress forwarding of log messages to the client during DETACH/ATTACH.
+    /// Internal DETACH/ATTACH queries may produce error-level log messages
+    /// (e.g., when a concurrent query interferes), and those messages would be
+    /// forwarded to the client via `send_logs_level`, causing unexpected stderr output.
+    auto old_logs_queue = CurrentThread::getInternalTextLogsQueue();
+    auto old_logs_level = CurrentThread::isInitialized() ? CurrentThread::get().getClientLogsLevel() : LogsLevel::none;
+    if (old_logs_queue)
+        CurrentThread::attachInternalTextLogsQueue(old_logs_queue, LogsLevel::none);
+    SCOPE_EXIT({
+        if (old_logs_queue)
+            CurrentThread::attachInternalTextLogsQueue(old_logs_queue, old_logs_level);
+    });
+
+    for (const auto & table_id : data.tables)
+    {
+        if (table_id.getDatabaseName() == "system")
+            continue;
+
+        const auto & catalog = DatabaseCatalog::instance();
+
+        /// If table doesn't store data on disk, the data will be lost after detach.
+        /// If table has lock for any action, it will be removed after detach.
+        /// Since it will affect future queries do not detach in those cases.
+        auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
+        if (!database
+            || !database->supportsDetachingTables()
+            || !table
+            || !table->storesDataOnDisk()
+            || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        if (!catalog.getReferentialDependencies(table_id).empty()
+            || !catalog.getReferentialDependents(table_id).empty()
+            || !catalog.getLoadingDependencies(table_id).empty()
+            || !catalog.getLoadingDependents(table_id).empty())
+            continue;
+
+        /// DETACH TABLE requires DROP TABLE privilege, and ATTACH TABLE requires CREATE TABLE.
+        /// Skip if the user doesn't have these privileges.
+        auto access = context->getAccess();
+        if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName()))
+            continue;
+
+        auto uuid = table->getStorageID().uuid;
+        table.reset();
+
+        auto full_name = table_id.getFullTableName();
+        auto detach_query = fmt::format("DETACH TABLE {}", full_name);
+        auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
+
+        try
+        {
+            {
+                auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(detach, context);
+            }
+
+            database->waitDetachedTableNotInUse(uuid);
+
+            {
+                auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(attach, context);
+            }
+        }
+        catch (...)
+        {
+            /// The DETACH/ATTACH may fail for various reasons
+            /// (e.g., a concurrent query interfered).
+            /// Since this is a testing-only feature, we just skip this table.
+            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::information);
+        }
+    }
+}
 
 static BlockIO executeQueryImpl(
     const char * begin,
@@ -1406,6 +1565,26 @@ static BlockIO executeQueryImpl(
         }
 
         logQuery(query_for_logging, context, internal, stage);
+
+        bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+        bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
+        if (!internal && is_initial_query && !has_transaction)
+        {
+            bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
+            auto reattach_probability = settings[Setting::reattach_tables_before_query_execution_probability];
+
+            if (!need_reattach_tables && reattach_probability > 0.0)
+            {
+                std::bernoulli_distribution distribution(reattach_probability);
+                need_reattach_tables |= distribution(thread_local_rng);
+            }
+
+            if (need_reattach_tables)
+            {
+                LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                reattachTablesUsedInQuery(out_ast, context);
+            }
+        }
 
         if (out_ast)
         {

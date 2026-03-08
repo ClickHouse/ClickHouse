@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
 -- Test that the optimizer picks up column statistics
 -- (The concrete statistics type, column data type and predicate type don't matter)
 

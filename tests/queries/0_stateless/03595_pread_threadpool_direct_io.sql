@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas, no-object-storage
+-- Tags: no-parallel-replicas, no-object-storage, no-random-detach
+-- no-random-detach: test checks profile events
 
 set min_bytes_to_use_direct_io = 0;
 

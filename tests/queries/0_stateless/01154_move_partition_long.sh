@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-shared-merge-tree, no-msan
+# Tags: long, no-parallel, no-shared-merge-tree, no-msan, no-random-detach
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

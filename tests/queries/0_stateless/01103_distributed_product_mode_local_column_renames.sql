@@ -1,4 +1,5 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed, no-parallel, no-random-detach
+-- no-random-detach: test uses readonly mode
 
 CREATE DATABASE IF NOT EXISTS test_01103;
 USE test_01103;

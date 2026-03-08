@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses loop() table function
 
 DROP DATABASE IF EXISTS 03147_db;
 CREATE DATABASE IF NOT EXISTS 03147_db;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long, no-parallel, no-random-detach
+# no-random-detach: DETACH/ATTACH interferes with async insert pipeline
 
 set -e
 

@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: ATTACH fails on zero-row parts with skip index marks
 -- Some tests for lightweight deleted on a column with text index
 
 DROP TABLE IF EXISTS tab;

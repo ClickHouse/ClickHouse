@@ -1,4 +1,5 @@
--- Tags: long, zookeeper, no-shared-merge-tree
+-- Tags: long, zookeeper, no-shared-merge-tree, no-random-detach
+-- no-random-detach: long test, DETACH/ATTACH adds too much overhead
 -- no-shared-merge-tree: different sychronization, replaced with another test
 
 SELECT '===Ordinary case===';

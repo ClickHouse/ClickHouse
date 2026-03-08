@@ -1,3 +1,5 @@
+-- Tags: long, no-flaky-check, no-random-detach
+-- no-random-detach: long test, DETACH/ATTACH adds too much overhead
 DROP TABLE IF EXISTS t64;
 
 CREATE TABLE t64

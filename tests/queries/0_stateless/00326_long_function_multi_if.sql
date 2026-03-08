@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long, no-msan, no-random-detach, no-flaky-check
 -- no-msan: it takes a long time
 
 SELECT 'Trivial case';

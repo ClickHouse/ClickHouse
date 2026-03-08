@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-azure-blob-storage
+# Tags: no-fasttest, no-azure-blob-storage, no-random-detach, no-flaky-check
+# no-random-detach: test uses DETACH/ATTACH itself
 # Tag no-fasttest: 45 seconds running
 
 # Creation of a database with Ordinary engine emits a warning.

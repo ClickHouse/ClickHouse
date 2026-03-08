@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-detach
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
 

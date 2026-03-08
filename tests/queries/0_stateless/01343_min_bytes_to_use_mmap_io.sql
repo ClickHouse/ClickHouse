@@ -1,4 +1,5 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-random-detach
+-- no-random-detach: test checks profile events
 DROP TABLE IF EXISTS test_01343;
 CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic';
 INSERT INTO test_01343 VALUES ('Hello, world');

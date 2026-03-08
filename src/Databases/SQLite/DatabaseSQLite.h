@@ -24,6 +24,8 @@ public:
 
     String getEngineName() const override { return "SQLite"; }
 
+    bool supportsDetachingTables() const override { return false; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool isTableExist(const String & name, ContextPtr context) const override;

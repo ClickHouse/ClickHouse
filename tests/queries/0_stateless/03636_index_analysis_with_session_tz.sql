@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
 SET session_timezone = 'UTC';
 -- For explain with indexes and key condition values verification
 SET parallel_replicas_local_plan = 1;

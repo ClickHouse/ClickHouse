@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test checks log output
 
 -- fire all kinds of queries and then check if those are present in the system.query_log
 SET log_comment='system.query_log logging test';

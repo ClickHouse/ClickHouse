@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
+
 -- { echoOn }
 DROP TABLE IF EXISTS t_implicit;
 

@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test checks cache state
 
 DROP TABLE IF EXISTS t_prewarm_cache;
 
