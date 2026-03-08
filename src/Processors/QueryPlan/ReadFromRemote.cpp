@@ -819,7 +819,7 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 
 static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes)
 {
-    String prefix(settings.offset + settings.indent, settings.indent_char);
+    String prefix(settings.offset + settings.base_indent, settings.indent_char);
     for (auto & pipe : pipes)
     {
         QueryPipeline pipeline(std::move(pipe));
@@ -849,7 +849,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
     {
         if (shard.query_plan)
         {
-            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
         }
         else
         {
@@ -1062,7 +1062,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings 
 
     if (query_plan)
     {
-        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
     }
     else
     {

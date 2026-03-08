@@ -212,10 +212,30 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 
 void JoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.other_prefix;
 
-    for (const auto & [name, value] : describeJoinActions(join))
+    auto description = describeJoinActions(join);
+    const size_t inline_count = settings.pretty ? 3 : 0;
+
+    if (settings.pretty)
+    {
+        settings.out << prefix;
+        for (size_t i = 0; settings.pretty && i < inline_count; ++i)
+        {
+            if (i > 0)
+                settings.out << " | ";
+            const auto & [name, value] = description[i];
+            settings.out << name << ": " << value;
+        }
+        settings.out << '\n';
+    }
+
+    for (size_t i = inline_count; i < description.size(); ++i)
+    {
+        const auto & [name, value] = description[i];
         settings.out << prefix << name << ": " << value << '\n';
+    }
+
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
     if (!primary_key_sharding.empty())
@@ -340,7 +360,7 @@ void FilledJoinStep::updateOutputHeader()
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.other_prefix;
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
