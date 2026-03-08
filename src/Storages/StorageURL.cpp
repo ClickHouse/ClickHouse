@@ -66,7 +66,7 @@ namespace Setting
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsUInt64 max_http_get_redirects;
-    extern const SettingsUInt64 max_http_post_redirects;
+    extern const SettingsBool http_allow_redirects_on_post;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
@@ -672,7 +672,7 @@ void StorageURLSink::initBuffers()
         .withAdditionalHeaders(headers)
         .withTimeouts(timeouts)
         .withBufferSize(DBMS_DEFAULT_BUFFER_SIZE)
-        .withRedirects(settings[Setting::max_http_post_redirects])
+        .withAllowRedirects(settings[Setting::http_allow_redirects_on_post])
         .create();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),

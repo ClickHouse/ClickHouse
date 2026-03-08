@@ -29,7 +29,7 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
                                  const ConnectionTimeouts & timeouts = {},
                                  size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
                                  ProxyConfiguration proxy_configuration = {},
-                                 size_t max_redirects_ = 0);
+                                 bool allow_redirects_ = false);
 
     // Counts the counter WriteBufferFromHTTPBytes
     void nextImpl() override;
@@ -38,7 +38,7 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
     void finalizeImpl() override;
 
     Poco::URI initial_uri;
-    size_t max_redirects;
+    bool allow_redirects;
 
     HTTPSessionPtr session;
     Poco::Net::HTTPRequest request;
@@ -57,7 +57,7 @@ private:
     HTTPHeaderEntries additional_headers = {};
     ConnectionTimeouts timeouts = {};
     size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t max_redirects_ = 0;
+    bool allow_redirects_ = false;
 
 public:
     explicit BuilderWriteBufferFromHTTP(const Poco::URI & uri_) : uri(uri_)
@@ -80,7 +80,7 @@ public:
     setterMember(withAdditionalHeaders, additional_headers)
     setterMember(withTimeouts, timeouts)
     setterMember(withBufferSize, buffer_size_)
-    setterMember(withRedirects, max_redirects_)
+    setterMember(withAllowRedirects, allow_redirects_)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

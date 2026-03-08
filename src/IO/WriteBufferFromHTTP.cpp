@@ -24,11 +24,11 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     const ConnectionTimeouts & timeouts_,
     size_t buffer_size_,
     ProxyConfiguration proxy_configuration,
-    size_t max_redirects_
+    bool allow_redirects_
 )
     : WriteBufferFromOStream(buffer_size_)
     , initial_uri(uri)
-    , max_redirects(max_redirects_)
+    , allow_redirects(allow_redirects_)
     , session{makeHTTPSession(connection_group_, uri, timeouts_, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
@@ -66,14 +66,13 @@ void WriteBufferFromHTTP::finalizeImpl()
     // Make sure the content in the buffer has been flushed
     this->next();
 
-    /// When max_redirects > 0, accept HTTP 3xx redirect responses as success.
+    /// When allow_redirects is true, accept HTTP 3xx redirect responses as success.
     /// The request body has already been fully sent to the original server via
     /// the chunked transfer stream. Since we cannot re-send the body to the
     /// redirect target (it was streamed, not buffered), we treat the redirect
     /// as an acknowledgment that the server received the data.
     /// This covers the common case of servers/proxies that accept POST data
     /// and respond with a redirect to a result or canonical URL.
-    bool allow_redirects = max_redirects > 0;
     receiveResponse(*session, request, response, allow_redirects);
 
     if (isRedirect(response.getStatus()) && allow_redirects)
@@ -103,7 +102,7 @@ std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
 
     /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
     std::unique_ptr<WriteBufferFromHTTP> ptr(new WriteBufferFromHTTP(
-        connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration, max_redirects_));
+        connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration, allow_redirects_));
 
     return ptr;
 }
