@@ -322,6 +322,14 @@ public:
 
     ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
+    bool ALWAYS_INLINE erase(Key x, size_t hash_value)
+    {
+        size_t buck = getBucketFromHash(hash_value);
+        return impls[buck].erase(x, hash_value);
+    }
+
+    bool ALWAYS_INLINE erase(Key x) { return erase(x, hash(x)); }
+
 
     void write(DB::WriteBuffer & wb) const
     {

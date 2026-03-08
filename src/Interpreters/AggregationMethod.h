@@ -1,11 +1,19 @@
 #pragma once
+#include <algorithm>
+#include <queue>
 #include <vector>
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <Columns/Collator.h>
+
+#include <Interpreters/TopNAggregationHeap.h>
+
 namespace DB
 {
-class IColumn;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -17,6 +25,7 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -60,6 +69,7 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodString() = default;
 
@@ -96,6 +106,7 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -129,6 +140,7 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -162,6 +174,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -196,6 +209,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
+    TopNAggregationHeap top_n_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -233,6 +247,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -280,6 +295,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopNAggregationHeap top_n_heap;
 
     AggregationMethodSerialized() = default;
 

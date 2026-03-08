@@ -169,6 +169,13 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
+void AggregatingStep::applyLimitPushdown(size_t top_n, std::vector<const Collator *> collators_, size_t num_key_columns)
+{
+    params.top_n_keys = top_n;
+    params.top_n_keys_collators = std::move(collators_);
+    params.top_n_key_columns = num_key_columns;
+}
+
 const SortDescription & AggregatingStep::getSortDescription() const
 {
     if (memoryBoundMergingWillBeUsed())

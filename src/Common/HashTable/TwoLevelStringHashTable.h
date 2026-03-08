@@ -186,6 +186,13 @@ public:
         return dispatch(*this, x, typename Impl::FindCallable{});
     }
 
+    bool ALWAYS_INLINE erase(const Key & x)
+    {
+        typename Impl::EraseCallable callable;
+        dispatch(*this, x, callable);
+        return callable.erased;
+    }
+
     void write(DB::WriteBuffer & wb) const
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)

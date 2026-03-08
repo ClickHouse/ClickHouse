@@ -288,9 +288,26 @@ public:
         }
     }
 
+    /// Returns the original key column pointer, used by the top-N heap optimization
+    /// to perform type-correct comparisons via IColumn::compareAt.
+    ALWAYS_INLINE const IColumn * getKeyColumn() const { return key_column; }
+
+    void setKeyColumn(const IColumn * col) { key_column = col; }
+
+    /// Returns all key columns used by the top-N heap optimization for composite keys.
+    ALWAYS_INLINE const ColumnRawPtrs & getKeyColumns() const { return key_columns_for_heap; }
+
+    void setKeyColumns(const ColumnRawPtrs & cols)
+    {
+        key_columns_for_heap = cols;
+        key_column = cols.size() == 1 ? cols[0] : nullptr;
+    }
+
 protected:
     Cache cache;
     const IColumn * null_map = nullptr;
+    const IColumn * key_column = nullptr;
+    ColumnRawPtrs key_columns_for_heap;
     bool has_null_data = false;
 
     /// column argument only for nullable column
@@ -310,6 +327,10 @@ protected:
 
         if constexpr (nullable)
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
+
+        key_column = column;
+        if (column)
+            key_columns_for_heap = {column};
     }
 
     template <typename Data, typename KeyHolder>

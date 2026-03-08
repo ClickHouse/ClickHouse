@@ -1,0 +1,63 @@
+<test>
+
+<!-- Benchmarks for the ordered_group_by_limit_pushdown optimization.
+     This optimization uses a heap during aggregation to skip GROUP BY keys
+     that won't make it into the ORDER BY ... LIMIT top-N results.
+     The pattern is: GROUP BY col ORDER BY col ASC LIMIT N (ORDER BY key = GROUP BY key).
+-->
+
+<!-- High cardinality: WatchID (~100M unique values out of 100M rows) -->
+<query>SELECT WatchID, count() FROM hits_100m_single GROUP BY WatchID ORDER BY WatchID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- High cardinality: UserID (~17M unique values) -->
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
+
+<!-- High cardinality string: URL (~10M unique values) -->
+<query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Medium cardinality: RegionID (~10K unique values) -->
+<query>SELECT RegionID, count() FROM hits_100m_single GROUP BY RegionID ORDER BY RegionID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Synthetic high cardinality with numbers_mt() -->
+<query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number ASC LIMIT 100 FORMAT Null</query>
+
+<!-- Composite keys: 2-column GROUP BY with high cardinality (~18M unique pairs) -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID, RegionID ASC LIMIT 1000 FORMAT Null</query>
+
+<!-- Composite keys: 3-column GROUP BY -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Composite keys: medium cardinality (~630K unique pairs) -->
+<query>SELECT RegionID, CounterID, count() FROM hits_100m_single GROUP BY RegionID, CounterID ORDER BY RegionID, CounterID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Prefix ORDER BY: ORDER BY is a leading prefix of GROUP BY keys.
+     The heap tracks only the prefix columns, keeping all groups where
+     the prefix matches the boundary. -->
+<!-- Prefix 1 of 2: ORDER BY UserID for GROUP BY UserID, RegionID -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID ORDER BY UserID ASC LIMIT 1000 FORMAT Null</query>
+
+<!-- Prefix 1 of 3: ORDER BY UserID for GROUP BY UserID, RegionID, CounterID -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- Prefix 2 of 3: ORDER BY UserID, RegionID for GROUP BY UserID, RegionID, CounterID -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID ORDER BY UserID, RegionID ASC LIMIT 10 FORMAT Null</query>
+
+<!-- No ORDER BY: GROUP BY ... LIMIT without ORDER BY.
+     The optimization uses all GROUP BY keys for the heap.
+     Any N groups are a valid result. -->
+<!-- Single column, high cardinality -->
+<query>SELECT UserID, count() FROM hits_100m_single GROUP BY UserID LIMIT 10 FORMAT Null</query>
+
+<!-- Two columns, high cardinality -->
+<query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID LIMIT 10 FORMAT Null</query>
+
+<!-- Three columns -->
+<query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID LIMIT 10 FORMAT Null</query>
+
+<!-- String column, no ORDER BY -->
+<query>SELECT URL, count() FROM hits_100m_single GROUP BY URL LIMIT 10 FORMAT Null</query>
+
+</test>
