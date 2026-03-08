@@ -99,6 +99,8 @@ struct PartLogElement
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
+    std::map<String, UInt64> projections_duration_ms;
+
     static std::string name() { return "PartLog"; }
 
     static MergeReasonType getMergeReasonType(MergeType merge_type);

@@ -1752,6 +1752,8 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
+        if (task->global_ctx->projection_merge_list_element)
+            global_ctx->projections_merge_time[part->name] = task->global_ctx->projection_merge_list_element->watch.elapsedMilliseconds();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 

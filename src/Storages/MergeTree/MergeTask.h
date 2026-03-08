@@ -170,6 +170,11 @@ public:
         return res;
     }
 
+    std::map<String, UInt64> grabProjectionsMergeTime()
+    {
+        return std::move(global_ctx->projections_merge_time);
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -261,6 +266,8 @@ private:
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
+
+        std::map<String, UInt64> projections_merge_time;
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
