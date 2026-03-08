@@ -325,7 +325,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -551,19 +551,6 @@ static String dumpStatsForLogs(const RelationStats & stats)
             }), ", "));
 }
 
-
-static bool isTrivialStep(const QueryPlan::Node * node)
-{
-    if (node->children.size() != 1)
-        return false;
-
-    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    if (!expression_step)
-        return false;
-
-    return isPassthroughActions(expression_step->getExpression());
-}
-
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 constexpr bool isInnerOrCross(JoinKind kind)
@@ -573,10 +560,14 @@ constexpr bool isInnerOrCross(JoinKind kind)
 
 size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
-    if (isTrivialStep(node))
-        node = node->children[0];
+    auto * join_node = node;
+    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    if (expression_step && node->children.size() == 1 && !expression_step->getExpression().hasArrayJoin())
+    {
+        join_node = node->children[0];
+    }
 
-    auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+    auto * child_join_step = typeid_cast<JoinStepLogical *>(join_node->step.get());
     if (child_join_step && !child_join_step->isOptimized())
     {
         auto child_join_kind = child_join_step->getJoinOperator().kind;
@@ -585,13 +576,20 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
         if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
         {
             QueryGraphBuilder child_graph(graph.context);
-            buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+            buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
+
+            if (expression_step)
+            {
+                ActionsDAG::NodeMapping node_mapping;
+                child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
+            }
+
             size_t count = child_graph.inputs.size();
             uniteGraphs(graph, std::move(child_graph));
             return count;
         }
         /// Optimize child subplan before continuing to get size estimation
-        optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
+        optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
     }
 
     graph.inputs.push_back(node);
@@ -1076,7 +1074,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                     {
                         auto mapped_it = join_expression_map.find(input_node);
                         if (mapped_it == join_expression_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                         first_dropped_node = mapped_it->second;
                         first_dropped_node_pos = input_pos;
                     }
@@ -1086,9 +1084,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
                 auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                 dag_outputs.push_back(mapped_it->second);
             }
+            auto actions_after_join = dag_outputs;
 
             /// Last step, output should correspond to the global actions DAG
             if (entry_idx == sequence.size() - 1)
@@ -1098,7 +1097,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 {
                     auto mapped_it = join_expression_map.find(output_node);
                     if (mapped_it == join_expression_map.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", output_node->result_name);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
                 }
             }
@@ -1107,6 +1106,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             {
                 if (!first_dropped_node)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned from join: {}", current_dag->dumpDAG());
+                actions_after_join.push_back(first_dropped_node);
                 dag_outputs.push_back(first_dropped_node);
                 current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
@@ -1119,7 +1119,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
-                dag_outputs,
+                actions_after_join,
                 join_settings,
                 sorting_settings);
 
