@@ -169,7 +169,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -190,10 +189,18 @@ public:
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
-        if (!c0_const_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be constant string", getName());
 
-        String format = c0_const_string->getValue<String>();
+        /// Fast path: constant format string (original behavior)
+        if (c0_const_string)
+            return executeConstFormat(c0_const_string->getValue<String>(), arguments, input_rows_count);
+
+        /// Slow path: dynamic (per-row) format string
+        return executeDynamicFormat(arguments, input_rows_count);
+    }
+
+private:
+    ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
         auto instructions = buildInstructions(format, arguments, input_rows_count);
 
         ColumnsWithTypeAndName concat_args(instructions.size());
@@ -227,7 +234,67 @@ public:
         return res;
     }
 
-private:
+    /// Per-row format string execution: parse and execute format for each row individually.
+    ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
+        const ColumnPtr & format_col = arguments[0].column->convertToFullColumnIfConst();
+        const auto * format_string_col = checkAndGetColumn<ColumnString>(format_col.get());
+        if (!format_string_col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a String column", getName());
+
+        auto result_col = ColumnString::create();
+        auto & result_chars = result_col->getChars();
+        auto & result_offsets = result_col->getOffsets();
+        result_offsets.resize(input_rows_count);
+
+        size_t curr_offset = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            String format = format_string_col->getDataAt(row).toString();
+
+            /// Build single-row argument columns for this row
+            ColumnsWithTypeAndName row_args(arguments.size());
+            row_args[0] = {ColumnConst::create(ColumnString::create(1, format), 1), arguments[0].type, arguments[0].name};
+            for (size_t i = 1; i < arguments.size(); ++i)
+            {
+                auto single_val_col = arguments[i].column->cut(row, 1);
+                row_args[i] = {std::move(single_val_col), arguments[i].type, arguments[i].name};
+            }
+
+            try
+            {
+                auto instructions = buildInstructions(format, row_args, 1);
+                ColumnsWithTypeAndName concat_args(instructions.size());
+                for (size_t j = 0; j < instructions.size(); ++j)
+                    concat_args[j] = instructions[j].execute();
+
+                auto row_result = function_concat->build(concat_args)->execute(
+                    concat_args, std::make_shared<DataTypeString>(), 1, false);
+
+                StringRef val = row_result->getDataAt(0);
+                result_chars.resize(curr_offset + val.size + 1);
+                if (val.size)
+                    memcpy(&result_chars[curr_offset], val.data, val.size);
+                result_chars[curr_offset + val.size] = '\0';
+                curr_offset += val.size + 1;
+            }
+            catch (const fmt::v12::format_error & e)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Bad format '{}' in function {} at row {}, reason: {}",
+                    format,
+                    getName(),
+                    row,
+                    e.what());
+            }
+
+            result_offsets[row] = curr_offset;
+        }
+
+        return result_col;
+    }
+
     std::vector<Instruction>
     buildInstructions(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
@@ -331,6 +398,7 @@ The `printf` function formats the given string with the values (strings, integer
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
 Literal `%` character can be escaped by `%%`.
+The format string can be either a constant or a column expression, allowing different format patterns per row.
 )";
     FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
     FunctionDocumentation::Arguments arguments = {
