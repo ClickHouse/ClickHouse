@@ -180,14 +180,17 @@ public:
         {
             if (WhichDataType(arguments[2].type).isStringOrFixedString())
             {
-                /// 3rd arg is encoding variant string - must be const
-                const auto * variant_col = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
-                if (!variant_col)
+                /// 3rd arg is encoding variant string.
+                /// Since useDefaultImplementationForConstants=true, const columns are
+                /// materialized before executeImpl, so we read the value from row 0.
+                ColumnPtr col2_full = arguments[2].column->convertToFullColumnIfConst();
+                const auto * variant_col = checkAndGetColumn<ColumnString>(col2_full.get());
+                if (!variant_col || input_rows_count == 0)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Encoding variant argument must be a constant string ('bech32' or 'bech32m') for function {}",
+                        "Encoding variant argument must be a String ('bech32' or 'bech32m') for function {}",
                         getName());
-                String variant = variant_col->getValue<String>();
+                String variant = variant_col->getDataAt(0).toString();
                 if (variant == "bech32")
                     explicit_encoding = bech32::Encoding::BECH32;
                 else if (variant == "bech32m")
@@ -439,13 +442,16 @@ public:
         bool raw_mode = false;
         if (arguments.size() == 2)
         {
-            const auto * mode_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            if (!mode_col)
+            /// Since useDefaultImplementationForConstants=true, const columns are
+            /// materialized before executeImpl, so we read the value from row 0.
+            ColumnPtr mode_full = arguments[1].column->convertToFullColumnIfConst();
+            const auto * mode_col = checkAndGetColumn<ColumnString>(mode_full.get());
+            if (!mode_col || input_rows_count == 0)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Second argument of function {} must be a constant string ('raw')",
+                    "Second argument of function {} must be a String ('raw')",
                     getName());
-            String mode = mode_col->getValue<String>();
+            String mode = mode_col->getDataAt(0).toString();
             if (mode == "raw")
                 raw_mode = true;
             else
