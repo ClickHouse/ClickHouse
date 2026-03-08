@@ -167,6 +167,13 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
+    ColumnPtr cut(size_t start, size_t length) const override
+    {
+        if (from_blob_task)
+            return convertFrom()->cut(start, length);
+        return wrapped_column->cut(start, length);
+    }
+
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }
     void filter(const Filter &) override { throwInapplicable(); }
     void expand(const Filter &, bool) override { throwInapplicable(); }
