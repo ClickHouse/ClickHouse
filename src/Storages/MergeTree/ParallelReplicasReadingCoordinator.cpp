@@ -24,6 +24,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <fmt/ranges.h>
 
