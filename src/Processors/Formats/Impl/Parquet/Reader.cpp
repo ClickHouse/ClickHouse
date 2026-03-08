@@ -347,7 +347,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             if (!output_idx.has_value())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition uses PREWHERE output");
+                continue; /// This column is not directly readable from parquet; skip push down for it.
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (output_info.is_primitive)
@@ -417,7 +417,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             if (!output_idx.has_value())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column condition uses PREWHERE output");
+                continue; /// This condition references non-parquet output (e.g. PREWHERE action result).
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
@@ -697,7 +697,9 @@ void Reader::preparePrewhere()
             }
             else
             {
-                if (!prewhere_output_column_idxs.contains(idx_in_output_block))
+                bool is_prewhere_output = prewhere_output_column_idxs.contains(idx_in_output_block);
+                bool is_missing_file_column = idx_in_output_block < sample_block->columns();
+                if (!is_prewhere_output && !is_missing_file_column)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input: column '{}' (idx {})",
                         col.name, idx_in_output_block);
             }
@@ -760,7 +762,10 @@ void Reader::preparePrewhere()
     for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)
     {
         /// Column must appear in exactly one of {output_columns, prewhere output}.
-        if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
+        bool in_file = sample_block_to_output_columns_idx[i].has_value();
+        bool is_prewhere_output = prewhere_output_column_idxs.contains(i);
+        bool is_missing_file_column = i < sample_block->columns() && !in_file && !is_prewhere_output;
+        if (!is_missing_file_column && in_file == is_prewhere_output)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
     }
 }
@@ -2124,6 +2129,14 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
         if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
     }
+    else if (!state.column)
+    {
+        /// The requested sample column is absent in parquet and wasn't produced by prewhere actions.
+        /// Fill it with defaults to allow filter evaluation and output delivery.
+        state.column = extended_sample_block.getByPosition(idx_in_output_block).type
+            ->createColumnConstWithDefaultValue(row_subgroup.filter.rows_pass)
+            ->convertToFullColumnIfConst();
+    }
     chassert(state.column);
     chassert(state.column->size() == row_subgroup.filter.rows_pass);
     return state.column;
@@ -2155,7 +2168,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         for (const auto & [name, idx] : step.idxs_in_output_block)
         {
             OutputColumnState & state = row_subgroup.output.at(idx);
-            chassert(!state.column);
             state.column = block.getByName(name).column;
         }
 

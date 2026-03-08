@@ -476,6 +476,38 @@ std::shared_ptr<FutureSetFromSubquery> PreparedSets::findSubquery(const Hash & k
     return it->second;
 }
 
+void PreparedSets::addSet(const FutureSetPtr & set)
+{
+    if (!set)
+        return;
+
+    if (auto set_from_subquery = std::dynamic_pointer_cast<FutureSetFromSubquery>(set))
+    {
+        sets_from_subqueries.emplace(set_from_subquery->getHash(), std::move(set_from_subquery));
+        return;
+    }
+
+    if (auto set_from_storage = std::dynamic_pointer_cast<FutureSetFromStorage>(set))
+    {
+        sets_from_storage.emplace(set_from_storage->getHash(), std::move(set_from_storage));
+        return;
+    }
+
+    if (auto set_from_tuple = std::dynamic_pointer_cast<FutureSetFromTuple>(set))
+    {
+        auto & vector = sets_from_tuple[set_from_tuple->getHash()];
+        const auto & types = set_from_tuple->getTypes();
+        for (const auto & existing_set : vector)
+            if (equals(existing_set->getTypes(), types))
+                return;
+
+        vector.push_back(std::move(set_from_tuple));
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type");
+}
+
 std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key) const
 {
     auto it = sets_from_storage.find(key);

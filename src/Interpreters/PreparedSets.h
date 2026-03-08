@@ -222,13 +222,14 @@ public:
     FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
     FutureSetFromStoragePtr findStorage(const Hash & key) const;
     FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
+    void addSet(const FutureSetPtr & set);
 
     using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
     Subqueries getSubqueries() const;
     bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
-    // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
+    const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
@@ -40,6 +40,12 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const StoragePtr & storage,
     ContextPtr context
 );
+
+/// Estimates size of the synthetic "affected rows" query for mutation commands.
+size_t evaluateMutationCommandsSize(
+    const MutationCommands & commands,
+    const StoragePtr & storage,
+    ContextPtr context);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -228,7 +234,7 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
-        std::unique_ptr<ExpressionAnalyzer> analyzer;
+        PreparedSetsPtr prepared_sets;
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),

@@ -5,7 +5,7 @@ import pytest
 
 import helpers.client as client
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry, get_retry_number
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
     wait_for_delete_inactive_parts,
@@ -537,10 +537,30 @@ def test_ttl_empty_parts(started_cluster):
     ("node_left", "node_right", "num_run"),
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
-def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
-    if node_left.is_built_with_memory_sanitizer():
+def test_ttl_compatibility(started_cluster, node_left, node_right, num_run, request):
+    # Targeted integration runs repeat selected tests many times.
+    # Running all three compatibility variants under sanitizers often exceeds
+    # the pytest session timeout, so keep the old/new compatibility case only.
+    is_slow_build = (
+        node_left.is_built_with_sanitizer()
+        or node_right.is_built_with_sanitizer()
+        or node_left.is_built_with_llvm_coverage()
+        or node_right.is_built_with_llvm_coverage()
+    )
+
+    if is_slow_build and num_run != 1:
         pytest.skip(
-            "Memory Sanitizer is too slow for this timing-sensitive test"
+            "Skip extra TTL compatibility variants for sanitizer/coverage builds "
+            "to stay within targeted integration session timeout"
+        )
+
+    # In targeted runs this test is repeated many times (--count), and the
+    # old/new compatibility case is expensive under sanitizers.
+    # Keep a few repetitions for coverage and skip the rest to avoid session-timeout.
+    if is_slow_build and num_run == 1 and get_retry_number(request) > 3:
+        pytest.skip(
+            "Skip extra repeat iterations of the slow TTL compatibility case "
+            "for sanitizer/coverage builds"
         )
 
     # The test times out for sanitizer/ARM builds, so we increase the timeout.

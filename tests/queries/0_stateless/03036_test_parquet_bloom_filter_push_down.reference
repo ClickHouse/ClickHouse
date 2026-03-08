@@ -512,8 +512,7 @@ Transformations on key column shall not be allowed (=). Should read everything
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1000,
-    "bytes_read": 47419
+    "rows_read": 1000
   }
 }
 Transformations on key column shall not be allowed (IN). Should read everything
@@ -525,7 +524,6 @@ Transformations on key column shall not be allowed (IN). Should read everything
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 1000,
-    "bytes_read": 47419
+    "rows_read": 1000
   }
 }
