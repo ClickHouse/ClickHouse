@@ -574,11 +574,19 @@ private:
             const auto dec = bech32::decode(input);
 
             bech32_data data_8bit;
+            if (dec.encoding == bech32::Encoding::INVALID || dec.data.empty())
+            {
+                finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
+                finalizeRow(data_offsets, data_pos, data_begin, i);
+
+                updatePrevOffset(prev_offset, new_offset, col_width);
+                continue;
+            }
+
             /// In raw mode, don't skip the first byte (no witness version).
             /// In default mode, skip the first byte which is the witness version.
             auto data_start = raw_mode ? dec.data.begin() : dec.data.begin() + 1;
-            if (dec.encoding == bech32::Encoding::INVALID
-                || data_start >= dec.data.end()
+            if (data_start >= dec.data.end()
                 || !convertbits<5, 8, false>(data_8bit, bech32_data(data_start, dec.data.end()))
                 || data_8bit.empty())
             {
