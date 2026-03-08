@@ -1,0 +1,36 @@
+<test>
+    <!--
+      OptimizeJsonCastToMapAccessPass rewrites JSONAllPathsWithValues(json)['key'] to getSubcolumn(json, 'key').
+      To verify the optimization: run
+        EXPLAIN PLAN SELECT count() FROM test_optimize_json_all_paths_subscript WHERE JSONAllPathsWithValues(json)['b'] = 'hello'
+      and check that the plan contains getSubcolumn (not JSONAllPathsWithValues + mapElement).
+      Stateless test 04033_optimize_json_all_paths_with_values_subscript validates correctness.
+    -->
+    <substitutions>
+        <substitution>
+            <name>json_sample</name>
+            <values>
+                <value>'{"a": 42, "b": "hello", "c": 3.14, "nest": {"x": 1, "y": [2, 3]}, "arr": [10, 20]}'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <allow_experimental_json_all_paths_with_values>1</allow_experimental_json_all_paths_with_values>
+        <allow_experimental_optimize_json_cast_to_map_access>1</allow_experimental_optimize_json_cast_to_map_access>
+        <optimize_functions_to_subcolumns>1</optimize_functions_to_subcolumns>
+    </settings>
+
+    <create_query>CREATE TABLE test_optimize_json_all_paths_subscript (json JSON, map_json Map(String, String) ALIAS JSONAllPathsWithValues(json)::Map(String, String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO test_optimize_json_all_paths_subscript SELECT materialize({json_sample}::JSON) FROM numbers(1000000)</fill_query>
+
+    <!-- Optimized path: subscript rewritten to getSubcolumn, no full map materialization -->
+    <query>SELECT count() FROM test_optimize_json_all_paths_subscript WHERE JSONAllPathsWithValues(json)['b'] = 'hello' FORMAT Null</query>
+    <query>SELECT JSONAllPathsWithValues(json)['a'] FROM test_optimize_json_all_paths_subscript FORMAT Null</query>
+    <query>SELECT count() FROM test_optimize_json_all_paths_subscript WHERE JSONAllPathsWithValues(json)::Map(String, String)['b'] = 'hello' FORMAT Null</query>
+    <!-- ALIAS column: same semantics, benchmark subscript on map_json -->
+    <query>SELECT count() FROM test_optimize_json_all_paths_subscript WHERE map_json['b'] = 'hello' FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_optimize_json_all_paths_subscript</drop_query>
+</test>

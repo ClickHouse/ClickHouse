@@ -7450,6 +7450,9 @@ Enable experimental lazy type hints for JSON type. This feature allows optimizin
     DECLARE(Bool, allow_experimental_json_all_paths_with_values, false, R"(
 Allow the JSONAllPathsWithValues function (returns path to value as Dynamic).
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_optimize_json_cast_to_map_access, false, R"(
+Allow rewriting JSONAllPathsWithValues(json)['key'] and cast variant to getSubcolumn for pushdown.
+)", EXPERIMENTAL) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries

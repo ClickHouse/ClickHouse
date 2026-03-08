@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
             {"enable_full_text_index", false, true, "The text index is now GA"},
             {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"allow_experimental_optimize_json_cast_to_map_access", false, false, "Allow rewriting JSONAllPathsWithValues subscript to getSubcolumn for pushdown"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},

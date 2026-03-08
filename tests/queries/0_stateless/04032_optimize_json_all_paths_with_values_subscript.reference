@@ -1,0 +1,28 @@
+-- direct vs via JSONAllPathsWithValues subscript
+1	x	x
+2	y	y
+3	x	x
+4	\N	\N
+-- WHERE JSONAllPathsWithValues(json)::Map(String,String)[\'a\'] = \'x\'
+1	{"a":"x","b":42,"n":100}
+3	{"a":"x"}
+-- WHERE json.a = \'x\' (native path, same result)
+1	{"a":"x","b":42,"n":100}
+3	{"a":"x"}
+-- SELECT subscript and cast
+1	42
+2	10
+3	0
+4	0
+-- Non-constant key (no rewrite, correct result)
+1	x
+-- ALIAS column: WHERE as_map[\'a\'] = \'x\'
+1	{"a":"x","b":"10"}
+-- ALIAS column: SELECT as_map[\'a\'], as_map[\'b\']
+1	x	10
+2	y	
+3		
+-- Optimization in plan (direct JSONAllPathsWithValues subscript)
+4
+-- Optimization in plan (ALIAS column subscript)
+4
