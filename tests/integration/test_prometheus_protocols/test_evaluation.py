@@ -1366,6 +1366,79 @@ def test_range_query():
     )
 
 
+def test_multiple_instant_vectors():
+    do_query_test(
+        "http_errors",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            [
+                "[('__name__','http_errors'),('http_code','401')]",
+                "1970-01-01 00:03:20.000",
+                "4",
+            ],
+            [
+                "[('__name__','http_errors'),('http_code','404')]",
+                "1970-01-01 00:03:20.000",
+                "5",
+            ],
+        ],
+    )
+
+
+def test_multiblock_instant_vector_json():
+    """When the pipeline executor produces multiple blocks (one row per block due to max_block_size=1),
+    the JSON response for instant vector queries must still be valid.
+    Before the fix, each block would re-emit "resultType":"vector","result":[...] producing malformed JSON like:
+    {"status":"success","data":{"resultType":"vector","result":[e1]"resultType":"vector","result":[e2]}}
+    """
+    import json
+    import urllib
+
+    query = "http_errors"
+    timestamp = 200
+    escaped_query = urllib.parse.quote_plus(query, safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?query={escaped_query}&time={timestamp}&max_block_size=1"
+    response = requests.get(url)
+    assert response.status_code == 200, f"Unexpected status code: {response.status_code}, body: {response.text}"
+
+    # The critical check: response must be valid JSON.
+    # Before the fix, response.json() would raise json.JSONDecodeError.
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["resultType"] == "vector"
+    assert len(data["data"]["result"]) == 2
+
+
+def test_multiblock_range_query_json():
+    """When the pipeline executor produces multiple blocks (one row per block due to max_block_size=1),
+    the JSON response for range queries must still be valid.
+    Before the fix, entries from different blocks had no comma between them, producing malformed JSON like:
+    {"status":"success","data":{"resultType":"matrix","result":[{...}{...}]}}
+    """
+    import json
+    import urllib
+
+    query = "http_errors"
+    start_time = 100
+    end_time = 210
+    step = 10
+    escaped_query = urllib.parse.quote_plus(query, safe="")
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={escaped_query}&start={start_time}&end={end_time}&step={step}&max_block_size=1"
+    )
+    response = requests.get(url)
+    assert response.status_code == 200, f"Unexpected status code: {response.status_code}, body: {response.text}"
+
+    # The critical check: response must be valid JSON.
+    # Before the fix, response.json() would raise json.JSONDecodeError.
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["resultType"] == "matrix"
+    assert len(data["data"]["result"]) == 2
+
+
 def test_multiple_series_in_same_resultset():
     do_query_test(
         "rate(http_errors[100])[1:1]",
