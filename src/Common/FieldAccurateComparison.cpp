@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
+#include <Core/CompareHelper.h>
 #include <base/demangle.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadBufferFromString.h>
@@ -43,7 +44,17 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
-                return l == r;
+            {
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    /// NaN should be treated as equal to NaN for index range analysis
+                    /// (consistent with ClickHouse sort order where NaN has a defined position).
+                    static constexpr int nan_direction_hint = 1;
+                    return FloatCompareHelper<T>::equals(l, r, nan_direction_hint);
+                }
+                else
+                    return l == r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::equalsOp(l, r);
@@ -110,7 +121,17 @@ public:
         else
         {
             if constexpr (std::is_same_v<T, U>)
-                return l < r;
+            {
+                if constexpr (std::is_floating_point_v<T>)
+                {
+                    /// NaN should be treated as greater than all normal values (consistent with ClickHouse sort order).
+                    /// Plain IEEE 754 `<` makes NaN incomparable, which breaks Range::intersectsRange.
+                    static constexpr int nan_direction_hint = 1;
+                    return FloatCompareHelper<T>::less(l, r, nan_direction_hint);
+                }
+                else
+                    return l < r;
+            }
 
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::lessOp(l, r);
