@@ -1,0 +1,102 @@
+<test>
+    <settings>
+        <query_plan_remove_redundant_sorting>0</query_plan_remove_redundant_sorting>
+    </settings>
+
+    <!-- Create tables with different data patterns for natural sort testing -->
+    <create_query>CREATE TABLE natural_sort_small (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE natural_sort_medium (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE natural_sort_large (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE natural_sort_mixed (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE natural_sort_files (key String) Engine = Memory</create_query>
+    <create_query>CREATE TABLE natural_sort_versions (key String) Engine = Memory</create_query>
+
+    <!-- Fill with small dataset (100K rows) - simple pattern: a1, a2, ..., a100000 -->
+    <fill_query>INSERT INTO natural_sort_small SELECT concat('item', toString(number)) AS key FROM numbers(100000)</fill_query>
+
+    <!-- Fill with medium dataset (1M rows) - simple pattern -->
+    <fill_query>INSERT INTO natural_sort_medium SELECT concat('item', toString(number)) AS key FROM numbers(1000000)</fill_query>
+
+    <!-- Fill with large dataset (10M rows) - simple pattern -->
+    <fill_query>INSERT INTO natural_sort_large SELECT concat('item', toString(number)) AS key FROM numbers(10000000)</fill_query>
+
+    <!-- Fill with mixed patterns: some with numbers, some without, some with leading zeros -->
+    <fill_query>
+        INSERT INTO natural_sort_mixed
+        SELECT 
+            CASE (number % 7)
+                WHEN 0 THEN concat('file', toString(number))
+                WHEN 1 THEN concat('file', toString(number % 1000))
+                WHEN 2 THEN concat('file', leftPad(toString(number % 1000), 4, '0'))
+                WHEN 3 THEN concat('item', toString(number), 'suffix')
+                WHEN 4 THEN concat('prefix', toString(number), 'suffix')
+                WHEN 5 THEN concat('a', toString(number % 100), 'b', toString(number % 1000))
+                ELSE concat('text', toString(number))
+            END AS key
+        FROM numbers(1000000)
+    </fill_query>
+
+    <!-- Fill with file-like patterns: file1, file2, file10, file20, etc. -->
+    <fill_query>
+        INSERT INTO natural_sort_files
+        SELECT concat('file', toString(number)) AS key
+        FROM numbers(1000000)
+    </fill_query>
+
+    <!-- Fill with version-like patterns: v1.0.0, v1.0.1, v1.1.0, v2.0.0, etc. -->
+    <fill_query>
+        INSERT INTO natural_sort_versions
+        SELECT 
+            concat('v', toString(number % 100), '.', toString((number / 100) % 100), '.', toString((number / 10000) % 100)) AS key
+        FROM numbers(1000000)
+    </fill_query>
+
+    <!-- Performance tests: Compare regular sort vs natural sort on small dataset -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key LIMIT 10000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key NATURAL LIMIT 10000) FORMAT Null</query>
+
+    <!-- Performance tests: Compare regular sort vs natural sort on medium dataset -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+
+    <!-- Performance tests: Compare regular sort vs natural sort on large dataset -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY key LIMIT 1000000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_large ORDER BY key NATURAL LIMIT 1000000) FORMAT Null</query>
+
+    <!-- Performance tests: Full sort on small dataset -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_small ORDER BY key NATURAL) FORMAT Null</query>
+
+    <!-- Performance tests: Full sort on medium dataset -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key NATURAL) FORMAT Null</query>
+
+    <!-- Performance tests: Mixed patterns - where natural sort should show difference -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY key LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_mixed ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+
+    <!-- Performance tests: File patterns -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY key LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_files ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+
+    <!-- Performance tests: Version patterns -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY key LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_versions ORDER BY key NATURAL LIMIT 100000) FORMAT Null</query>
+
+    <!-- Performance tests: DESC natural sort -->
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key DESC LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT * FROM natural_sort_medium ORDER BY key DESC NATURAL LIMIT 100000) FORMAT Null</query>
+
+    <!-- Performance tests: Multiple columns with natural sort on first -->
+    <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY key, len LIMIT 100000) FORMAT Null</query>
+    <query>SELECT sum(length(key)) FROM (SELECT key, length(key) as len FROM natural_sort_medium ORDER BY key NATURAL, len LIMIT 100000) FORMAT Null</query>
+
+    <!-- Cleanup -->
+    <drop_query>DROP TABLE IF EXISTS natural_sort_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS natural_sort_medium</drop_query>
+    <drop_query>DROP TABLE IF EXISTS natural_sort_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS natural_sort_mixed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS natural_sort_files</drop_query>
+    <drop_query>DROP TABLE IF EXISTS natural_sort_versions</drop_query>
+</test>
+

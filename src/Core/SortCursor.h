@@ -4,15 +4,26 @@
 #include <vector>
 #include <algorithm>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
+#include <Columns/IColumnUnique.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
+
 
 #include "config.h"
 
@@ -22,6 +33,387 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+    inline bool isStringLikeColumn(const IColumn * col)
+{
+    if (!col) return false;
+
+    for (;;)
+    {
+        // Unwrap ColumnConst
+        if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col))
+        {
+            col = &col_const->getDataColumn();
+            continue;
+        }
+        // Unwrap Nullable
+        if (const ColumnNullable * col_null = typeid_cast<const ColumnNullable *>(col))
+        {
+            col = &col_null->getNestedColumn();
+            continue;
+        }
+        // Unwrap LowCardinality - check dictionary's nested column
+        if (const ColumnLowCardinality * col_lc = typeid_cast<const ColumnLowCardinality *>(col))
+        {
+            const IColumnUnique & dict = col_lc->getDictionary();
+            col = dict.getNestedColumn().get();
+            if (!col) return false;
+            continue;
+        }
+        // Unwrap Sparse - check values column
+        if (const ColumnSparse * col_sparse = typeid_cast<const ColumnSparse *>(col))
+        {
+            col = &col_sparse->getValuesColumn();
+            continue;
+        }
+        // Unwrap Replicated - check nested column
+        if (const ColumnReplicated * col_rep = typeid_cast<const ColumnReplicated *>(col))
+        {
+            col = col_rep->getNestedColumn().get();
+            if (!col) return false;
+            continue;
+        }
+        // Tuple: NATURAL applies transitively if any component is string-like
+        if (const ColumnTuple * col_tuple = typeid_cast<const ColumnTuple *>(col))
+        {
+            for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
+                if (isStringLikeColumn(&col_tuple->getColumn(i))) return true;
+            return false;
+        }
+        // Array: NATURAL applies if element type is string-like (or has string-like inside)
+        if (const ColumnArray * col_arr = typeid_cast<const ColumnArray *>(col))
+            return isStringLikeColumn(&col_arr->getData());
+        // Map: NATURAL applies if key/value types are string-like (nested is Array(Tuple(k,v)))
+        if (const ColumnMap * col_map = typeid_cast<const ColumnMap *>(col))
+            return isStringLikeColumn(&col_map->getNestedColumn());
+        // Now check leaf column types
+        if (typeid_cast<const ColumnString *>(col)) return true;
+        if (typeid_cast<const ColumnFixedString *>(col)) return true;
+
+        return false;
+    }
+}
+
+    /// Overload for pointer-like wrappers (shared_ptr, intrusive_ptr, COW pointers, etc.).
+    /// Participates in overload resolution only if `col.get()` is a valid expression.
+    template <typename ColumnPtr>
+    inline auto isStringLikeColumn(const ColumnPtr & col) -> decltype(col.get(), bool())
+    {
+        return isStringLikeColumn(col.get());
+    }
+
+static inline const IColumn * unwrapConstColumn(const IColumn * col)
+{
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+        return &col_const->getDataColumn();
+    return col;
+}
+
+static inline const IColumn * unwrapNullableColumn(const IColumn * col, bool & is_null, size_t pos)
+{
+    // If ColumnNullable, check nullmap; return nested column pointer.
+    if (const auto * col_null = typeid_cast<const ColumnNullable *>(col))
+    {
+        const auto & nullmap = col_null->getNullMapData();
+        is_null = static_cast<bool>(nullmap[pos]);
+        return &col_null->getNestedColumn();
+    }
+    is_null = false;
+    return col;
+}
+
+namespace detail
+{
+    template <typename T>
+    auto toStringViewImpl(const T & value) -> decltype(value.toView())
+    {
+        return value.toView();
+    }
+
+    inline std::string_view toStringViewImpl(const std::string_view & value)
+    {
+        return value;
+    }
+}
+
+/// Extract string view from a column at given position.
+/// Supports ColumnString and ColumnFixedString (and their const/nullable wrappers).
+/// Throws if unsupported.
+static inline std::string_view getStringViewFromColumn(const IColumn * col, size_t pos)
+{
+    // Unwrap const
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+        return getStringViewFromColumn(&col_const->getDataColumn(), 0);
+
+    if (const auto * col_null = typeid_cast<const ColumnNullable *>(col))
+    {
+        if (col_null->isNullAt(pos))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getStringViewFromColumn: value is NULL at position {}, caller must handle nulls before calling", pos);
+        return getStringViewFromColumn(col_null->getNestedColumnPtr().get(), pos);
+    }
+
+    if (const auto * col_str = typeid_cast<const ColumnString *>(col))
+    {
+        return detail::toStringViewImpl(col_str->getDataAt(pos));
+    }
+
+    if (const auto * col_fixed = typeid_cast<const ColumnFixedString *>(col))
+    {
+        return detail::toStringViewImpl(col_fixed->getDataAt(pos));
+    }
+
+    // LowCardinality(String): value at pos is dictionary.getDataAt(index_at_pos)
+    if (const auto * col_lc = typeid_cast<const ColumnLowCardinality *>(col))
+        return col_lc->getDataAt(pos);
+
+    // Sparse(String): value at pos from values column
+    if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(col))
+        return col_sparse->getDataAt(pos);
+
+    // Replicated(String): value at pos from nested column
+    if (const auto * col_rep = typeid_cast<const ColumnReplicated *>(col))
+        return col_rep->getDataAt(pos);
+
+    throw std::runtime_error("getStringViewFromColumn: unsupported column type for natural comparison");
+}
+
+/// Compare two ascii digit sequences (assumed to contain only '0'..'9') such that
+/// - strip leading zeros (but keep at least one digit)
+/// - compare by length (longer => greater)
+/// - if same length, lexicographical compare
+/// Returns -1/0/+1
+static inline int compareDigitSequences(const std::string_view a, const std::string_view b)
+{
+    // strip leading zeros (but leave at least one digit)
+    size_t ia = 0;
+    while (ia + 1 < a.size() && a[ia] == '0') ++ia;
+    size_t ib = 0;
+    while (ib + 1 < b.size() && b[ib] == '0') ++ib;
+
+    size_t lena = a.size() - ia;
+    size_t lenb = b.size() - ib;
+    if (lena < lenb) return -1;
+    if (lena > lenb) return 1;
+
+    // same length, lexicographic
+    for (size_t k = 0; k < lena; ++k)
+    {
+        char ca = a[ia + k];
+        char cb = b[ib + k];
+        if (ca < cb) return -1;
+        if (ca > cb) return 1;
+    }
+    return 0;
+}
+
+/// Main natural compare function.
+///
+/// Semantics for nulls:
+///  - if left is null and right is null -> 0
+///  - if left is null and right is not -> return nulls_direction (1 if NULLs greater, -1 if NULLs less)
+///  - if left not null and right is null -> return -nulls_direction
+///
+/// Returns: -1 if left < right, 0 if equal, +1 if left > right (in usual compareAt convention).
+static inline int naturalCompareAt(
+    size_t lhs_pos,
+    size_t rhs_pos,
+    const IColumn & lhs_col_in,
+    const IColumn & rhs_col_in,
+    int nulls_direction,
+    std::shared_ptr<Collator> collator = nullptr)
+{
+    // Unwrap const wrappers
+    const IColumn * lcol = &lhs_col_in;
+    const IColumn * rcol = &rhs_col_in;
+
+    // handle ColumnConst -> unwrap to nested; if const, pos 0 is used for value
+    if (typeid_cast<const ColumnConst *>(lcol))
+        lcol = &static_cast<const ColumnConst &>(lhs_col_in).getDataColumn();
+    if (typeid_cast<const ColumnConst *>(rcol))
+        rcol = &static_cast<const ColumnConst &>(rhs_col_in).getDataColumn();
+
+    // Handle nullable: fully unwrap and check nulls at each level (handles Nullable(Nullable(...)) etc.)
+    bool l_is_null = false;
+    bool r_is_null = false;
+    while (const ColumnNullable * lnull = typeid_cast<const ColumnNullable *>(lcol))
+    {
+        if (lnull->isNullAt(lhs_pos))
+        {
+            l_is_null = true;
+            break;
+        }
+        lcol = &lnull->getNestedColumn();
+    }
+    while (const ColumnNullable * rnull = typeid_cast<const ColumnNullable *>(rcol))
+    {
+        if (rnull->isNullAt(rhs_pos))
+        {
+            r_is_null = true;
+            break;
+        }
+        rcol = &rnull->getNestedColumn();
+    }
+
+    // Other wrappers can still represent NULLs (LowCardinality, Sparse, Replicated, etc.).
+    // Rely on virtual isNullAt to detect those without ColumnNullable wrapper.
+    if (!l_is_null && lcol->isNullAt(lhs_pos))
+        l_is_null = true;
+    if (!r_is_null && rcol->isNullAt(rhs_pos))
+        r_is_null = true;
+
+    if (l_is_null || r_is_null)
+    {
+        if (l_is_null && r_is_null) return 0;
+        return l_is_null ? nulls_direction : -nulls_direction;
+    }
+
+    // Tuple: element-wise comparison, natural for string-like components
+    const ColumnTuple * ltuple = typeid_cast<const ColumnTuple *>(lcol);
+    const ColumnTuple * rtuple = typeid_cast<const ColumnTuple *>(rcol);
+    if (ltuple && rtuple && ltuple->tupleSize() == rtuple->tupleSize())
+    {
+        for (size_t i = 0; i < ltuple->tupleSize(); ++i)
+        {
+            const IColumn & lsub = ltuple->getColumn(i);
+            const IColumn & rsub = rtuple->getColumn(i);
+            int cmp = (isStringLikeColumn(&lsub) && isStringLikeColumn(&rsub))
+                ? naturalCompareAt(lhs_pos, rhs_pos, lsub, rsub, nulls_direction, collator)
+                : lsub.compareAt(lhs_pos, rhs_pos, rsub, nulls_direction);
+            if (cmp != 0) return cmp;
+        }
+        return 0;
+    }
+
+    // Array: element-wise comparison in data column, natural if nested supports it
+    const ColumnArray * larr = typeid_cast<const ColumnArray *>(lcol);
+    const ColumnArray * rarr = typeid_cast<const ColumnArray *>(rcol);
+    if (larr && rarr)
+    {
+        const auto & loffs = larr->getOffsets();
+        const auto & roffs = rarr->getOffsets();
+        size_t lstart = (lhs_pos == 0 ? 0 : loffs[lhs_pos - 1]);
+        size_t rstart = (rhs_pos == 0 ? 0 : roffs[rhs_pos - 1]);
+        size_t lsize = loffs[lhs_pos] - lstart;
+        size_t rsize = roffs[rhs_pos] - rstart;
+        const IColumn & ldata = larr->getData();
+        const IColumn & rdata = rarr->getData();
+        bool use_natural = isStringLikeColumn(&ldata) && isStringLikeColumn(&rdata);
+        for (size_t i = 0; i < std::min(lsize, rsize); ++i)
+        {
+            int cmp = use_natural
+                ? naturalCompareAt(lstart + i, rstart + i, ldata, rdata, nulls_direction, collator)
+                : ldata.compareAt(lstart + i, rstart + i, rdata, nulls_direction);
+            if (cmp != 0) return cmp;
+        }
+        if (lsize != rsize) return lsize < rsize ? -1 : 1;
+        return 0;
+    }
+
+    // Map: delegate to nested Array column
+    const ColumnMap * lmap = typeid_cast<const ColumnMap *>(lcol);
+    const ColumnMap * rmap = typeid_cast<const ColumnMap *>(rcol);
+    if (lmap && rmap)
+        return naturalCompareAt(lhs_pos, rhs_pos, lmap->getNestedColumn(), rmap->getNestedColumn(), nulls_direction, collator);
+
+    // Now we expect both lcol and rcol to be string-like (ColumnString or ColumnFixedString).
+    // Get string views
+    std::string_view a = getStringViewFromColumn(lcol, lhs_pos);
+    std::string_view b = getStringViewFromColumn(rcol, rhs_pos);
+
+    size_t ia = 0;
+    size_t ib = 0;
+    const size_t na = a.size();
+    const size_t nb = b.size();
+
+    while (ia < na && ib < nb)
+    {
+        bool da = std::isdigit(static_cast<unsigned char>(a[ia]));
+        bool db = std::isdigit(static_cast<unsigned char>(b[ib]));
+
+        if (da && db)
+        {
+            // extract digit runs
+            size_t start_a = ia;
+            while (ia < na && std::isdigit(static_cast<unsigned char>(a[ia]))) ++ia;
+            size_t len_a = ia - start_a;
+
+            size_t start_b = ib;
+            while (ib < nb && std::isdigit(static_cast<unsigned char>(b[ib]))) ++ib;
+            size_t len_b = ib - start_b;
+
+            int cmp = compareDigitSequences(std::string_view(a.data() + start_a, len_a),
+                                            std::string_view(b.data() + start_b, len_b));
+            if (cmp != 0) return cmp;
+            // If numeric values are equal, compare original digit sequences lexicographically
+            if (len_a < len_b) return -1;
+            if (len_a > len_b) return 1;
+            for (size_t k = 0; k < len_a; ++k)
+            {
+                char ca = a[start_a + k];
+                char cb = b[start_b + k];
+                if (ca < cb) return -1;
+                if (ca > cb) return 1;
+            }
+            continue;
+        }
+
+        if (!da && !db)
+        {
+            // extract non-digit runs and compare lexicographically
+            size_t start_a = ia;
+            while (ia < na && !std::isdigit(static_cast<unsigned char>(a[ia]))) ++ia;
+            size_t len_a = ia - start_a;
+
+            size_t start_b = ib;
+            while (ib < nb && !std::isdigit(static_cast<unsigned char>(b[ib]))) ++ib;
+            size_t len_b = ib - start_b;
+
+            int cmp = 0;
+            if (collator)
+            {
+                cmp = collator->compare(
+                    a.data() + start_a, len_a,
+                    b.data() + start_b, len_b);
+            }
+            else
+            {
+                // Compare substrings by bytes (legacy behavior).
+                size_t minlen = std::min(len_a, len_b);
+                for (size_t k = 0; k < minlen; ++k)
+                {
+                    unsigned char ca = static_cast<unsigned char>(a[start_a + k]);
+                    unsigned char cb = static_cast<unsigned char>(b[start_b + k]);
+                    if (ca < cb) { cmp = -1; break; }
+                    if (ca > cb) { cmp = 1; break; }
+                }
+                if (cmp == 0)
+                {
+                    if (len_a < len_b) cmp = -1;
+                    else if (len_a > len_b) cmp = 1;
+                }
+            }
+
+            if (cmp != 0)
+                return cmp;
+            continue;
+        }
+
+        // one is digit, other is not: decide ordering
+        // In natural sort, textual component < numeric component (text comes before numbers).
+        return da ? 1 : -1;
+    }
+
+    // If equal up to min length, shorter string is less
+    if (ia == na && ib == nb) return 0;
+    return ia == na ? -1 : 1;
+}
+
 
 class Block;
 using IColumnPermutation = PaddedPODArray<size_t>;
@@ -203,7 +595,19 @@ struct SortCursor : SortCursorHelper<SortCursor>
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            int res;
+
+            if (desc.is_natural)
+            {
+                if (!isStringLikeColumn(impl->sort_columns[i]) || !isStringLikeColumn(rhs.impl->sort_columns[i]))
+                    throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction);
+            }
+            else
+            {
+                res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            }
 
             if (res > 0)
                 return true;
@@ -243,7 +647,18 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
             const auto & desc = impl->desc[0];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            res = direction * impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+
+            if (desc.is_natural)
+            {
+                if (!isStringLikeColumn(impl->sort_columns[0]) || !isStringLikeColumn(rhs.impl->sort_columns[0]))
+                    throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[0]), *(rhs.impl->sort_columns[0]), nulls_direction);
+            }
+            else
+            {
+                res = direction * impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+            }
         }
 
         if constexpr (consider_order)
@@ -274,7 +689,19 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
 
         const auto & desc = this->impl->desc[0];
 
-        int res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
+        int res;
+
+        if (desc.is_natural)
+        {
+            if (!isStringLikeColumn(&lhs_column) || !isStringLikeColumn(&rhs_column))
+                throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+
+            res = desc.direction * naturalCompareAt(lhs_pos, rhs_pos, lhs_column, rhs_column, desc.nulls_direction);
+        }
+        else
+        {
+            res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
+        }
 
         if constexpr (consider_order)
             return res ? res > 0 : this_impl->order > rhs.impl->order;
@@ -308,23 +735,32 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
 
         const auto & desc = this->impl->desc[0];
 
-        auto get_compare_result = [&]() -> int
+        int res;
+        if (desc.is_natural)
         {
-            bool lval_is_null = lhs_nullmap[lhs_pos];
-            bool rval_is_null = rhs_nullmap[rhs_pos];
-
-            if (unlikely(lval_is_null || rval_is_null))
+            if (!isStringLikeColumn(lhs_columns[0]) || !isStringLikeColumn(rhs.impl->sort_columns[0]))
+                throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+            res = desc.direction * naturalCompareAt(lhs_pos, rhs_pos, *lhs_columns[0], *(rhs.impl->sort_columns[0]), desc.nulls_direction, desc.collator);
+        }
+        else
+        {
+            auto get_compare_result = [&]() -> int
             {
-                if (lval_is_null && rval_is_null)
-                    return 0;
-                return lval_is_null ? desc.nulls_direction : -desc.nulls_direction;
-            }
+                bool lval_is_null = lhs_nullmap[lhs_pos];
+                bool rval_is_null = rhs_nullmap[rhs_pos];
 
-            return denull_lhs_column.compareAt(lhs_pos, rhs_pos, denull_rhs_column, desc.nulls_direction);
-        };
+                if (unlikely(lval_is_null || rval_is_null))
+                {
+                    if (lval_is_null && rval_is_null)
+                        return 0;
+                    return lval_is_null ? desc.nulls_direction : -desc.nulls_direction;
+                }
 
+                return denull_lhs_column.compareAt(lhs_pos, rhs_pos, denull_rhs_column, desc.nulls_direction);
+            };
 
-        int res = desc.direction * get_compare_result();
+            res = desc.direction * get_compare_result();
+        }
         if constexpr (consider_order)
             return res ? res > 0 : this_impl->order > rhs.impl->order;
         else
@@ -347,12 +783,22 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
             int res;
-            if (impl->need_collation[i])
-                res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
-            else
-                res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            if (desc.is_natural)
+            {
+                if (!isStringLikeColumn(impl->sort_columns[i]) || !isStringLikeColumn(rhs.impl->sort_columns[i]))
+                    throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-            res *= direction;
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction, impl->desc[i].collator);
+            }
+            else
+            {
+                if (impl->need_collation[i])
+                    res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
+                else
+                    res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+
+                res *= direction;
+            }
             if (res > 0)
                 return true;
             if (res < 0)
@@ -750,7 +1196,20 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
     for (const auto & elem : descr)
     {
         size_t ind = elem.column_number;
-        int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
+        int res;
+
+        if (elem.base.is_natural)
+        {
+            if (!isStringLikeColumn(lhs[ind]) || !isStringLikeColumn(rhs[ind]))
+                throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+
+            res = elem.base.direction * naturalCompareAt(i, j, *(lhs[ind]), *(rhs[ind]), elem.base.nulls_direction);
+        }
+        else
+        {
+            res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
+        }
+
         if (res < 0)
             return true;
         if (res > 0)

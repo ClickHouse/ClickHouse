@@ -55,7 +55,19 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     }
 
     queue_variants = SortQueueVariants(sort_description_types, description);
-    if (queue_variants.variantSupportJITCompilation())
+
+    // Check if natural sort is used - JIT compilation is not supported for natural sort
+    bool has_natural_sort = false;
+    for (const auto & column_description : description)
+    {
+        if (column_description.is_natural)
+        {
+            has_natural_sort = true;
+            break;
+        }
+    }
+
+    if (!has_natural_sort && queue_variants.variantSupportJITCompilation())
         compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attempts*/);
 }
 
