@@ -24,6 +24,10 @@ class SystemAllocatedMemoryHolder
         {
             [[maybe_unused]] auto res = CurrentMemoryTracker::allocNoThrow(size);
             data = __real_malloc(size);
+            if (!data)
+            {
+                [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+            }
         }
 
         Memory(Memory && other) noexcept

@@ -130,7 +130,16 @@ void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 {
     checkSize(size);
     auto trace = CurrentMemoryTracker::alloc(size);
-    void * ptr = allocNoTrack<clear_memory_, populate>(size, alignment);
+    void * ptr = nullptr;
+    try
+    {
+        ptr = allocNoTrack<clear_memory_, populate>(size, alignment);
+    }
+    catch (...)
+    {
+        [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+        throw;
+    }
     trace.onAlloc(ptr, size);
     return ptr;
 }

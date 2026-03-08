@@ -9,6 +9,8 @@ option (SANITIZE "Enable one of the code sanitizers" "")
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
 if (SANITIZE)
+    message(STATUS "Sanitizer build: malloc/free wrapping is disabled, so memory tracking coverage for C allocations is partial.")
+
     if (SANITIZE STREQUAL "address")
         set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")

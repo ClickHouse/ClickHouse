@@ -115,12 +115,17 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    if (likely(size != 0))
+    size_t size_for_nallocx = size;
+    if (unlikely(size_for_nallocx == 0))
+        size_for_nallocx = 1;
+
+    if constexpr (sizeof...(TAlign) == 1)
     {
-        if constexpr (sizeof...(TAlign) == 1)
-            actual_size = nallocx(size, MALLOCX_ALIGN(alignToSizeT(align...)));
-        else
-            actual_size = nallocx(size, 0);
+        actual_size = nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
+    }
+    else
+    {
+        actual_size = nallocx(size_for_nallocx, 0);
     }
 #endif
 
