@@ -408,17 +408,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 String prefix = extractFixedPrefixFromRegularExpression(expression);
 
                 /// If simple extraction failed, use comprehensive regex analysis
-                /// for anchored patterns (starting with ^).
-                if (prefix.empty() && !expression.empty() && expression[0] == '^')
+                /// for anchored patterns matching ^(alt1|alt2|...).
+                /// The group must start immediately after ^ (expression[1] == '(') and
+                /// must NOT be a flag group like (?i) (expression[2] != '?'), to ensure
+                /// alternatives represent start-of-string content, not substrings.
+                if (prefix.empty()
+                    && expression.size() >= 3
+                    && expression[0] == '^'
+                    && expression[1] == '('
+                    && expression[2] != '?')
                 {
                     auto analysis = OptimizedRegularExpression::analyze(expression);
 
-                    /// Use alternatives only when the group starts immediately after ^,
-                    /// i.e. the pattern is ^(alt1|alt2|...). This guarantees alternatives
-                    /// are prefixes of the matched string. Patterns like ^.*(a|b) have
-                    /// non-literal content between ^ and the group, so their alternatives
-                    /// are substrings — using them would cause false negatives.
-                    if (!analysis.alternatives.empty() && expression.size() >= 2 && expression[1] == '(')
+                    if (!analysis.alternatives.empty())
                     {
                         /// Find the longest common prefix of all alternatives.
                         prefix = analysis.alternatives[0];
@@ -433,10 +435,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                                 break;
                         }
                     }
-
-                    /// Fall back to required_substring if it's a confirmed prefix.
-                    if (prefix.empty() && !analysis.required_substring.empty() && analysis.required_substring_is_prefix)
-                        prefix = analysis.required_substring;
                 }
 
                 if (prefix.empty())
