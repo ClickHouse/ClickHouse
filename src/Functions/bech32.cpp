@@ -153,7 +153,7 @@ public:
 
         /// check 3rd (optional) arg: either a witness version (UInt*) or encoding variant ('bech32'/'bech32m')
         size_t arg_idx = 2;
-        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt() && !WhichDataType(arguments[arg_idx]).isStringOrFixedString())
+        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt() && !WhichDataType(arguments[arg_idx]).isString())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument {} of function {}, expected unsigned integer (witness version) or String ('bech32'/'bech32m')",
@@ -178,7 +178,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            if (WhichDataType(arguments[2].type).isStringOrFixedString())
+            if (WhichDataType(arguments[2].type).isString())
             {
                 /// 3rd arg is encoding variant string — must be constant (mode selector, not per-row data).
                 /// useDefaultImplementationForConstants=true materializes const literals into
@@ -444,7 +444,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        if (arguments.size() == 2 && !WhichDataType(arguments[1]).isStringOrFixedString())
+        if (arguments.size() == 2 && !WhichDataType(arguments[1]).isString())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument 2 of function {}, expected String ('raw')",
@@ -500,7 +500,7 @@ public:
             }
         }
 
-        const ColumnPtr & column = arguments[0].column;
+        ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
