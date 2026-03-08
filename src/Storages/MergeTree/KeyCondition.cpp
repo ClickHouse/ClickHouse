@@ -23,6 +23,7 @@
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -403,12 +404,39 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// This optimization can't process alternation - this would require
-                /// a comprehensive parsing of regular expression.
-                if (expression.contains('|'))
-                    return false;
-
+                /// First, try the simple prefix extraction (handles ^prefix patterns without groups/alternation).
                 String prefix = extractFixedPrefixFromRegularExpression(expression);
+
+                /// If simple extraction failed, use comprehensive regex analysis.
+                /// This handles patterns like ^(exact)$, ^(prefix.*), and ^(a|b|c)$
+                /// by extracting the common required_substring prefix.
+                if (prefix.empty())
+                {
+                    auto analysis = OptimizedRegularExpression::analyze(expression);
+
+                    /// If analysis found exact alternatives (e.g. ^(a|b|c)$), compute common prefix.
+                    /// All alternatives must start from the beginning (is_trivial or required_substring_is_prefix).
+                    if (!analysis.alternatives.empty())
+                    {
+                        /// Find the longest common prefix of all alternatives.
+                        prefix = analysis.alternatives[0];
+                        for (size_t i = 1; i < analysis.alternatives.size(); ++i)
+                        {
+                            size_t common_len = 0;
+                            size_t max_len = std::min(prefix.size(), analysis.alternatives[i].size());
+                            while (common_len < max_len && prefix[common_len] == analysis.alternatives[i][common_len])
+                                ++common_len;
+                            prefix = prefix.substr(0, common_len);
+                            if (prefix.empty())
+                                break;
+                        }
+                    }
+                    else if (!analysis.required_substring.empty() && analysis.required_substring_is_prefix)
+                    {
+                        prefix = analysis.required_substring;
+                    }
+                }
+
                 if (prefix.empty())
                     return false;
 
