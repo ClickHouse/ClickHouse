@@ -236,7 +236,7 @@ protected:
         UInt64 provided = 0;
         RangesPos cursor = start;
 
-        while (provided < block_size)
+        while (provided < block_size && !isCancelled())
         {
             chassert(cursor.offset_in_ranges < ranges.size());
 
