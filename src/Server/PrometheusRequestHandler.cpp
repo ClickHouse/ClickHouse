@@ -15,6 +15,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
@@ -29,9 +30,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/QualifiedTableName.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
@@ -42,6 +46,60 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool prometheus_remote_write_dynamic_routing_enabled;
+}
+
+namespace
+{
+#if USE_PROMETHEUS_PROTOBUFS
+    String getRequestPath(const HTTPServerRequest & request)
+    {
+        const auto & uri = request.getURI();
+        auto query_pos = uri.find('?');
+        if (query_pos == String::npos)
+            return uri;
+        return uri.substr(0, query_pos);
+    }
+
+    QualifiedTableName resolveTableNameFromRequest(
+        const PrometheusRequestHandlerConfig & config,
+        const HTTPServerRequest & request)
+    {
+        if (!config.enable_table_name_url_routing)
+            return config.time_series_table_name;
+
+        const String path = getRequestPath(request);
+        auto start = path.begin();
+        if (start != path.end() && *start == '/')
+            ++start;
+        auto first_sep = std::find(start, path.end(), '/');
+        if (first_sep == path.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                path);
+        auto second_sep = std::find(first_sep + 1, path.end(), '/');
+        if (second_sep == path.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                path);
+
+        String database(start, first_sep);
+        String table(first_sep + 1, second_sep);
+        if (database.empty() || table.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                path);
+
+        return QualifiedTableName{database, table};
+    }
+#endif
 }
 
 /// Base implementation of a prometheus protocol.
@@ -241,8 +299,22 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
-        PrometheusRemoteWriteProtocol protocol{table, context};
+        const bool is_dynamic_routing = config().enable_table_name_url_routing;
+        auto table_name = resolveTableNameFromRequest(config(), request);
+        auto table = DatabaseCatalog::instance().getTable(StorageID{table_name}, context);
+        auto time_series_storage = storagePtrToTimeSeries(table);
+        if (is_dynamic_routing)
+        {
+            const auto & time_series_settings = time_series_storage->getStorageSettings();
+            if (!time_series_settings[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Prometheus remote write dynamic routing is disabled for TimeSeries table {}",
+                    time_series_storage->getStorageID().getNameForLogs());
+            }
+        }
+        PrometheusRemoteWriteProtocol protocol{time_series_storage, context};
 
         if (write_request.timeseries_size())
             protocol.writeTimeSeries(write_request.timeseries());

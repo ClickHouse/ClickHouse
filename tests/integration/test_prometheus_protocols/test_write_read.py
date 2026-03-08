@@ -96,6 +96,10 @@ def start_cluster():
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         wait_for_scraped_data()
         send_big_data()
+        node.query(
+            "CREATE TABLE prometheus_dynamic ENGINE=TimeSeries "
+            "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -154,3 +158,19 @@ def test_remote_read_big_data():
     assert len(read_response.results) == 1
     assert len(read_response.results[0].timeseries) == 1
     assert len(read_response.results[0].timeseries[0].samples) == 75000
+
+
+def test_remote_write_dynamic_routing():
+    timestamp = time.time()
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "dynamic_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "default/prometheus_dynamic/write",
+        write_request,
+    )
+    assert_eq_with_retry(
+        node, "SELECT count() > 0 FROM timeSeriesData(prometheus_dynamic)", "1"
+    )
