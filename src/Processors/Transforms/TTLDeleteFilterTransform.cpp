@@ -100,6 +100,30 @@ TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     }
 }
 
+TTLDeleteFilterTransform::TTLDeleteFilterTransform(
+    const SharedHeader & header_,
+    std::vector<DeleteTTLEntry> pre_built_entries_,
+    time_t current_time_,
+    bool force_,
+    const MergeTreeMutableDataPartPtr & data_part_)
+    : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
+    , delete_ttl_entries(std::move(pre_built_entries_))
+    , current_time(current_time_)
+    , force(force_)
+    , date_lut(DateLUT::instance())
+    , data_part(data_part_)
+{
+    for (const auto & entry : delete_ttl_entries)
+    {
+        if (isMinTTLExpired(entry.old_ttl_info)
+            && isTTLExpired(entry.old_ttl_info.max)
+            && !entry.description.where_expression_ast)
+        {
+            all_data_dropped = true;
+        }
+    }
+}
+
 bool TTLDeleteFilterTransform::isTTLExpired(time_t ttl) const
 {
     return ttl && (ttl <= current_time);
