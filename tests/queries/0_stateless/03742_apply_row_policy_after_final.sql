@@ -10,6 +10,7 @@ INSERT INTO tab VALUES (1, 'aaa', 1), (2, 'bbb', 1);
 INSERT INTO tab VALUES (1, 'ccc', 2);
 
 SELECT '= no row policy =';
+SET apply_row_policy_after_final = 0;
 SELECT '--- raw';
 SELECT * FROM tab ORDER BY x, version;
 SELECT '--- final';
