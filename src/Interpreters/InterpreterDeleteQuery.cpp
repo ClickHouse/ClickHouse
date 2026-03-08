@@ -64,18 +64,22 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 /// This is needed because the DELETE predicate is re-formatted as a string and re-parsed
 /// in the context of an UPDATE/ALTER query, where qualified names like db.table.column
 /// cannot be resolved. See #71760.
+static void stripQualifiedNamesImpl(ASTPtr & ast, const DatabaseAndTableWithAlias & db_and_table)
+{
+    if (auto * identifier = ast->as<ASTIdentifier>())
+        IdentifierSemantic::setColumnShortName(*identifier, db_and_table);
+
+    for (auto & child : ast->children)
+        stripQualifiedNamesImpl(child, db_and_table);
+}
+
 static void stripQualifiedNames(ASTPtr & ast, const StorageID & storage_id)
 {
     DatabaseAndTableWithAlias db_and_table;
     db_and_table.database = storage_id.database_name;
     db_and_table.table = storage_id.table_name;
     db_and_table.uuid = storage_id.uuid;
-
-    if (auto * identifier = ast->as<ASTIdentifier>())
-        IdentifierSemantic::setColumnShortName(*identifier, db_and_table);
-
-    for (auto & child : ast->children)
-        stripQualifiedNames(child, storage_id);
+    stripQualifiedNamesImpl(ast, db_and_table);
 }
 
 BlockIO InterpreterDeleteQuery::execute()
