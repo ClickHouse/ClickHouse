@@ -3,6 +3,8 @@
 -- be a deterministic, same-direction monotonic function. The number of
 -- FINAL BY expressions must exactly match the number of sorting key columns.
 
+SET enable_analyzer = 1;
+
 -- ============================================================
 -- Part 1: Basic coarse merge with AggregatingMergeTree
 -- ORDER BY unix_time
