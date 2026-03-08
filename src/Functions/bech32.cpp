@@ -185,32 +185,40 @@ public:
                 /// full columns, so we also accept ColumnString and read from row 0.
                 ColumnPtr col2_full = arguments[2].column->convertToFullColumnIfConst();
                 const auto * variant_col = checkAndGetColumn<ColumnString>(col2_full.get());
-                if (!variant_col || input_rows_count == 0)
+                if (!variant_col)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Encoding variant argument must be a constant String ('bech32' or 'bech32m') for function {}",
                         getName());
-                /// Validate all rows have the same value (guards against non-const column expressions)
-                String variant = variant_col->getDataAt(0).toString();
-                for (size_t row = 1; row < input_rows_count; ++row)
+                if (input_rows_count == 0)
                 {
-                    if (variant_col->getDataAt(row).toString() != variant)
+                    have_encoding_variant = true;
+                    explicit_encoding = bech32::Encoding::BECH32;
+                }
+                else
+                {
+                    /// Validate all rows have the same value (guards against non-const column expressions)
+                    String variant = variant_col->getDataAt(0).toString();
+                    for (size_t row = 1; row < input_rows_count; ++row)
+                    {
+                        if (variant_col->getDataAt(row).toString() != variant)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Encoding variant must be constant for function {}, got different values in rows",
+                                getName());
+                    }
+                    if (variant == "bech32")
+                        explicit_encoding = bech32::Encoding::BECH32;
+                    else if (variant == "bech32m")
+                        explicit_encoding = bech32::Encoding::BECH32M;
+                    else
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Encoding variant must be constant for function {}, got different values in rows",
+                            "Invalid encoding variant '{}' for function {}, expected 'bech32' or 'bech32m'",
+                            variant,
                             getName());
+                    have_encoding_variant = true;
                 }
-                if (variant == "bech32")
-                    explicit_encoding = bech32::Encoding::BECH32;
-                else if (variant == "bech32m")
-                    explicit_encoding = bech32::Encoding::BECH32M;
-                else
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid encoding variant '{}' for function {}, expected 'bech32' or 'bech32m'",
-                        variant,
-                        getName());
-                have_encoding_variant = true;
             }
             else
             {
@@ -460,11 +468,17 @@ public:
             /// Decode mode must be constant — it's a mode selector, not per-row data.
             ColumnPtr mode_full = arguments[1].column->convertToFullColumnIfConst();
             const auto * mode_col = checkAndGetColumn<ColumnString>(mode_full.get());
-            if (!mode_col || input_rows_count == 0)
+            if (!mode_col)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Second argument of function {} must be a constant String ('raw')",
                     getName());
+            if (input_rows_count == 0)
+            {
+                raw_mode = true; /// doesn't matter for empty result, just skip validation
+            }
+            else
+            {
             String mode = mode_col->getDataAt(0).toString();
             /// Validate all rows have the same value (guards against non-const column expressions)
             for (size_t row = 1; row < input_rows_count; ++row)
@@ -483,6 +497,7 @@ public:
                     "Invalid mode '{}' for function {}, expected 'raw'",
                     mode,
                     getName());
+            }
         }
 
         const ColumnPtr & column = arguments[0].column;
