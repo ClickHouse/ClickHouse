@@ -58,6 +58,8 @@ public:
             return new DummyTCPHandler(socket);
         }
     }
+
+    bool isSecure() const override { return true; }
 };
 
 
