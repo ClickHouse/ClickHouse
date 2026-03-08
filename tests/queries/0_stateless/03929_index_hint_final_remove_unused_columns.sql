@@ -33,6 +33,9 @@ FROM mytable__fuzz_45 FINAL PREWHERE key = 5 ORDER BY ALL ASC NULLS FIRST;
 -- but ReadFromMergeTree FINAL must keep them for merging. absorbExtraChildColumns only
 -- handled ExpressionStep, not FilterStep, leaving the mismatch unresolved and triggering
 -- the same "Block structure mismatch" assertion in debug/sanitizer builds.
-SELECT value FROM mytable__fuzz_45 FINAL WHERE value IS NOT NULL ORDER BY ALL ASC NULLS FIRST;
+-- SELECT uses `key`, WHERE uses `value` — different columns, so FilterStep must reduce
+-- its output (drop `value`) and input (drop `timestamp`, `insert_timestamp`), causing
+-- the mismatch with ReadFromMergeTree FINAL which keeps all sort-key + version columns.
+SELECT key FROM mytable__fuzz_45 FINAL WHERE value IS NOT NULL ORDER BY ALL ASC NULLS FIRST;
 
 DROP TABLE IF EXISTS mytable__fuzz_45;
