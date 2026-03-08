@@ -96,6 +96,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event InsertQuery;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -1568,6 +1569,9 @@ static BlockIO executeQueryImpl(
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
+                //Increment InsertQuery for async insert with inline data
+                ProfileEvents::increment(ProfileEvents::InsertQuery);
+
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
