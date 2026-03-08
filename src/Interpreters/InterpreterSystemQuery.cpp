@@ -891,6 +891,23 @@ BlockIO InterpreterSystemQuery::execute()
             system_logs.flush(query.tables);
             break;
         }
+        case Type::CLOSE_CONNECTIONS:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM CLOSE CONNECTIONS query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+            getContext()->checkAccess(AccessType::SYSTEM_CLOSE_CONNECTIONS);
+            getContext()->closeConnections(query.server_type);
+            break;
+        }
+        case Type::CLOSE_CONNECTIONS_AND_STOP_LISTEN:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM CLOSE CONNECTIONS AND STOP LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+            getContext()->checkAccess(AccessType::SYSTEM_CLOSE_CONNECTIONS);
+            getContext()->closeConnections(query.server_type);
+            getContext()->stopServers(query.server_type);
+            break;
+        }
         case Type::STOP_LISTEN:
         {
             if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
@@ -2425,6 +2442,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::SYNC_FILE_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
+            break;
+        }
+        case Type::CLOSE_CONNECTIONS:
+        case Type::CLOSE_CONNECTIONS_AND_STOP_LISTEN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CLOSE_CONNECTIONS);
             break;
         }
         case Type::STOP_LISTEN:

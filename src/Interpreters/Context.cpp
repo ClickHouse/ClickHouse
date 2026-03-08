@@ -690,10 +690,11 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
+    /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback, close_connections_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
     Context::StartStopServersCallback start_servers_callback;
     Context::StartStopServersCallback stop_servers_callback;
+    Context::CloseConnectionsCallback close_connections_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
@@ -6458,6 +6459,21 @@ void Context::stopServers(const ServerType & server_type) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stop servers because stop_servers_callback is not set.");
 
     shared->stop_servers_callback(server_type);
+}
+
+void Context::setCloseConnectionsCallback(CloseConnectionsCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->close_connections_callback = std::move(callback);
+}
+
+void Context::closeConnections(const ServerType & server_type) const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->close_connections_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't close connections because close_connections_callback is not set.");
+
+    shared->close_connections_callback(server_type);
 }
 
 

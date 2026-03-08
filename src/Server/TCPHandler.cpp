@@ -2921,6 +2921,7 @@ void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPoc
 
 void TCPHandler::run()
 {
+    TCPConnectionRegistration registration(tcp_server, socket());
     try
     {
         runImpl();

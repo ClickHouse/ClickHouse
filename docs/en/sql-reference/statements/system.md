@@ -340,6 +340,28 @@ Enables background data distribution when inserting data into distributed tables
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
+### SYSTEM CLOSE CONNECTIONS {#close-connections}
+
+Forcefully closes all existing connections on the specified interface by shutting down their sockets. Connected clients are immediately disconnected. The server continues to accept new connections on the same interface.
+
+Unlike `SYSTEM STOP LISTEN`, which only stops accepting new connections but leaves existing ones intact (they may wait up to `poll_interval` before noticing), `SYSTEM CLOSE CONNECTIONS` immediately terminates all active connections.
+
+```sql
+SYSTEM CLOSE CONNECTIONS [TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+:::note
+Commands that close TCP connections should be sent via the HTTP interface, otherwise the command will close the connection used to send it before the response can be delivered.
+:::
+
+### SYSTEM CLOSE CONNECTIONS AND STOP LISTEN {#close-connections-and-stop-listen}
+
+Forcefully closes all existing connections on the specified interface and stops listening for new ones. This is equivalent to executing `SYSTEM CLOSE CONNECTIONS` followed by `SYSTEM STOP LISTEN`.
+
+```sql
+SYSTEM CLOSE CONNECTIONS AND STOP LISTEN [TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
 ### SYSTEM STOP LISTEN {#stop-listen}
 
 Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol.

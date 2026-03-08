@@ -1578,8 +1578,12 @@ public:
     void setStartServersCallback(StartStopServersCallback && callback);
     void setStopServersCallback(StartStopServersCallback && callback);
 
+    using CloseConnectionsCallback = std::function<void(const ServerType &)>;
+    void setCloseConnectionsCallback(CloseConnectionsCallback && callback);
+
     void startServers(const ServerType & server_type) const;
     void stopServers(const ServerType & server_type) const;
+    void closeConnections(const ServerType & server_type) const;
 
     void shutdown();
 

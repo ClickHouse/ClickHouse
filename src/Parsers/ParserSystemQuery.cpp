@@ -719,6 +719,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::CLOSE_CONNECTIONS:
+        case Type::CLOSE_CONNECTIONS_AND_STOP_LISTEN:
         case Type::START_LISTEN:
         case Type::STOP_LISTEN:
         {

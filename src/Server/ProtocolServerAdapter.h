@@ -43,6 +43,9 @@ public:
     /// Stops the server. No new connections will be accepted.
     void stop() { impl->stop(); }
 
+    /// Shutdown all existing connection sockets to force them to close immediately.
+    void closeConnections() { impl->closeConnections(); }
+
     bool isStopping() const { return impl->isStopping(); }
 
     /// Returns the number of currently handled connections.
@@ -71,6 +74,7 @@ private:
         virtual ~Impl() = default;
         virtual void start() = 0;
         virtual void stop() = 0;
+        virtual void closeConnections() = 0;
         virtual bool isStopping() const = 0;
         virtual UInt16 portNumber() const = 0;
         virtual size_t currentConnections() const = 0;

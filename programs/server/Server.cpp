@@ -2691,6 +2691,12 @@ try
         access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
+    global_context->setCloseConnectionsCallback([&](const ServerType & server_type)
+    {
+        std::lock_guard lock(servers_lock);
+        closeServerConnections(servers, server_type);
+    });
+
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
@@ -3667,6 +3673,24 @@ void Server::createInterserverServers(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
             });
+        }
+    }
+}
+
+void Server::closeServerConnections(
+    std::vector<ProtocolServerAdapter> & servers,
+    const ServerType & server_type) const
+{
+    LoggerRawPtr log = &logger();
+
+    for (auto & server : servers)
+    {
+        const std::string server_port_name = server.getPortName();
+
+        if (server_type.shouldStop(server_port_name))
+        {
+            LOG_INFO(log, "Closing connections for {}", server.getDescription());
+            server.closeConnections();
         }
     }
 }
