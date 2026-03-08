@@ -243,6 +243,16 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
 
     while (!waiting_outputs.empty() && !inputs_with_data.empty())
     {
+        /// An output that was added to `waiting_outputs` may have become finished
+        /// since then (its status was updated via `updated_outputs` above).
+        /// Skip such stale entries to avoid pushing data to a finished port
+        /// and corrupting internal state.
+        if (output_ports[waiting_outputs.front()].status != OutputStatus::NeedData)
+        {
+            waiting_outputs.pop();
+            continue;
+        }
+
         auto & waiting_output = output_ports[waiting_outputs.front()];
         waiting_outputs.pop();
 
@@ -267,6 +277,10 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
 
         return Status::Finished;
     }
+
+    /// Drain remaining stale entries before checking if we still need data.
+    while (!waiting_outputs.empty() && output_ports[waiting_outputs.front()].status != OutputStatus::NeedData)
+        waiting_outputs.pop();
 
     if (!waiting_outputs.empty())
         return Status::NeedData;
@@ -391,6 +405,13 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     /// Process abandoned chunks if any.
     while (!abandoned_chunks.empty() && !waiting_outputs.empty())
     {
+        /// Skip stale entries — outputs that became finished since they were enqueued.
+        if (output_ports[waiting_outputs.front()].status != OutputStatus::NeedData)
+        {
+            waiting_outputs.pop();
+            continue;
+        }
+
         auto & waiting_output = output_ports[waiting_outputs.front()];
         waiting_outputs.pop();
 
@@ -403,6 +424,13 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     /// Enable more inputs if needed.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
+        /// Skip stale entries — outputs that became finished since they were enqueued.
+        if (output_ports[waiting_outputs.front()].status != OutputStatus::NeedData)
+        {
+            waiting_outputs.pop();
+            continue;
+        }
+
         auto & input = input_ports[disabled_input_ports.front()];
         disabled_input_ports.pop();
 
@@ -420,10 +448,11 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         waiting_outputs.pop();
 
         if (output.status != OutputStatus::Finished)
-           ++num_finished_outputs;
-
-        output.status = OutputStatus::Finished;
-        output.port->finish();
+        {
+            ++num_finished_outputs;
+            output.status = OutputStatus::Finished;
+            output.port->finish();
+        }
     }
 
     if (num_finished_outputs == outputs.size())
