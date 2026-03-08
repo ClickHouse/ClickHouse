@@ -757,6 +757,14 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
     configuration->checkMutationIsPossible(commands);
 }
 
+void StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
+{
+    auto * metadata = getExternalMetadata(context);
+    if (!metadata)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+    metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
+}
+
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();

@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
@@ -152,6 +153,19 @@ public:
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+
+    virtual void executeCommand(
+        const String & command_name,
+        const ASTPtr & /*args*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/)
+    {
+        throwNotImplemented(fmt::format("EXECUTE {}", command_name));
+    }
+
     virtual void drop(ContextPtr) { }
 
 protected:
