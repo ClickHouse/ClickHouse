@@ -6813,6 +6813,30 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     return resolved;
 }
 
+StoragePtr Context::resolveStorage(StorageID storage_id, StorageNamespace where) const
+{
+    const auto & catalog = DatabaseCatalog::instance();
+
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return catalog.tryGetByUUID(storage_id.uuid).second;
+
+    StorageID resolved = StorageID::createEmpty();
+    std::optional<Exception> exc;
+    {
+        SharedLockGuard lock(mutex);
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    }
+    if (exc)
+        throw Exception(*exc);
+
+    if (resolved.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return catalog.getTable(resolved, shared_from_this());
+    /// We use getDatabase().tryGetTable() over DatabaseCatalog::tryGetTable() to get UNKNOWN_DATABASE error
+    if (!resolved.hasUUID())
+        return catalog.getDatabase(resolved.database_name)->tryGetTable(resolved.table_name, shared_from_this());
+    return catalog.tryGetByUUID(resolved.uuid).second;
+}
+
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)

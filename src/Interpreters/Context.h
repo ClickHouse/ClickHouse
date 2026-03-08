@@ -946,6 +946,7 @@ public:
     };
 
     String resolveDatabase(const String & database_name) const;
+    StoragePtr resolveStorage(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;

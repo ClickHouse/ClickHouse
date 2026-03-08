@@ -207,40 +207,26 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
-    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
-
-    StoragePtr storage;
+    StoragePtr storage = context->resolveStorage(StorageID(database_name, table_name));
     TableLockHolder storage_lock;
 
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    if (!storage)
+        return {};
+    if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage->getStorageID()))
     {
         /// If table is the target of a refreshable materialized view, it needs additional
         /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
-    }
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
+        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage->getStorageID(), context);
     }
     if (!storage)
         return {};
-
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+
+    bool is_temporary_table = storage->getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE;
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
