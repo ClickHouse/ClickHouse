@@ -57,6 +57,7 @@ struct DPJoinEntry
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
+    std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;

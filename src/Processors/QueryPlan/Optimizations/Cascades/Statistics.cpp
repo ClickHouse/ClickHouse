@@ -205,7 +205,9 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             stats.emplace();
             stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
             stats->column_statistics = relation_stats.column_stats;
-            stats->estimated_bytes_per_row = estimateReadBytesPerRowFromStep(*read_step);
+            stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
+                ? *relation_stats.avg_row_bytes
+                : estimateReadBytesPerRowFromStep(*read_step);
         }
     }
 

@@ -62,6 +62,9 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
         if (stat_object->has("cardinality"))
             stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
 
+        if (stat_object->has("avg_row_bytes"))
+            stats.avg_row_bytes = stat_object->getValue<double>("avg_row_bytes");
+
         if (stat_object->isObject("distinct_keys"))
         {
             auto distinct_keys = stat_object->getObject("distinct_keys");
