@@ -344,6 +344,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     referential_dependencies.clear();
     loading_dependencies.clear();
     view_dependencies.clear();
+    plain_view_dependencies.clear();
 }
 
 bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
@@ -964,6 +965,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , referential_dependencies{"ReferentialDeps"}
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
+    , plain_view_dependencies{"PlainViewDeps"}
     , log(getLogger("DatabaseCatalog"))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
@@ -1018,6 +1020,24 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 {
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
+}
+
+void DatabaseCatalog::addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies)
+{
+    if (new_plain_view_dependencies.empty())
+        return;
+    std::lock_guard lock{databases_mutex};
+    for (const auto & source_table : new_plain_view_dependencies)
+        plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
+}
+
+std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & source_table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto result = view_dependencies.getDependencies(source_table_id);
+    auto plain_views = plain_view_dependencies.getDependencies(source_table_id);
+    result.insert(result.end(), plain_views.begin(), plain_views.end());
+    return result;
 }
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
@@ -1603,9 +1623,10 @@ void DatabaseCatalog::addDependencies(
     const StorageID & table_id,
     const std::vector<StorageID> & new_referential_dependencies,
     const std::vector<StorageID> & new_loading_dependencies,
-    const std::vector<StorageID> & new_view_dependencies)
+    const std::vector<StorageID> & new_view_dependencies,
+    const std::vector<StorageID> & new_plain_view_dependencies)
 {
-    if (new_referential_dependencies.empty() && new_loading_dependencies.empty())
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty() && new_view_dependencies.empty() && new_plain_view_dependencies.empty())
         return;
     std::lock_guard lock{databases_mutex};
     if (!new_referential_dependencies.empty())
@@ -1616,6 +1637,11 @@ void DatabaseCatalog::addDependencies(
     {
         for (const auto & new_view_dependency : new_view_dependencies)
             view_dependencies.addDependency(new_view_dependency, table_id);
+    }
+    if (!new_plain_view_dependencies.empty())
+    {
+        for (const auto & source_table_id : new_plain_view_dependencies)
+            plain_view_dependencies.addDependency(source_table_id, table_id);
     }
 }
 
@@ -1681,30 +1707,34 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
     return loading_dependencies.getDependents(table_id);
 }
 
-std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
-    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
+std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
+    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_view)
 {
     std::lock_guard lock{databases_mutex};
     checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
     std::vector<StorageID> old_view_dependencies;
+    std::vector<StorageID> old_plain_view_dependencies;
 
-    if (is_mv)
+    /// Remove view from dependency graphs
+    if (is_view)
     {
-        auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
-        {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
+        StorageID view_by_name{table_id.database_name, table_id.table_name};
+        auto view_sources = view_dependencies.getDependents(view_by_name);
+        for (const auto & source_table_id : view_sources)
+            view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
+        old_view_dependencies.insert(old_view_dependencies.end(), view_sources.begin(), view_sources.end());
 
-            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
-            old_view_dependencies.push_back(the_table_from);
-        }
+        auto plain_view_sources = plain_view_dependencies.getDependents(view_by_name);
+        for (const auto & source_table_id : plain_view_sources)
+            plain_view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
+        old_plain_view_dependencies.insert(old_plain_view_dependencies.end(), plain_view_sources.begin(), plain_view_sources.end());
     }
 
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
-        old_view_dependencies};
+        old_view_dependencies,
+        old_plain_view_dependencies};
 }
 
 void DatabaseCatalog::updateDependencies(
