@@ -10,7 +10,7 @@ namespace DataLake
 {
 
 /// Returns static credentials from DatabaseDataLake settings for a storage type.
-/// Returns nullptr when settings do not provide credentials for this storage.
+/// Returns nullptr when settings do not provide a complete credential pair for this storage.
 std::shared_ptr<IStorageCredentials> tryGetStaticStorageCredentials(
     DB::DatabaseDataLakeStorageType storage_type,
     const DB::DatabaseDataLakeSettings & settings);

@@ -69,6 +69,34 @@ TEST(StaticStorageCredentialsTest, PrefersNonPrefixedSettingsWhenBothSet)
     EXPECT_EQ(s3_credentials->getSecretAccessKey(), "preferred_secret");
 }
 
+TEST(StaticStorageCredentialsTest, FallsBackToStoragePrefixedPairWhenAwsPairIsIncomplete)
+{
+    DB::SettingsChanges changes;
+    changes.emplace_back("aws_access_key_id", "incomplete_access");
+    changes.emplace_back("storage_aws_access_key_id", "storage_access");
+    changes.emplace_back("storage_aws_secret_access_key", "storage_secret");
+    auto settings = makeSettingsWithChanges(changes);
+
+    auto credentials = tryGetStaticStorageCredentials(DB::DatabaseDataLakeStorageType::S3, settings);
+    ASSERT_NE(credentials, nullptr);
+
+    auto s3_credentials = std::dynamic_pointer_cast<S3Credentials>(credentials);
+    ASSERT_NE(s3_credentials, nullptr);
+    EXPECT_EQ(s3_credentials->getAccessKeyId(), "storage_access");
+    EXPECT_EQ(s3_credentials->getSecretAccessKey(), "storage_secret");
+}
+
+TEST(StaticStorageCredentialsTest, ReturnsNullptrWhenCredentialFieldsWouldBeMixedAcrossSettingNamespaces)
+{
+    DB::SettingsChanges changes;
+    changes.emplace_back("aws_access_key_id", "catalog_access");
+    changes.emplace_back("storage_aws_secret_access_key", "storage_secret");
+    auto settings = makeSettingsWithChanges(changes);
+
+    auto credentials = tryGetStaticStorageCredentials(DB::DatabaseDataLakeStorageType::S3, settings);
+    EXPECT_EQ(credentials, nullptr);
+}
+
 TEST(StaticStorageCredentialsTest, ReturnsNullptrWhenSecretIsMissing)
 {
     DB::SettingsChanges changes;
