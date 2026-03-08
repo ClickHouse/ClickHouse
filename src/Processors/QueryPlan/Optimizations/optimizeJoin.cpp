@@ -15,6 +15,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -33,9 +34,10 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
+#include <Processors/QueryPlan/Optimizations/filterSampling.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-
 #include <Storages/StorageMemory.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
 #include <limits>
@@ -232,12 +234,25 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node,
+    const ActionsDAG * filter_dag,
+    const String * filter_column_name)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
+
+        /// Derive predicate node from the filter DAG for the column statistics estimator.
+        const ActionsDAG::Node * filter_node = (filter_dag && filter_column_name)
+            ? static_cast<const ActionsDAG::Node *>(filter_dag->tryFindInOutputs(*filter_column_name))
+            : nullptr;
+
+        /// Compute base statistics via column statistics estimator or index analysis.
+        RelationStats stats{.table_name = table_display_name};
+        bool filter_accounted = false;
+        bool has_filter = filter_node || reading->getPrewhereInfo();
 
         if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
@@ -247,50 +262,92 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter_node, prewhere_node);
+                stats.estimated_rows = relation_profile.rows;
+                stats.column_stats = relation_profile.column_stats;
+
+                if (has_filter && stats.estimated_rows)
+                {
+                    auto unfiltered_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), nullptr, nullptr);
+                    filter_accounted = (stats.estimated_rows != unfiltered_profile.rows);
+                }
+                else
+                {
+                    filter_accounted = !has_filter;
+                }
+
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
-                return stats;
             }
         }
-        if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
-            return dummy_stats;
 
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
-        if (!analyzed_result)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
-
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
+        if (!stats.estimated_rows)
         {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+            if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
+                return dummy_stats;
+
+            auto analyzed_result = reading->getAnalyzedResult();
+            if (!analyzed_result)
+                analyzed_result = reading->selectRangesToRead();
+            if (!analyzed_result)
+                return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
+
+            bool is_filtered_by_index = false;
+            UInt64 total_parts = 0;
+            UInt64 total_granules = 0;
+            for (const auto & idx_stat : analyzed_result->index_stats)
             {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
+                if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+                {
+                    total_parts = idx_stat.num_parts_after;
+                    total_granules = idx_stat.num_granules_after;
+                    continue;
+                }
+
+                is_filtered_by_index = is_filtered_by_index
+                    || (total_parts && idx_stat.num_parts_after < total_parts)
+                    || (total_granules && idx_stat.num_granules_after < total_granules);
+
+                if (is_filtered_by_index)
+                    break;
             }
 
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
+            if (has_filter && !is_filtered_by_index)
+            {
+                /// Return max row count if we know it for small tables, it should be better than "unknown".
+                constexpr size_t small_table_threshold_rows = 50000;
+                if (analyzed_result->selected_rows && analyzed_result->selected_rows < small_table_threshold_rows)
+                    return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
 
-            if (is_filtered_by_index)
-                break;
+                stats.estimated_rows = analyzed_result->selected_rows;
+                filter_accounted = false;
+            }
+            else
+            {
+                stats.estimated_rows = analyzed_result->selected_rows;
+                filter_accounted = true;
+            }
         }
-        bool has_filter = filter || reading->getPrewhereInfo();
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
+        /// If the filter/PREWHERE wasn't accounted for by column statistics or index analysis,
+        /// try sampling-based estimation by reading a few granules and evaluating the expression.
+        /// The filter DAG can come from a parent FilterStep (passed via filter_dag/filter_column_name)
+        /// or from a PREWHERE on this ReadFromMergeTree step (used as fallback by estimateFilterSelectivity).
+        if (!filter_accounted && has_filter && stats.estimated_rows)
+        {
+            if (auto selectivity = estimateFilterSelectivity(*reading, filter_dag, filter_column_name))
+            {
+                UInt64 unfiltered = *stats.estimated_rows;
+                stats.estimated_rows = static_cast<UInt64>(Float64(unfiltered) * *selectivity);
+                LOG_DEBUG(getLogger("optimizeJoin"),
+                    "Filter selectivity estimated as {} (row count adjusted from {} to {})",
+                    *selectivity, unfiltered, *stats.estimated_rows);
+            }
+            /// If sampling fails, keep the original (unfiltered) estimate — it's imprecise
+            /// but still better than returning "unknown" which forces the join optimizer
+            /// to guess.
+        }
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -301,9 +358,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
-    {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
-    }
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter_dag, filter_column_name);
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
@@ -318,7 +373,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter_dag, filter_column_name);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -327,30 +382,31 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter_dag, filter_column_name);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
 
+    if (typeid_cast<const BuildRuntimeFilterStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), filter_dag, filter_column_name);
+
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        const auto & dag = filter_step->getExpression();
-        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        auto stats = estimateReadRowsCount(*node.children.front(), &filter_step->getExpression(), &filter_step->getFilterColumnName());
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter_dag, filter_column_name);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter_dag, filter_column_name);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -390,8 +446,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0], nullptr, nullptr).estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1], nullptr, nullptr).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -595,7 +651,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    RelationStats stats = estimateReadRowsCount(*node, nullptr, nullptr);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
