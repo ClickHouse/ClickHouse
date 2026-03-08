@@ -82,6 +82,10 @@ process_library() {
          ${GREP_CMD} -q -i -F 'distribution of the software without specific, written prior permission' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'makes no representations about the suitability of this software' "$LIB_LICENSE" &&
          echo "HPND") ||
+        (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and/or distribute this software' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'purpose with or without fee is hereby granted' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES' "$LIB_LICENSE" &&
+         echo "ISC") ||
         echo "Unknown")
 
         if [ "$LICENSE_TYPE" == "GPL" ]

@@ -227,6 +227,9 @@ endif()
 if (TARGET ch_rust::wasmtime)
     set(USE_WASMTIME 1)
 endif()
+if (TARGET ch_contrib::ipcrypt2)
+    set(USE_IPCRYPT 1)
+endif()
 
 set (USE_YTSAURUS 1)
 

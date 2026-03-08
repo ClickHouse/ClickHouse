@@ -390,3 +390,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/ipcrypt2"]
+	path = contrib/ipcrypt2
+	url = https://github.com/jedisct1/ipcrypt2.git
