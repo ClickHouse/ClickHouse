@@ -60,8 +60,6 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric AvroSchemaCacheBytes;
-    extern const Metric AvroSchemaCacheCells;
     extern const Metric AvroSchemaRegistryCacheBytes;
     extern const Metric AvroSchemaRegistryCacheCells;
 }
@@ -1065,107 +1063,6 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
-class AvroConfluentRowInputFormat::SchemaRegistry
-{
-public:
-    explicit SchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000)
-        : base_url(base_url_), schema_cache(CurrentMetrics::AvroSchemaCacheBytes, CurrentMetrics::AvroSchemaCacheCells, schema_cache_max_size)
-    {
-        if (base_url.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Schema Registry URL");
-    }
-
-    avro::ValidSchema getSchema(uint32_t id)
-    {
-        auto [schema, loaded] = schema_cache.getOrSet(
-            id,
-            [this, id](){ return std::make_shared<avro::ValidSchema>(fetchSchema(id)); }
-        );
-        return *schema;
-    }
-
-private:
-    avro::ValidSchema fetchSchema(uint32_t id)
-    {
-        try
-        {
-            try
-            {
-                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
-
-                /// One second for connect/send/receive. Just in case.
-                auto timeouts = ConnectionTimeouts()
-                    .withConnectionTimeout(1)
-                    .withSendTimeout(1)
-                    .withReceiveTimeout(1);
-
-                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                if (url.getPort())
-                    request.setHost(url.getHost(), url.getPort());
-                else
-                    request.setHost(url.getHost());
-
-                if (!url.getUserInfo().empty())
-                {
-                    Poco::Net::HTTPCredentials http_credentials;
-                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
-
-                    http_credentials.fromUserInfo(url.getUserInfo());
-
-                    std::string decoded_username;
-                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
-                    http_basic_credentials.setUsername(decoded_username);
-
-                    if (!http_credentials.getPassword().empty())
-                    {
-                        std::string decoded_password;
-                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
-                        http_basic_credentials.setPassword(decoded_password);
-                    }
-
-                    http_basic_credentials.authenticate(request);
-                }
-
-                auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, timeouts);
-                session->sendRequest(request);
-
-                Poco::Net::HTTPResponse response;
-                std::istream * response_body = receiveResponse(*session, request, response, false);
-
-                Poco::JSON::Parser parser;
-                auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
-
-
-                auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
-                return avro::compileJsonSchemaFromString(schema);
-            }
-            catch (const Exception &)
-            {
-                throw;
-            }
-            catch (const Poco::Exception & e)
-            {
-                throw Exception(Exception::CreateFromPocoTag{}, e);
-            }
-            catch (const avro::Exception & e)
-            {
-                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
-            }
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while fetching schema id = " + std::to_string(id));
-            throw;
-        }
-    }
-
-    Poco::URI base_url;
-    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
-};
-
-using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
 static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
@@ -1177,7 +1074,7 @@ static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const
         base_url,
         [base_url]()
         {
-            return std::make_shared<ConfluentSchemaRegistry>(base_url);
+            return std::make_shared<ConfluentSchemaRegistry>(base_url, "AvroConfluentRowInputFormat");
         }
     );
     return schema_registry;
@@ -1257,7 +1154,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     auto it = deserializer_cache.find(schema_id);
     if (it == deserializer_cache.end())
     {
-        auto schema = schema_registry->getSchema(schema_id);
+        auto schema = schema_registry->getAvroSchema(schema_id);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
@@ -1276,7 +1173,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
-        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id).root();
+        root_node = getConfluentSchemaRegistry(format_settings)->getAvroSchema(schema_id).root();
     }
     else
     {

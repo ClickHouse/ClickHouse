@@ -119,6 +119,12 @@ void ProtobufReader::endNestedMessage()
     field_end = cursor;
 }
 
+void ProtobufReader::setCurrentMessageEnd(Int64 message_end)
+{
+    if (current_message_level == 1)
+        current_message_end = message_end;
+}
+
 bool ProtobufReader::readFieldNumber(int & field_number_)
 {
     assert(current_message_level);
