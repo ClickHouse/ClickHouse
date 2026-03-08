@@ -2530,8 +2530,17 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    auto predicate_value = value.safeGet<UInt8>();
-    return predicate_value == 0;
+    /// The filter expression may evaluate to any numeric type, not just UInt8,
+    /// e.g. when WHERE uses a Float64 expression like sin(col) or radians(col).
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() == 0;
+    if (value.getType() == Field::Types::Int64)
+        return value.safeGet<Int64>() == 0;
+    if (value.getType() == Field::Types::Float64)
+        return value.safeGet<Float64>() == 0;
+
+    /// For any other type, conservatively assume the filter is not always false.
+    return false;
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
@@ -3083,26 +3092,11 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         }
         else
         {
-            /// Replace predicate result to constant 1.
-            Node node;
-            node.type = ActionType::COLUMN;
-            node.result_name = predicate->result_name;
-            node.result_type = predicate->result_type;
-            node.column = node.result_type->createColumnConst(0, 1);
-
-            if (predicate->type != ActionType::INPUT)
-                *predicate = std::move(node);
-            else
-            {
-                /// Special case. We cannot replace input to constant inplace.
-                /// Because we cannot affect inputs list for actions.
-                /// So we just add a new constant and update outputs.
-                const auto * new_predicate = &addNode(node);
-                for (auto & output_node : outputs)
-                    if (output_node == predicate)
-                        output_node = new_predicate;
-            }
-
+            /// The whole predicate was pushed down, but the filter column is still
+            /// needed in the output (e.g. it appears in SELECT). Keep the original
+            /// expression so the output values are correct.  The caller will convert
+            /// the FilterStep into an ExpressionStep, which still evaluates the
+            /// expression but no longer filters.
             is_filter_const = true;
         }
     }
