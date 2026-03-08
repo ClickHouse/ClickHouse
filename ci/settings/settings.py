@@ -39,7 +39,7 @@ TEXT_CONTENT_EXTENSIONS = [
 ]
 
 DOCKERHUB_USERNAME = "robotclickhouse"
-DOCKERHUB_SECRET = "dockerhub_robot_password"
+DOCKERHUB_SECRET = "/ci/docker/robotclickhouse-readwrite-token"
 
 CI_DB_DB_NAME = "default"
 CI_DB_TABLE_NAME = "checks"
