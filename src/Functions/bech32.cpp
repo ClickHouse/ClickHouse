@@ -419,10 +419,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
+        if (arguments.empty())
             throw Exception(
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Function {} requires 1 or 2 arguments (address[, 'raw'])",
+                "At least 1 argument (address) is required for function {}",
+                getName());
+
+        if (arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "A maximum of 2 arguments (address[, 'raw']) are allowed for function {}",
                 getName());
 
         WhichDataType dtype(arguments[0]);
