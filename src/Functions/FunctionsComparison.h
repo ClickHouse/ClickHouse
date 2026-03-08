@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -1243,49 +1244,24 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
-        {
-            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
-                    backQuote(arguments[0]->getName()),
-                    backQuote(arguments[1]->getName()),
-                    backQuote(getName()));
-        }
-        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-        {
+        bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+        bool types_compatible = is_equality
+            ? areTypesComparableForEquality(arguments[0], arguments[1])
+            : areTypesComparableForOrdering(arguments[0], arguments[1]);
+
+        if (!types_compatible)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                "Illegal types of arguments ({}, {}) of function {}",
                 backQuote(arguments[0]->getName()),
                 backQuote(arguments[1]->getName()),
                 backQuote(getName()));
-        }
 
         WhichDataType left(arguments[0].get());
         WhichDataType right(arguments[1].get());
 
         const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
-
-        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
-        bool has_date = left.isDateOrDate32() || right.isDateOrDate32();
-
-        if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
-            || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
-            /// You can compare the date, datetime, or datetime64 and an enumeration with a constant string.
-            || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
-            || (left.isUUID() && right.isUUID())
-            || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
-            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            || (arguments[0]->equals(*arguments[1]))))
-        {
-            if (!tryGetLeastSupertype(arguments))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
-        }
 
         bool both_tuples = left_tuple && right_tuple;
         if (both_tuples || (left_tuple && right.isStringOrFixedString()) || (left.isStringOrFixedString() && right_tuple))

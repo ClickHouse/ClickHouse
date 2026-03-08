@@ -5,9 +5,60 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
+
+namespace
+{
+
+/// Shared type-pair compatibility logic used by both equality and ordering comparisons.
+/// This mirrors the checks in FunctionComparison::getReturnTypeImpl.
+bool areTypePairsCompatibleForComparison(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    WhichDataType left(lhs.get());
+    WhichDataType right(rhs.get());
+
+    bool both_represented_by_number = lhs->isValueRepresentedByNumber() && rhs->isValueRepresentedByNumber();
+    bool has_date = left.isDateOrDate32() || right.isDateOrDate32();
+
+    if (both_represented_by_number && !has_date)
+        return true;
+
+    if (left.isStringOrFixedString() || right.isStringOrFixedString())
+        return true;
+
+    if ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64())
+        && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64())
+        && left.idx == right.idx)
+        return true;
+
+    if (left.isUUID() && right.isUUID())
+        return true;
+
+    if ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))
+        return true;
+
+    if (left.isEnum() && right.isEnum() && lhs->getName() == rhs->getName())
+        return true;
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(lhs.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(rhs.get());
+    if (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        return true;
+
+    if (lhs->equals(*rhs))
+        return true;
+
+    DataTypes args = {lhs, rhs};
+    if (tryGetLeastSupertype(args))
+        return true;
+
+    return false;
+}
+
+}
 
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
@@ -246,6 +297,22 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     }
 
     return true;
+}
+
+bool areTypesComparableForEquality(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    if (!lhs->isComparableForEquality() || !rhs->isComparableForEquality())
+        return false;
+
+    return areTypePairsCompatibleForComparison(lhs, rhs);
+}
+
+bool areTypesComparableForOrdering(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    if (!lhs->isComparable() || !rhs->isComparable())
+        return false;
+
+    return areTypePairsCompatibleForComparison(lhs, rhs);
 }
 
 }
