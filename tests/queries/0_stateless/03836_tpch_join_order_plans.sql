@@ -100,17 +100,18 @@ SET param__internal_cascades_cost_config = '{
     "sequential_weight":100
 }';
 
--- SF100 baseline cardinalities and key column NDVs for all TPC-H tables.
+-- SF100 baseline cardinalities, bytes_per_row, and key column NDVs for all TPC-H tables.
+-- bytes_per_row reflects typical uncompressed SF100 row widths.
 -- Individual queries override this with post-filter cardinalities where needed.
 SET param__internal_join_table_stat_hints = '{
-    "lineitem":  { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_linenumber": 7, "l_returnflag": 3, "l_linestatus": 2, "l_shipdate": 2526, "l_commitdate": 2466, "l_receiptdate": 2554, "l_quantity": 50, "l_discount": 11, "l_shipmode": 7, "l_shipinstruct": 4 } },
-    "orders":    { "cardinality": 150000000,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_orderdate": 2406, "o_orderstatus": 3, "o_orderpriority": 5, "o_clerk": 1000 } },
-    "customer":  { "cardinality": 15000000,   "distinct_keys": { "c_custkey": 15000000, "c_nationkey": 25, "c_mktsegment": 5, "c_acctbal": 14975000, "c_phone": 14999997 } },
-    "part":      { "cardinality": 20000000,   "distinct_keys": { "p_partkey": 20000000, "p_type": 150, "p_brand": 25, "p_size": 50, "p_container": 40, "p_name": 19999999 } },
-    "supplier":  { "cardinality": 1000000,    "distinct_keys": { "s_suppkey": 1000000, "s_nationkey": 25, "s_acctbal": 999990 } },
-    "partsupp":  { "cardinality": 80000000,   "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_availqty": 9999, "ps_supplycost": 99865 } },
-    "nation":    { "cardinality": 25,         "distinct_keys": { "n_nationkey": 25, "n_regionkey": 5, "n_name": 25 } },
-    "region":    { "cardinality": 5,          "distinct_keys": { "r_regionkey": 5, "r_name": 5 } }
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 128, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_linenumber": 7, "l_returnflag": 3, "l_linestatus": 2, "l_shipdate": 2526, "l_commitdate": 2466, "l_receiptdate": 2554, "l_quantity": 50, "l_discount": 11, "l_shipmode": 7, "l_shipinstruct": 4 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 80,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_orderdate": 2406, "o_orderstatus": 3, "o_orderpriority": 5, "o_clerk": 1000 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 120, "distinct_keys": { "c_custkey": 15000000, "c_nationkey": 25, "c_mktsegment": 5, "c_acctbal": 14975000, "c_phone": 14999997 } },
+    "part":     { "cardinality": 20000000,  "avg_row_bytes": 90,  "distinct_keys": { "p_partkey": 20000000, "p_type": 150, "p_brand": 25, "p_size": 50, "p_container": 40, "p_name": 19999999 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 110, "distinct_keys": { "s_suppkey": 1000000, "s_nationkey": 25, "s_acctbal": 999990 } },
+    "partsupp": { "cardinality": 80000000,  "avg_row_bytes": 40,  "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_availqty": 9999, "ps_supplycost": 99865 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 60,  "distinct_keys": { "n_nationkey": 25, "n_regionkey": 5, "n_name": 25 } },
+    "region":   { "cardinality": 5,         "avg_row_bytes": 50,  "distinct_keys": { "r_regionkey": 5, "r_name": 5 } }
 }';
 
 -- Q01: Pricing summary (single table, no joins)
@@ -123,15 +124,14 @@ FROM lineitem WHERE l_shipdate <= '1998-09-02'
 GROUP BY l_returnflag, l_linestatus ORDER BY l_returnflag, l_linestatus;
 
 -- Q02: Minimum cost supplier (part+supplier+partsupp+nation+region + correlated subquery)
--- Filters: r_name='EUROPE' (1/5 regions → 5 nations, 200K suppliers),
---          p_size=15 (1/50) AND p_type LIKE '%BRASS' (30/150 types) → ~80K parts,
---          partsupp filtered to matching ~80K parts × 4 avg suppliers = ~320K rows.
+-- Filters: r_name='EUROPE' (1/5 regions), p_size=15 AND p_type LIKE '%BRASS' -> ~137K parts.
+-- Other tables have no scan-level filters (join selectivity applied later by optimizer).
 SET param__internal_join_table_stat_hints = '{
-    "region":   { "cardinality": 1,      "distinct_keys": { "r_regionkey": 1,     "r_name": 1 } },
-    "nation":   { "cardinality": 5,      "distinct_keys": { "n_nationkey": 5,     "n_regionkey": 1, "n_name": 5 } },
-    "supplier": { "cardinality": 200000, "distinct_keys": { "s_suppkey": 200000,  "s_nationkey": 5, "s_acctbal": 199990 } },
-    "part":     { "cardinality": 80000,  "distinct_keys": { "p_partkey": 80000,   "p_type": 30, "p_size": 1, "p_brand": 25 } },
-    "partsupp": { "cardinality": 320000, "distinct_keys": { "ps_partkey": 80000,  "ps_suppkey": 200000, "ps_supplycost": 99865 } }
+    "region":   { "cardinality": 1,        "avg_row_bytes": 68, "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 25,       "avg_row_bytes": 8,  "distinct_keys": { "n_nationkey": 25,      "n_regionkey": 5, "n_name": 25 } },
+    "supplier": { "cardinality": 1000000,  "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25, "s_acctbal": 657087 } },
+    "part":     { "cardinality": 137000,   "avg_row_bytes": 68, "distinct_keys": { "p_partkey": 137000,    "p_type": 30, "p_size": 1, "p_brand": 25 } },
+    "partsupp": { "cardinality": 80000000, "avg_row_bytes": 13, "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_supplycost": 99865 } }
 }';
 SELECT '-- Q02';
 EXPLAIN
@@ -146,13 +146,13 @@ WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey AND p_size = 15
 ORDER BY s_acctbal DESC, n_name, s_name, p_partkey LIMIT 100;
 
 -- Q03: Shipping priority (customer, orders, lineitem)
--- Filters: c_mktsegment='BUILDING' (1/5 → 3M customers),
---          o_orderdate < '1995-03-15' (~46% of 7yr span → ~69M orders, 1170 distinct dates),
---          l_shipdate > '1995-03-15' (~54% → ~325M lineitem rows, 1386 distinct dates).
+-- Filters: c_mktsegment='BUILDING' (1/5 -> 3M customers),
+--          o_orderdate < '1995-03-15' (~46% of 7yr span -> ~69M orders, 1170 distinct dates),
+--          l_shipdate > '1995-03-15' (~54% -> ~325M lineitem rows, 1386 distinct dates).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 3000000,   "distinct_keys": { "c_custkey": 3000000,   "c_nationkey": 25, "c_mktsegment": 1 } },
-    "orders":   { "cardinality": 69000000,  "distinct_keys": { "o_orderkey": 69000000,  "o_custkey": 10000000, "o_orderdate": 1170, "o_orderstatus": 3 } },
-    "lineitem": { "cardinality": 325000000, "distinct_keys": { "l_orderkey": 100000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_shipdate": 1386 } }
+    "customer": { "cardinality": 3000000,   "avg_row_bytes": 18, "distinct_keys": { "c_custkey": 3000000,   "c_nationkey": 25, "c_mktsegment": 1 } },
+    "orders":   { "cardinality": 71000000,  "avg_row_bytes": 10, "distinct_keys": { "o_orderkey": 71000000,  "o_custkey": 10000000, "o_orderdate": 1170, "o_orderstatus": 3 } },
+    "lineitem": { "cardinality": 323000000, "avg_row_bytes": 22, "distinct_keys": { "l_orderkey": 100000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_shipdate": 1386 } }
 }';
 SELECT '-- Q03';
 EXPLAIN
@@ -163,10 +163,10 @@ WHERE c_mktsegment = 'BUILDING' AND c_custkey = o_custkey AND l_orderkey = o_ord
 GROUP BY l_orderkey, o_orderdate, o_shippriority ORDER BY revenue DESC, o_orderdate LIMIT 10;
 
 -- Q04: Order priority (orders + EXISTS subquery on lineitem)
--- Filter: o_orderdate in Q3 1993 (92 days / ~2556 day span → ~3.6% → ~5.4M orders).
+-- Filter: o_orderdate in Q3 1993 (92 days / ~2556 day span -> ~3.6% -> ~5.4M orders).
 SET param__internal_join_table_stat_hints = '{
-    "orders":   { "cardinality": 5400000,   "distinct_keys": { "o_orderkey": 5400000,   "o_custkey": 5000000, "o_orderdate": 92, "o_orderpriority": 5 } },
-    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_commitdate": 2466, "l_receiptdate": 2554 } }
+    "orders":   { "cardinality": 5400000,   "avg_row_bytes": 18, "distinct_keys": { "o_orderkey": 5400000,   "o_custkey": 5000000, "o_orderdate": 92, "o_orderpriority": 5 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 8,  "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000, "l_commitdate": 2466, "l_receiptdate": 2554 } }
 }';
 SELECT '-- Q04';
 EXPLAIN
@@ -177,15 +177,15 @@ WHERE o_orderdate >= '1993-07-01' AND o_orderdate < '1993-10-01'
 GROUP BY o_orderpriority ORDER BY o_orderpriority;
 
 -- Q05: Local supplier volume (customer, orders, lineitem, supplier, nation, region)
--- Filters: r_name='ASIA' (1/5 → 1 region, 5 nations, 200K suppliers),
---          o_orderdate in 1994 (1/7 → ~21.4M orders, 365 distinct dates).
+-- Filters: r_name='ASIA' (1/5 -> 1 region), o_orderdate in 1994 (-> ~21.9M orders).
+-- supplier, customer, nation have no scan-level filters.
 SET param__internal_join_table_stat_hints = '{
-    "region":   { "cardinality": 1,          "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
-    "nation":   { "cardinality": 5,          "distinct_keys": { "n_nationkey": 5,        "n_regionkey": 1, "n_name": 5 } },
-    "supplier": { "cardinality": 200000,     "distinct_keys": { "s_suppkey": 200000,     "s_nationkey": 5 } },
-    "customer": { "cardinality": 15000000,   "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
-    "orders":   { "cardinality": 21400000,   "distinct_keys": { "o_orderkey": 21400000,  "o_custkey": 12000000, "o_orderdate": 365, "o_orderstatus": 3 } },
-    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000 } }
+    "region":   { "cardinality": 1,         "avg_row_bytes": 8,  "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 72, "distinct_keys": { "n_nationkey": 25,       "n_regionkey": 5, "n_name": 25 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,    "s_nationkey": 25 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 7,  "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "orders":   { "cardinality": 21900000,  "avg_row_bytes": 10, "distinct_keys": { "o_orderkey": 21900000,  "o_custkey": 12000000, "o_orderdate": 365, "o_orderstatus": 3 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 24, "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000 } }
 }';
 SELECT '-- Q05';
 EXPLAIN
@@ -205,13 +205,14 @@ WHERE l_shipdate >= '1994-01-01' AND l_shipdate < '1995-01-01'
     AND l_discount BETWEEN 0.05 AND 0.07 AND l_quantity < 24;
 
 -- Q07: Volume shipping (supplier, lineitem, orders, customer, nation x2)
--- Filter: l_shipdate in 1995-1996 (2yr / 7yr ≈ 28.6% → ~171M lineitem rows, 730 distinct dates).
+-- Filter: l_shipdate in 1995-1996 (-> ~183M lineitem rows).
+-- nation filtered by n_name IN ('FRANCE','GERMANY') -> 1 row per alias.
 SET param__internal_join_table_stat_hints = '{
-    "supplier": { "cardinality": 1000000,   "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
-    "lineitem": { "cardinality": 171000000, "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_shipdate": 730 } },
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
-    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
-    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "lineitem": { "cardinality": 183000000, "avg_row_bytes": 26, "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_shipdate": 730 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 8,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 7,  "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "nation":   { "cardinality": 1,         "avg_row_bytes": 68, "distinct_keys": { "n_nationkey": 1,         "n_name": 1 } }
 }';
 SELECT '-- Q07';
 EXPLAIN
@@ -225,17 +226,17 @@ WHERE s_suppkey = l_suppkey AND o_orderkey = l_orderkey AND c_custkey = o_custke
 GROUP BY supp_nation, cust_nation, l_year ORDER BY supp_nation, cust_nation, l_year;
 
 -- Q08: National market share (part, supplier, lineitem, orders, customer, nation x2, region)
--- Filters: r_name='AMERICA' (1/5 → 1 region, 5 nations n1, 200K suppliers),
---          p_type='ECONOMY ANODIZED STEEL' (1/150 → ~133K parts),
---          o_orderdate in 1995-1996 (2/7 → ~42.9M orders, 730 distinct dates).
+-- Filters: r_name='AMERICA' (1 region), p_type='ECONOMY ANODIZED STEEL' (-> ~134K parts),
+--          o_orderdate in 1995-1996 (-> ~43.9M orders).
+-- supplier, customer, nation have no scan-level filters.
 SET param__internal_join_table_stat_hints = '{
-    "region":   { "cardinality": 1,          "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
-    "nation":   { "cardinality": 5,          "distinct_keys": { "n_nationkey": 5,        "n_regionkey": 1, "n_name": 5 } },
-    "part":     { "cardinality": 133000,     "distinct_keys": { "p_partkey": 133000,     "p_type": 1 } },
-    "supplier": { "cardinality": 200000,     "distinct_keys": { "s_suppkey": 200000,     "s_nationkey": 5 } },
-    "orders":   { "cardinality": 42900000,   "distinct_keys": { "o_orderkey": 42900000,  "o_custkey": 12000000, "o_orderdate": 730 } },
-    "customer": { "cardinality": 15000000,   "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
-    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } }
+    "region":   { "cardinality": 1,         "avg_row_bytes": 8,  "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 8,  "distinct_keys": { "n_nationkey": 25,       "n_regionkey": 5, "n_name": 25 } },
+    "part":     { "cardinality": 134000,    "avg_row_bytes": 8,  "distinct_keys": { "p_partkey": 134000,     "p_type": 1 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,    "s_nationkey": 25 } },
+    "orders":   { "cardinality": 43900000,  "avg_row_bytes": 10, "distinct_keys": { "o_orderkey": 43900000,  "o_custkey": 12000000, "o_orderdate": 730 } },
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 7,  "distinct_keys": { "c_custkey": 15000000,   "c_nationkey": 25 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 28, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } }
 }';
 SELECT '-- Q08';
 EXPLAIN
@@ -251,14 +252,14 @@ FROM (SELECT toYear(o_orderdate) AS o_year, l_extendedprice * (1 - l_discount) A
 GROUP BY o_year ORDER BY o_year;
 
 -- Q09: Product type profit measure (part, supplier, lineitem, partsupp, orders, nation)
--- Filter: p_name LIKE '%green%' (~20% of parts → ~4M rows).
+-- Filter: p_name LIKE '%green%' -> ~1.13M parts (real selectivity ~5.6%).
 SET param__internal_join_table_stat_hints = '{
-    "part":     { "cardinality": 4000000,   "distinct_keys": { "p_partkey": 4000000,   "p_type": 150, "p_brand": 25 } },
-    "supplier": { "cardinality": 1000000,   "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
-    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } },
-    "partsupp": { "cardinality": 80000000,  "distinct_keys": { "ps_partkey": 20000000,  "ps_suppkey": 1000000 } },
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
-    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
+    "part":     { "cardinality": 1128000,   "avg_row_bytes": 8,  "distinct_keys": { "p_partkey": 1128000,   "p_type": 150, "p_brand": 25 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 36, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_suppkey": 1000000 } },
+    "partsupp": { "cardinality": 80000000,  "avg_row_bytes": 13, "distinct_keys": { "ps_partkey": 20000000,  "ps_suppkey": 1000000 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 6,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 68, "distinct_keys": { "n_nationkey": 25,        "n_name": 25 } }
 }';
 SELECT '-- Q09';
 EXPLAIN
@@ -271,13 +272,13 @@ WHERE s_suppkey = l_suppkey AND ps_suppkey = l_suppkey AND ps_partkey = l_partke
 GROUP BY nation, o_year ORDER BY nation, o_year DESC;
 
 -- Q10: Returned item reporting (customer, orders, lineitem, nation)
--- Filters: o_orderdate in Q4 1993 (92 days → ~5.4M orders),
---          l_returnflag='R' (1/3 of 3 flag values → ~200M lineitem rows).
+-- Filters: o_orderdate in Q4 1993 (-> ~5.5M orders),
+--          l_returnflag='R' (-> ~148M lineitem rows).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000,  "c_nationkey": 25 } },
-    "orders":   { "cardinality": 5400000,   "distinct_keys": { "o_orderkey": 5400000,  "o_custkey": 5000000, "o_orderdate": 92 } },
-    "lineitem": { "cardinality": 200000000, "distinct_keys": { "l_orderkey": 100000000, "l_returnflag": 1 } },
-    "nation":   { "cardinality": 25,        "distinct_keys": { "n_nationkey": 25,       "n_name": 25 } }
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 150, "distinct_keys": { "c_custkey": 15000000,  "c_nationkey": 25 } },
+    "orders":   { "cardinality": 5500000,   "avg_row_bytes": 10,  "distinct_keys": { "o_orderkey": 5500000,  "o_custkey": 5000000, "o_orderdate": 92 } },
+    "lineitem": { "cardinality": 148000000, "avg_row_bytes": 29,  "distinct_keys": { "l_orderkey": 100000000, "l_returnflag": 1 } },
+    "nation":   { "cardinality": 25,        "avg_row_bytes": 68,  "distinct_keys": { "n_nationkey": 25,       "n_name": 25 } }
 }';
 SELECT '-- Q10';
 EXPLAIN
@@ -290,11 +291,11 @@ GROUP BY c_custkey, c_name, c_acctbal, c_phone, n_name, c_address, c_comment
 ORDER BY revenue DESC LIMIT 20;
 
 -- Q11: Important stock identification (partsupp, supplier, nation)
--- Filter: n_name='GERMANY' (1/25 → 1 nation, 40K suppliers, ~3.2M partsupp rows).
+-- Filter: n_name='GERMANY' (1 nation). supplier and partsupp have no scan-level filters.
 SET param__internal_join_table_stat_hints = '{
-    "nation":   { "cardinality": 1,       "distinct_keys": { "n_nationkey": 1,     "n_name": 1 } },
-    "supplier": { "cardinality": 40000,   "distinct_keys": { "s_suppkey": 40000,   "s_nationkey": 1 } },
-    "partsupp": { "cardinality": 3200000, "distinct_keys": { "ps_partkey": 3200000, "ps_suppkey": 40000, "ps_supplycost": 99865 } }
+    "nation":   { "cardinality": 1,        "avg_row_bytes": 8,  "distinct_keys": { "n_nationkey": 1,       "n_name": 1 } },
+    "supplier": { "cardinality": 1000000,  "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "partsupp": { "cardinality": 80000000, "avg_row_bytes": 13, "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_supplycost": 99865 } }
 }';
 SELECT '-- Q11';
 EXPLAIN
@@ -309,11 +310,10 @@ HAVING sum(ps_supplycost * ps_availqty) > (
 ORDER BY value DESC;
 
 -- Q12: Shipping modes and order priority (orders, lineitem)
--- Filter: l_receiptdate in 1994 (1/7) AND l_shipmode IN ('MAIL','SHIP') (2/7)
---         → ~24.5M lineitem rows.
+-- Filter: l_shipmode IN ('MAIL','SHIP') AND date/commit/ship filters -> ~4.77M lineitem rows.
 SET param__internal_join_table_stat_hints = '{
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_orderpriority": 5 } },
-    "lineitem": { "cardinality": 24500000,  "distinct_keys": { "l_orderkey": 24500000,  "l_shipmode": 2, "l_receiptdate": 365, "l_commitdate": 2466, "l_shipdate": 2526 } }
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 20, "distinct_keys": { "o_orderkey": 150000000, "o_orderpriority": 5 } },
+    "lineitem": { "cardinality": 4770000,   "avg_row_bytes": 22, "distinct_keys": { "l_orderkey": 4770000,  "l_shipmode": 2, "l_receiptdate": 365, "l_commitdate": 2466, "l_shipdate": 2526 } }
 }';
 SELECT '-- Q12';
 EXPLAIN
@@ -329,8 +329,8 @@ GROUP BY l_shipmode ORDER BY l_shipmode;
 -- Q13: Customer distribution (LEFT OUTER JOIN customer, orders)
 -- Filter: o_comment NOT LIKE '%special%requests%' (~98% pass, negligible selectivity).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000 } },
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } }
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 3,  "distinct_keys": { "c_custkey": 15000000 } },
+    "orders":   { "cardinality": 148500000, "avg_row_bytes": 66, "distinct_keys": { "o_orderkey": 148500000, "o_custkey": 15000000 } }
 }';
 SELECT '-- Q13';
 EXPLAIN
@@ -343,10 +343,10 @@ GROUP BY c_count ORDER BY custdist DESC, c_count DESC
 SETTINGS join_use_nulls = 1;
 
 -- Q14: Promotion effect (lineitem, part)
--- Filter: l_shipdate in Sep 1995 (30 days / ~2556 total ≈ 1/84 → ~7.1M lineitem rows).
+-- Filter: l_shipdate in Sep 1995 (30 days / ~2556 total ~ 1/84 -> ~7.1M lineitem rows).
 SET param__internal_join_table_stat_hints = '{
-    "lineitem": { "cardinality": 7100000,  "distinct_keys": { "l_orderkey": 7100000, "l_partkey": 7100000, "l_shipdate": 30 } },
-    "part":     { "cardinality": 20000000, "distinct_keys": { "p_partkey": 20000000, "p_type": 150 } }
+    "lineitem": { "cardinality": 7760000,  "avg_row_bytes": 22, "distinct_keys": { "l_orderkey": 7760000, "l_partkey": 7760000, "l_shipdate": 30 } },
+    "part":     { "cardinality": 20000000, "avg_row_bytes": 68, "distinct_keys": { "p_partkey": 20000000, "p_type": 150 } }
 }';
 SELECT '-- Q14';
 EXPLAIN
@@ -356,10 +356,10 @@ FROM lineitem, part
 WHERE l_partkey = p_partkey AND l_shipdate >= '1995-09-01' AND l_shipdate < '1995-10-01';
 
 -- Q15: Top supplier (view + supplier join)
--- Filter in view: l_shipdate in Q1 1996 (90 days / ~2556 ≈ 1/28 → ~21.4M lineitem rows).
+-- Filter in view: l_shipdate in Q1 1996 (90 days / ~2556 ~ 1/28 -> ~21.4M lineitem rows).
 SET param__internal_join_table_stat_hints = '{
-    "lineitem": { "cardinality": 21400000, "distinct_keys": { "l_suppkey": 1000000, "l_shipdate": 90 } },
-    "supplier": { "cardinality": 1000000,  "distinct_keys": { "s_suppkey": 1000000 } }
+    "lineitem": { "cardinality": 21400000, "avg_row_bytes": 22, "distinct_keys": { "l_suppkey": 1000000, "l_shipdate": 90 } },
+    "supplier": { "cardinality": 1000000,  "avg_row_bytes": 62, "distinct_keys": { "s_suppkey": 1000000 } }
 }';
 SELECT '-- Q15';
 DROP VIEW IF EXISTS revenue0;
@@ -376,11 +376,12 @@ DROP VIEW revenue0;
 
 -- Q16: Parts/supplier relationship (partsupp, part + NOT IN subquery on supplier)
 -- Filter on part: p_brand <> 'Brand#45' (24/25) AND p_type NOT LIKE 'MEDIUM POLISHED%' (120/150)
---                 AND p_size IN (8 values / 50) → ~20M × 0.96 × 0.80 × 0.16 ≈ 2.5M parts.
+--                 AND p_size IN (8 values / 50) -> ~20M x 0.96 x 0.80 x 0.16 ~ 2.5M parts.
+-- Filter on supplier: s_comment LIKE '%Customer%Complaints%' -> ~732 suppliers.
 SET param__internal_join_table_stat_hints = '{
-    "part":     { "cardinality": 2500000,  "distinct_keys": { "p_partkey": 2500000,  "p_brand": 24, "p_type": 120, "p_size": 8 } },
-    "partsupp": { "cardinality": 80000000, "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000 } },
-    "supplier": { "cardinality": 1000000,  "distinct_keys": { "s_suppkey": 1000000,   "s_comment": 999990 } }
+    "part":     { "cardinality": 1248000,  "avg_row_bytes": 136, "distinct_keys": { "p_partkey": 1248000,  "p_brand": 24, "p_type": 120, "p_size": 8 } },
+    "partsupp": { "cardinality": 80000000, "avg_row_bytes": 7,   "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000 } },
+    "supplier": { "cardinality": 732,      "avg_row_bytes": 8,   "distinct_keys": { "s_suppkey": 732,      "s_comment": 732 } }
 }';
 SELECT '-- Q16';
 EXPLAIN
@@ -392,10 +393,10 @@ WHERE p_partkey = ps_partkey AND p_brand <> 'Brand#45'
 GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size;
 
 -- Q17: Small-quantity orders (lineitem, part + correlated subquery)
--- Filter: p_brand='Brand#23' (1/25) AND p_container='MED BOX' (1/40) → ~20K parts.
+-- Filter: p_brand='Brand#23' (1/25) AND p_container='MED BOX' (1/40) -> ~20K parts.
 SET param__internal_join_table_stat_hints = '{
-    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_quantity": 50 } },
-    "part":     { "cardinality": 20000,     "distinct_keys": { "p_partkey": 20000,      "p_brand": 1, "p_container": 1 } }
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 12, "distinct_keys": { "l_orderkey": 150000000, "l_partkey": 20000000, "l_quantity": 50 } },
+    "part":     { "cardinality": 20000,     "avg_row_bytes": 8,  "distinct_keys": { "p_partkey": 20000,      "p_brand": 1, "p_container": 1 } }
 }';
 SELECT '-- Q17';
 EXPLAIN
@@ -407,9 +408,9 @@ WHERE p_partkey = l_partkey AND p_brand = 'Brand#23' AND p_container = 'MED BOX'
 -- Q18: Large volume customer (customer, orders, lineitem + IN subquery)
 -- No selective scan-level filters (HAVING sum > 300 is post-aggregation).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 15000000,  "distinct_keys": { "c_custkey": 15000000 } },
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_totalprice": 147999998 } },
-    "lineitem": { "cardinality": 600037902, "distinct_keys": { "l_orderkey": 150000000, "l_quantity": 50 } }
+    "customer": { "cardinality": 15000000,  "avg_row_bytes": 25, "distinct_keys": { "c_custkey": 15000000 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 17, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000, "o_totalprice": 147999998 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 12, "distinct_keys": { "l_orderkey": 150000000, "l_quantity": 50 } }
 }';
 SELECT '-- Q18';
 EXPLAIN
@@ -420,13 +421,13 @@ WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING 
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
 ORDER BY o_totalprice DESC, o_orderdate LIMIT 100;
 
--- Q19: Discounted revenue (lineitem, part — complex OR filter)
+-- Q19: Discounted revenue (lineitem, part -- complex OR filter)
 -- Filters: l_shipmode IN ('AIR','AIR REG') (2/7) AND l_shipinstruct='DELIVER IN PERSON' (1/4)
---          → ~21M lineitem rows.
---          3 brands × 4 containers each out of 25×40 combinations → ~50K parts.
+--          -> ~21M lineitem rows.
+--          3 brands x 4 containers each out of 25x40 combinations -> ~50K parts.
 SET param__internal_join_table_stat_hints = '{
-    "lineitem": { "cardinality": 21000000, "distinct_keys": { "l_orderkey": 21000000, "l_partkey": 3000000, "l_quantity": 50, "l_shipmode": 2, "l_shipinstruct": 1 } },
-    "part":     { "cardinality": 50000,   "distinct_keys": { "p_partkey": 50000,     "p_brand": 3, "p_container": 12, "p_size": 50 } }
+    "lineitem": { "cardinality": 21000000, "avg_row_bytes": 52, "distinct_keys": { "l_orderkey": 21000000, "l_partkey": 3000000, "l_quantity": 50, "l_shipmode": 2, "l_shipinstruct": 1 } },
+    "part":     { "cardinality": 50000,    "avg_row_bytes": 24, "distinct_keys": { "p_partkey": 50000,     "p_brand": 3, "p_container": 12, "p_size": 50 } }
 }';
 SELECT '-- Q19';
 EXPLAIN
@@ -444,16 +445,15 @@ WHERE p_partkey = l_partkey
             AND l_shipmode IN ('AIR','AIR REG') AND l_shipinstruct = 'DELIVER IN PERSON'));
 
 -- Q20: Potential part promotion (supplier, nation + nested IN subqueries)
--- Filters: p_name LIKE 'forest%' (~1/26 → ~770K parts),
---          n_name='CANADA' (1/25 → 1 nation, 40K suppliers),
---          l_shipdate in 1994 (1/7 → ~85.7M lineitem rows),
---          partsupp filtered to forest-parts' suppliers → ~3M rows.
+-- Filters: p_name LIKE 'forest%' -> ~220K parts, n_name='CANADA' (1 nation),
+--          l_shipdate in 1994 (-> ~90.4M lineitem rows).
+-- supplier and partsupp have no scan-level filters.
 SET param__internal_join_table_stat_hints = '{
-    "nation":   { "cardinality": 1,        "distinct_keys": { "n_nationkey": 1,      "n_name": 1 } },
-    "supplier": { "cardinality": 40000,    "distinct_keys": { "s_suppkey": 40000,    "s_nationkey": 1 } },
-    "part":     { "cardinality": 770000,   "distinct_keys": { "p_partkey": 770000 } },
-    "partsupp": { "cardinality": 3000000,  "distinct_keys": { "ps_partkey": 770000,  "ps_suppkey": 40000 } },
-    "lineitem": { "cardinality": 85700000, "distinct_keys": { "l_partkey": 20000000, "l_suppkey": 1000000, "l_shipdate": 365 } }
+    "nation":   { "cardinality": 1,        "avg_row_bytes": 8,   "distinct_keys": { "n_nationkey": 1,       "n_name": 1 } },
+    "supplier": { "cardinality": 1000000,  "avg_row_bytes": 136, "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "part":     { "cardinality": 220000,   "avg_row_bytes": 24,  "distinct_keys": { "p_partkey": 220000 } },
+    "partsupp": { "cardinality": 80000000, "avg_row_bytes": 10,  "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000 } },
+    "lineitem": { "cardinality": 90400000, "avg_row_bytes": 18,  "distinct_keys": { "l_partkey": 20000000,  "l_suppkey": 1000000, "l_shipdate": 365 } }
 }';
 SELECT '-- Q20';
 EXPLAIN
@@ -470,13 +470,13 @@ WHERE s_suppkey IN (
 ORDER BY s_name;
 
 -- Q21: Suppliers who kept orders waiting (supplier, lineitem, orders, nation + EXISTS subqueries)
--- Filters: o_orderstatus='F' (~50% of orders → ~75M rows),
---          n_name='SAUDI ARABIA' (1/25 → 1 nation, 40K suppliers).
+-- Filters: o_orderstatus='F' (-> ~73M orders), n_name='SAUDI ARABIA' (1 nation).
+-- supplier has no scan-level filter (join with nation filters later).
 SET param__internal_join_table_stat_hints = '{
-    "nation":   { "cardinality": 1,          "distinct_keys": { "n_nationkey": 1,       "n_name": 1 } },
-    "supplier": { "cardinality": 40000,      "distinct_keys": { "s_suppkey": 40000,     "s_nationkey": 1 } },
-    "lineitem": { "cardinality": 600037902,  "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_receiptdate": 2554, "l_commitdate": 2466 } },
-    "orders":   { "cardinality": 75000000,   "distinct_keys": { "o_orderkey": 75000000,  "o_custkey": 15000000, "o_orderstatus": 1 } }
+    "nation":   { "cardinality": 1,         "avg_row_bytes": 68, "distinct_keys": { "n_nationkey": 1,       "n_name": 1 } },
+    "supplier": { "cardinality": 1000000,   "avg_row_bytes": 72, "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25 } },
+    "lineitem": { "cardinality": 600037902, "avg_row_bytes": 12, "distinct_keys": { "l_orderkey": 150000000, "l_suppkey": 1000000, "l_receiptdate": 2554, "l_commitdate": 2466 } },
+    "orders":   { "cardinality": 73000000,  "avg_row_bytes": 13, "distinct_keys": { "o_orderkey": 73000000,  "o_custkey": 15000000, "o_orderstatus": 1 } }
 }';
 SELECT '-- Q21';
 EXPLAIN
@@ -491,10 +491,10 @@ WHERE s_suppkey = l1.l_suppkey AND o_orderkey = l1.l_orderkey AND o_orderstatus 
 GROUP BY s_name ORDER BY numwait DESC, s_name LIMIT 100;
 
 -- Q22: Global sales opportunity (customer + NOT EXISTS on orders)
--- Filter: substring(c_phone, 1, 2) IN (7 codes / 26 possible ≈ 27% → ~4M customers).
+-- Filter: substring(c_phone, 1, 2) IN (7 codes / 26 possible ~ 27% -> ~4M customers).
 SET param__internal_join_table_stat_hints = '{
-    "customer": { "cardinality": 4000000,   "distinct_keys": { "c_custkey": 4000000,   "c_acctbal": 3990000 } },
-    "orders":   { "cardinality": 150000000, "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } }
+    "customer": { "cardinality": 4000000,   "avg_row_bytes": 27, "distinct_keys": { "c_custkey": 4000000,   "c_acctbal": 3990000 } },
+    "orders":   { "cardinality": 150000000, "avg_row_bytes": 4,  "distinct_keys": { "o_orderkey": 150000000, "o_custkey": 15000000 } }
 }';
 SELECT '-- Q22';
 EXPLAIN
