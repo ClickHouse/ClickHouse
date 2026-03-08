@@ -8,6 +8,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
@@ -575,7 +576,22 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             args[0] = make_intrusive<ASTLiteral>(table_endpoint);
     }
 
+    const auto columns = ColumnsDescription(table_metadata.getSchema());
+
+    DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
+    auto storage_type_from_catalog = catalog->getStorageType();
+    if (storage_type_from_catalog.has_value())
+    {
+        storage_type = storage_type_from_catalog.value();
+    }
+    else
+    {
+        if (table_metadata.hasLocation() || !lightweight)
+            storage_type = table_metadata.getStorageType();
+    }
+
     /// We either fetch storage credentials from catalog
+    /// or get storage credentials from database settings
     /// or get storage credentials from database engine arguments
     /// in CREATE query (e.g. in `args`).
     /// Vended credentials can be disabled in catalog itself,
@@ -597,6 +613,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
+        else if (auto static_credentials = DataLake::tryGetStaticStorageCredentials(storage_type, settings))
+        {
+            LOG_DEBUG(log, "Using static credentials from database settings");
+            static_credentials->addCredentialsToEngineArgs(args);
+        }
         else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
         {
             throw Exception(
@@ -607,20 +628,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     }
 
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
-
-    const auto columns = ColumnsDescription(table_metadata.getSchema());
-
-    DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
-    auto storage_type_from_catalog = catalog->getStorageType();
-    if (storage_type_from_catalog.has_value())
-    {
-        storage_type = storage_type_from_catalog.value();
-    }
-    else
-    {
-        if (table_metadata.hasLocation() || !lightweight)
-            storage_type = table_metadata.getStorageType();
-    }
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
