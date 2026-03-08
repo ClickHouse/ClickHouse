@@ -45,4 +45,23 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("file{1..5}"), "file(1|2|3|4|5)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("file{1,2,3}"), "file(1|2|3)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"), "(1|2|3)blabla(a\\.x|b\\.x|c\\.x)smth\\[\\]_else(aa|bb)[^/][^/]*");
+
+    /// `**` (double-star / globstar) tests
+    /// `**/` matches zero or more directory components
+    EXPECT_EQ(makeRegexpPatternFromGlobs("**/file.txt"), "([^{}]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/file.txt"), "data/([^{}]*/)*file\\.txt");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/sub/**/file.txt"), "data/([^{}]*/)*sub/([^{}]*/)*file\\.txt");
+    /// `**` at end (not followed by `/`) keeps old behavior
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**"), "data/[^/]*[^{}]*");
+
+    /// Verify that `**/` patterns actually match expected paths
+    {
+        re2::RE2 re(makeRegexpPatternFromGlobs("data/**/part1.tsv"));
+        EXPECT_TRUE(RE2::FullMatch("data/part1.tsv", re));            /// zero directory levels
+        EXPECT_TRUE(RE2::FullMatch("data/sub1/part1.tsv", re));       /// one directory level
+        EXPECT_TRUE(RE2::FullMatch("data/a/b/part1.tsv", re));        /// two directory levels
+        EXPECT_TRUE(RE2::FullMatch("data/a/b/c/part1.tsv", re));      /// three directory levels
+        EXPECT_FALSE(RE2::FullMatch("data/part2.tsv", re));            /// wrong filename
+        EXPECT_FALSE(RE2::FullMatch("other/part1.tsv", re));           /// wrong prefix
+    }
 }

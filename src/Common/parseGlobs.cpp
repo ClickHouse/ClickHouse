@@ -154,10 +154,25 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
+
+    /// Replace `**/` with a placeholder before character-by-character processing.
+    /// `**/` means "match zero or more directory components".
+    static constexpr std::string_view double_star_slash = "**/";
+    static constexpr std::string_view double_star_slash_replacement = "\x01";
+    for (size_t pos = almost_res.find(double_star_slash); pos != std::string::npos; pos = almost_res.find(double_star_slash, pos))
+        almost_res.replace(pos, double_star_slash.size(), double_star_slash_replacement);
+
     WriteBufferFromOwnString buf_final_processing;
     char previous = ' ';
     for (const auto & letter : almost_res)
     {
+        if (letter == '\x01')
+        {
+            /// `**/` → match zero or more path segments (each ending with `/`).
+            buf_final_processing << "([^{}]*/)*";
+            previous = '/';
+            continue;
+        }
         if (previous == '*' && letter == '*')
         {
             buf_final_processing << "[^{}]";
