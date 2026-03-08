@@ -38,7 +38,9 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {table_expr}", query_id=query_id,
+        f"SELECT * FROM {table_expr}",
+        query_id=query_id,
+        settings={"iceberg_metadata_staleness_seconds": 600},
     )
 
     instance.query("SYSTEM FLUSH LOGS")
@@ -53,6 +55,7 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
     instance.query(
         f"SELECT * FROM {table_expr}",
         query_id=query_id,
+        settings={"iceberg_metadata_staleness_seconds": 600},
     )
 
     instance.query("SYSTEM FLUSH LOGS")
@@ -73,7 +76,9 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {table_expr}", query_id=query_id,
+        f"SELECT * FROM {table_expr}",
+        query_id=query_id,
+        settings={"iceberg_metadata_staleness_seconds": 600},
     )
 
     instance.query("SYSTEM FLUSH LOGS")
@@ -88,7 +93,10 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
     instance.query(
         f"SELECT * FROM {table_expr}",
         query_id=query_id,
-        settings={"use_iceberg_metadata_files_cache":"0"},
+        settings={
+            "iceberg_metadata_staleness_seconds": 600,
+            "use_iceberg_metadata_files_cache": 0,
+        },
     )
 
     instance.query("SYSTEM FLUSH LOGS")

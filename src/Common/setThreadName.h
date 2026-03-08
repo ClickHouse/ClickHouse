@@ -66,6 +66,7 @@ namespace DB
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
+    M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \
     M(KEEPER_HANDLER, "KeeperHandler") \
