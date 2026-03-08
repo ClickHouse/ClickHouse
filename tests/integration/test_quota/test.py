@@ -22,7 +22,7 @@ instance = cluster.add_instance(
 
 def check_system_quotas(canonical):
     canonical_tsv = TSV(canonical)
-    r = TSV(instance.query("SELECT * FROM system.quotas ORDER BY name"))
+    r = TSV(instance.query("SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas ORDER BY name"))
     print(("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
@@ -1424,7 +1424,7 @@ def test_reload_users_xml_by_timer():
     copy_quota_xml("tiny_limits.xml", reload_immediately=False)
     assert_eq_with_retry(
         instance,
-        "SELECT * FROM system.quotas",
+        "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
         [
             [
                 "myQuota",

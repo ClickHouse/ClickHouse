@@ -77,6 +77,39 @@ namespace
         });
     }
 
+    bool parseIpPrefixBits(IParserBase::Pos & pos, Expected & expected,
+                           std::optional<MaskBits> & ipv4_bits, std::optional<MaskBits> & ipv6_bits)
+    {
+        auto try_parse_prefix = [&](Keyword keyword, std::optional<MaskBits> & prefix_bits, UInt8 max_bits)
+        {
+            return IParserBase::wrapParseImpl(pos, [&]
+            {
+                if (!ParserKeyword{keyword}.ignore(pos, expected))
+                    return false;
+
+                ASTPtr value_ast;
+                if (!ParserNumber{}.parse(pos, value_ast, expected))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected integer prefix length for IP address masking");
+
+                UInt64 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
+
+                if (prefix > max_bits)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "{} prefix must be between 0 and {}",
+                        toStringView(keyword),
+                        static_cast<unsigned>(max_bits));
+
+                prefix_bits = static_cast<MaskBits>(prefix);
+
+                return true;
+            });
+        };
+        bool parsed_any = false;
+        parsed_any |= try_parse_prefix(Keyword::IPV4_PREFIX_BITS, ipv4_bits, 32);
+        parsed_any |= try_parse_prefix(Keyword::IPV6_PREFIX_BITS, ipv6_bits, 128);
+        return parsed_any;
+    }
 
     bool parseQuotaType(IParserBase::Pos & pos, Expected & expected, QuotaType & quota_type)
     {
@@ -287,6 +320,8 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String new_name;
     std::optional<QuotaKeyType> key_type;
+    std::optional<MaskBits> ipv4_prefix_bits;
+    std::optional<MaskBits> ipv6_prefix_bits;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
     String cluster;
     String storage_name;
@@ -302,8 +337,16 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;
+                if (new_key_type == QuotaKeyType::IP_ADDRESS || new_key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
+                    parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits);
                 continue;
             }
+        }
+
+        if (!ipv4_prefix_bits && !ipv6_prefix_bits)
+        {
+            if (parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits))
+                continue;
         }
 
         if (parseIntervalsWithLimits(pos, expected, all_limits))
@@ -324,6 +367,15 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
+    /// Validate that prefix bits are only used with IP_ADDRESS or FORWARDED_IP_ADDRESS key type
+    if ((ipv4_prefix_bits || ipv6_prefix_bits) && key_type
+        && *key_type != QuotaKeyType::IP_ADDRESS && *key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+    {
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "IP prefix bits can only be specified for quotas KEYED BY ip_address or forwarded_ip_address");
+    }
+
     auto query = make_intrusive<ASTCreateQuotaQuery>();
     node = query;
 
@@ -335,6 +387,8 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->key_type = key_type;
+    query->ipv4_prefix_bits = ipv4_prefix_bits;
+    query->ipv6_prefix_bits = ipv6_prefix_bits;
     query->all_limits = std::move(all_limits);
     query->roles = std::move(roles);
     query->storage_name = std::move(storage_name);

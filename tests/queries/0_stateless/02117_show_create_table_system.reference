@@ -857,6 +857,8 @@ CREATE TABLE system.quotas
     `id` UUID,
     `storage` String,
     `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4)),
+    `ipv4_prefix_bits` Nullable(UInt8),
+    `ipv6_prefix_bits` Nullable(UInt8),
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),

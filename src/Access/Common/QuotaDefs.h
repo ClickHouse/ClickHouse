@@ -43,6 +43,9 @@ struct QuotaTypeInfo
     static const QuotaTypeInfo & get(QuotaType type);
 };
 
+/// Number of prefix bits used for IP address masking.
+using MaskBits = UInt8;
+
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.
 enum class QuotaKeyType : uint8_t
