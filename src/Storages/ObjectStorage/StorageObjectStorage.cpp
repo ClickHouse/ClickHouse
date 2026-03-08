@@ -172,6 +172,21 @@ StorageObjectStorage::StorageObjectStorage(
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
+
+    if (configuration->getRawPath().hasSchemaHashWildcard())
+    {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
+
+        if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
+
+        if (columns.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
+
+        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+    }
+
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
 
@@ -543,7 +558,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.hasGlobsIgnorePartitionWildcard())
+    if (raw_path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -614,7 +629,7 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
-    if (path.hasGlobs())
+    if (path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,

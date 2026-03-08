@@ -61,6 +61,7 @@ public:
     /// only by directory.
     /// Therefore in the below methods we use supports_partial_prefix=false.
     Path getRawPath() const override { return path; }
+    void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
 
     const Paths & getPaths() const override { return paths; }
