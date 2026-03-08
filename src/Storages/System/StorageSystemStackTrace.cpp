@@ -506,12 +506,15 @@ protected:
 
                     expected_responding_thread.store(reinterpret_cast<uintptr_t>(pt_it->second), std::memory_order_release);
 
-                    if (0 != pthread_kill(pt_it->second, STACK_TRACE_SERVICE_SIGNAL))
+                    /// pthread_kill returns error codes directly (not via errno).
+                    int err = pthread_kill(pt_it->second, STACK_TRACE_SERVICE_SIGNAL);
+                    if (err != 0)
                     {
-                        /// The thread may has been already finished.
-                        if (ESRCH == errno)
+                        /// The thread may have been already finished.
+                        if (err == ESRCH)
                             continue;
 
+                        errno = err;
                         throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot send a signal");
                     }
 
