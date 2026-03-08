@@ -43,12 +43,6 @@ namespace Setting
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 namespace detail
 {
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
@@ -127,11 +121,14 @@ ColumnPtr getFilteredTables(
                                                                        /* skip_not_loaded */ false);
                 for (; table_it->isValid(); table_it->next())
                 {
+                    const auto & table = table_it->table();
+                    if (!table)
+                        continue; /// Table was concurrently dropped and should be skipped
                     table_column->insert(table_it->name());
                     if (engine_column)
-                        engine_column->insert(table_it->table()->getName());
+                        engine_column->insert(table->getName());
                     if (uuid_column)
-                        uuid_column->insert(table_it->table()->getStorageID().uuid);
+                        uuid_column->insert(table->getStorageID().uuid);
                 }
             }
             else
@@ -526,7 +523,7 @@ protected:
 
                 StoragePtr table = tables_it->table();
                 if (!table)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
+                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
 
                 TableLockHolder lock;
 
