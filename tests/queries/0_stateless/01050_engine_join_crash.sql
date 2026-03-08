@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS testJoinTable;
 
 SET any_join_distinct_right_table_keys = 1;

@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 drop table IF EXISTS joinbug;
 
 set allow_deprecated_syntax_for_merge_tree=1;

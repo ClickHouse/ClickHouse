@@ -10,6 +10,8 @@ SET query_plan_join_swap_table=0; -- result is not deterministic for ANY join
 SET enable_analyzer=1;
 SET allow_experimental_join_condition=1;
 SET join_use_nulls=0;
+-- Disable new compatibility mode to test legacy behavior where SEMI JOIN returns columns from both sides
+SET semi_join_compatibility=0;
 -- { echoOn }
 {% for algorithm in ['hash', 'grace_hash'] -%}
 SET join_algorithm='{{ algorithm }}';

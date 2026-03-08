@@ -67,6 +67,8 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool semi_join_compatibility;
+    extern const SettingsBool anti_join_compatibility;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -1985,20 +1987,41 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                 }
             }
 
-            for (auto && left_table_column_with_name : left_table_expression_columns)
-            {
-                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
-                    continue;
+            /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
+              * - LEFT SEMI/ANTI JOIN: only left table columns
+              * - RIGHT SEMI/ANTI JOIN: only right table columns
+              * Controlled by `semi_join_compatibility`
+              * and `anti_join_compatibility` settings.
+              */
+            bool is_semi = join_node->getStrictness() == JoinStrictness::Semi;
+            bool is_anti = join_node->getStrictness() == JoinStrictness::Anti;
+            const auto & settings = scope.context->getSettingsRef();
+            bool skip_non_preserved_side =
+                (is_semi && settings[Setting::semi_join_compatibility])
+                || (is_anti && settings[Setting::anti_join_compatibility]);
+            bool skip_left = skip_non_preserved_side && isRight(join_node->getKind());
+            bool skip_right = skip_non_preserved_side && isLeft(join_node->getKind());
 
-                matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
+            if (!skip_left)
+            {
+                for (auto && left_table_column_with_name : left_table_expression_columns)
+                {
+                    if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
+                        continue;
+
+                    matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
+                }
             }
 
-            for (auto && right_table_column_with_name : right_table_expression_columns)
+            if (!skip_right)
             {
-                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
-                    continue;
+                for (auto && right_table_column_with_name : right_table_expression_columns)
+                {
+                    if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
+                        continue;
 
-                matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
+                    matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
+                }
             }
 
             table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));

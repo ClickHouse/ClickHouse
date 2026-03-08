@@ -15,20 +15,20 @@ any right
 4	a5	b5
 5		b6
 semi left
-2	a3	b1
-4	a5	b3
+2	a3
+4	a5
 semi right
-2	a3	b1
-2	a3	b2
-4	a5	b3
-4	a5	b4
-4	a5	b5
+2	b1
+2	b2
+4	b3
+4	b4
+4	b5
 anti left
-0	a1	
-1	a2	
-3	a4	
+0	a1
+1	a2
+3	a4
 anti right
-5		b6
+5	b6
 any left
 0	a1	
 1	a2	
@@ -46,17 +46,17 @@ any right
 4	a5	b5
 5		b6
 semi left
-2	a3	b1
-4	a5	b3
+2	a3
+4	a5
 semi right
-2	a3	b1
-2	a3	b2
-4	a5	b3
-4	a5	b4
-4	a5	b5
+2	b1
+2	b2
+4	b3
+4	b4
+4	b5
 anti left
-0	a1	
-1	a2	
-3	a4	
+0	a1
+1	a2
+3	a4
 anti right
-5		b6
+5	b6
