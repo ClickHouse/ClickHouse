@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -77,6 +79,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
     bool is_parallel_replicas_initiator_with_projection_support,
     size_t max_step_description_length)
 {
@@ -466,8 +469,11 @@ std::optional<String> optimizeUseNormalProjections(
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 
+    /// Now the projection is used, re-do optimizeReadInOrder
+    if (optimization_settings.read_in_order && typeid_cast<SortingStep *>(iter->node->step.get()))
+        optimizeReadInOrder(*iter->node, nodes, optimization_settings);
+
     /// Here we remove last steps from stack to be able to optimize again.
-    /// In theory, read-in-order can be applied to projection.
     stack.resize(iter.base() - stack.begin());
     return best_candidate->projection->name;
 }
