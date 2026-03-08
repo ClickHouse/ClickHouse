@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS alpha;
 DROP TABLE IF EXISTS alpha__day;
 
 SET session_timezone = 'Etc/UTC';
+-- Statistics pruning would filter parts before merge, affecting EXPLAIN output
+SET use_statistics_for_part_pruning = 0;
 
 CREATE TABLE alpha
 (

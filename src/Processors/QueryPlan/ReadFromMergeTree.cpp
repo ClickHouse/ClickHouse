@@ -2418,6 +2418,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log,
         result.index_stats);
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+        res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
+
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
         metadata_snapshot->getColumns().getAllPhysical(),
@@ -3575,10 +3578,12 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
     {
         case ReadFromMergeTree::IndexType::None:
             return "None";
-        case ReadFromMergeTree::IndexType::MinMax:
-            return "MinMax";
+        case ReadFromMergeTree::IndexType::PartitionMinMax:
+            return "Partition Min-Max";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
+        case ReadFromMergeTree::IndexType::Statistics:
+            return "Statistics";
         case ReadFromMergeTree::IndexType::PrimaryKey:
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:

@@ -1,0 +1,204 @@
+-- AND on different columns all have statistics, should prune parts
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              id
+              value
+              version
+            Parts: 1/4
+            Granules: 1/4
+          PrimaryKey
+            Keys:
+              id
+            Condition: (id in [50, +Inf))
+            Parts: 1/1
+            Granules: 1/1
+            Search Algorithm: binary search
+          Ranges: 1
+1
+-- OR on different columns all have statistics, should prune parts
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              id
+              version
+            Parts: 2/4
+            Granules: 2/4
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
+99
+-- AND with column without statistics (str has no minmax), should prune parts
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              value
+            Parts: 1/4
+            Granules: 1/4
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+1
+-- OR with column without statistics (str has no minmax), should NOT prune parts
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Ranges: 4
+1
+-- partition and statistics pruning
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Keys:
+              dt
+            Condition: (dt in [20099, 20099])
+            Parts: 1/4
+            Granules: 1/4
+          Partition
+            Keys:
+              toYYYYMMDD(dt)
+            Condition: (toYYYYMMDD(dt) in [20250111, 20250111])
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              dt
+              value
+            Parts: 0/1
+            Granules: 0/1
+          PrimaryKey
+            Condition: true
+            Parts: 0/0
+            Granules: 0/0
+          Ranges: 0
+0
+-- Nullable column pruning, Part 3 has NULL values, should be pruned
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              value_nullable
+            Parts: 3/4
+            Granules: 3/4
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Ranges: 3
+51
+-- FINAL query should NOT use Statistics pruning
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Ranges: 4
+1
+-- Non-monotonic function wrapping column length(toString(value)), should NOT use Statistics pruning
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Ranges: 4
+90

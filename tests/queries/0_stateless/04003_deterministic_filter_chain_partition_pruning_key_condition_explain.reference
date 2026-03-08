@@ -13,7 +13,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_simple_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Keys:
               x
             Condition: (plus(x, 2) in [9, 9])
@@ -34,7 +34,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_simple_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Keys:
               x
             Condition: (plus(x, 2) in [10, +Inf))
@@ -55,7 +55,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_simple_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Keys:
               x
             Condition: (plus(x, 2) in (-Inf, 8])
@@ -76,7 +76,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_simple_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Keys:
               x
             Condition: (plus(x, 2) not in [9, 9])
@@ -102,7 +102,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -121,7 +121,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -140,7 +140,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -159,7 +159,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -184,7 +184,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key2)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 20/20
             Granules: 20/20
@@ -203,7 +203,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key2)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 20/20
             Granules: 20/20
@@ -222,7 +222,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key2)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 20/20
             Granules: 20/20
@@ -241,7 +241,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_composite_key2)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 20/20
             Granules: 20/20
@@ -265,7 +265,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_det_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -284,7 +284,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_det_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -303,7 +303,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_det_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -322,7 +322,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_det_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -341,7 +341,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_det_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
@@ -365,7 +365,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_strings)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 6/6
             Granules: 6/6
@@ -384,7 +384,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_strings)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 6/6
             Granules: 6/6
@@ -403,7 +403,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_strings)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 6/6
             Granules: 6/6
@@ -422,7 +422,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_strings)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 6/6
             Granules: 6/6
@@ -441,7 +441,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_strings)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 6/6
             Granules: 6/6
@@ -460,7 +460,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_strings)
     Indexes:
-      MinMax
+      Partition Min-Max
         Condition: true
         Parts: 6/6
         Granules: 6/6
@@ -482,7 +482,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_monotonic_datetime)
     Indexes:
-      MinMax
+      Partition Min-Max
         Condition: true
         Parts: 3/3
         Granules: 3/3
@@ -513,7 +513,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_partition_key_to_year_month)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 4/4
             Granules: 4/4
@@ -535,7 +535,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_partition_key_to_year_month)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 4/4
             Granules: 4/4
@@ -557,7 +557,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_partition_key_to_year_month)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 4/4
             Granules: 4/4
@@ -582,7 +582,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_nondeterministic_function)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 15/15
             Granules: 15/15
