@@ -381,6 +381,9 @@ Data skipping indexes can also be created on composite columns:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
+-- on columns of type JSON:
+INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
+
 -- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
@@ -448,6 +451,10 @@ The following data types are supported:
 
 :::note Map data type: specifying index creation with keys or values
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
+:::
+
+:::note JSON data type: indexing JSON paths
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}

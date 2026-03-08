@@ -8,6 +8,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -427,6 +428,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
+        if (traverseJSONSubcolumnKeyNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -516,6 +520,23 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+    }
+
+    /// Try to match JSON subcolumn for JSONAllPaths index.
+    /// tryMatchNodeToJSONIndex handles both plain identifiers and CAST-unwrapped expressions.
+    auto json_info = tryMatchNodeToJSONIndex(index_column_node, header);
+
+    if (json_info && function_name == "equals")
+    {
+        auto key_type = index_column_node.getDAGNode()->result_type;
+        if (!isJSONPathFilterSafe(key_type, value_field))
+            return false;
+
+        auto tokens = stringToTokens(Field(json_info->path));
+        out.function = RPNElement::FUNCTION_EQUALS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+        return true;
     }
 
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
@@ -780,6 +801,52 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
         return false;
 
     return header.has(fmt::format("mapValues({})", column_name));
+}
+
+bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    /// Handle functions like `func(json.some.path, ...)` where `json.some.path`
+    /// is a plain INPUT node referencing a JSON subcolumn.
+    /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
+
+    const auto * dag_node = function_node.getDAGNode();
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
+        || !WhichDataType(dag_node->result_type).isUInt8())
+        return false;
+
+    auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
+    auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return false;
+
+    auto required_column = required_columns.front();
+    auto output_column_name = outputs.front()->result_name;
+
+    /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header);
+    if (!json_info)
+        return false;
+
+    /// Evaluate the function on a default column value.
+    /// If the function returns true for the default value (what we'd get when the path is missing),
+    /// we cannot safely skip the granule.
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1),
+                 required_column.type, required_column.name}};
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    if (result_column->getBool(0))
+        return false;
+
+    auto tokens = stringToTokens(Field(json_info->path));
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        "JSONPathExists", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
 }
 
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
