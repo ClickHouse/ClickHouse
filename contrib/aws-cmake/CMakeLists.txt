@@ -99,9 +99,12 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/net/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/client/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/smithy/identity/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/checksum/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
@@ -115,6 +118,7 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/stream/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/threading/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/xml/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/cbor/*.cpp"
 )
 
 if(OS_LINUX OR OS_DARWIN)
@@ -319,6 +323,7 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
     "${AWS_CRT_DIR}/source/checksum/*.cpp"
+    "${AWS_CRT_DIR}/source/cbor/*.cpp"
 )
 
 list(APPEND AWS_SOURCES ${AWS_CRT_SRC})
