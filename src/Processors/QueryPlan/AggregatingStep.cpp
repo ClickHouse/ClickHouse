@@ -11,6 +11,8 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
+#include <Parsers/IASTHash.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -24,8 +26,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/PartialAggregateCachingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -264,14 +268,24 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
+    auto partial_aggregate_cache = settings.use_partial_aggregate_cache
+        ? Context::getGlobalContextInstance()->getPartialAggregateCache()
+        : nullptr;
+    bool use_partial_aggregate_cache = partial_aggregate_cache != nullptr;
+
     /// optimize_aggregation_in_order
-    if (!sort_description_for_merging.empty())
+    if (!sort_description_for_merging.empty() && !use_partial_aggregate_cache)
     {
         /// two-level aggregation is not supported anyway for in order aggregation.
         allow_to_use_two_level_group_by = false;
 
         /// It is incorrect for in order aggregation.
         params.stats_collecting_params.disable();
+    }
+    else if (!sort_description_for_merging.empty() && use_partial_aggregate_cache)
+    {
+        sort_description_for_merging.clear();
+        group_by_sort_description.clear();
     }
 
     if (!allow_to_use_two_level_group_by)
@@ -492,6 +506,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    if (partial_aggregate_cache && pipeline.getNumStreams() > 1)
+        pipeline.resize(1, false, settings.min_outstreams_per_resize_after_split);
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -524,8 +541,31 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        if (partial_aggregate_cache)
+        {
+            /// Compute query hash from aggregation parameters (keys + aggregate functions)
+            SipHash hash;
+            for (const auto & key : params.keys)
+                hash.update(key);
+            for (const auto & aggregate : params.aggregates)
+            {
+                hash.update(aggregate.function->getName());
+                for (const auto & arg : aggregate.argument_names)
+                    hash.update(arg);
+            }
+            IASTHash query_hash = getSipHash128AsPair(hash);
+
+            pipeline.addSimpleTransform([&, query_hash, partial_aggregate_cache](const SharedHeader & header)
+            {
+                return std::make_shared<PartialAggregateCachingTransform>(
+                    header, params, query_hash, partial_aggregate_cache, final);
+            });
+        }
+        else
+        {
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        }
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 

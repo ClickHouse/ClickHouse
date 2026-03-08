@@ -4,6 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Cache/PartialAggregateInfo.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -257,6 +258,16 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                 data_part->index_granularity->getMarksCount(),
                 data_part->index_granularity->hasFinalMark(),
                 res.read_mark_ranges));
+        }
+
+        if (reader_settings.use_partial_aggregate_cache)
+        {
+            String part_name
+                = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+            chunk.getChunkInfos().add(std::make_shared<PartialAggregateInfo>(
+                data_part->storage.getStorageID().uuid,
+                part_name,
+                data_part->info.mutation));
         }
 
         return ChunkAndProgress{
