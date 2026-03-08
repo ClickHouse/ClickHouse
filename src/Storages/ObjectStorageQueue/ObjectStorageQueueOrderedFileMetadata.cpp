@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
-#include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -673,12 +672,16 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     {
         if (state.is_processed)
         {
-            LOG_TRACE(
+            LOG_WARNING(
                 log, "File {} is already processed, current max processed file: {}",
                 path, *state.last_processed_path);
 
             if (ignore_if_exists)
+            {
+                if (created_processing_node)
+                    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
                 return;
+            }
 
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -745,7 +748,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(
     LastProcessedFileInfoMapPtr created_nodes)
 {
     chassert(created_processing_node);
-    doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false, created_nodes);
+    doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */true, created_nodes);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition)

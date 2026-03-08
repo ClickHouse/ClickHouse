@@ -98,6 +98,7 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_before_commit) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \

@@ -74,6 +74,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_once[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
+    extern const char object_storage_queue_pause_before_commit[];
 }
 
 namespace ServerSetting
@@ -987,6 +988,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         fiu_do_on(FailPoints::object_storage_queue_fail_after_insert, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after insert");
         });
+
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_commit);
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
