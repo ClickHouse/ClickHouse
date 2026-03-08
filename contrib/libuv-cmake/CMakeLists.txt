@@ -69,7 +69,10 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
-  list(APPEND uv_libraries rt)
+  # Don't link librt for musl - rt functions are in libc
+  if(NOT USE_MUSL)
+    list(APPEND uv_libraries rt)
+  endif()
   list(APPEND uv_sources
        src/unix/linux.c
        src/unix/procfs-exepath.c

@@ -42,3 +42,14 @@ target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
 # The library is using register variables that are bound to specific registers
 # Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
 target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
+
+# When building with musl, we need to wait for musl headers to be generated
+if (USE_MUSL)
+    add_dependencies(unwind musl-headers)
+    # Add musl arch include paths for bits/*.h headers
+    # These are added here (not in toolchain) to avoid include order issues in musl's own build
+    target_include_directories(unwind SYSTEM BEFORE PRIVATE
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}"
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic"
+    )
+endif()
