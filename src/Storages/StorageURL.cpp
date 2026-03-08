@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsUInt64 max_http_get_redirects;
+    extern const SettingsBool http_allow_redirects_on_post;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;
@@ -661,6 +662,8 @@ void StorageURLSink::initBuffers()
 
     auto poco_uri = Poco::URI(uri);
 
+    const auto & settings = context->getSettingsRef();
+
     auto write_buffer = BuilderWriteBufferFromHTTP(poco_uri)
         .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
         .withMethod(http_method)
@@ -669,9 +672,8 @@ void StorageURLSink::initBuffers()
         .withAdditionalHeaders(headers)
         .withTimeouts(timeouts)
         .withBufferSize(DBMS_DEFAULT_BUFFER_SIZE)
+        .withAllowRedirects(settings[Setting::http_allow_redirects_on_post])
         .create();
-
-    const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),
         compression_method,
