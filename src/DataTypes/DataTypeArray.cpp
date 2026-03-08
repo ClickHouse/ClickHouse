@@ -56,7 +56,7 @@ void DataTypeArray::updateHashImpl(SipHash & hash) const
 
 SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
+    return SerializationArray::create(nested->getDefaultSerialization());
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const

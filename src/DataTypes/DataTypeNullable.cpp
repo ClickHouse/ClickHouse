@@ -96,7 +96,7 @@ ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) 
 
 SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
+    return SerializationNullable::create(nested_data_type->getDefaultSerialization());
 }
 
 void DataTypeNullable::forEachChild(const ChildCallback & callback) const

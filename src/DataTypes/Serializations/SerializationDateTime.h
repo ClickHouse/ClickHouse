@@ -9,8 +9,15 @@ namespace DB
 
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
-public:
+private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+
+public:
+    static UInt128 getHash(const TimezoneMixin & time_zone_);
+
+    static SerializationPtr create(const TimezoneMixin & time_zone_);
+
+    size_t allocatedBytes() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -31,8 +38,15 @@ public:
 
 class SerializationTime final : public SerializationNumber<Int32>
 {
-public:
+private:
     explicit SerializationTime(const DataTypeTime & /*time_type*/);
+
+public:
+    static UInt128 getHash(const DataTypeTime & time_type);
+
+    static SerializationPtr create(const DataTypeTime & time_type);
+
+    size_t allocatedBytes() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

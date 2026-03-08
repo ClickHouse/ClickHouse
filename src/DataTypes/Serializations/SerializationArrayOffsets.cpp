@@ -1,8 +1,22 @@
 #include <Columns/ColumnsNumber.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationArrayOffsets.h>
 
 namespace DB
 {
+
+
+UInt128 SerializationArrayOffsets::getHash()
+{
+    SipHash hash;
+    hash.update("ArrayOffsets");
+    return hash.get128();
+}
+
+SerializationPtr SerializationArrayOffsets::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationArrayOffsets(); });
+}
 
 void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
@@ -65,6 +79,11 @@ void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
     }
 
     settings.path.pop_back();
+}
+
+size_t SerializationArrayOffsets::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

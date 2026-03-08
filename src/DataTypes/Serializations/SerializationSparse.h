@@ -25,8 +25,15 @@ namespace DB
 /// null map is not written but can be restored from offsets.
 class SerializationSparse final : public ISerialization
 {
-public:
+private:
     explicit SerializationSparse(const SerializationPtr & nested_);
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+
+    static SerializationPtr create(const SerializationPtr & nested_);
+
+    size_t allocatedBytes() const override;
 
     KindStack getKindStack() const override;
 
@@ -133,8 +140,17 @@ private:
 /// methods and builds a null map in full serialization from offset of Sparse column.
 class SerializationSparseNullMap final : public SerializationNumber<UInt8>
 {
+private:
+    SerializationSparseNullMap() = default;
+
 public:
     using Base = SerializationNumber<UInt8>;
+
+    static UInt128 getHash();
+
+    static SerializationPtr create();
+
+    size_t allocatedBytes() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,

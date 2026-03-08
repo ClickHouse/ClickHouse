@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
@@ -22,6 +23,14 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+UInt128 SerializationDynamic::getHash(size_t max_dynamic_types_)
+{
+    SipHash hash;
+    hash.update("Dynamic");
+    hash.update(max_dynamic_types_);
+    return hash.get128();
 }
 
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
@@ -921,6 +930,11 @@ static void serializeTextImpl(
     }
 }
 
+SerializationPtr SerializationDynamic::create(size_t max_dynamic_types_)
+{
+    return ISerialization::pooled(getHash(max_dynamic_types_), [=] { return new SerializationDynamic(max_dynamic_types_); });
+}
+
 void SerializationDynamic::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto nested_serialize = [&settings](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
@@ -1167,6 +1181,11 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
     };
 
     serializeTextImpl(column, row_num, ostr, nested_serialize);
+}
+
+size_t SerializationDynamic::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

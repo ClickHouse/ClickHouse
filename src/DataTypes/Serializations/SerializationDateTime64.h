@@ -8,8 +8,15 @@ namespace DB
 
 class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64>, public TimezoneMixin
 {
-public:
+private:
     SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_);
+
+public:
+    static UInt128 getHash(UInt32 scale_, const TimezoneMixin & time_zone_);
+
+    static SerializationPtr create(UInt32 scale_, const TimezoneMixin & time_zone_);
+
+    size_t allocatedBytes() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

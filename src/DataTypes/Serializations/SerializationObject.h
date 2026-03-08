@@ -174,8 +174,6 @@ protected:
     std::list<re2::RE2> path_regexps_to_skip;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
-
-private:
     std::vector<String> sorted_typed_paths;
 };
 

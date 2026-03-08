@@ -361,6 +361,9 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(SerializationCacheBytes, "Total size of the serialization cache in bytes") \
+    M(SerializationCacheBytesUncorrected, "The number of bytes in the serialiation cache including only the values. Doesn't count keys and additional overhead from empty slots") \
+    M(SerializationCacheCount, "Total number of entries in the serialization cache") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \

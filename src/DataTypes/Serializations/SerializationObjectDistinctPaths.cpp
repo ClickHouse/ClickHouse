@@ -1,8 +1,8 @@
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
-
 
 namespace DB
 {
@@ -17,6 +17,23 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 {
     const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
+}
+
+
+UInt128 SerializationObjectDistinctPaths::getHash(const std::vector<String> & typed_paths_)
+{
+    SipHash hash;
+    hash.update("ObjectDistinctPaths");
+    for (const auto & path : typed_paths_)
+        hash.update(path);
+    const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
+    hash.update(shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization())->getHash());
+    return hash.get128();
+}
+
+SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<String> & typed_paths_)
+{
+    return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
@@ -288,6 +305,15 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
     settings.path.pop_back();
+}
+
+size_t SerializationObjectDistinctPaths::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += typed_paths.capacity() * sizeof(String);
+    for (const auto & path : typed_paths)
+        bytes += path.capacity();
+    return bytes;
 }
 
 }

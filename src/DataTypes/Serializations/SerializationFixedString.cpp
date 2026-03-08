@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -25,6 +26,14 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
+
+UInt128 SerializationFixedString::getHash(size_t n_)
+{
+    SipHash hash;
+    hash.update("FixedString");
+    hash.update(n_);
+    return hash.get128();
+}
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -190,6 +199,11 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     }
 }
 
+SerializationPtr SerializationFixedString::create(size_t n_)
+{
+    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
+}
+
 
 void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
@@ -292,6 +306,11 @@ void SerializationFixedString::serializeTextMarkdown(
     }
     else
         serializeTextEscaped(column, row_num, ostr, settings);
+}
+
+size_t SerializationFixedString::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -72,7 +71,15 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
+private:
     explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
+
+public:
+    static UInt128 getHash(const String & variant_name_);
+
+    size_t allocatedBytes() const override;
+
+    static SerializationPtr create(const DataTypes & variant_types_, const String & variant_name_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

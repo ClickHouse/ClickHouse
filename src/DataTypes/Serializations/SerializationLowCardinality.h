@@ -14,8 +14,14 @@ private:
     DataTypePtr dictionary_type;
     SerializationPtr dict_inner_serialization;
 
-public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
+
+public:
+    static UInt128 getHash(const DataTypePtr & dictionary_type);
+
+    static SerializationPtr create(const DataTypePtr & dictionary_type);
+
+    size_t allocatedBytes() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

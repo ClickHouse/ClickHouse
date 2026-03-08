@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDate.h>
 
 #include <IO/ReadHelpers.h>
@@ -9,6 +10,14 @@
 
 namespace DB
 {
+
+UInt128 SerializationDate::getHash(const DateLUTImpl & time_zone_)
+{
+    SipHash hash;
+    hash.update("Date");
+    hash.update(time_zone_.getTimeZone());
+    return hash.get128();
+}
 
 void SerializationDate::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
@@ -135,6 +144,16 @@ bool SerializationDate::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
 
 SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
+}
+
+SerializationPtr SerializationDate::create(const DateLUTImpl & time_zone_)
+{
+    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDate(time_zone_); });
+}
+
+size_t SerializationDate::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

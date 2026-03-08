@@ -11,13 +11,39 @@ namespace DB
 template <typename Parser>
 class SerializationJSON : public SerializationObject
 {
-public:
+private:
     SerializationJSON(
         const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
+        size_t max_dynamic_paths_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_);
+
+public:
+    static UInt128 getHash(
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_,
+        size_t max_dynamic_paths_);
+
+    static SerializationPtr create(
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_,
+        size_t max_dynamic_paths_,
+        std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
+    {
+        /// We intentionally do NOT cache SerializationJSON objects. The json_extract_tree
+        /// contains mutable caches (DynamicNode::json_extract_nodes_cache, variants_order_cache)
+        /// that accumulate state per-use. Sharing these across queries via the cache leads to
+        /// incorrect behaviour (e.g. timezone mismatches in cached DateTimeNode objects).
+        auto * obj = new SerializationJSON(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, max_dynamic_paths_, std::move(json_extract_tree_));
+        obj->cached_hash = getHash(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, max_dynamic_paths_);
+        return std::shared_ptr<ISerialization>(obj);
+    }
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -42,6 +68,7 @@ public:
 private:
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
 
+    size_t max_dynamic_paths;
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree;
     /// Pool of parser objects to make SerializationJSON thread safe.
     mutable SimpleObjectPool<Parser> parsers_pool;

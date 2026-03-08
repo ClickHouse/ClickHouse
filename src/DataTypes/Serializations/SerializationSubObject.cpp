@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationSubObjectSharedData.h>
@@ -20,6 +21,31 @@ SerializationSubObject::SerializationSubObject(
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_type->getDefaultSerialization())
 {
+}
+
+
+UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_)
+{
+    SipHash hash;
+    hash.update("SubObject");
+    hash.update(paths_prefix_);
+    hash.update(dynamic_type_->getName());
+    std::vector<String> sorted_paths;
+    sorted_paths.reserve(typed_paths_serializations_.size());
+    for (const auto & [path, _] : typed_paths_serializations_)
+        sorted_paths.push_back(path);
+    std::sort(sorted_paths.begin(), sorted_paths.end());
+    for (const auto & path : sorted_paths)
+    {
+        hash.update(path);
+        hash.update(typed_paths_serializations_.at(path)->getHash());
+    }
+    return hash.get128();
+}
+
+SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type)
+{
+    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type); });
 }
 
 struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeBinaryBulkState
@@ -155,7 +181,7 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    sub_object_state->shared_data_serialization = std::make_shared<SerializationSubObjectSharedData>(
+    sub_object_state->shared_data_serialization = SerializationSubObjectSharedData::create(
         structure_state_concrete->shared_data_serialization_version,
         structure_state_concrete->shared_data_buckets,
         paths_prefix,
@@ -218,6 +244,16 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     settings.path.pop_back();
+}
+
+size_t SerializationSubObject::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += paths_prefix.capacity();
+    bytes += typed_paths_serializations.bucket_count() * sizeof(void *);
+    for (const auto & [key, _] : typed_paths_serializations)
+        bytes += sizeof(std::pair<const String, SerializationPtr>) + sizeof(void *) + key.capacity();
+    return bytes;
 }
 
 }

@@ -35,13 +35,13 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeString::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationString>();
+    return SerializationString::create();
 }
 
 SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
 {
     return IDataType::getSerialization(
-        info.getKindStack(), info.getSettings(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
+        info.getKindStack(), info.getSettings(), SerializationString::create(info.getSettings().string_serialization_version));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -24,8 +25,10 @@ SerializationJSON<Parser>::SerializationJSON(
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
+    size_t max_dynamic_paths_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
     : SerializationObject(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
+    , max_dynamic_paths(max_dynamic_paths_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -370,6 +373,42 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
+}
+
+template <typename Parser>
+UInt128 SerializationJSON<Parser>::getHash(
+    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const std::unordered_set<String> & paths_to_skip_,
+    const std::vector<String> & path_regexps_to_skip_,
+    const DataTypePtr & dynamic_type_,
+    size_t max_dynamic_paths_)
+{
+    SipHash hash;
+    hash.update("JSON");
+    hash.update(TypeName<Parser>);
+
+    std::vector<String> sorted_paths(typed_paths_types_.size());
+    size_t i = 0;
+    for (const auto & [path, _] : typed_paths_types_)
+        sorted_paths[i++] = path;
+    std::sort(sorted_paths.begin(), sorted_paths.end());
+    for (const auto & path : sorted_paths)
+    {
+        hash.update(path);
+        hash.update(typed_paths_types_.at(path)->getName());
+    }
+
+    std::vector<String> sorted_skip(paths_to_skip_.begin(), paths_to_skip_.end());
+    std::sort(sorted_skip.begin(), sorted_skip.end());
+    for (const auto & path : sorted_skip)
+        hash.update(path);
+
+    for (const auto & path : path_regexps_to_skip_)
+        hash.update(path);
+
+    hash.update(max_dynamic_paths_);
+    hash.update(dynamic_type_->getName());
+    return hash.get128();
 }
 
 #if USE_SIMDJSON

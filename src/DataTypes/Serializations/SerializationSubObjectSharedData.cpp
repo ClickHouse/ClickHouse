@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationSubObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/DataTypeObject.h>
@@ -25,6 +26,30 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     , dynamic_serialization(dynamic_type->getDefaultSerialization())
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
+}
+
+UInt128 SerializationSubObjectSharedData::getHash(
+    SerializationObjectSharedData::SerializationVersion serialization_version_,
+    size_t buckets_,
+    const String & paths_prefix_,
+    const DataTypePtr & dynamic_type_)
+{
+    SipHash hash;
+    hash.update("SubObjectSharedData");
+    hash.update(static_cast<int>(serialization_version_.value));
+    hash.update(buckets_);
+    hash.update(paths_prefix_);
+    hash.update(dynamic_type_->getName());
+    return hash.get128();
+}
+
+SerializationPtr SerializationSubObjectSharedData::create(
+    SerializationObjectSharedData::SerializationVersion serialization_version_,
+    size_t buckets_,
+    const String & paths_prefix_,
+    const DataTypePtr & dynamic_type_)
+{
+    return ISerialization::pooled(getHash(serialization_version_, buckets_, paths_prefix_, dynamic_type_), [&] { return new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_); });
 }
 
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
@@ -331,6 +356,11 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "deserializeBinaryBulkWithMultipleStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
+}
+
+size_t SerializationSubObjectSharedData::allocatedBytes() const
+{
+    return sizeof(*this) + paths_prefix.capacity();
 }
 
 }

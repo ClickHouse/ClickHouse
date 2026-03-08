@@ -44,7 +44,7 @@ bool DataTypeTime64::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeTime64::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationTime64>(scale, *this);
+    return SerializationTime64::create(scale, *this);
 }
 
 const DateLUTImpl & DataTypeTime64::getTimeZone() const

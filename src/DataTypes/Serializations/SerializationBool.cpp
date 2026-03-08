@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -17,6 +18,14 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
+}
+
+UInt128 SerializationBool::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Bool");
+    hash.update(nested_->getHash());
+    return hash.get128();
 }
 
 namespace
@@ -431,6 +440,11 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     return ReturnType(true);
 }
 
+SerializationPtr SerializationBool::create(const SerializationPtr & nested_)
+{
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationBool(nested_); });
+}
+
 void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextQuotedImpl<void>(column, istr, settings);
@@ -460,6 +474,11 @@ bool SerializationBool::tryDeserializeWholeText(IColumn & column, ReadBuffer & i
 void SerializationBool::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeSimple(column, row_num, ostr, settings);
+}
+
+size_t SerializationBool::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

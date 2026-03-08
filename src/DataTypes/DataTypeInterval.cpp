@@ -7,7 +7,7 @@
 namespace DB
 {
 
-SerializationPtr DataTypeInterval::doGetDefaultSerialization() const { return std::make_shared<SerializationInterval>(kind); }
+SerializationPtr DataTypeInterval::doGetDefaultSerialization() const { return SerializationInterval::create(kind); }
 
 bool DataTypeInterval::equals(const IDataType & rhs) const
 {

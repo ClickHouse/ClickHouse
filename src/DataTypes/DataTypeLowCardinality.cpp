@@ -157,7 +157,7 @@ void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
 
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationLowCardinality>(dictionary_type);
+    return SerializationLowCardinality::create(dictionary_type);
 }
 
 void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const

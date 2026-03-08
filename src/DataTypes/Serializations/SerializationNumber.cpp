@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -225,6 +226,26 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
+}
+
+template <typename T>
+UInt128 SerializationNumber<T>::getHash()
+{
+    SipHash hash;
+    hash.update(TypeName<T>);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationNumber<T>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationNumber<T>(); });
+}
+
+template <typename T>
+size_t SerializationNumber<T>::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 template class SerializationNumber<UInt8>;
