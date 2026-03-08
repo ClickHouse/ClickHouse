@@ -119,6 +119,9 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
+    /// The working directory at the time the daemon was started, before any chdir calls.
+    const std::string & getOriginalWorkingDirectory() const { return original_working_directory; }
+
 protected:
     void loadConfiguration();
 
@@ -160,6 +163,11 @@ protected:
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
+
+    /// The working directory at the time the daemon object was constructed,
+    /// before Poco's beDaemon/chdir or any other directory changes.
+    /// Used to resolve relative config paths correctly.
+    std::string original_working_directory;
 
     String build_id;
     String stored_binary_hash;
