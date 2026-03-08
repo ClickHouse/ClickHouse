@@ -576,17 +576,20 @@ namespace
             : query_context(query_context_)
             , thread_group(thread_group_)
             , block_io(std::move(block_io_))
-            , executor(block_io.pipeline)
-            , schema(
-                CHColumnToArrowColumn::calculateArrowSchema(
-                    executor.getHeader().getColumnsWithTypeAndName(),
-                    "Arrow",
-                    nullptr,
-                    {.output_string_as_string = true}
-                )
-            )
             , block_modifier(block_modifier_)
         {
+            try
+            {
+                executor.emplace(block_io.pipeline);
+                schema = CHColumnToArrowColumn::calculateArrowSchema(executor->getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+            }
+            catch (...)
+            {
+                try { block_io.onException(); }
+                catch (...) { tryLogCurrentException("PollSession: block_io.onException() failed during constructor rollback"); }
+                throw;
+            }
+
             if (schema_modifier)
             {
                 auto result = schema_modifier(schema);
@@ -602,7 +605,7 @@ namespace
         std::shared_ptr<arrow::Schema> getSchema() const { return schema; }
         bool getNextBlock(Block & block)
         {
-            if (!executor.pull(block))
+            if (!executor->pull(block))
                 return false;
             if (block_modifier)
                 block_modifier(block);
@@ -615,7 +618,7 @@ namespace
         ContextPtr query_context;
         ThreadGroupPtr thread_group;
         BlockIO block_io;
-        PullingPipelineExecutor executor;
+        std::optional<PullingPipelineExecutor> executor;
         std::shared_ptr<arrow::Schema> schema;
         std::function<void(Block &)> block_modifier;
     };
@@ -1475,47 +1478,36 @@ CommandSelectorResult commandSelector(const google::protobuf::Any & any_msg, boo
 
             if (!schema_only)
             {
-                for (const auto & info_name : command.info())
+                #define SQL_INFO_SELECTOR(INFO_NAME, BUILDER, ARG) \
+                        { INFO_NAME, [&](){ return BUILDER(INFO_NAME, ARG); } }
+
+                std::unordered_map<SqlInfo, std::function<arrow::Status()>> selector
                 {
-                    switch (info_name)
-                    {
-                        case SqlInfo::FLIGHT_SQL_SERVER_NAME:
-                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, "ClickHouse"));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_VERSION:
-                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, VERSION_STRING));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION:
-                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ARROW_VERSION_STRING));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_READ_ONLY:
-                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_SQL:
-                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT:
-                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MIN_VERSION:
-                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MAX_VERSION:
-                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION:
-                            ARROW_RETURN_NOT_OK(builder_int32_append(info_name, arrow::flight::protocol::sql::SQL_SUPPORTED_TRANSACTION_NONE));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_CANCEL:
-                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
-                            break;
-                        case SqlInfo::FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT:
-                        case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT:
-                            ARROW_RETURN_NOT_OK(builder_int32_append(info_name, 0));
-                            break;
-                        default:
-                            return arrow::Status::Invalid("sql::CommandGetSqlInfo for info_name " + std::to_string(info_name) + " is not implemented.");
-                    }
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_NAME, builder_string_append, "ClickHouse"),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_VERSION, builder_string_append, VERSION_STRING),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION, builder_string_append, ARROW_VERSION_STRING),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_READ_ONLY, builder_boolean_append, false),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SQL, builder_boolean_append, true),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT, builder_boolean_append, false),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MIN_VERSION, builder_string_append, ""),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MAX_VERSION, builder_string_append, ""),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION, builder_int32_append, arrow::flight::protocol::sql::SQL_SUPPORTED_TRANSACTION_NONE),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_CANCEL, builder_boolean_append, true),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT, builder_int32_append, 0),
+                    SQL_INFO_SELECTOR(SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT, builder_int32_append, 0)
+                };
+                #undef SQL_INFO_SELECTOR
+
+                if (command.info().empty())
+                {
+                    for (const auto & [_, builder] : selector)
+                        ARROW_RETURN_NOT_OK(builder());
+                }
+                else
+                {
+                    for (const auto & info_name : command.info())
+                        if (auto it = selector.find(static_cast<SqlInfo>(info_name)); it != selector.end())
+                            ARROW_RETURN_NOT_OK(it->second());
                 }
             }
 
@@ -2009,8 +2001,8 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
             ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
+            block_io_owned_here = false;
             auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
-            block_io_owned_here = false; /// ownership moved; PollSession handles lifecycle from here
 
             schema = poll_session->getSchema();
 
