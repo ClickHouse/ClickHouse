@@ -615,7 +615,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         }
         else if (auto static_credentials = DataLake::tryGetStaticStorageCredentials(storage_type, settings))
         {
-            LOG_DEBUG(log, "Using static credentials from database settings");
+            LOG_TRACE(log, "Using static credentials from database settings");
             static_credentials->addCredentialsToEngineArgs(args);
         }
         else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
