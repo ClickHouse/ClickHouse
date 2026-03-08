@@ -8,5 +8,6 @@
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
         <table_engines_require_grant>true</table_engines_require_grant>
         <allow_impersonate_user>true</allow_impersonate_user>
+        <disallow_config_defined_profiles_for_sql_defined_users>true</disallow_config_defined_profiles_for_sql_defined_users>
     </access_control_improvements>
 </clickhouse>

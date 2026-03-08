@@ -2,6 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Access/UsersConfigAccessStorage.h>
 #include <Common/quoteString.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int THERE_IS_NO_PROFILE;
 }
 
@@ -137,6 +139,41 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
     merged_settings.merge(enabled.params.settings_from_enabled_roles, /* normalize= */ false);
     merged_settings.merge(enabled.params.settings_from_user, /* normalize= */ false);
+
+    if (access_control.isConfigDefinedProfilesForSQLUsersDisallowed())
+    {
+        auto user_storage = access_control.findStorage(enabled.params.user_id);
+        bool is_sql_defined_user = user_storage
+            && strcmp(user_storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) != 0;
+
+        if (is_sql_defined_user)
+        {
+            auto check_elements = [&](const SettingsProfileElements & elements)
+            {
+                for (const auto & elem : elements)
+                {
+                    if (!elem.parent_profile)
+                        continue;
+                    /// The server's default profile is always allowed.
+                    if (default_profile_id && *elem.parent_profile == *default_profile_id)
+                        continue;
+                    auto profile_storage = access_control.findStorage(*elem.parent_profile);
+                    if (profile_storage
+                        && strcmp(profile_storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) == 0)
+                    {
+                        auto profile_name = access_control.tryReadName(*elem.parent_profile);
+                        throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "Cannot apply config-defined profile '{}' to SQL-defined user. "
+                            "Server setting `disallow_config_defined_profiles_for_sql_defined_users` is enabled",
+                            profile_name.value_or("unknown"));
+                    }
+                }
+            };
+
+            check_elements(enabled.params.settings_from_user);
+            check_elements(enabled.params.settings_from_enabled_roles);
+        }
+    }
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 

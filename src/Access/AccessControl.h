@@ -213,6 +213,9 @@ public:
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
+    void setConfigDefinedProfilesForSQLUsersDisallowed(bool disallow) { disallow_config_defined_profiles_for_sql_defined_users = disallow; }
+    bool isConfigDefinedProfilesForSQLUsersDisallowed() const { return disallow_config_defined_profiles_for_sql_defined_users; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -307,6 +310,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool disallow_config_defined_profiles_for_sql_defined_users = false;
 };
 
 }
