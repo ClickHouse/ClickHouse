@@ -2200,7 +2200,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance.", {"UInt32", "Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_distance = {"Returns the 1-norm distance. For `Array` inputs, the return type is `Float32` for `Float32` or `BFloat16` elements, and `Float64` for integer or `Float64` elements. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples_l1_distance = {
         {
             "Basic usage",
@@ -2228,7 +2228,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance = {"Returns the 2-norm distance.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance = {"Returns the 2-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_l2_distance = {
         {
             "Basic usage",
@@ -2256,7 +2256,7 @@ Calculates the sum of the squares of the difference between the corresponding el
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_squared_distance = {"Returns the sum of the squares of the difference between the corresponding elements of two vectors. For `Array` inputs, the return type is `Float32` for `Float32` or `BFloat16` elements, and `Float64` for integer or `Float64` elements. For `Tuple` inputs, the return type follows the arithmetic result type of the element-wise operations (integer types are preserved).", {"(U)Int*", "Float*"}};
     FunctionDocumentation::Examples examples_l2_squared_distance = {
         {
             "Basic usage",
@@ -2284,7 +2284,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector1", "First vector.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_distance = {"Returns the Infinity-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_linf_distance = {
         {
             "Basic usage",
@@ -2313,7 +2313,7 @@ Calculates the distance between two points (the elements of the vectors are the 
         {"vector2", "Second vector.", {"Tuple(T)", "Array(T)"}},
         {"p", "The power. Possible values: real number from `[1; inf)`.", {"UInt*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_lp_distance = {"Returns the p-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_lp_distance = {
         {
             "Basic usage",
@@ -2341,7 +2341,7 @@ Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity
         {"vector1", "First tuple.", {"Tuple(T)", "Array(T)"}},
         {"vector2", "Second tuple.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = {"Returns the cosine of the angle between two vectors subtracted from one.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance = {"Returns the cosine of the angle between two vectors subtracted from one. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_cosine_distance = {
         {
             "Basic usage",
@@ -2367,7 +2367,7 @@ Calculates the approximate distance between two points (the values of the vector
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
         = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
             R"(
@@ -2408,7 +2408,7 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             "using more bits increases accuracy at the cost of performance.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
-        = {"Returns the approximate cosine of the angle between two vectors subtracted from one.", {"Float64"}};
+        = {"Returns the approximate cosine of the angle between two vectors subtracted from one. The return type is determined by the least common supertype of the input element types: `Float32` for `Float32` or `BFloat16` inputs, `Float64` for integer or `Float64` inputs.", {"Float*"}};
     FunctionDocumentation::Examples examples_cosine_distance_transposed
         = {{"Basic usage",
             R"(
