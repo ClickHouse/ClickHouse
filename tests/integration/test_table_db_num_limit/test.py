@@ -285,3 +285,17 @@ def test_named_collection_limit(started_cluster):
     finally:
         for i in range(throw_limit + 1):
             node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
+
+
+def test_user_predefined_db_ingores_limit(started_cluster):
+    throw_limit = 10
+    database = "_system"
+
+    node.query(f"CREATE DATABASE {database}")
+
+    for i in range(throw_limit + 1):
+        node.query(f"CREATE TABLE {database}.t{i} (a Int32) Engine = Log")
+
+    assert "0\n" == node.query("SELECT value FROM system.metrics WHERE name = 'AttachedTable'")
+
+    node.query(f"DROP DATABASE {database} SYNC")

@@ -31,4 +31,6 @@
 
     <max_named_collection_num_to_warn>5</max_named_collection_num_to_warn>
     <max_named_collection_num_to_throw>10</max_named_collection_num_to_throw>
+
+    <user_predefined_database>_system</user_predefined_database>
 </clickhouse>
