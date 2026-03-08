@@ -582,20 +582,20 @@ namespace
             {
                 executor.emplace(block_io.pipeline);
                 schema = CHColumnToArrowColumn::calculateArrowSchema(executor->getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+
+                if (schema_modifier)
+                {
+                    auto result = schema_modifier(schema);
+                    if (!result.ok())
+                        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema {}", schema->ToString());
+                    schema = result.ValueUnsafe();
+                }
             }
             catch (...)
             {
                 try { block_io.onException(); }
                 catch (...) { tryLogCurrentException("PollSession: block_io.onException() failed during constructor rollback"); }
                 throw;
-            }
-
-            if (schema_modifier)
-            {
-                auto result = schema_modifier(schema);
-                if (!result.ok())
-                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema {}", schema->ToString());
-                schema = result.ValueUnsafe();
             }
         }
 
