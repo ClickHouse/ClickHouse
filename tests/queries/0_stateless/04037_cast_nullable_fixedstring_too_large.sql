@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Verify that CAST to Nullable(FixedString(N)) returns NULL instead of throwing
 -- when the source string is too long to fit in FixedString(N).
 -- See https://github.com/ClickHouse/ClickHouse/issues/77464
