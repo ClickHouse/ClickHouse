@@ -1,0 +1,13 @@
+Positive half values:
+0.5	1
+1.5	2
+2.5	3
+3.5	4
+Negative half values:
+-0.5	-1
+-1.5	-2
+-2.5	-3
+-3.5	-4
+Non-half rounding:
+3	-3
+2	-2

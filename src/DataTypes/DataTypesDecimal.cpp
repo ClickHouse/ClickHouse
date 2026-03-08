@@ -10,6 +10,7 @@
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <cmath>
 #include <type_traits>
 
 namespace DB
@@ -293,7 +294,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        result = static_cast<ToNativeType>(out);
+        result = static_cast<ToNativeType>(std::round(out));
         return ReturnType(true);
     }
     else
