@@ -149,6 +149,16 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
+    bool optimizeManifestFiles(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        ContextPtr context) override;
+
     bool supportsDelete() const override { return configuration->supportsDelete(); }
 
     bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }

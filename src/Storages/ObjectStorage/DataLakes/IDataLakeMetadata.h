@@ -134,6 +134,12 @@ public:
         return false;
     }
 
+    virtual bool optimizeManifestFiles(
+        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,

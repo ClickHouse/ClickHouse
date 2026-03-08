@@ -593,6 +593,19 @@ bool StorageObjectStorage::optimize(
     return configuration->optimize(metadata_snapshot, context, format_settings);
 }
 
+bool StorageObjectStorage::optimizeManifestFiles(
+        const ASTPtr & /*query*/,
+        [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        [[maybe_unused]] ContextPtr context)
+{
+    return configuration->optimizeManifestFiles(metadata_snapshot, context, format_settings);
+}
+
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,

@@ -267,6 +267,11 @@ public:
         return false;
     }
 
+    virtual bool optimizeManifestFiles(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        return false;
+    }
+
     virtual bool supportsPrewhere() const
     {
         return true;

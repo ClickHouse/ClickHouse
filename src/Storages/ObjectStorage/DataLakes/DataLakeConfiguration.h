@@ -377,6 +377,12 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
+    bool optimizeManifestFiles(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    {
+        assertInitialized();
+        return current_metadata->optimizeManifestFiles(metadata_snapshot, context, format_settings);
+    }
+
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);

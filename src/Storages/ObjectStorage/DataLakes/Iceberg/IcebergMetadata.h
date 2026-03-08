@@ -107,6 +107,7 @@ public:
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+    bool optimizeManifestFiles(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
     void mutate(
         const MutationCommands & commands,

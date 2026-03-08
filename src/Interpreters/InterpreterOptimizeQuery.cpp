@@ -44,6 +44,15 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
+    // Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
+    if (ast.manifest)
+    {
+        // Manifest compaction is handled through the optimize() call with special flag
+        // The storage will check if it's a data lake table and perform manifest-only compaction
+        table->optimizeManifestFiles(query_ptr, metadata_snapshot, ast.partition, ast.final, false, {}, false, getContext());
+        return {};
+    }
+
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
     if (ast.deduplicate_by_columns)

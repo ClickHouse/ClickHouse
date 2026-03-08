@@ -108,6 +108,45 @@ struct Plan
     } partition_encoder;
 };
 
+size_t getNumberOfManifestFiles(
+    const IcebergHistory & snapshots_info,
+    const PersistentTableComponents & persistent_table_components,
+    ObjectStoragePtr object_storage,
+    ContextPtr context)
+{
+    LoggerPtr log = getLogger("IcebergCompaction::shouldCompactManifests");
+
+    // Count unique manifest files across all snapshots
+    std::unordered_set<String> unique_manifest_files;
+
+    for (const auto & snapshot : snapshots_info)
+    {
+        try
+        {
+            LOG_TEST(log, "Snapshot_id {}", snapshot.snapshot_id);
+            auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
+            for (const auto & manifest_file : manifest_list)
+            {
+                unique_manifest_files.insert(manifest_file.manifest_file_path);
+                LOG_TEST(log, "Manifest file path {}", manifest_file.manifest_file_path);
+            }
+        }
+        catch (const Exception & e)
+        {
+            LOG_WARNING(log, "Failed to read manifest list {}: {}", snapshot.manifest_list_path, e.what());
+            continue;
+        }
+    }
+
+    size_t total_manifest_files = unique_manifest_files.size();
+
+    LOG_DEBUG(log, "Found {} unique manifest files, compaction {}",
+              total_manifest_files,
+              total_manifest_files > 5 ? "recommended" : "not needed (threshold: 5)");
+
+    return total_manifest_files;
+}
+
 Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
@@ -290,6 +329,270 @@ static void writeDataFiles(
         output_format->finalize();
         write_buffer->finalize();
     }
+}
+
+void writeConsolidatedManifestFile(
+    IcebergHistory snapshots_info,
+    const PersistentTableComponents & persistent_table_components,
+    const DataLakeStorageSettings & data_lake_settings,
+    ObjectStoragePtr object_storage, ContextPtr context,
+    SharedHeader sample_block_,
+    String write_format,
+    CompressionMethod compression_method)
+{
+    auto log = getLogger("IcebergManifestConsolidation");
+    LOG_INFO(log, "Writing consolidated manifest file for all snapshots");
+
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_table_components.table_path,
+        data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_table_components.table_uuid);
+
+    Poco::JSON::Object::Ptr initial_metadata_object
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+
+    // Create a deep copy of the metadata object to avoid modifying the original
+    // This ensures we create a new metadata file rather than updating the existing one
+    auto deepCopy = [](Poco::JSON::Object::Ptr obj) -> Poco::JSON::Object::Ptr
+    {
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        obj->stringify(oss);
+        Poco::JSON::Parser parser;
+        auto result = parser.parse(oss.str());
+        return result.extract<Poco::JSON::Object::Ptr>();
+    };
+
+    Poco::JSON::Object::Ptr metadata_object = deepCopy(initial_metadata_object);
+
+    auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    Poco::JSON::Object::Ptr current_schema;
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        {
+            current_schema = schemas->getObject(static_cast<UInt32>(i));
+            break;
+        }
+    }
+
+    auto partition_spec_id = metadata_object->getValue<Int32>(f_default_spec_id);
+    auto partitions_specs = metadata_object->getArray(f_partition_specs);
+    Poco::JSON::Object::Ptr partition_spec;
+
+    for (size_t i = 0; i < partitions_specs->size(); ++i)
+    {
+        auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
+        if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+        {
+            partition_spec = current_partition_spec;
+            break;
+        }
+    }
+
+    std::vector<String> partition_columns;
+    auto fields_from_partition_spec = partition_spec->getArray(f_fields);
+    for (UInt32 i = 0; i < fields_from_partition_spec->size(); ++i)
+    {
+        partition_columns.push_back(fields_from_partition_spec->getObject(i)->getValue<String>(f_name));
+    }
+
+    // Collect data files grouped by partition key
+    // Map: partition_key_string -> { partition_values (Row), file paths, statistics }
+    struct PartitionData
+    {
+        Row partition_values;
+        std::vector<String> file_paths;
+        DataFileStatistics statistics;
+
+        explicit PartitionData(Poco::JSON::Array::Ptr schema)
+            : statistics(schema)
+        {}
+    };
+
+    auto schema_fields = schemas->getObject(static_cast<UInt32>(current_schema_id))->getArray(Iceberg::f_fields);
+
+    // Ordered map so partition manifest files are written in a deterministic order
+    std::map<String, PartitionData> partitions_map;
+
+    size_t total_data_files = 0;
+
+    for (const auto & snapshot : snapshots_info)
+    {
+        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
+        for (const auto & manifest_file : manifest_list)
+        {
+            auto files_handle = getManifestFileEntriesHandle(
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+
+            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+            {
+                // Build a string key that uniquely identifies this partition
+                String partition_key;
+                for (const auto & val : data_file->parsed_entry->partition_key_value)
+                    partition_key += val.dump() + "|";
+
+                if (!partitions_map.contains(partition_key))
+                    partitions_map.emplace(partition_key, PartitionData(schema_fields));
+
+                auto & pd = partitions_map.at(partition_key);
+                pd.partition_values = data_file->parsed_entry->partition_key_value;
+                // Avoid duplicates across snapshots
+                if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->file_path) == pd.file_paths.end())
+                {
+                    pd.file_paths.push_back(data_file->file_path);
+                    ++total_data_files;
+                }
+            }
+        }
+    }
+
+    // Create file name generator for new metadata files
+    FileNamesGenerator generator(
+        persistent_table_components.table_path,
+        persistent_table_components.table_path,
+        false,
+        compression_method,
+        write_format);
+    generator.setVersion(metadata_version + 1);
+
+    // Get summary totals from history for the new snapshot
+    MetadataGenerator metadata_generator(metadata_object);
+    auto generated_metadata_name = generator.generateMetadataName();
+
+    Int64 total_added_files = 0;
+    Int64 total_added_records = 0;
+    Int64 total_added_files_size = 0;
+    Int64 parent_snapshot_id = 0;
+
+    for (const auto & history_record : snapshots_info)
+    {
+        total_added_files += history_record.added_files;
+        total_added_records += history_record.added_records;
+        total_added_files_size += history_record.added_files_size;
+        parent_snapshot_id = history_record.snapshot_id;
+    }
+
+    auto new_snapshot = metadata_generator.generateNextMetadata(
+        generator,
+        generated_metadata_name.path_in_metadata,
+        parent_snapshot_id,
+        total_added_files,
+        total_added_records,
+        total_added_files_size,
+        static_cast<Int64>(partitions_map.size()), // one partition per unique partition value
+        0, // added_delete_files
+        0, // num_deleted_rows
+        std::nullopt,
+        std::nullopt);
+
+    // Write one manifest file per partition
+    auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes();
+
+    std::vector<String> consolidated_manifest_paths;
+    Int64 total_manifest_file_size = 0;
+
+    for (auto & [partition_key, pd] : partitions_map)
+    {
+        auto manifest_path = generator.generateManifestEntryName();
+        LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
+                 partition_key, manifest_path.path_in_storage, pd.file_paths.size());
+
+        auto buffer_manifest = object_storage->writeObject(
+            StoredObject(manifest_path.path_in_storage),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        generateManifestFile(
+            metadata_object,
+            partition_columns,
+            pd.partition_values,
+            partition_types,
+            pd.file_paths,
+            pd.statistics,
+            sample_block_,
+            new_snapshot.snapshot,
+            write_format,
+            partition_spec,
+            partition_spec_id,
+            *buffer_manifest,
+            Iceberg::FileContentType::DATA);
+
+        total_manifest_file_size += buffer_manifest->count();
+        buffer_manifest->finalize();
+
+        consolidated_manifest_paths.push_back(manifest_path.path_in_metadata);
+    }
+
+    // Create manifest list pointing to all per-partition manifest files
+    LOG_INFO(log, "Creating manifest list with {} partition manifest(s): {}",
+             consolidated_manifest_paths.size(), new_snapshot.storage_metadata_path);
+
+    auto buffer_manifest_list = object_storage->writeObject(
+        StoredObject(new_snapshot.storage_metadata_path),
+        WriteMode::Rewrite,
+        std::nullopt,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        context->getWriteSettings());
+
+    generateManifestList(
+        generator,
+        metadata_object,
+        object_storage,
+        context,
+        consolidated_manifest_paths,
+        new_snapshot.snapshot,
+        total_manifest_file_size,
+        *buffer_manifest_list,
+        Iceberg::FileContentType::DATA,
+        false);
+    buffer_manifest_list->finalize();
+
+    // Write final metadata file
+    {
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+
+        LOG_INFO(log, "Writing metadata file: {}", generated_metadata_name.path_in_storage);
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(generated_metadata_name.path_in_storage),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        buffer_metadata->write(json_representation.data(), json_representation.size());
+        buffer_metadata->finalize();
+    }
+
+    // Update version hint file to point to the new metadata
+    {
+        auto version_hint = generator.generateVersionHint();
+        LOG_INFO(log, "Updating version hint file: {}", version_hint.path_in_storage);
+
+        auto buffer_version_hint = object_storage->writeObject(
+            StoredObject(version_hint.path_in_storage),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+
+        // Extract version number from metadata filename
+        // Format: metadata/v<version>.metadata.json or metadata/v<version>-<uuid>.metadata.json
+        auto version_str = std::to_string(generator.getInitialVersion() - 1);
+        buffer_version_hint->write(version_str.data(), version_str.size());
+        buffer_version_hint->finalize();
+    }
+
+    LOG_INFO(log, "Successfully created {} partition manifest file(s) covering {} data files",
+             consolidated_manifest_paths.size(), total_data_files);
 }
 
 void writeMetadataFiles(
@@ -502,6 +805,40 @@ void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & 
     {
         object_storage->removeObjectIfExists(StoredObject(metadata_file));
     }
+}
+
+void compactIcebergManifests(
+    IcebergHistory snapshots_info,
+    const PersistentTableComponents & persistent_table_components,
+    ObjectStoragePtr object_storage_,
+    const DataLakeStorageSettings & data_lake_settings,
+    SharedHeader sample_block_,
+    ContextPtr context_,
+    const String & write_format)
+{
+    auto log = getLogger("IcebergManifestCompaction");
+    LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
+
+    // Check if compaction is needed using the helper function
+    size_t total_manifest_files_before = getNumberOfManifestFiles(snapshots_info, persistent_table_components, object_storage_, context_);
+
+    if (total_manifest_files_before <= 5)
+    {
+        LOG_INFO(log, "Manifest compaction is not needed. Total manifest files: {}", total_manifest_files_before);
+        return;
+    }
+
+    // Write new metadata files with consolidated manifests
+    writeConsolidatedManifestFile(snapshots_info,
+                                  persistent_table_components,
+                                  data_lake_settings,
+                                  object_storage_,
+                                  context_,
+                                  sample_block_,
+                                  write_format,
+                                  persistent_table_components.metadata_compression_method);
+
+    LOG_INFO(log, "Successfully compacted {} manifest files", total_manifest_files_before);
 }
 
 void compactIcebergTable(

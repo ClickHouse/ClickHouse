@@ -568,6 +568,19 @@ public:
         bool /*cleanup*/,
         ContextPtr /*context*/);
 
+    /** Perform any background work. For example, combining parts in a MergeTree type table.
+      * Returns whether any work has been done.
+      */
+    virtual bool optimizeManifestFiles(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        ContextPtr /*context*/);
+
     /// Executes update query. More lightweight than mutation.
     virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
 

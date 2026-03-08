@@ -21,6 +21,9 @@ public:
 
     void update(const Chunk & chunk);
 
+    /// Merge statistics from another DataFileStatistics object
+    void merge(const DataFileStatistics & other);
+
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, size_t>> getNullCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
