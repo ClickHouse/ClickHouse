@@ -603,7 +603,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -617,7 +619,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -819,6 +823,11 @@ private:
                 return min_represent_digits;
             }
             auto str = toString(fractional_second);
+            /// Left-pad with zeros to `scale` digits, because `toString` does not preserve leading zeros
+            /// (e.g. fractional_second=5, scale=3 gives "5" but we need "005").
+            /// Without this, the buffer would be left partially uninitialized.
+            if (str.size() < scale)
+                str.insert(0, scale - str.size(), '0');
             if (min_represent_digits > scale)
             {
                 for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
