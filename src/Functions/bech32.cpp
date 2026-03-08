@@ -108,8 +108,12 @@ class EncodeToBech32Representation : public IFunction
 public:
     static constexpr auto name = "bech32Encode";
 
-    /// Default to the new and improved Bech32m algorithm
+    /// Default to the new and improved Bech32m algorithm (SegWit mode with witness version byte)
     static constexpr int default_witness_version = 1;
+
+    /// When encoding variant is explicitly specified as a string ('bech32' or 'bech32m'),
+    /// we encode raw data without prepending a witness version byte.
+    /// This mode is needed for non-SegWit use cases such as Cosmos SDK addresses.
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBech32Representation>(); }
 
@@ -147,12 +151,12 @@ public:
                     i + 1,
                     getName());
 
-        /// check 3rd (optional) arg, specifying witness version aka whether to use Bech32 or Bech32m algo
+        /// check 3rd (optional) arg: either a witness version (UInt*) or encoding variant ('bech32'/'bech32m')
         size_t arg_idx = 2;
-        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt())
+        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt() && !WhichDataType(arguments[arg_idx]).isStringOrFixedString())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}, expected unsigned integer",
+                "Illegal type {} of argument {} of function {}, expected unsigned integer (witness version) or String ('bech32'/'bech32m')",
                 arguments[arg_idx]->getName(),
                 arg_idx + 1,
                 getName());
@@ -164,20 +168,51 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        bool have_witness_version = arguments.size() == 3;
+        bool have_witness_version = false;
+        bool have_encoding_variant = false;
+        bech32::Encoding explicit_encoding = bech32::Encoding::INVALID;
 
         ColumnPtr col0 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col1 = arguments[1].column->convertToFullColumnIfConst();
         ColumnPtr col2;
-        if (have_witness_version)
-            col2 = arguments[2].column;
+
+        if (arguments.size() == 3)
+        {
+            if (WhichDataType(arguments[2].type).isStringOrFixedString())
+            {
+                /// 3rd arg is encoding variant string - must be const
+                const auto * variant_col = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+                if (!variant_col)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Encoding variant argument must be a constant string ('bech32' or 'bech32m') for function {}",
+                        getName());
+                String variant = variant_col->getValue<String>();
+                if (variant == "bech32")
+                    explicit_encoding = bech32::Encoding::BECH32;
+                else if (variant == "bech32m")
+                    explicit_encoding = bech32::Encoding::BECH32M;
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid encoding variant '{}' for function {}, expected 'bech32' or 'bech32m'",
+                        variant,
+                        getName());
+                have_encoding_variant = true;
+            }
+            else
+            {
+                have_witness_version = true;
+                col2 = arguments[2].column;
+            }
+        }
 
         if (const ColumnString * col0_string = checkAndGetColumn<ColumnString>(col0.get()))
         {
             const ColumnString::Chars & col0_vec = col0_string->getChars();
             const ColumnString::Offsets * col0_offsets = &col0_string->getOffsets();
 
-            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version);
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, 0, have_encoding_variant, explicit_encoding);
         }
 
         if (const ColumnFixedString * col0_fixed_string = checkAndGetColumn<ColumnFixedString>(col0.get()))
@@ -185,7 +220,7 @@ public:
             const ColumnString::Chars & col0_vec = col0_fixed_string->getChars();
             const ColumnString::Offsets * col0_offsets = nullptr; /// dummy
 
-            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, col0_fixed_string->getN());
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, col0_fixed_string->getN(), have_encoding_variant, explicit_encoding);
         }
 
         throw Exception(
@@ -200,14 +235,16 @@ private:
         const ColumnPtr & col2,
         const size_t input_rows_count,
         const bool have_witness_version = false,
-        const size_t col0_width = 0) const
+        const size_t col0_width = 0,
+        const bool have_encoding_variant = false,
+        const bech32::Encoding explicit_encoding = bech32::Encoding::INVALID) const
     {
         if (const ColumnString * col1_str_ptr = checkAndGetColumn<ColumnString>(col1.get()))
         {
             const ColumnString::Chars & col1_vec = col1_str_ptr->getChars();
             const ColumnString::Offsets * col1_offsets = &col1_str_ptr->getOffsets();
 
-            return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width);
+            return execute(col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width, 0, have_encoding_variant, explicit_encoding);
         }
 
         if (const ColumnFixedString * col1_fstr_ptr = checkAndGetColumn<ColumnFixedString>(col1.get()))
@@ -216,7 +253,7 @@ private:
             const ColumnString::Offsets * col1_offsets = nullptr; /// dummy
 
             return execute(
-                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width, col1_fstr_ptr->getN());
+                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width, col1_fstr_ptr->getN(), have_encoding_variant, explicit_encoding);
         }
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col1->getName(), getName());
@@ -231,7 +268,9 @@ private:
         const size_t input_rows_count,
         const bool have_witness_version = false,
         const size_t human_readable_part_width = 0,
-        const size_t data_width = 0)
+        const size_t data_width = 0,
+        const bool have_encoding_variant = false,
+        const bech32::Encoding explicit_encoding = bech32::Encoding::INVALID)
     {
         /// outputs
         auto out_col = ColumnString::create();
@@ -277,30 +316,44 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
-            uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
+            bech32_data input_5bit;
+            bech32::Encoding encoding;
 
-            /** Witness version is a versioning mechanism for Bitcoin SegWit addresses:
-              * - Version 0: Original SegWit (BIP-141, BIP-173), uses Bech32 encoding
-              * - Version 1: Taproot (BIP-341, BIP-350), uses Bech32m encoding
-              * - Versions 2-16: Reserved for future protocol upgrades
-              *
-              * The witness version must be in range [0, 16] per the SegWit specification.
-              * It also must fit in the bech32 charset which is 5 bits (0-31), otherwise
-              * indexing into the CHARSET array in bech32::encode will cause a buffer overflow.
-              */
-            if (witness_version > 16)
+            if (have_encoding_variant)
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid witness version {} for function {}, expected value in range [0, 16]",
-                    witness_version,
-                    name);
+                /// Raw encoding mode: no witness version byte prepended.
+                /// This is used for non-SegWit use cases like Cosmos SDK addresses.
+                encoding = explicit_encoding;
+                convertbits<8, 5, true>(input_5bit, input);
+            }
+            else
+            {
+                uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
+
+                /** Witness version is a versioning mechanism for Bitcoin SegWit addresses:
+                  * - Version 0: Original SegWit (BIP-141, BIP-173), uses Bech32 encoding
+                  * - Version 1: Taproot (BIP-341, BIP-350), uses Bech32m encoding
+                  * - Versions 2-16: Reserved for future protocol upgrades
+                  *
+                  * The witness version must be in range [0, 16] per the SegWit specification.
+                  * It also must fit in the bech32 charset which is 5 bits (0-31), otherwise
+                  * indexing into the CHARSET array in bech32::encode will cause a buffer overflow.
+                  */
+                if (witness_version > 16)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid witness version {} for function {}, expected value in range [0, 16]",
+                        witness_version,
+                        name);
+                }
+
+                input_5bit.push_back(witness_version);
+                encoding = witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32;
+                convertbits<8, 5, true>(input_5bit, input);
             }
 
-            bech32_data input_5bit;
-            input_5bit.push_back(witness_version);
-            convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
-            std::string address = bech32::encode(human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
+            std::string address = bech32::encode(human_readable_part, input_5bit, encoding);
 
             if (address.empty() || address.size() > max_address_len)
             {
@@ -342,7 +395,9 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
 
     /// Bech32 and Bech32m are each bijective, but since our decode function accepts either of them,
     /// then decode(bech32(input)) == decode(bech32m(input))
@@ -352,10 +407,23 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Function {} requires 1 or 2 arguments (address[, 'raw'])",
+                getName());
+
         WhichDataType dtype(arguments[0]);
         if (!dtype.isStringOrFixedString())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        if (arguments.size() == 2 && !WhichDataType(arguments[1]).isStringOrFixedString())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument 2 of function {}, expected String ('raw')",
+                arguments[1]->getName(),
+                getName());
 
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
@@ -368,6 +436,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        bool raw_mode = false;
+        if (arguments.size() == 2)
+        {
+            const auto * mode_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            if (!mode_col)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Second argument of function {} must be a constant string ('raw')",
+                    getName());
+            String mode = mode_col->getValue<String>();
+            if (mode == "raw")
+                raw_mode = true;
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid mode '{}' for function {}, expected 'raw'",
+                    mode,
+                    getName());
+        }
+
         const ColumnPtr & column = arguments[0].column;
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -375,7 +463,7 @@ public:
             const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets * in_offsets = &col->getOffsets();
 
-            return execute(in_vec, in_offsets, input_rows_count);
+            return execute(in_vec, in_offsets, input_rows_count, 0, raw_mode);
         }
 
         if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
@@ -383,7 +471,7 @@ public:
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
             const ColumnString::Offsets * in_offsets = nullptr; /// dummy
 
-            return execute(in_vec, in_offsets, input_rows_count, col_fix_string->getN());
+            return execute(in_vec, in_offsets, input_rows_count, col_fix_string->getN(), raw_mode);
         }
 
         throw Exception(
@@ -392,7 +480,7 @@ public:
 
 private:
     static ColumnPtr
-    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets * in_offsets, size_t input_rows_count, size_t col_width = 0)
+    execute(const ColumnString::Chars & in_vec, const ColumnString::Offsets * in_offsets, size_t input_rows_count, size_t col_width = 0, bool raw_mode = false)
     {
         auto col0_res = ColumnString::create();
         auto col1_res = ColumnString::create();
@@ -442,8 +530,12 @@ private:
             const auto dec = bech32::decode(input);
 
             bech32_data data_8bit;
+            /// In raw mode, don't skip the first byte (no witness version).
+            /// In default mode, skip the first byte which is the witness version.
+            auto data_start = raw_mode ? dec.data.begin() : dec.data.begin() + 1;
             if (dec.encoding == bech32::Encoding::INVALID
-                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin() + 1 /*first val is witver*/, dec.data.end()))
+                || data_start >= dec.data.end()
+                || !convertbits<5, 8, false>(data_8bit, bech32_data(data_start, dec.data.end()))
                 || data_8bit.empty())
             {
                 finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
@@ -499,11 +591,11 @@ For this reason it is not recommended to use the [`FixedString`](../data-types/f
 certain that they are all the same length and ensure that your `FixedString` column is set to that length as well.
 :::
     )";
-    FunctionDocumentation::Syntax bech32Encode_syntax = "bech32Encode(hrp, data[, witver])";
+    FunctionDocumentation::Syntax bech32Encode_syntax = "bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])";
     FunctionDocumentation::Arguments bech32Encode_arguments = {
         {"hrp", "A String of `1 - 83` lowercase characters specifying the \"human-readable part\" of the code. Usually 'bc' or 'tb'.", {"String", "FixedString"}},
         {"data", "A String of binary data to encode.", {"String", "FixedString"}},
-        {"witver", "Optional. The witness version (default = 1). An `UInt*` specifying the version of the algorithm to run. `0` for Bech32 and `1` or greater for Bech32m.", {"UInt*"}}
+        {"witver_or_variant", "Optional. Either a UInt* witness version (default = 1, `0` for Bech32, `1`+ for Bech32m) or a String encoding variant: `'bech32'` (BIP173) or `'bech32m'` (BIP350). When a string variant is used, no witness version byte is prepended — this is needed for non-SegWit addresses such as Cosmos SDK.", {"UInt*", "String"}}
     };
     FunctionDocumentation::ReturnedValue bech32Encode_returned_value = {"Returns a Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If the algorithm cannot generate a valid address from the input, it will return an empty string.", {"String"}};
     FunctionDocumentation::Examples bech32Encode_examples = {
@@ -531,6 +623,15 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
             )",
             "abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4"
+        },
+        {
+            "Cosmos SDK address (BIP173, no witness version)",
+            R"(
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
+SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
+            )",
+            "inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs"
         }
     };
     FunctionDocumentation::IntroducedIn bech32Encode_introduced_in = {25, 6};
@@ -544,9 +645,10 @@ Decodes a Bech32 address string generated by either the bech32 or bech32m algori
 Unlike the encode function, `Bech32Decode` will automatically handle padded FixedStrings.
 :::
     )";
-    FunctionDocumentation::Syntax bech32Decode_syntax = "bech32Decode(address)";
+    FunctionDocumentation::Syntax bech32Decode_syntax = "bech32Decode(address[, 'raw'])";
     FunctionDocumentation::Arguments bech32Decode_arguments = {
-        {"address", "A Bech32 string to decode.", {"String", "FixedString"}}
+        {"address", "A Bech32 string to decode.", {"String", "FixedString"}},
+        {"mode", "Optional. Pass `'raw'` to decode without stripping the first byte as a witness version. Use this for non-SegWit addresses (e.g. Cosmos SDK).", {"String"}}
     };
     FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
     FunctionDocumentation::Examples bech32Decode_examples = {
