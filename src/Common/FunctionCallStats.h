@@ -55,7 +55,7 @@ struct FunctionCallStats
     bool isEnabled() const { return enabled.load(std::memory_order_relaxed); }
 
 private:
-    std::atomic<bool> enabled{false};
+    std::atomic<bool> enabled{true};
     mutable std::mutex mutex;
     std::unordered_map<std::string, Stats> data;
 };
