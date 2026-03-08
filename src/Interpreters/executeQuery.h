@@ -138,4 +138,7 @@ void logExceptionBeforeStart(
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
+
+/// Add to audit log if enabled
+void auditLog(const QueryLogElement & elem, ContextPtr context);
 }
