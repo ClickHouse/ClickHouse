@@ -1,0 +1,11 @@
+simple anchored
+10000
+grouped anchored
+10000
+alternation common prefix
+20000
+alternation no common prefix
+20000
+result check
+20000
+20000

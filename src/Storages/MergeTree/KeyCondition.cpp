@@ -23,6 +23,7 @@
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -403,12 +404,39 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// This optimization can't process alternation - this would require
-                /// a comprehensive parsing of regular expression.
-                if (expression.contains('|'))
-                    return false;
-
+                /// First, try the simple prefix extraction (handles ^prefix patterns without groups/alternation).
                 String prefix = extractFixedPrefixFromRegularExpression(expression);
+
+                /// If simple extraction failed, use comprehensive regex analysis
+                /// for anchored patterns matching ^(alt1|alt2|...).
+                /// The group must start immediately after ^ (expression[1] == '(') and
+                /// must NOT be a flag group like (?i) (expression[2] != '?'), to ensure
+                /// alternatives represent start-of-string content, not substrings.
+                if (prefix.empty()
+                    && expression.size() >= 3
+                    && expression[0] == '^'
+                    && expression[1] == '('
+                    && expression[2] != '?')
+                {
+                    auto analysis = OptimizedRegularExpression::analyze(expression);
+
+                    if (!analysis.alternatives.empty())
+                    {
+                        /// Find the longest common prefix of all alternatives.
+                        prefix = analysis.alternatives[0];
+                        for (size_t i = 1; i < analysis.alternatives.size(); ++i)
+                        {
+                            size_t common_len = 0;
+                            size_t max_len = std::min(prefix.size(), analysis.alternatives[i].size());
+                            while (common_len < max_len && prefix[common_len] == analysis.alternatives[i][common_len])
+                                ++common_len;
+                            prefix = prefix.substr(0, common_len);
+                            if (prefix.empty())
+                                break;
+                        }
+                    }
+                }
+
                 if (prefix.empty())
                     return false;
 
