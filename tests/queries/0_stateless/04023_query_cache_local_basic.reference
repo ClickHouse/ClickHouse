@@ -1,0 +1,12 @@
+-- miss then hit --
+1
+1
+0	1
+1	0
+-- tags --
+3
+-- clear by tag --
+2
+0
+-- system.query_cache columns --
+SELECT 7 SETTINGS use_query_cache = true, query_cache_tag = 'test'	test
