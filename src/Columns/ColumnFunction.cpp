@@ -4,6 +4,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FunctionCallStats.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -407,6 +408,8 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     ProfileEvents::increment(ProfileEvents::FunctionExecute);
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+    FunctionCallStats::instance().increment(function->getName(), elements_size);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
     if (res.column->getDataType() != res.type->getColumnType())
