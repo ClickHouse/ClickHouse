@@ -50,6 +50,7 @@ struct ASTTableExpression : public IAST
 
     /// Modifiers
     bool final = false;
+    ASTPtr final_by;        /// Expression list for FINAL BY (coarse-grained merge key)
     ASTPtr sample_size;
     ASTPtr sample_offset;
 

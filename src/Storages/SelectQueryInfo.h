@@ -216,6 +216,12 @@ struct SelectQueryInfo
 
     bool isFinal() const;
 
+    /// Returns the FINAL BY expression list, or nullptr if not specified.
+    ASTPtr finalBy() const;
+
+    /// Pre-built FINAL BY ActionsDAG from the Planner.
+    std::shared_ptr<const ActionsDAG> final_by_actions_dag;
+
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,

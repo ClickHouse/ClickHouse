@@ -905,7 +905,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                 }
 
-                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio);
+                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, table_expression.final_by);
             }
 
             if (table_expression.database_and_table_name)

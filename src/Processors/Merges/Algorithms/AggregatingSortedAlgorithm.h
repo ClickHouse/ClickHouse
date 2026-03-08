@@ -25,7 +25,8 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_);
+        std::optional<size_t> max_dynamic_subcolumns_,
+        bool disable_part_level_shortcut_ = false);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

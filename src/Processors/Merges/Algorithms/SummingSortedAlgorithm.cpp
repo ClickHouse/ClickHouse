@@ -830,8 +830,9 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
-    bool aggregate_all_columns)
-    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
+    bool aggregate_all_columns,
+    bool disable_part_level_shortcut_)
+    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_), disable_part_level_shortcut_)
     , columns_definition(
           defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)

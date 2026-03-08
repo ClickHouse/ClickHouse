@@ -3,6 +3,7 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeFinalByValidation.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -1389,6 +1390,20 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     bool enable_parallel_reading,
     std::shared_ptr<ParallelReadingExtension> extension_) const
 {
+    /// Validate FINAL BY even when the table is empty (no parts), so that
+    /// invalid queries are always rejected regardless of whether data exists.
+    /// When the table has data, validation runs in the `ReadFromMergeTree`
+    /// constructor instead (no duplication).
+    if (query_info.final_by_actions_dag)
+    {
+        auto final_by_ast = query_info.finalBy();
+        validateFinalBy(
+            query_info.final_by_actions_dag->clone(),
+            final_by_ast->children.size(),
+            storage_snapshot,
+            data.merging_params.mode);
+    }
+
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {

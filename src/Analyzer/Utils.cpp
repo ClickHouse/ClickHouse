@@ -441,6 +441,9 @@ static ASTPtr convertIntoTableExpressionAST(
     {
         result_table_expression->final = table_expression_modifiers->hasFinal();
 
+        if (table_expression_modifiers->hasFinalBy())
+            result_table_expression->final_by = table_expression_modifiers->getFinalBy();
+
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
