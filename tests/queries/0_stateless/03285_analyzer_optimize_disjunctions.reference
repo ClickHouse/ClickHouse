@@ -67,7 +67,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.B AND (__table1.A OR __table1.C)
+WHERE __table1.B AND __table1.A OR __table1.C
 SETTINGS optimize_extract_common_expressions = 1
 752
 QUERY id: 0
@@ -191,7 +191,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.B AND (__table1.A OR __table1.C)
+WHERE __table1.B AND __table1.A OR __table1.C
 SETTINGS optimize_extract_common_expressions = 1
 752
 QUERY id: 0

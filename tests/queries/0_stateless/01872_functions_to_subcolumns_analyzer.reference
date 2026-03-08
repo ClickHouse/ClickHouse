@@ -174,15 +174,11 @@ SELECT
 FROM default.t_func_to_subcolumns AS __table1
 ALL FULL OUTER JOIN
 (
-    (
-        SELECT 1 AS id
-        FROM system.one AS __table4
-    )
+    SELECT 1 AS id
+    FROM system.one AS __table4
     UNION ALL
-    (
-        SELECT 3 AS id
-        FROM system.one AS __table6
-    )
+    SELECT 3 AS id
+    FROM system.one AS __table6
 ) AS __table2 USING (id)
 0	10
 0	20

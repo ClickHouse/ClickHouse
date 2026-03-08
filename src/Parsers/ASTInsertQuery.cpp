@@ -51,8 +51,6 @@ void ASTInsertQuery::setTable(const String & name)
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     ostr << "INSERT INTO" << " ";
     if (table_function)
     {

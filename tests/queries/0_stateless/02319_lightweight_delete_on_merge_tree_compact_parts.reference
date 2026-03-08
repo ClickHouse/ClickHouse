@@ -13,7 +13,7 @@
 1
 1
 1
-(UPDATE _row_exists = 0 WHERE (c % 5) = 1)	1
+(UPDATE _row_exists = 0 WHERE c % 5 = 1)	1
 (UPDATE _row_exists = 0 WHERE c = 4)	1
 (MATERIALIZE INDEX i_c)	1
 (UPDATE b = -1 WHERE a < 3)	1

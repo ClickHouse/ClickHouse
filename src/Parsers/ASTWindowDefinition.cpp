@@ -96,8 +96,6 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         if (need_space)
             ostr << " ";
 
-        format_frame.need_parens = true;
-
         ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
         {

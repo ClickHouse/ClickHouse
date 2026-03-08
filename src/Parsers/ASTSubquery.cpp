@@ -43,7 +43,6 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     ostr << "(" << nl_or_nothing;
     FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
     ++frame_nested.indent;
     children[0]->format(ostr, settings, state, frame_nested);
     ostr << nl_or_nothing << indent_str << ")";

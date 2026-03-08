@@ -46,22 +46,18 @@ SELECT * FROM system.one UNION ALL SELECT * FROM system.one
 SELECT *
 FROM system.one
 UNION ALL
-(
-    SELECT *
-    FROM system.one
-)
+SELECT *
+FROM system.one
 # /* oneline */ select * from system.one union all (select * from system.one)
-SELECT * FROM system.one UNION ALL (SELECT * FROM system.one)
+SELECT * FROM system.one UNION ALL SELECT * FROM system.one
 # select 1 union all (select 1 union distinct select 1)
 SELECT 1
 UNION ALL
-(
-    SELECT 1
-    UNION DISTINCT
-    SELECT 1
-)
+SELECT 1
+UNION DISTINCT
+SELECT 1
 # /* oneline */ select 1 union all (select 1 union distinct select 1)
-SELECT 1 UNION ALL (SELECT 1 UNION DISTINCT SELECT 1)
+SELECT 1 UNION ALL SELECT 1 UNION DISTINCT SELECT 1
 # select * from system.one array join arr as row
 SELECT *
 FROM system.one
@@ -69,9 +65,9 @@ ARRAY JOIN arr AS row
 # /* oneline */ select * from system.one array join arr as row
 SELECT * FROM system.one ARRAY JOIN arr AS row
 # select 1 in 1
-SELECT 1 IN (1)
+SELECT 1 IN 1
 # /* oneline */ select 1 in 1
-SELECT 1 IN (1)
+SELECT 1 IN 1
 # select 1 in (select 1)
 SELECT 1 IN (
         SELECT 1
@@ -106,11 +102,9 @@ FROM
 (
     SELECT 1 AS x
     UNION ALL
-    (
-        SELECT 1
-        UNION ALL
-        SELECT 1
-    )
+    SELECT 1
+    UNION ALL
+    SELECT 1
 )
 # /* oneline */ SELECT x FROM ( SELECT 1 AS x UNION ALL ( SELECT 1 UNION ALL SELECT 1))
-SELECT x FROM (SELECT 1 AS x UNION ALL (SELECT 1 UNION ALL SELECT 1))
+SELECT x FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION ALL SELECT 1)

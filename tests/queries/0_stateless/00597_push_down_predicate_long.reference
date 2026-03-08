@@ -94,15 +94,11 @@ WHERE value = \'1\'
 SELECT *
 FROM
 (
-    (
-        SELECT 1 AS id
-        FROM system.one
-    )
+    SELECT 1 AS id
+    FROM system.one
     UNION ALL
-    (
-        SELECT 2
-        FROM system.one
-    )
+    SELECT 2
+    FROM system.one
 )
 WHERE id = 1
 1
@@ -276,15 +272,11 @@ WHERE id = 1
 SELECT *
 FROM
 (
-    (
-        SELECT *
-        FROM test_00597
-    )
+    SELECT *
+    FROM test_00597
     UNION ALL
-    (
-        SELECT *
-        FROM test_00597
-    )
+    SELECT *
+    FROM test_00597
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
