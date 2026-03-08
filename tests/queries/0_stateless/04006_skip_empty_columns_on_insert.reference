@@ -1,0 +1,30 @@
+case1_columns_in_part
+key
+val1
+case1_data
+1	100		0
+case2_data
+0	0
+case3_pre_merge
+1	100	0	
+2	0	200	
+3	0	0	hello
+case3_post_merge
+1	100	0	
+2	0	200	
+3	0	0	hello
+case4_pre_mutate
+1	100	
+case4_post_mutate
+1	100	mutated
+case5_columns_in_part
+key
+case5_data
+1	\N	\N
+case5_post_merge
+1	\N	\N
+2	42	hello
+case6_columns_in_part
+key1
+case6_data
+1	0	0
