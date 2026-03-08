@@ -31,7 +31,10 @@ static String traceColumnToInput(const ActionsDAG & dag, const String & output_n
 }
 
 /// Translate distribution column names through an ActionsDAG.
-static void translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
+/// Returns false if any column set becomes empty (all names are computed by this step),
+/// signaling that the passthrough implementation should be rejected so that
+/// DistributionEnforcer fires on this step's output where the column exists.
+static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
 {
     for (auto & column_set : columns)
     {
@@ -40,12 +43,21 @@ static void translateDistributionColumns(const ActionsDAG & dag, std::vector<Nam
         {
             String input_name = traceColumnToInput(dag, name);
             if (!input_name.empty())
+            {
                 translated.insert(input_name);
-            else
+            }
+            else if (!dag.tryFindInOutputs(name))
+            {
+                /// Not in DAG outputs — may be a passthrough input column. Keep it.
                 translated.insert(name);
+            }
+            /// else: computed by this step (FUNCTION) — not present in input. Drop it.
         }
+        if (translated.empty())
+            return false;
         column_set = std::move(translated);
     }
+    return true;
 }
 
 /// Stateless per-row steps that can safely run on any subset of the data independently.
@@ -144,8 +156,8 @@ private:
                 else if (auto * filter_step = typeid_cast<FilterStep *>(implementation_expression->plan_step.get()))
                     dag = &filter_step->getExpression();
 
-                if (dag)
-                    translateDistributionColumns(*dag, input_props.distribution.columns);
+                if (dag && !translateDistributionColumns(*dag, input_props.distribution.columns))
+                    return nullptr;
             }
 
             implementation_expression->properties.distribution = distribution;
