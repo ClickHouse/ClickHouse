@@ -67,6 +67,7 @@ private:
     uint64_t getEntryHash(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     std::atomic<time_t> execute_merges_on_single_replica_time_threshold = 0;
+    std::atomic<size_t> execute_merges_on_single_replica_min_blocks = 0;
     std::atomic<time_t> remote_fs_execute_merges_on_single_replica_time_threshold = 0;
     std::atomic<time_t> last_refresh_time = 0;
 
