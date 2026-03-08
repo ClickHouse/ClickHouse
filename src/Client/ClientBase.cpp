@@ -544,16 +544,15 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    /// Also skip clearing when progress is rendered on a different fd (e.g. stderr) than
-    /// data output (stdout) — they don't interfere, and clearing causes visible flicker
-    /// when piping large amounts of data. See #80056.
-    bool progress_on_same_fd_as_output = tty_buf && tty_buf->getFD() == stdout_fd;
-    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout) && progress_on_same_fd_as_output)
+    /// Also skip clearing when stdout is not a tty (i.e. piped) — in that case, progress
+    /// is rendered on a different terminal (stderr or /dev/tty) and doesn't interfere with
+    /// data output. Clearing causes visible flicker when piping large data. See #80056.
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout) && stdout_is_a_tty)
     {
         std::unique_lock lock(tty_mutex);
         progress_indication.clearProgressOutput(*tty_buf, lock);
     }
-    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout) && progress_on_same_fd_as_output)
+    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout) && stdout_is_a_tty)
     {
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
