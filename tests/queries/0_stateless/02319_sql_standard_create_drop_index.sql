@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 -- add_minmax_index_for_numeric_columns=0: Adds more output to system.data_skipping_indices
 drop table if exists t_index;
 create table t_index(a int, b String) engine=MergeTree() order by a SETTINGS add_minmax_index_for_numeric_columns=0;

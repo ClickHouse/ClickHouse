@@ -1,4 +1,7 @@
 -- Tags: no-parallel-replicas
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- add_minmax_index_for_numeric_columns=0: We are checking the size of secondary indices and we want to check only manually created indices
 
 SET enable_analyzer = 1;

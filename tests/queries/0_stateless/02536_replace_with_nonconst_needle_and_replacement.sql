@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests string functions with MergeTree, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Tests that functions replaceOne(), replaceAll(), replaceRegexpOne(), replaceRegexpAll() work with non-const pattern and replacement arguments
 
 DROP TABLE IF EXISTS test_tab;

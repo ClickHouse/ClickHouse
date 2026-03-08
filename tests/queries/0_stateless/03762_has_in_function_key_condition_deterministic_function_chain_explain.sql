@@ -2,6 +2,8 @@
 -- EXPLAIN output may differ
 -- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
+-- Disable force_primary_key_reverse_order: EXPLAIN indexes output depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_and_compare_chain = 1;

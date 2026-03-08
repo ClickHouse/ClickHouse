@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS nullable_key;
 DROP TABLE IF EXISTS nullable_key_without_final_mark;
 DROP TABLE IF EXISTS nullable_minmax_index;

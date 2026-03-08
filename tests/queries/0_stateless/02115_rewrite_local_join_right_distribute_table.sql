@@ -1,4 +1,7 @@
 -- Tags: global, no-parallel
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE DATABASE IF NOT EXISTS test_02115;
 USE test_02115;
 

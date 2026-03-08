@@ -1,4 +1,7 @@
 -- Tags: zookeeper
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS join_inner_table__fuzz_146_replicated SYNC;
 CREATE TABLE join_inner_table__fuzz_146_replicated
 (

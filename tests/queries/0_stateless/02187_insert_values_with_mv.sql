@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests materialized views with INSERT, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 --Tags: no-async-insert
 -- no-async-insert because initial_query_id in system.query_views_log have query_id
 --  of "secondary" flush query with query_kind: AsyncInsertFlush

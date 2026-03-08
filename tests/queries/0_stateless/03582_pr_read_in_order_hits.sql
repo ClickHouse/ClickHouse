@@ -1,4 +1,6 @@
 -- Tags: stateful
+-- Disable force_primary_key_reverse_order: tests read_in_order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 SET max_threads = 0; -- let's reset to automatic detection of the number of threads, otherwise test can be slow.
 
 SELECT '--- In order ---';

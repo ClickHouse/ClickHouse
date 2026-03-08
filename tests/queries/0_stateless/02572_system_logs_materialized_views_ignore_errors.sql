@@ -1,4 +1,7 @@
 -- Tags: no-parallel, no-replicated-database
+-- Disable force_primary_key_reverse_order: tests materialized views with system logs, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Tag no-parallel: due to attaching to system.query_log
 -- Tag no-replicated-database: Replicated database will has extra queries
 

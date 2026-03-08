@@ -3,6 +3,8 @@
 
 -- This test validates the storage size of the text index without and with posting list compression.
 
+-- Disable force_primary_key_reverse_order: tests text index storage sizes on MergeTree, behavior depends on key direction
+SET force_primary_key_reverse_order = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 SET max_insert_threads = 1;

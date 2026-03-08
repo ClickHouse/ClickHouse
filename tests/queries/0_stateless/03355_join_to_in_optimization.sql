@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;

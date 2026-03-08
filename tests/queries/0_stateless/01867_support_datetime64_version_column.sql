@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists replacing;
 create table replacing(    `A` Int64,    `D` DateTime64(9, 'Asia/Istanbul'),    `S` String)    ENGINE = ReplacingMergeTree(D) ORDER BY A;
 

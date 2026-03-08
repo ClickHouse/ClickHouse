@@ -1,4 +1,7 @@
 -- Tags: no-random-settings
+-- Disable force_primary_key_reverse_order: Tests distinct-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- there is a bug if `optimize_distinct_in_order` is true
 
 DROP TABLE IF EXISTS test;

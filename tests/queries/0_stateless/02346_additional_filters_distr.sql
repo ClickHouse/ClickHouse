@@ -1,4 +1,6 @@
 -- Tags: no-parallel, distributed
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
 
 create database if not exists shard_0;
 create database if not exists shard_1;

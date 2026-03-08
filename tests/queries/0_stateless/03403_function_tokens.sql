@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests tokens function, creates MergeTree with order-dependent output
+SET force_primary_key_reverse_order = 0;
+
 SELECT 'Constants: tokens should be constant';
 SELECT 'Negative tests';
 -- Must accept one to three arguments

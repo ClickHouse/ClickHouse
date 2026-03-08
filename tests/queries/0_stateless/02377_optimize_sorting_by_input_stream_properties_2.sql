@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 set optimize_syntax_fuse_functions = 0;
 
 drop table if exists tab;

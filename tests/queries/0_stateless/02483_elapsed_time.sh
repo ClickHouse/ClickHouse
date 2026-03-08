@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+
+# Disable force_primary_key_reverse_order: tests query elapsed time with MergeTree, output depends on execution order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # The following query fails during query interpretation so it throws an ExceptionBeforeStart
 EXCEPTION_BEFORE_START_QUERY="WITH
                               (

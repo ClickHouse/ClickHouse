@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests ALTER TABLE MODIFY ORDER BY
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE IF NOT EXISTS test (a UInt64) ENGINE=MergeTree() ORDER BY a;
 
 INSERT INTO test (a) SELECT 1 FROM numbers(1000);

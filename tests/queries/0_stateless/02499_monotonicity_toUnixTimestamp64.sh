@@ -8,6 +8,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+
+# Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT --optimize_trivial_insert_select 1 -q "create table t(ts DateTime64) engine=MergeTree order by ts as select * from numbers_mt(1e6);"
 
 max_block_size=8192

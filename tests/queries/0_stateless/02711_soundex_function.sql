@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests soundex function with MergeTree, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 SELECT soundex('');
 SELECT soundex('12345');
 SELECT soundex('341Jons54326ton');

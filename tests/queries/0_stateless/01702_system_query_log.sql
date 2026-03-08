@@ -1,4 +1,6 @@
 -- Tags: no-parallel
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 -- fire all kinds of queries and then check if those are present in the system.query_log
 SET log_comment='system.query_log logging test';

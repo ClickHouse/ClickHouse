@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists pr_t;
 
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
