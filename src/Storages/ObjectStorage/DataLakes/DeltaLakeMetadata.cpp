@@ -6,6 +6,10 @@
 
 #if USE_PARQUET
 
+#if USE_DELTA_KERNEL_RS
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#endif
+
 #include <Common/logger_useful.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -613,9 +617,195 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
     schema = result.schema;
     partition_columns = result.partition_columns;
     object_storage = object_storage_;
+    table_path = impl.table_path;
 
     LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
              data_files.size(), partition_columns.size(), schema.toString());
+}
+
+/// Helper: extract version number from a .json metadata filename.
+/// Returns std::nullopt if the filename is not a valid version file.
+static std::optional<UInt64> extractVersionFromFilename(const String & path)
+{
+    auto filename = std::filesystem::path(path).filename().string();
+    if (filename.size() <= 5 || !filename.ends_with(".json"))
+        return std::nullopt;
+    filename = filename.substr(0, filename.size() - 5);
+    try
+    {
+        return std::stoull(filename);
+    }
+    catch (const std::invalid_argument &) { return std::nullopt; }
+    catch (const std::out_of_range &) { return std::nullopt; }
+}
+
+/// Helper: read _last_checkpoint file and return the checkpoint version (0 if none).
+static UInt64 readLastCheckpointVersion(
+    ObjectStoragePtr object_storage,
+    const String & table_path,
+    ContextPtr local_context,
+    LoggerPtr log)
+{
+    static constexpr auto deltalake_metadata_directory = "_delta_log";
+    const auto last_checkpoint_file = std::filesystem::path(table_path) / deltalake_metadata_directory / "_last_checkpoint";
+
+    if (!object_storage->exists(StoredObject(last_checkpoint_file)))
+        return 0;
+
+    try
+    {
+        RelativePathWithMetadata object_info(last_checkpoint_file);
+        auto buf = createReadBuffer(object_info, object_storage, local_context, log);
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+        const JSON json(json_str);
+        return json["version"].getUInt();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to read _last_checkpoint");
+        return 0;
+    }
+}
+
+/// Parse a single .json metadata file and populate a DeltaLakeHistoryRecord.
+static void parseCommitInfo(
+    ReadBuffer & buf,
+    DeltaLakeHistoryRecord & record)
+{
+    char c;
+    while (!buf.eof())
+    {
+        /// Skip invalid characters before JSON
+        while (buf.peek(c) && c != '{')
+            buf.ignore();
+
+        if (buf.eof())
+            break;
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, buf);
+
+        if (json_str.empty())
+            continue;
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & json_object = json.extract<Poco::JSON::Object::Ptr>();
+
+        if (!json_object)
+            continue;
+
+        /// Extract commitInfo
+        if (json_object->has("commitInfo"))
+        {
+            const auto commit_info = json_object->get("commitInfo").extract<Poco::JSON::Object::Ptr>();
+            if (commit_info)
+            {
+                /// Prefer inCommitTimestamp over timestamp per Delta Lake protocol
+                if (commit_info->has("inCommitTimestamp"))
+                {
+                    auto ts = commit_info->getValue<Int64>("inCommitTimestamp");
+                    record.timestamp = static_cast<DateTime64>(ts);
+                }
+                else if (commit_info->has("timestamp"))
+                {
+                    auto ts = commit_info->getValue<Int64>("timestamp");
+                    record.timestamp = static_cast<DateTime64>(ts);
+                }
+
+                if (commit_info->has("operation"))
+                    record.operation = commit_info->getValue<String>("operation");
+
+                if (commit_info->has("operationParameters"))
+                {
+                    const auto params = commit_info->get("operationParameters").extract<Poco::JSON::Object::Ptr>();
+                    if (params)
+                    {
+                        for (const auto & param : *params)
+                            record.operation_parameters[param.first] = param.second.toString();
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+DeltaLakeHistory parseDeltaLakeHistory(
+    ObjectStoragePtr object_storage,
+    const String & table_path,
+    ContextPtr local_context,
+    LoggerPtr log)
+{
+    DeltaLakeHistory history;
+
+    static constexpr auto deltalake_metadata_directory = "_delta_log";
+    static constexpr auto metadata_file_suffix = ".json";
+
+    try
+    {
+        /// Read _last_checkpoint to find checkpoint version.
+        /// When a checkpoint exists, .json files for versions <= checkpoint_version
+        /// may have been removed. We still need to report those versions in the history.
+        const UInt64 checkpoint_version = readLastCheckpointVersion(object_storage, table_path, local_context, log);
+
+        Strings metadata_files = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+
+        /// Build a set of versions that have .json files available
+        std::map<UInt64, String> version_to_file;
+        UInt64 max_version = checkpoint_version;
+        for (const auto & file : metadata_files)
+        {
+            if (auto version = extractVersionFromFilename(file))
+            {
+                version_to_file[*version] = file;
+                max_version = std::max(max_version, *version);
+            }
+        }
+
+        if (max_version == 0 && version_to_file.empty())
+            return history;
+
+        /// Iterate all versions from 0 to max_version.
+        /// For versions with .json files, parse commitInfo.
+        /// For versions without .json files (removed after checkpoint), emit a record with just the version.
+        for (UInt64 version = 0; version <= max_version; ++version)
+        {
+            try
+            {
+                DeltaLakeHistoryRecord record;
+                record.version = version;
+                record.is_latest_version = (version == max_version);
+
+                auto it = version_to_file.find(version);
+                if (it != version_to_file.end())
+                {
+                    /// .json file exists — parse commitInfo
+                    RelativePathWithMetadata object_info(it->second);
+                    auto buf = createReadBuffer(object_info, object_storage, local_context, log);
+                    parseCommitInfo(*buf, record);
+                }
+
+                history.push_back(std::move(record));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to process version {}", version));
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to get Delta Lake history");
+    }
+
+    return history;
+}
+
+DeltaLakeHistory DeltaLakeMetadata::getHistory(ContextPtr local_context) const
+{
+    return parseDeltaLakeHistory(object_storage, table_path, local_context, getLogger("DeltaLakeMetadata"));
 }
 
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)

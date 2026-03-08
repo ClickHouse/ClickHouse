@@ -4,17 +4,38 @@
 
 #if USE_PARQUET
 
+#include <map>
+#include <optional>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
 
 namespace DB
 {
+
+/// History record for Delta Lake version tracking
+struct DeltaLakeHistoryRecord
+{
+    UInt64 version;
+    std::optional<DateTime64> timestamp;
+    String operation;
+    std::map<String, String> operation_parameters;
+    bool is_latest_version;
+};
+
+using DeltaLakeHistory = std::vector<DeltaLakeHistoryRecord>;
+
+/// Shared helper to parse Delta Lake history from metadata JSON files.
+/// Used by both DeltaLakeMetadata and DeltaLakeMetadataDeltaKernel.
+DeltaLakeHistory parseDeltaLakeHistory(
+    ObjectStoragePtr object_storage,
+    const String & table_path,
+    ContextPtr local_context,
+    LoggerPtr log);
 
 struct DeltaLakePartitionColumn
 {
@@ -39,6 +60,9 @@ public:
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
+
+    /// Get history of Delta Lake table versions
+    DeltaLakeHistory getHistory(ContextPtr local_context) const;
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
@@ -88,6 +112,7 @@ private:
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
     ObjectStoragePtr object_storage;
+    String table_path;
 
     Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };

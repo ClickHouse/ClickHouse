@@ -4021,6 +4021,159 @@ deltaLake{suffix}({cluster}
     assert node.contains_in_log("Row indexes size 2 for file")
 
 
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history(started_cluster, use_delta_kernel):
+    """Test that system.delta_lake_history table works correctly with Delta Lake tables."""
+    node = get_node(started_cluster, use_delta_kernel)
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_system_delta_lake_history")
+
+    # Verify system.delta_lake_history table exists and has correct schema
+    result = node.query(
+        "SELECT name FROM system.columns WHERE database = 'system' AND table = 'delta_lake_history' ORDER BY position"
+    )
+    assert len(result.strip()) > 0, "system.delta_lake_history table should have columns"
+
+    # Create a Delta Lake table with multiple versions
+    path = f"s3a://{bucket}/{TABLE_NAME}"
+    storage_options = get_storage_options(started_cluster)
+
+    # Write initial data (version 0)
+    data = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    write_deltalake(path, data, mode="overwrite", storage_options=storage_options)
+
+    # Write more data (version 1)
+    data2 = pa.table({"a": [4, 5, 6], "b": ["p", "q", "r"]})
+    write_deltalake(path, data2, mode="append", storage_options=storage_options)
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    # Create the Delta Lake table in ClickHouse
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        """
+    )
+
+    # Query system.delta_lake_history for this table - check all columns except timestamp
+    history = node.query(
+        f"""
+        SELECT database, table, version, operation, operation_parameters, is_latest_version
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        ORDER BY version
+        """
+    ).strip()
+
+    # Should have at least 2 versions (initial write + append)
+    lines = history.split("\n")
+    assert len(lines) >= 2, f"Expected at least 2 history entries, got {len(lines)}"
+
+    # Verify version 0 entry
+    assert f"default\t{TABLE_NAME}\t0" in history, "Version 0 should exist with correct database and table"
+
+    # Verify version 1 entry
+    assert f"default\t{TABLE_NAME}\t1" in history, "Version 1 should exist with correct database and table"
+
+    # Verify is_latest_version flag - version 1 should be latest (1), version 0 should not be (0)
+    version_0_line = [line for line in lines if f"\t0\t" in line][0]
+    version_1_line = [line for line in lines if f"\t1\t" in line][0]
+    assert version_0_line.endswith("\t0"), "Version 0 should have is_latest_version=0"
+    assert version_1_line.endswith("\t1"), "Version 1 should have is_latest_version=1"
+
+    # Verify operation column is not empty for versions that have .json files
+    operations = node.query(
+        f"""
+        SELECT version, operation
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        ORDER BY version
+        """
+    ).strip()
+    for op_line in operations.split("\n"):
+        parts = op_line.split("\t")
+        assert len(parts) == 2 and parts[1] != "", f"Operation should not be empty: {op_line}"
+
+    # Clean up
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history_with_checkpoint(started_cluster, use_delta_kernel):
+    """Test that system.delta_lake_history works correctly when checkpoints exist.
+    When a checkpoint is created, older .json files may be removed.
+    History should still show all versions from 0 to the latest."""
+    node = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_history_checkpoint")
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+    # Write 24 more versions to trigger checkpoints (created every 10 commits)
+    for i in range(1, 25):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
+
+    files = default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+
+    # Verify checkpoint file exists
+    has_checkpoint = any(f.endswith("last_checkpoint") for f in files)
+    assert has_checkpoint, "Expected _last_checkpoint file after 25 writes"
+
+    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    # Query history - should have all 25 versions (0..24)
+    history_count = int(
+        node.query(
+            f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+        )
+    )
+    assert history_count == 25, f"Expected 25 history entries (versions 0-24), got {history_count}"
+
+    # Verify version range: min should be 0, max should be 24
+    version_range = node.query(
+        f"""
+        SELECT min(version), max(version)
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        """
+    ).strip()
+    assert version_range == "0\t24", f"Expected versions 0..24, got: {version_range}"
+
+    # Verify is_latest_version: only version 24 should be latest
+    latest = node.query(
+        f"""
+        SELECT version FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}' AND is_latest_version = 1
+        """
+    ).strip()
+    assert latest == "24", f"Expected version 24 as latest, got: {latest}"
+
+    # Versions with .json files should have non-empty operation
+    ops_with_json = node.query(
+        f"""
+        SELECT count() FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}' AND operation != ''
+        """
+    ).strip()
+    assert int(ops_with_json) > 0, "Expected some versions with non-empty operation"
+
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
