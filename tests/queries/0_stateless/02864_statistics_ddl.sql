@@ -70,6 +70,28 @@ CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniq)) Engine = MergeTr
 CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col UUID STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+-- uniqHLL12 behaves same as uniq
+CREATE TABLE tab (col UInt8 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UInt256 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Float32 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Decimal32(3) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date32 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime64 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Enum('hello', 'world') STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv4 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UInt8) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col String STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col FixedString(1) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+--     These types don't work:
+CREATE TABLE tab (col Array(Float64) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col UUID STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col IPv6 STATISTICS(uniqHLL12)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
 --   countmin requires data_type.isValueRepresentedByInteger or data_type = (Fixed)String
 --     These types work:

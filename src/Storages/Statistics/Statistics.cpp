@@ -236,6 +236,11 @@ UInt64 ColumnStatistics::estimateCardinality() const
     {
         return stats.at(StatisticsType::Uniq)->estimateCardinality();
     }
+
+    if (stats.contains(StatisticsType::UniqHLL12))
+    {
+        return stats.at(StatisticsType::UniqHLL12)->estimateCardinality();
+    }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
@@ -250,6 +255,8 @@ Estimate ColumnStatistics::getEstimate() const
 
     if (stats.contains(StatisticsType::Uniq))
         info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+    else if (stats.contains(StatisticsType::UniqHLL12))
+        info.estimated_cardinality = stats.at(StatisticsType::UniqHLL12)->estimateCardinality();
 
     if (stats.contains(StatisticsType::MinMax))
     {
@@ -400,6 +407,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
+
+    registerValidator(StatisticsType::UniqHLL12, uniqStatisticsValidator);
+    registerCreator(StatisticsType::UniqHLL12, uniqStatisticsCreator);
 
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
