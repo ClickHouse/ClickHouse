@@ -27,4 +27,15 @@ INSERT INTO mytable__fuzz_45 VALUES (1, 100, 5, '2020-01-01 00:00:00'), (2, 200,
 SELECT indexHint(isNotNull(100), indexHint(indexHint(indexHint(assumeNotNull(0), isNotNull(0)), 0), isNullable(0), isNull(isNull(0))), *), value
 FROM mytable__fuzz_45 FINAL PREWHERE key = 5 ORDER BY ALL ASC NULLS FIRST;
 
+-- Also test WHERE (not PREWHERE) + FINAL: the WHERE clause creates a FilterStep in the
+-- query plan instead of embedding the condition in ReadFromMergeTree. FilterStep removes
+-- sort-key and version columns from its input header (they are absent from SELECT and WHERE),
+-- but ReadFromMergeTree FINAL must keep them for merging. absorbExtraChildColumns only
+-- handled ExpressionStep, not FilterStep, leaving the mismatch unresolved and triggering
+-- the same "Block structure mismatch" assertion in debug/sanitizer builds.
+-- SELECT uses `key`, WHERE uses `value` — different columns, so FilterStep must reduce
+-- its output (drop `value`) and input (drop `timestamp`, `insert_timestamp`), causing
+-- the mismatch with ReadFromMergeTree FINAL which keeps all sort-key + version columns.
+SELECT key FROM mytable__fuzz_45 FINAL WHERE value IS NOT NULL ORDER BY ALL ASC NULLS FIRST;
+
 DROP TABLE IF EXISTS mytable__fuzz_45;
