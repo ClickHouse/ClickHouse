@@ -1,0 +1,24 @@
+--- shared offsets (default) ---
+[1,2]	['x','y']
+--- independent wide parts ---
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+--- independent compact parts ---
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+--- alter add column ---
+1	[1,2,3]	[]
+1	[1,2,3]	[]
+2	[10]	['x','y','z']
+--- multiple groups ---
+1	[1]	['hello','world']	[100,200,300]	[0]
+--- immutability ---
+--- done ---

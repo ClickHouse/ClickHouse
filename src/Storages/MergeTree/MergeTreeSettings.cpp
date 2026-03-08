@@ -266,6 +266,13 @@ namespace ErrorCodes
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
+    DECLARE(Bool, share_nested_offsets, true, R"(
+    When enabled (default), columns that belong to the same flattened Nested structure (e.g. n.a and n.b)
+    share a single offsets file on disk (e.g. n.size0). The array sizes of sibling columns are also validated
+    to be equal during INSERT. When disabled, each Array column gets its own offset file, allowing columns
+    with dotted names to be independent without Nested type semantics. Disabling this is recommended for
+    new tables that use flatten_nested=0 or do not rely on the legacy Nested type.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
@@ -2680,6 +2687,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
+        || name == "share_nested_offsets"
     ;
 }
 
