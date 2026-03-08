@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
@@ -276,7 +277,7 @@ public:
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0.
     ///
-    /// Applies preprocessor and tokenizer for text-search functions.
+    /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
     /// Example: hasAllTokens(text_col, 'token1 token2') -> hasToken(lower(text_col), ['token1', 'token2'], 'splitByNonAlpha').
     ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {
@@ -357,6 +358,11 @@ private:
         return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
+    static bool needApplyPostprocessor(const String & function_name)
+    {
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+    }
+
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
     {
         NameSet used_index_columns;
@@ -404,7 +410,7 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_preprocess_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
+        bool need_preprocess_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name) || needApplyPostprocessor(function_name);
 
         /// Early exit if there is nothig to process.
         if (!need_preprocess_function && !direct_read_from_text_index)
@@ -421,7 +427,7 @@ private:
         });
 
         if (need_preprocess_function)
-            preprocessTextIndexFunction(replacement, selected_conditions, context);
+            processTextIndexFunction(replacement, selected_conditions, context);
 
         if (direct_read_from_text_index)
             replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, context);
@@ -429,8 +435,8 @@ private:
         return replacement;
     }
 
-    /// Applies preprocessor and tokenizer for text-search functions.
-    void preprocessTextIndexFunction(
+    /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
+    void processTextIndexFunction(
         NodeReplacement & replacement,
         const std::vector<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
@@ -455,6 +461,7 @@ private:
         const auto & condition = selected_conditions.front();
         const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition);
         auto preprocessor = condition_text.getPreprocessor();
+        auto postprocessor = condition_text.getPostprocessor();
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
@@ -502,6 +509,28 @@ private:
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
                 needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
+                needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+            }
+        }
+
+        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
+        {
+            if (needles_field.getType() == Field::Types::String)
+            {
+                /// hasToken case: single token string.
+                auto tokens = postprocessor->applyBatch({needles_field.safeGet<String>()});
+                needles_field = tokens.empty() ? String{} : tokens.front();
+            }
+            else if (needles_field.getType() == Field::Types::Array)
+            {
+                /// hasAllTokens/hasAnyTokens case: array of tokens.
+                const auto & src_array = needles_field.safeGet<Array>();
+                std::vector<String> tokens;
+                for (const auto & element : src_array)
+                    if (element.getType() == Field::Types::String)
+                        tokens.push_back(element.safeGet<String>());
+                tokens = postprocessor->applyBatch(std::move(tokens));
+                needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
         }

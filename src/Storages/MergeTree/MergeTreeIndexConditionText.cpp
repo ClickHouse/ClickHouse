@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -60,11 +61,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     TokenizerPtr tokenizer_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : WithContext(context_)
     , header(index_sample_block)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
+    , postprocessor(postprocessor_)
 {
     if (!predicate)
     {
@@ -483,7 +486,8 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
-    return tokenizer->compactTokens(tokens);
+    tokens = tokenizer->compactTokens(tokens);
+    return postprocessor->applyBatch(std::move(tokens));
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
@@ -491,7 +495,8 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     std::vector<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
     tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
-    return tokenizer->compactTokens(tokens);
+    tokens = tokenizer->compactTokens(tokens);
+    return postprocessor->applyBatch(std::move(tokens));
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -590,6 +595,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 search_tokens.push_back(element.safeGet<String>());
             }
         }
+        search_tokens = postprocessor->applyBatch(std::move(search_tokens));
 
         if (function_name == "hasAnyTokens")
         {
@@ -609,6 +615,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
             tokens.push_back("");
+
+        tokens = postprocessor->applyBatch(tokens);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));

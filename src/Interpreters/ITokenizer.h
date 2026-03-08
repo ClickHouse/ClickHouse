@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
+#include <Columns/IColumn_fwd.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
 #include <base/FnTraits.h>
@@ -425,5 +426,10 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 }
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
+
+/// Tokenizes rows_read rows of col starting at offset and returns a ColumnArray(String)
+/// with one sub-array per row containing the tokens.
+/// col may be a flat String column or a ColumnArray(String).
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & col, size_t offset, size_t rows_read);
 
 }

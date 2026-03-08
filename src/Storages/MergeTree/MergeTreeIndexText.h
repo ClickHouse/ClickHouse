@@ -79,6 +79,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     ASTPtr preprocessor;
+    ASTPtr postprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -386,6 +387,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+
+    /// Adds a single already-tokenized and postprocessed token to the current row.
+    void addToken(std::string_view token);
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -411,6 +415,9 @@ struct MergeTreeIndexTextGranuleBuilder
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
+
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorText(
@@ -418,7 +425,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         PostingListCodecPtr posting_list_codec_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -434,6 +442,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -463,6 +472,7 @@ public:
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 }

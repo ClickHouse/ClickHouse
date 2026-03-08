@@ -102,6 +102,7 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -133,6 +134,7 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -294,6 +296,81 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
+**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each individual token after tokenization.
+
+Unlike the preprocessor, which transforms the entire input string before it is split into tokens, the postprocessor operates on the tokens themselves, one at a time.
+This is the natural place for transformations that are inherently token-level.
+
+Typical use cases for the postprocessor argument include:
+1. **Filtering stop words and noise tokens**. Very common words such as "the", "a", "is", or domain-specific noise tokens carry little search value and inflate the index.
+   A postprocessor can discard them by returning an empty string — tokens mapped to an empty string are not added to the index.
+   Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
+2. **Stemming or lemmatization**. Reducing each token to its root or base form improves search recall by matching morphological variants (e.g. "running" → "run", "better" → "good").
+   ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
+   Example: `stem('en', col)`
+3. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
+   Note: when case normalization is the only transformation needed, using it as a `preprocessor` is equally effective and slightly more efficient.
+
+The postprocessor expression must transform an input token of type [String](/sql-reference/data-types/string.md) to a value of the same type.
+The expression must reference the same column (or expression) on which the text index is defined.
+When the column is of type `Array(String)`, the postprocessor still operates on individual tokens as plain `String` values.
+
+Using non-deterministic functions is disallowed.
+
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) apply the postprocessor to each search token before looking it up in the index.
+Search tokens that the postprocessor maps to an empty string are ignored (they are treated as if absent from the search phrase).
+
+Example — stop word filtering:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+Example — stemming:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem('en', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasToken(str, 'running');
+```
+
+**Combining the preprocessor and postprocessor**. Both arguments can be specified together.
+In that case, the preprocessor is applied to the full column value first, then the tokenizer splits the result into tokens, and finally the postprocessor is applied to each individual token.
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = lower(str),                                               -- 1. lowercase the full value before splitting
+        postprocessor = if(str IN ('the', 'a', 'an', 'of'), '', stem('en', str)) -- 2. filter stop words and stem each token
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 **Other arguments (optional)**.
 
 <details markdown="1">
@@ -358,8 +435,8 @@ If no index exists on a column or table part, the string search functions will f
 
 :::note
 We recommend using functions `hasAnyTokens` and `hasAllTokens` to search the text index, please see [below](#functions-example-hasanytokens-hasalltokens).
-These functions work with all available tokenizers and all possible preprocessor expressions.
-As the other supported functions historically preceded the text index, they had to retain their legacy behavior in many cases (e.g. no preprocessor support).
+These functions work with all available tokenizers and all possible preprocessor and postprocessor expressions.
+As the other supported functions historically preceded the text index, they had to retain their legacy behavior in many cases (e.g. no preprocessor or postprocessor support).
 :::
 
 ### Supported functions {#functions-support}
@@ -451,7 +528,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
 :::note
-Function `hasToken` looks straightforward to use but it has certain pitfalls with non-default tokenizers and preprocessor expressions.
+Function `hasToken` looks straightforward to use but it has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
 We recommend using functions `hasAnyTokens` and `hasAllTokens` instead.
 :::
 
