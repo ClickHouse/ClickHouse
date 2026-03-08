@@ -64,6 +64,13 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
+    static std::vector<std::string> getLastProcessedPaths(
+        const std::filesystem::path & zk_path,
+        size_t buckets_num,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const std::string & zookeeper_name,
+        LoggerPtr log);
+
     static void migrateToBuckets(
         const std::string & zk_path,
         size_t value,

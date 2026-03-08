@@ -365,6 +365,9 @@ SETTINGS
 `S3Queue` processing mode allows to store less metadata in ZooKeeper, but has a limitation that files, which added later by time, are required to have alphanumerically bigger names.
 
 `S3Queue` `ordered` mode, as well as `unordered`, supports `(s3queue_)processing_threads_num` setting (`s3queue_` prefix is optional), which allows to control number of threads, which would do processing of `S3` files locally on the server.
+
+For `ordered` mode without partitioning, ClickHouse may resume S3 listing from the last processed key to avoid re-listing the full prefix history. In bucketed ordered mode, the resume point is conservatively chosen as the smallest processed key across all buckets to avoid skipping unprocessed files.
+This resume-listing optimization is used only for S3-backed queues in ordered mode without partitioning (not for AzureQueue or when `partitioning_mode` is set).
 In addition, `ordered` mode also introduces another setting called `(s3queue_)buckets` which means "logical threads". It means that in distributed scenario, when there are several servers with `S3Queue` table replicas, where this setting defines the number of processing units. E.g. each processing thread on each `S3Queue` replica will try to lock a certain `bucket` for processing, each `bucket` is attributed to certain files by hash of the file name. Therefore, in distributed scenario it is highly recommended to have `(s3queue_)buckets` setting to be at least equal to the number of replicas or bigger. This is fine to have the number of buckets bigger than the number of replicas. The most optimal scenario would be for `(s3queue_)buckets` setting to equal a multiplication of `number_of_replicas` and `(s3queue_)processing_threads_num`.
 The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
 The setting `(s3queue_)buckets` is available starting with version `24.6`.
