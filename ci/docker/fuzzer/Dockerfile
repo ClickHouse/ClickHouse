@@ -12,8 +12,6 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3 \
-            python3-pip \
             rsync \
             tree \
             vim \
@@ -22,8 +20,11 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+RUN ln -sf /usr/bin/python3.14 /usr/bin/python3 \
+    && ln -sf /usr/local/bin/pip3 /usr/bin/pip3
+
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /requirements.txt
 
 COPY * /
 

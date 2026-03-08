@@ -131,6 +131,17 @@ RUN wget -q -O /usr/bin/jeprof.orig https://raw.githubusercontent.com/jemalloc/j
 RUN wget -q -O /usr/bin/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl && chmod +x /usr/bin/flamegraph.pl
 RUN wget -q -O /usr/bin/difffolded.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl && chmod +x /usr/bin/difffolded.pl
 
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 \
+    && echo "deb https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/deadsnakes-ppa.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.14 \
+        python3.14-venv \
+        python3.14-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.14
+
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
