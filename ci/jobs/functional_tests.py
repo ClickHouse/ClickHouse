@@ -16,6 +16,23 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
+
+
+def find_master_builds():
+    """Find S3 URLs for all 5 build types from a recent master commit."""
+    commits = Info().get_kv_data("master_commits") or []
+    for sha in commits:
+        probe_url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{BUGFIX_BUILD_TYPES[0]}/clickhouse"
+        if Shell.check(f"curl -sfI {probe_url} > /dev/null"):
+            return {
+                bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
+                for bt in BUGFIX_BUILD_TYPES
+            }
+    return None
+
+
+
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
@@ -264,14 +281,19 @@ def main():
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
-        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
-            link_arch = "aarch64" if Utils.is_arm() else "amd64"
-            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
-            Shell.run(
-                f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
-                verbose=True,
-                strict=True,
-            )
+        build_urls = find_master_builds()
+        assert build_urls, "Could not find master builds in S3"
+        for bt, url in build_urls.items():
+            bt_path = f"{temp_dir}/clickhouse_{bt}"
+            if not info.is_local_run or not Path(bt_path).is_file():
+                Shell.run(
+                    f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                )
+                Shell.run(f"chmod +x {bt_path}", verbose=True)
+        Shell.run(
+            f"cp {temp_dir}/clickhouse_{BUGFIX_BUILD_TYPES[0]} {temp_dir}/clickhouse",
+            verbose=True,
+        )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
@@ -305,9 +327,7 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run or is_bugfix_validation:
-        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
-        # regular test failures are assumed to be sufficient to validate the test
+    if is_coverage or info.is_local_run:
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -609,6 +629,44 @@ def main():
                 if is_final_run or stop_by_elapsed_time:
                     break
 
+        # Run additional build types for bugfix validation.
+        # Exit early on first failure to avoid duplicate test names,
+        # workspace pollution, and to preserve logs for CHECK_ERRORS.
+        if is_bugfix_validation:
+            for r in test_result.results:
+                r.set_label(BUGFIX_BUILD_TYPES[0])
+
+            if test_result.is_ok():
+                for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+                    print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                    Shell.run(
+                        f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
+                        verbose=True,
+                    )
+                    Shell.run(f"chmod +x {ch_path}/clickhouse", verbose=True)
+                    CH.terminate()
+                    CH.clean_logs()
+                    CH.start()
+                    CH.wait_ready()
+
+                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    run_tests(
+                        batch_num=0,
+                        batch_total=0,
+                        tests=tests,
+                        extra_args=runner_options,
+                        random_order=True,
+                        rerun_count=1,
+                    )
+                    bt_result = ft_res_processor_bt.run()
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    test_result.results = bt_result.results
+                    debug_files += ft_res_processor_bt.debug_files
+
+                    if not bt_result.is_ok():
+                        break
+
         # Apply collected results from multi-run mode
         if run_sets_cnt > 1 and collected_test_results:
             test_result.results = collected_test_results
@@ -713,7 +771,6 @@ def main():
             reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
-        # must not be performed for a test validation - test must fail and log errors are not respected
         print("Check fatal errors")
         sw_ = Utils.Stopwatch()
         results.append(
@@ -733,7 +790,9 @@ def main():
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status in (Result.StatusExtended.FAIL, Result.StatusExtended.ERROR):
+                # Both test failures and crashes (e.g. sanitizer errors) count as
+                # successful bug reproduction
                 r.status = Result.StatusExtended.OK
                 has_failure = True
             elif r.status == Result.StatusExtended.OK:
@@ -743,7 +802,7 @@ def main():
             test_result.set_failed().set_info("Failed to reproduce the bug")
         else:
             # For bugfix validation, the expected behavior is:
-            # - At least one test must fail (bug reproduced)
+            # - At least one test must fail or crash (bug reproduced)
             # - The overall Tests result is treated as success in that case
             test_result.set_success()
 

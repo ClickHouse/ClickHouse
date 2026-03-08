@@ -20,6 +20,24 @@ from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
+
+
+BUGFIX_BUILD_TYPES = ["amd_asan", "amd_tsan", "amd_msan", "amd_ubsan", "amd_debug"]
+
+
+def find_master_builds():
+    """Find S3 URLs for all 5 build types from a recent master commit."""
+    commits = Info().get_kv_data("master_commits") or []
+    for sha in commits:
+        probe_url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{BUGFIX_BUILD_TYPES[0]}/clickhouse"
+        if Shell.check(f"curl -sfI {probe_url} > /dev/null"):
+            return {
+                bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
+                for bt in BUGFIX_BUILD_TYPES
+            }
+    return None
+
+
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
@@ -522,21 +540,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         )
 
     if is_bugfix_validation:
-        if Utils.is_arm():
-            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-        else:
-            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-        if not info.is_local_run or not (Path(temp_path) / "clickhouse").exists():
-            print(
-                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
-            )
-            if info.is_local_run:
-                time.sleep(10)
-            Shell.check(
-                f"wget -nv -P {temp_path} {link_to_master_head_binary}",
-                verbose=True,
-                strict=True,
-            )
+        build_urls = find_master_builds()
+        assert build_urls, "Could not find master builds in S3"
+        for bt, url in build_urls.items():
+            bt_path = f"{temp_path}/clickhouse_{bt}"
+            if not info.is_local_run or not Path(bt_path).is_file():
+                print(f"NOTE: Downloading {bt} build to [{bt_path}]")
+                Shell.run(
+                    f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                )
+                Shell.run(f"chmod +x {bt_path}", verbose=True)
+        clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
 
     if is_bugfix_validation or is_flaky_check:
         assert (
@@ -723,6 +737,53 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 has_error = True
                 error_info.append(test_result_sequential.info)
 
+    # Run additional build types for bugfix validation.
+    # Exit early on first failure to avoid duplicate test names and workspace pollution.
+    if is_bugfix_validation:
+        for r in test_results:
+            r.set_label(BUGFIX_BUILD_TYPES[0])
+
+        if all(r.is_ok() for r in test_results):
+            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+                print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
+                test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
+                test_env["CLICKHOUSE_BINARY"] = bt_clickhouse_path
+                test_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = bt_clickhouse_path
+                Shell.check(
+                    f"{bt_clickhouse_path} --version", verbose=True, strict=True
+                )
+
+                bt_test_results = []
+
+                if parallel_test_modules:
+                    bt_result_parallel = run_pytest_and_collect_results(
+                        command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+                        env=test_env,
+                        report_name=f"parallel_{bugfix_bt}",
+                    )
+                    bt_test_results.extend(bt_result_parallel.results)
+                    if bt_result_parallel.files:
+                        failed_tests_files.extend(bt_result_parallel.files)
+
+                bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
+                if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP:
+                    bt_result_sequential = run_pytest_and_collect_results(
+                        command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                        env=test_env,
+                        report_name=f"sequential_{bugfix_bt}",
+                    )
+                    bt_test_results.extend(bt_result_sequential.results)
+                    if bt_result_sequential.files:
+                        failed_tests_files.extend(bt_result_sequential.files)
+
+                for r in bt_test_results:
+                    r.set_label(bugfix_bt)
+                test_results = bt_test_results
+
+                if any(not r.is_ok() for r in bt_test_results):
+                    break
+
     # Collect logs before re-run
     attached_files = []
     if not info.is_local_run:
@@ -842,7 +903,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for r in R.results:
             # invert statuses
             r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status in (Result.StatusExtended.FAIL, Result.StatusExtended.ERROR):
+                # Both test failures and crashes (e.g. sanitizer errors) count as
+                # successful bug reproduction
                 r.status = Result.StatusExtended.OK
                 has_failure = True
             elif r.status == Result.StatusExtended.OK:

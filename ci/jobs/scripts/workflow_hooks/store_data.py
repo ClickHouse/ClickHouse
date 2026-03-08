@@ -23,13 +23,18 @@ if __name__ == "__main__":
     digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
     info.store_kv_data("build_digest", digest)
 
-    if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
-        # store previous commits for perf tests
+    # store recent master commits (used by bugfix validation to find builds, and by perf tests)
+    if info.repo_name == "ClickHouse/ClickHouse":
         raw = Shell.get_output(
-            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
+            "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
             verbose=True,
         )
-        commits = raw.splitlines()
+        master_commits = raw.splitlines()
+        info.store_kv_data("master_commits", master_commits)
+
+    if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+        # store previous commits for perf tests
+        commits = list(master_commits)
 
         while commits and commits[0] != info.sha:
             commits.pop(0)
