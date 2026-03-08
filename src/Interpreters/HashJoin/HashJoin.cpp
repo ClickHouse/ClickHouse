@@ -675,9 +675,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
 
-                for (size_t i = 0; i < asof_column_nullable.size(); ++i)
-                    if (!asof_column_nullable[i])
-                        new_selector_data.push_back(i);
+                /// Intersect with the original selector to keep only rows that
+                /// both belong to this partition and have a non-NULL ASOF key
+                for (size_t r : selector)
+                    if (!asof_column_nullable[r])
+                        new_selector_data.push_back(r);
 
                 selector = ScatteredBlock::Selector(std::move(new_selector));
             }
@@ -758,9 +760,15 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             UInt8 save_nullmap = 0;
             if (isRightOrFull(kind) && null_map)
             {
-                /// Save rows with NULL keys
-                for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
-                    save_nullmap |= (*null_map)[i];
+                /// Only check rows belonging to this partition's selector
+                for (size_t r : stored_columns->selector)
+                {
+                    if ((*null_map)[r])
+                    {
+                        save_nullmap = 1;
+                        break;
+                    }
+                }
             }
 
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
@@ -817,23 +825,29 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     });
             }
 
+            /// NullMapHolder stores a raw pointer to stored_columns, don't pop the block if a nullmap references it
+            bool nullmap_stored_for_block = false;
+
             if (!flag_per_row && save_nullmap && is_inserted)
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
                 data->nullmaps_allocated_size += h.allocatedBytes();
+                nullmap_stored_for_block = true;
             }
 
             if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += h.allocatedBytes();
+                nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && !is_inserted)
+            if (!flag_per_row && !is_inserted && !nullmap_stored_for_block)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
+                data->rows_to_join -= rows;
                 data->columns.pop_back();
                 doDebugAsserts();
             }
@@ -1668,8 +1682,8 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns_info.columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            /// Iterate only the selector's rows to avoid emitting rows outside this partition.
+            for (size_t row : columns->selector)
             {
                 if (nullmap && (*nullmap)[row])
                 {
@@ -1995,7 +2009,7 @@ void HashJoin::tryRerangeRightTableData()
     if (!data
         || data->sorted
         || data->columns.empty()
-        || data->maps.size() != 1
+        || data->maps.size() > 1
         || data->rows_to_join > table_join->sortRightMaximumTableRows()
         || data->avgPerKeyRows() < table_join->sortRightMinimumPerkeyRows())
     {
