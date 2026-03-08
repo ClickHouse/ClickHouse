@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
@@ -29,7 +31,6 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
@@ -87,7 +88,11 @@ public:
         Settings settings_);
 
     void validate();
-    size_t evaluateCommandsSize();
+
+    /// Estimate the total AST size of the mutation commands.
+    /// This is a static method that does not require a fully constructed MutationsInterpreter
+    /// (avoids potential deadlocks from table lock acquisition during QueryAnalyzer resolution).
+    static size_t evaluateCommandsSize(const MutationCommands & commands, const StoragePtr & storage, ContextPtr context);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
@@ -219,7 +224,7 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        explicit Stage(ContextPtr /*context_*/) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -228,13 +233,24 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
-        std::unique_ptr<ExpressionAnalyzer> analyzer;
+        /// A single step in the action pipeline for this stage.
+        struct ActionStep
+        {
+            ActionsDAG dag;
+            String filter_column_name;  /// Non-empty for filter steps (DELETEs).
+            bool project_input = false;
+        };
 
         /// A chain of actions needed to execute this stage.
-        /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
+        /// First steps calculate filter columns for DELETEs,
         /// then there is (possibly) an UPDATE step, and finally a projection step.
-        ExpressionActionsChain expressions_chain;
-        Names filter_column_names;
+        std::vector<ActionStep> action_steps;
+
+        /// Prepared sets for IN subqueries used in this stage.
+        PreparedSetsPtr prepared_sets;
+
+        /// Input columns needed by this stage (computed from first action step's DAG inputs).
+        Names required_columns;
 
         bool affects_all_columns = false;
         std::optional<UInt64> mutation_version;

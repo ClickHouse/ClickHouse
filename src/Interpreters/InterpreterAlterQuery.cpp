@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace ServerSetting
@@ -339,8 +340,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
 
         table->checkMutationIsPossible(mutation_commands, settings);
-        MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        if (settings[Setting::validate_mutation_query])
+        {
+            MutationsInterpreter::Settings mutation_settings(false);
+            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        }
         table->mutate(mutation_commands, getContext());
     }
 
