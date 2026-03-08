@@ -18,8 +18,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -446,9 +446,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 sampling.filter_function->children.push_back(sampling.filter_function->arguments);
             }
 
-            ASTPtr query = sampling.filter_function;
-            auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false));
+            sampling.filter_expression = std::make_shared<const ActionsDAG>(analyzeExpressionToActionsDAG(sampling.filter_function, available_real_columns, context));
         }
     }
 

@@ -4,8 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
@@ -163,11 +162,11 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+        auto all_columns = columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns());
         /// In expression we also need to store source columns
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+        result.expression = analyzeExpressionToActions(expr, all_columns, context);
         /// In sample block we use just key columns
-        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+        result.sample_block = analyzeExpressionToActions(expr, all_columns, context, true)->getSampleBlock();
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)

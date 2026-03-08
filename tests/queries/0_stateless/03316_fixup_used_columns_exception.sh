@@ -14,7 +14,7 @@ CREATE TABLE test_exception(
 ENGINE=MergeTree
 ORDER BY All" 2>&1) || true
 
-if [[ $create_status == *"required columns: 'All', available columns: 'id'"* ]]; then
+if [[ $create_status == *"required columns: 'All', available columns: 'id'"* ]] || [[ $create_status == *"Unknown expression identifier"*"All"* ]]; then
     echo "Query got the right exception message."
 else
     echo "Unexpected behavior: $create_status"

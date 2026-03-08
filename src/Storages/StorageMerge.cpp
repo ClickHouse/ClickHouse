@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -1339,10 +1340,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 
     ASTPtr expr = row_policy_filter_ptr->expression;
 
-    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
-    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
-
-    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+    actions_dag = analyzeExpressionToActionsDAG(expr, needed_columns, local_context);
     filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();

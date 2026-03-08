@@ -22,8 +22,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -508,8 +507,7 @@ void StorageHive::initMinMaxIndexExpression()
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
     if (!partition_key_expr_list->children.empty())
     {
-        auto syntax_result = TreeRewriter(getContext()).analyze(partition_key_expr_list, metadata_snapshot->getColumns().getAllPhysical());
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, getContext()).getActions(false);
+        partition_key_expr = analyzeExpressionToActions(partition_key_expr_list, metadata_snapshot->getColumns().getAllPhysical(), getContext());
 
         /// Add all columns used in the partition key to the min-max index.
         partition_name_types = partition_key_expr->getRequiredColumnsWithTypes();

@@ -72,6 +72,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -271,9 +272,7 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
 {
-    ASTPtr query = sharding_key;
-    auto syntax_result = TreeRewriter(context).analyze(query, columns);
-    return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
+    return analyzeExpressionToActions(sharding_key, columns, context, project);
 }
 
 void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)

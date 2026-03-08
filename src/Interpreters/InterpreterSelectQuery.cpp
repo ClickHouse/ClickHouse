@@ -37,6 +37,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
@@ -1488,9 +1489,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                     source_columns.emplace_back(column.name, column.type);
         }
 
-        auto syntax_result = TreeRewriter(context).analyze(exprs, source_columns);
-        ExpressionAnalyzer analyzer(exprs, syntax_result, context);
-        ActionsDAG actions = analyzer.getActionsDAG(true);
+        ActionsDAG actions = analyzeExpressionToActionsDAG(exprs, source_columns, context, true);
         ActionsDAG conv_dag = ActionsDAG::makeConvertingActions(actions.getResultColumns(),
             result_columns, ActionsDAG::MatchColumnsMode::Position, context, true);
         ActionsDAG merge_dag = ActionsDAG::merge(std::move(actions), std::move(conv_dag));

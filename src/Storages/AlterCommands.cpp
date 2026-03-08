@@ -11,9 +11,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1616,8 +1615,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         if (default_expression)
                         {
                             ASTPtr query = default_expression->clone();
-                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                            const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                            const auto actions = analyzeExpressionToActions(query, all_columns.getAll(), context, true);
                             const auto required_columns = actions->getRequiredColumns();
 
                             if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))

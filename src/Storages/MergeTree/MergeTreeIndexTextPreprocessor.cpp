@@ -17,8 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 
 namespace DB
 {
@@ -115,8 +114,7 @@ ActionsDAG createActionsDAGForPreprocessor(
         return ActionsDAG();
 
     auto context = Context::getGlobalContextInstance();
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, source_columns);
-    auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false, true);
+    auto actions_dag = analyzeExpressionToActionsDAG(expression_ast, source_columns, context);
 
     auto expression_name = expression_ast->getColumnName();
     actions_dag.project({{expression_name, expression_name}});

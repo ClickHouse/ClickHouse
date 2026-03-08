@@ -12,8 +12,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
 
@@ -165,9 +164,8 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
 
 static ActionsDAG makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
 {
-    auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
     String result_column_name = ast->getColumnName();
-    auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
+    auto dag = analyzeExpressionToActionsDAG(ast, header.getNamesAndTypesList(), context);
     const ActionsDAG::Node * result_node = &dag.findInOutputs(result_column_name);
     auto & outputs = dag.getOutputs();
     outputs.clear();

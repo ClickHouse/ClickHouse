@@ -2,8 +2,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -309,11 +309,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
             auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
             replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), array_join_result_to_source, context);
 
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, metadata_snapshot->getColumns().getAll());
-            auto expression_analyzer = ExpressionAnalyzer(column_expr, syntax_analyzer_result, context);
-
             aliases_sort_description[i].column_name = column_expr->getColumnName();
-            aliases_actions[i] = expression_analyzer.getActions(true);
+            aliases_actions[i] = analyzeExpressionToActions(column_expr, metadata_snapshot->getColumns().getAll(), context, true);
         }
 
         return getInputOrderImpl(metadata_snapshot, aliases_sort_description, aliases_actions, context, limit);

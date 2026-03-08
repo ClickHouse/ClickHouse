@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -585,8 +586,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         filter_function = makeASTFunction("has", func_array, make_intrusive<ASTIdentifier>(window_id_name));
     }
 
-    auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
-    auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, getContext()).getActionsDAG(false);
+    auto filter_expression = analyzeExpressionToActionsDAG(filter_function, builder.getHeader().getNamesAndTypesList(), getContext());
     auto filter_actions = std::make_shared<ExpressionActions>(std::move(filter_expression));
 
     builder.addSimpleTransform([&](const SharedHeader & header)
@@ -1552,8 +1552,7 @@ void StorageWindowView::writeIntoWindowView(
         NamesAndTypesList columns;
         columns.emplace_back(window_view.timestamp_column_name, std::make_shared<DataTypeDateTime>());
 
-        auto syntax_result = TreeRewriter(local_context).analyze(query, columns);
-        auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, local_context).getActionsDAG(false);
+        auto filter_expression = analyzeExpressionToActionsDAG(filter_function, columns, local_context);
 
         pipe.addSimpleTransform([&](const SharedHeader & header_)
         {

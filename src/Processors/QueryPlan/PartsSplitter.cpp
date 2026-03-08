@@ -9,8 +9,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -1215,8 +1214,7 @@ Pipes readByLayers(
         if (!filter_function)
             continue;
 
-        auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-        auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+        auto actions = analyzeExpressionToActionsDAG(filter_function, primary_key.expression->getRequiredColumnsWithTypes(), context);
         reorderColumns(actions, merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = in_reverse_order ? fmt::format(

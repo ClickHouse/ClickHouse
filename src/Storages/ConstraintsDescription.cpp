@@ -1,9 +1,8 @@
 #include <Storages/ConstraintsDescription.h>
 
 #include <Interpreters/ComparisonGraph.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -143,10 +142,8 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
-            // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
-            auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
+            res.push_back(analyzeExpressionToActions(expr, source_columns_, context));
         }
     }
     return res;

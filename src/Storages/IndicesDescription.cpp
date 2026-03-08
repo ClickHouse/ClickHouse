@@ -1,6 +1,5 @@
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTFunction.h>
@@ -150,12 +149,11 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 
     expression_list_ast = expr_list->clone();
 
-    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+    expression = analyzeExpressionToActions(
         expr_list,
-        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
-    );
-
-    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        context,
+        true);
 
     sample_block = expression->getSampleBlock();
 }
@@ -266,8 +264,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    return analyzeExpressionToActions(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
 }
 
 Names IndicesDescription::getAllRegisteredNames() const

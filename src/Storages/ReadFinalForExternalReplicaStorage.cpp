@@ -3,8 +3,7 @@
 #if USE_MYSQL || USE_LIBPQXX
 
 #include <Core/Settings.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -79,8 +78,7 @@ void readFinalFromNestedStorage(
     if (!expressions->children.empty())
     {
         const auto & header = query_plan.getCurrentHeader();
-        auto syntax = TreeRewriter(context).analyze(expressions, header->getNamesAndTypesList());
-        auto actions = ExpressionAnalyzer(expressions, syntax, context).getActionsDAG(true /* add_aliases */, false /* project_result */);
+        auto actions = analyzeExpressionToActionsDAG(expressions, header->getNamesAndTypesList(), context, true);
 
         auto step = std::make_unique<FilterStep>(
             query_plan.getCurrentHeader(),

@@ -13,7 +13,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -95,9 +95,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
 
-        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
-        std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
+        std::optional<ActionsDAG> actions = analyzeExpressionToActionsDAG(where_ast, initial_header.getNamesAndTypesList(), context, true);
         std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
         {
             if (actions.has_value())

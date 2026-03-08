@@ -6,7 +6,9 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
@@ -179,9 +181,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
 {
     ExpressionAndSets result;
     auto ttl_string = ast->formatWithSecretsOneLine();
-    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
-    ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
-    auto dag = analyzer.getActionsDAG(false);
+    auto dag = analyzeExpressionToActionsDAG(ast, columns, context);
 
     const auto * col = &dag.findInOutputs(ast->getColumnName());
     if (col->result_name != ttl_string)
@@ -191,7 +191,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.removeUnusedActions();
 
     result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
-    result.sets = analyzer.getPreparedSets();
+    result.sets = std::make_shared<PreparedSets>();
 
     return result;
 }
