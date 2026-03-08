@@ -28,7 +28,6 @@ RUN apt-get update \
     git \
     iproute2 \
     cgroupfs-mount \
-    python3-pip \
     tzdata \
     libicu-dev \
     bsdutils \
@@ -63,6 +62,9 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
         /tmp/* \
     && apt-get clean \
     && dockerd --version; docker --version
+
+RUN ln -sf /usr/bin/python3.14 /usr/bin/python3 \
+    && ln -sf /usr/local/bin/pip3 /usr/bin/pip3
 
 # kazoo 2.10.0 is broken
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html

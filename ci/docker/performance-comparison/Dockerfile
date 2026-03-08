@@ -6,6 +6,8 @@ FROM clickhouse/test-base:$FROM_TAG
 # Remove problematic Kitware repository
 RUN rm -f /etc/apt/sources.list.d/*kitware* || true
 
+COPY requirements.txt /
+
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             bash \
@@ -21,9 +23,7 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3 \
             python3-dev \
-            python3-pip \
             rsync \
             tree \
             tzdata \
@@ -34,13 +34,13 @@ RUN apt-get update \
             ripgrep \
             zstd \
             unzip \
+    && ln -sf /usr/bin/python3.14 /usr/bin/python3 \
+    && ln -sf /usr/local/bin/pip3 /usr/bin/pip3 \
+    && pip3 --no-cache-dir install -r requirements.txt \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-COPY requirements.txt /
-RUN pip3 --no-cache-dir install -r requirements.txt
 
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb

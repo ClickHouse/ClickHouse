@@ -20,20 +20,21 @@ RUN apt-get update \
         lz4 \
         odbc-postgresql \
         odbcinst \
-        python3 \
         rpm2cpio \
         sqlite3 \
         tar \
         tzdata \
         unixodbc \
-        python3-pip \
         libcurl4-openssl-dev \
         libssl-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+RUN ln -sf /usr/bin/python3.14 /usr/bin/python3 \
+    && ln -sf /usr/local/bin/pip3 /usr/bin/pip3
+
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+RUN python3 -m pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
