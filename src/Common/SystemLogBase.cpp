@@ -9,6 +9,7 @@
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/UserQueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>

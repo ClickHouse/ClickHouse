@@ -121,6 +121,7 @@ class QueryResultCache;
 class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
+class UserQueryLog;
 class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -1486,6 +1487,7 @@ public:
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
+    std::shared_ptr<UserQueryLog> getUserQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
     std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;

@@ -1078,6 +1078,8 @@ void LocalServer::processConfig()
 
         if (!attached_system_database)
             attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+        // TODO: testing hack, remove.
+        global_context->initializeSystemLogs();
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();

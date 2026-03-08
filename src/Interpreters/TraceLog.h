@@ -67,7 +67,7 @@ class TraceLog : public SystemLog<TraceLogElement>
 {
     using SystemLog<TraceLogElement>::SystemLog;
 public:
-    TraceLog(ContextPtr context_,
+    TraceLog(ContextMutablePtr context_,
         const SystemLogSettings & settings_,
         std::shared_ptr<SystemLogQueue<TraceLogElement>> queue_ = nullptr)
         : SystemLog<TraceLogElement>(context_, settings_, queue_),

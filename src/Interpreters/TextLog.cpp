@@ -103,7 +103,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(value10);
 }
 
-TextLog::TextLog(ContextPtr context_,
+TextLog::TextLog(ContextMutablePtr context_,
                  const SystemLogSettings & settings)
     : SystemLog<TextLogElement>(context_, settings, getLogQueue(settings.queue_settings))
 {

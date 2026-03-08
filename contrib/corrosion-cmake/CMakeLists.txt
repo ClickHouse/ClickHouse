@@ -35,7 +35,9 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2025-07-07")
+# set(Rust_TOOLCHAIN "nightly-2025-07-07")
+set(Rust_FIND_QUIETLY TRUE)
+set(ENABLE_RUST FALSE)
 
 macro(find_rust)
     set_rust_target()

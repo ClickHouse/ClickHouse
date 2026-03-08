@@ -45,7 +45,7 @@ public:
         Periodically flushed to disk. Transposed form of system.metric_log.)";
 
     TransposedMetricLog(
-        ContextPtr context_,
+        ContextMutablePtr context_,
         const SystemLogSettings & settings_,
         std::shared_ptr<SystemLogQueue<TransposedMetricLogElement>> queue_ = nullptr)
         : PeriodicLog<TransposedMetricLogElement>(context_, settings_, queue_)
