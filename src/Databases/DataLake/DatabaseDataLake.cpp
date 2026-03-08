@@ -47,6 +47,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 
 namespace DB
 {
@@ -942,6 +943,22 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+
+        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        if (!auth_header_str.empty())
+        {
+            // Ensure during creation that the HTTP headers are checked against the forbidden HTTP header filter.
+            auto pos = auth_header_str.find(':');
+            if (pos != std::string::npos)
+            {
+                DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auth header format. Expected 'HeaderName:HeaderValue'");
+            }
+        }
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
