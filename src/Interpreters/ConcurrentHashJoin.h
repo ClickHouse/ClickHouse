@@ -73,6 +73,11 @@ public:
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
         size_t stream_idx, size_t num_streams) const override;
 
+    static bool needUsedFlagsForPerLeftTableRow(const std::shared_ptr<TableJoin> & table_join)
+    {
+        return table_join->strictness() != JoinStrictness::Semi && table_join->strictness() != JoinStrictness::Asof;
+    }
+
     bool isCloneSupported() const override
     {
         return getTotals().empty() && getTotalRowCount() == 0;
@@ -100,6 +105,8 @@ public:
     friend class NotJoinedHash;
 
 private:
+    void finalizeSlots();
+
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     bool any_take_last_row;
@@ -108,6 +115,14 @@ private:
     bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
+
+    /// updated during addBlockToJoin while holding the slot mutex
+    struct CachedSlotSize
+    {
+        std::atomic<size_t> row_count{0};
+        std::atomic<size_t> byte_count{0};
+    };
+    std::unique_ptr<CachedSlotSize[]> cached_slot_sizes;
 
     std::mutex totals_mutex;
     Block totals;
