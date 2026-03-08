@@ -2397,13 +2397,17 @@ bool MutateTask::prepare()
     for (const auto & name : updated_columns_in_patches)
     {
         GetColumnsOptions options = GetColumnsOptions::AllPhysical;
-        auto type = ctx->storage_snapshot->getColumn(options.withVirtuals(VirtualsKind::Persistent), name).type;
+        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent), name);
+
+        /// Skip updated column if it was dropped from the table.
+        if (!column)
+            continue;
 
         ctx->commands_for_part.push_back(MutationCommand
         {
             .type = MutationCommand::READ_COLUMN,
             .column_name = name,
-            .data_type = type,
+            .data_type = column->type,
             .read_for_patch = true,
         });
     }
