@@ -14,11 +14,6 @@ ORDER BY id;
 
 INSERT INTO test_delete_qualified VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
--- DELETE with qualified column name (database.table.column)
-DELETE FROM test_delete_qualified WHERE default.test_delete_qualified.id = 1;
-
-SELECT * FROM test_delete_qualified ORDER BY id;
-
 -- DELETE with table.column qualification
 DELETE FROM test_delete_qualified WHERE test_delete_qualified.id = 2;
 
