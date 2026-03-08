@@ -292,8 +292,8 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         # I leave last one working by intent (to finish consuming after all rebalances)
         for consumer_index in range(NUMBER_OF_CONCURRENT_CONSUMERS - 1):
             table_name = f"{table_name_prefix}_{suffix}_{consumer_index}"
-            logging.debug(f"Dropping test.{table_name}_consumer{consumer_index}")
-            instance.query(f"DROP TABLE IF EXISTS test.{table_name}_consumer{consumer_index} SYNC")
+            logging.debug(f"Dropping test.{table_name}")
+            instance.query(f"DROP TABLE IF EXISTS test.{table_name} SYNC")
 
         def check_callback(res):
             logging.debug(f"Waiting for finishing consuming (have {res}, should be {msg_index[0]})")
@@ -308,8 +308,8 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         for consumer_index in range(NUMBER_OF_CONCURRENT_CONSUMERS):
             table_name = f"{table_name_prefix}_{suffix}_{consumer_index}"
             instance.query(f"""
-                DROP TABLE IF EXISTS test.{table_name}_consumer{consumer_index};
-                DROP TABLE IF EXISTS test.{table_name}_consumer{consumer_index}_mv;
+                DROP TABLE IF EXISTS test.{table_name};
+                DROP TABLE IF EXISTS test.{table_name}_mv;
             """)
 
         instance.query(f"DROP TABLE IF EXISTS test.kafka_destination_{suffix}")
