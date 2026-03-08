@@ -78,6 +78,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>(),    "Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>(),    "The size of the file with marks for secondary indices."},
+        {"secondary_indices_materialized",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The array of materialized secondary index names in this part."},
         {"modification_time",                           std::make_shared<DataTypeDateTime>(),  "The time the directory with the data part was modified. This usually corresponds to the time of data part creation."},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>(),  "The time when the data part became inactive."},
         {"refcount",                                    std::make_shared<DataTypeUInt32>(),    "The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges."},
@@ -211,6 +212,17 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(get_secondary_indexes_size().data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_secondary_indexes_size().marks);
+        if (columns_mask[src_index++])
+        {
+            Array materialized_indices;
+            auto secondary_indices_descriptions = part->storage.getInMemoryMetadataPtr()->secondary_indices;
+            for (const auto & index_description : secondary_indices_descriptions)
+            {
+                if (part->hasSecondaryIndex(index_description.name))
+                    materialized_indices.push_back(index_description.name);
+            }
+            columns[res_index++]->insert(materialized_indices);
+        }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
