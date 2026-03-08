@@ -1,0 +1,28 @@
+sumTuple
+(12,15,18)
+avgTuple
+(4,5,6)
+minTuple
+(1,2,3)
+maxTuple
+(7,8,9)
+GROUP BY
+0	(6,9)
+1	(9,13.5)
+named tuple
+(4,6)	Tuple(\n    a Int64,\n    b Float64)
+mixed types
+(5,8,10)
+single element
+(20)
+table numeric
+1	(30,4,300)
+2	(70,8,700)
+1	(15,2,150)
+2	(35,4,350)
+1	(10,1.5,100)
+2	(30,3.5,300)
+1	(20,2.5,200)
+2	(40,4.5,400)
+TupleIf
+(6,8)
