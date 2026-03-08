@@ -1,0 +1,210 @@
+-- max DESC: optimized
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+trace_996	2024-01-01 02:46:36
+trace_995	2024-01-01 02:46:35
+-- max DESC: unoptimized
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+trace_996	2024-01-01 02:46:36
+trace_995	2024-01-01 02:46:35
+-- min ASC: optimized
+trace_0	2024-01-01 00:00:00
+trace_1	2024-01-01 00:00:01
+trace_2	2024-01-01 00:00:02
+trace_3	2024-01-01 00:00:03
+trace_4	2024-01-01 00:00:04
+-- min ASC: unoptimized
+trace_0	2024-01-01 00:00:00
+trace_1	2024-01-01 00:00:01
+trace_2	2024-01-01 00:00:02
+trace_3	2024-01-01 00:00:03
+trace_4	2024-01-01 00:00:04
+-- max + any: optimized
+trace_999	2024-01-01 02:46:39	service_4
+trace_998	2024-01-01 02:46:38	service_3
+trace_997	2024-01-01 02:46:37	service_2
+-- EXPLAIN PLAN: has TopNAggregating
+1
+-- EXPLAIN with count: no TopNAggregating
+0
+-- EXPLAIN WITH TIES: no TopNAggregating
+0
+-- EXPLAIN max ASC: no TopNAggregating
+0
+-- K larger than groups
+trace_9	2024-01-01 00:01:39
+trace_8	2024-01-01 00:01:38
+trace_7	2024-01-01 00:01:37
+trace_6	2024-01-01 00:01:36
+trace_5	2024-01-01 00:01:35
+trace_4	2024-01-01 00:01:34
+trace_3	2024-01-01 00:01:33
+trace_2	2024-01-01 00:01:32
+trace_1	2024-01-01 00:01:31
+trace_0	2024-01-01 00:01:30
+-- empty table
+-- Mode 2 (unsorted): max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Mode 2 (unsorted): reference
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- EXPLAIN LIMIT OFFSET: no TopNAggregating
+0
+-- NULLS LAST: optimized
+d	200
+f	150
+a	100
+-- NULLS LAST: reference
+d	200
+f	150
+a	100
+-- NULLS FIRST: optimized
+b	\N
+d	200
+f	150
+-- NULLS FIRST: reference
+b	\N
+d	200
+f	150
+-- collation: optimized
+3	a
+1	ä
+5	b
+-- collation: reference
+3	a
+1	ä
+5	b
+-- mode 1: has TopNAggregating
+1
+-- mode 1: sorted input true
+1
+-- mode 1 small limit: optimized
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+-- mode 1 small limit: reference
+trace_999	2024-01-01 02:46:39
+trace_998	2024-01-01 02:46:38
+trace_997	2024-01-01 02:46:37
+-- argMin ASC: optimized
+g0	payload_0
+g1	payload_1
+g10	payload_10
+g11	payload_11
+g12	payload_12
+-- argMin ASC: reference
+g0	payload_0
+g1	payload_1
+g10	payload_10
+g11	payload_11
+g12	payload_12
+-- argMax DESC: optimized
+g49	payload_499
+g48	payload_498
+g47	payload_497
+g46	payload_496
+g45	payload_495
+-- argMax DESC: reference
+g49	payload_499
+g48	payload_498
+g47	payload_497
+g46	payload_496
+g45	payload_495
+-- ties: optimized
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- ties: reference
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- multi-agg max+argMax: optimized
+g49	2024-01-01 00:08:19	payload_499
+g48	2024-01-01 00:08:18	payload_498
+g47	2024-01-01 00:08:17	payload_497
+g46	2024-01-01 00:08:16	payload_496
+g45	2024-01-01 00:08:15	payload_495
+-- multi-agg max+argMax: reference
+g49	2024-01-01 00:08:19	payload_499
+g48	2024-01-01 00:08:18	payload_498
+g47	2024-01-01 00:08:17	payload_497
+g46	2024-01-01 00:08:16	payload_496
+g45	2024-01-01 00:08:15	payload_495
+-- EXPLAIN argMin: no TopNAggregating
+0
+-- Mode 2 threshold pruning: max DESC
+49	4999
+48	4998
+47	4997
+46	4996
+45	4995
+-- Mode 2 threshold pruning reference
+49	4999
+48	4998
+47	4997
+46	4996
+45	4995
+-- Mode 2 threshold pruning: min ASC
+0	0
+43	1
+36	2
+29	3
+22	4
+-- Mode 2 threshold pruning min ASC reference
+0	0
+43	1
+36	2
+29	3
+22	4
+-- Pruning level 0: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level 1: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level 2: max DESC
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- Pruning level reference
+trace_99	2024-01-01 00:16:39
+trace_98	2024-01-01 00:16:38
+trace_97	2024-01-01 00:16:37
+trace_96	2024-01-01 00:16:36
+trace_95	2024-01-01 00:16:35
+-- EXPLAIN pruning level 0: no TopNAggregating
+0
+-- EXPLAIN pruning level 1: has TopNAggregating
+1
+-- EXPLAIN max-limit gate default: no TopNAggregating
+0
+-- EXPLAIN max-limit gate override: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has Threshold pruning true
+1
+-- EXPLAIN threshold pruning: has __topKFilter prewhere
+1

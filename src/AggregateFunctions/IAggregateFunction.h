@@ -97,6 +97,23 @@ public:
     /// See AggregateFunctionAny for example.
     virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
 
+    struct TopKAggregateInfo
+    {
+        /// Sort direction on the argument column where the first row determines the aggregate result.
+        /// -1 = DESC (max, argMax), 1 = ASC (min, argMin), 0 = not supported.
+        int determined_by_first_row_direction = 0;
+
+        /// Whether the aggregate output is monotonically ordered by the sort key.
+        /// True for min/max (output = extreme of the input column, same ordering).
+        /// False for argMin/argMax (output is a different column) and any.
+        /// Only aggregates with output_ordered_by_sort_key=true can use Mode 1 as the ORDER BY aggregate.
+        bool output_ordered_by_sort_key = false;
+    };
+
+    /// For TopN aggregation optimization: returns info about whether the aggregate result
+    /// is determined by the first row when input is sorted in a specific direction.
+    virtual TopKAggregateInfo getTopKAggregateInfo() const { return {}; }
+
     ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */

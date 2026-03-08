@@ -272,6 +272,16 @@ public:
         return Data::allocatesMemoryInArena(result_type_index);
     }
 
+    IAggregateFunction::TopKAggregateInfo getTopKAggregateInfo() const override
+    {
+        if (return_both)
+            return {};
+        if constexpr (isMin)
+            return {.determined_by_first_row_direction = 1};
+        else
+            return {.determined_by_first_row_direction = -1};
+    }
+
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (return_both)

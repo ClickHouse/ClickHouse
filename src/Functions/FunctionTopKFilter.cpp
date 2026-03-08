@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -29,10 +31,12 @@ public:
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
-        String comparator = "less";
+        String comparator = "lessOrEquals";
 
         if (threshold_tracker->getDirection() == -1) /// DESC
-            comparator = "greater";
+            comparator = "greaterOrEquals";
+        /// TODO: Add NULL-ordering and collation-aware threshold comparisons so
+        /// this filter can be safely used for nullable / non-numeric ORDER BY args.
         auto context = Context::getGlobalContextInstance();
         compare_function = FunctionFactory::instance().get(comparator, context);
         direction = threshold_tracker_->getDirection();
@@ -70,32 +74,47 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (input_rows_count == 0) /// dry run?
+        if (input_rows_count == 0)
             return ColumnUInt8::create();
 
-        if (threshold_tracker && threshold_tracker->isSet())
-        {
-            auto current_threshold = threshold_tracker->getValue();
-
-            auto data_type = arguments[0].type;
-            ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
-
-            ColumnsWithTypeAndName args{ arguments[0], {threshold_column, data_type, {}} };
-            auto elem_compare = compare_function->build(args);
-            /// Note that using "greater" / "less" function here is more optimal than using Column::compareColumn()
-            /// because greater/less implementation is AVX specific optimized.
-            return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, /* dry_run = */ false);
-        }
-        else
-        {
+        if (!threshold_tracker || !threshold_tracker->isSet())
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
+
+        uint64_t current_version = threshold_tracker->getVersion();
+        FunctionBasePtr comparator;
+        Field converted_threshold;
+        {
+            std::lock_guard lock(cache_mutex);
+            if (current_version != cached_version || !cached_comparator)
+            {
+                cached_version = current_version;
+                cached_threshold = threshold_tracker->getValue();
+                auto data_type = arguments[0].type;
+                cached_converted_threshold = convertFieldToType(cached_threshold, *data_type);
+                auto threshold_col = data_type->createColumnConst(1, cached_converted_threshold);
+                ColumnsWithTypeAndName build_args{arguments[0], {threshold_col, data_type, {}}};
+                cached_comparator = compare_function->build(build_args);
+            }
+            comparator = cached_comparator;
+            converted_threshold = cached_converted_threshold;
         }
+
+        auto data_type = arguments[0].type;
+        auto threshold_col = data_type->createColumnConst(input_rows_count, converted_threshold);
+        ColumnsWithTypeAndName exec_args{arguments[0], {threshold_col, data_type, {}}};
+        return comparator->execute(exec_args, comparator->getResultType(), input_rows_count, false);
     }
 private:
     TopKThresholdTrackerPtr threshold_tracker;
     FunctionOverloadResolverPtr compare_function;
 
     int direction;
+
+    mutable std::mutex cache_mutex;
+    mutable uint64_t cached_version{0};
+    mutable Field cached_threshold;
+    mutable Field cached_converted_threshold;
+    mutable FunctionBasePtr cached_comparator;
 };
 
 FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_)

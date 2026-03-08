@@ -3816,6 +3816,28 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
+    DECLARE(Bool, optimize_topn_aggregation, false, R"(
+Enables fused TopN aggregation optimization for queries of the form GROUP BY ... ORDER BY aggregate LIMIT K.
+When enabled, combines aggregation, sorting, and limiting into a single pass. Supports early termination
+when the table sorting key matches the ORDER BY aggregate argument.
+Only applies when all aggregate functions are min/max/any/argMin/argMax family.
+
+Possible values:
+
+- 0 — TopN aggregation optimization is disabled.
+- 1 — TopN aggregation optimization is enabled.
+)", 0) \
+    DECLARE(UInt64, topn_aggregation_pruning_level, 2, R"(
+Controls Mode 2 pruning optimizations when optimize_topn_aggregation is enabled.
+- 0 — Direct compute only: no in-transform threshold pruning or dynamic filter pushdown. Not recommended (slower than baseline).
+- 1 — In-transform threshold pruning: rows below the current K-th aggregate value are skipped.
+- 2 — Full: in-transform threshold pruning plus dynamic __topKFilter prewhere for storage-level row skipping. The prewhere filter is only injected when use_top_k_dynamic_filtering is also enabled; otherwise level 2 behaves like level 1.
+)", 0) \
+    DECLARE(UInt64, topn_aggregation_max_limit, 1000, R"(
+Maximum LIMIT value for applying TopN Mode 2 optimization (`GROUP BY ... ORDER BY aggregate LIMIT K` on unsorted input).
+When LIMIT is larger than this threshold, the optimizer falls back to the standard aggregation + sorting pipeline to avoid known regressions for large K.
+Mode 1 (sorted-input early termination) is not affected by this setting.
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \

@@ -140,6 +140,14 @@ public:
         this->data(place).insertResultInto(to, this->result_type);
     }
 
+    IAggregateFunction::TopKAggregateInfo getTopKAggregateInfo() const override
+    {
+        if constexpr (isMin)
+            return {.determined_by_first_row_direction = 1, .output_ordered_by_sort_key = true};
+        else
+            return {.determined_by_first_row_direction = -1, .output_ordered_by_sort_key = true};
+    }
+
 #if USE_EMBEDDED_COMPILER
     bool isCompilable() const override
     {

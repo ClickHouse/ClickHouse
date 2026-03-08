@@ -1,0 +1,20 @@
+-- argMax mismatched arg: no TopNAggregating
+0
+-- max mismatched arg: no TopNAggregating
+0
+-- argMax same arg: has TopNAggregating
+1
+-- correctness: mismatched companion optimized
+49	4999	p949
+48	4998	p848
+47	4997	p2547
+46	4996	p396
+45	4995	p4245
+-- correctness: mismatched companion reference
+49	4999	p949
+48	4998	p848
+47	4997	p2547
+46	4996	p396
+45	4995	p4245
+-- any companion: has TopNAggregating
+1
