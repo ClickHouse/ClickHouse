@@ -237,7 +237,7 @@ private:
     /// Per-row format string execution: parse and execute format for each row individually.
     ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
-        const ColumnPtr & format_col = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr format_col = arguments[0].column->convertToFullColumnIfConst();
         const auto * format_string_col = checkAndGetColumn<ColumnString>(format_col.get());
         if (!format_string_col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a String column", getName());
@@ -247,13 +247,16 @@ private:
         auto & result_offsets = result_col->getOffsets();
         result_offsets.resize(input_rows_count);
 
+        /// Pre-allocate reusable containers outside the loop to reduce per-row allocations.
+        ColumnsWithTypeAndName row_args(arguments.size());
+        auto result_type = std::make_shared<DataTypeString>();
+
         size_t curr_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             String format = format_string_col->getDataAt(row).toString();
 
-            /// Build single-row argument columns for this row
-            ColumnsWithTypeAndName row_args(arguments.size());
+            /// Build single-row argument columns for this row.
             auto fmt_col = ColumnString::create();
             fmt_col->insert(format);
             row_args[0] = {ColumnConst::create(std::move(fmt_col), 1), arguments[0].type, arguments[0].name};
@@ -271,7 +274,7 @@ private:
                     concat_args[j] = instructions[j].execute();
 
                 auto row_result = function_concat->build(concat_args)->execute(
-                    concat_args, std::make_shared<DataTypeString>(), 1, false);
+                    concat_args, result_type, 1, false);
 
                 StringRef val = row_result->getDataAt(0);
                 result_chars.resize(curr_offset + val.size + 1);
