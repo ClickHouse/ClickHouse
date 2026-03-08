@@ -392,12 +392,14 @@ FunctionCast::WrapperType FunctionCast::createStringWrapper(const DataTypePtr & 
     return createFunctionAdaptor(function, from_type);
 }
 
-FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
+FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypePtr & from_type, const size_t N, bool requested_result_is_nullable) const
 {
     if (!isStringOrFixedString(from_type))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CAST AS FixedString is only implemented for types String and FixedString");
 
-    bool exception_mode_null = cast_type == CastType::accurateOrNull;
+    /// Return NULL instead of throwing when the target type is explicitly Nullable
+    /// (e.g. CAST('abc', 'Nullable(FixedString(2))')) or when using accurateCastOrNull.
+    bool exception_mode_null = cast_type == CastType::accurateOrNull || requested_result_is_nullable;
     return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
     {
         if (exception_mode_null)
@@ -2323,7 +2325,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::String:
             return createStringWrapper(from_type);
         case TypeIndex::FixedString:
-            return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN());
+            return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN(), requested_result_is_nullable);
         case TypeIndex::Array:
             return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
         case TypeIndex::Tuple:
