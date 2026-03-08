@@ -152,7 +152,7 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+const BitSet & getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
@@ -321,7 +321,7 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
     return JoinExpressionActions(std::move(result_data));
 }
 
-BitSet JoinActionRef::getSourceRelations() const
+const BitSet & JoinActionRef::getSourceRelations() const
 {
     return getExpressionSourcesImpl(getData()->expression_sources, *this);
 }

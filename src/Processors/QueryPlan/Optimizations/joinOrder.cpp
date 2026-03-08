@@ -91,6 +91,7 @@ private:
 
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
+    std::shared_ptr<DPJoinEntry> solveDPhyp();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
@@ -102,12 +103,29 @@ private:
     /// Peridically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
 
+    /// Try to build the best join plan between left_rels and right_rels.
+    /// Updates dp_table if a better plan is found.
+    void tryJoin(const BitSet & left_rels, const BitSet & right_rels);
+
+    /// DPhyp helpers
+    void buildHyperedges();
+    BitSet getNeighborhood(const BitSet & node_set) const;
+
+    void emitCsg(const BitSet & csg);
+    void enumerateCsgRec(const BitSet & csg, const BitSet & exclusion);
+    void emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg);
+    void enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion);
+
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
     std::unordered_map<JoinActionRef, bool> applied;
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
+
+    /// DPhyp hyperedge representation (built lazily by buildHyperedges)
+    std::vector<Hyperedge> hyperedges;
+    std::vector<std::vector<size_t>> node_to_edge_ids; /// node index → hyperedge indices
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
@@ -224,6 +242,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         {
             case JoinOrderAlgorithm::DPSIZE:
                 best_plan = solveDPsize();
+                break;
+            case JoinOrderAlgorithm::DPHYP:
+                best_plan = solveDPhyp();
                 break;
             case JoinOrderAlgorithm::GREEDY:
                 best_plan = solveGreedy();
@@ -403,7 +424,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
     const auto & participating = predicate->getSourceRelations();
-    return (participating & left) && (participating & right);
+    return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
@@ -414,6 +435,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1
+    dp_table.clear();
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -512,6 +534,319 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
         return best_full_plan->second;
 
     LOG_TRACE(log, "Failed to find best plan using DPsize algorithm");
+    return nullptr;
+}
+
+void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_rels)
+{
+    auto left_entry = dp_table.find(left_rels);
+    if (left_entry == dp_table.end())
+        return;
+
+    auto right_entry = dp_table.find(right_rels);
+    if (right_entry == dp_table.end())
+        return;
+
+    auto join_kind = isValidJoinOrder(left_rels, right_rels);
+    if (!join_kind)
+        return;
+
+    /// Restrict to inner joins for now (same as DPsize FIXME)
+    if (*join_kind != JoinKind::Inner)
+        return;
+
+    auto applicable_predicates = getApplicableExpressions(left_rels, right_rels);
+    std::vector<JoinActionRef *> connecting_predicates;
+    for (auto * predicate : applicable_predicates)
+    {
+        if (connects(predicate, left_rels, right_rels))
+            connecting_predicates.push_back(predicate);
+    }
+
+    /// DPhyp guarantees that left_rels and right_rels are connected via the hyperedge graph,
+    /// so we only require at least one directly applicable predicate here.
+    if (connecting_predicates.empty())
+        return;
+
+    auto & left = left_entry->second;
+    auto & right = right_entry->second;
+
+    auto selectivity = computeSelectivity(connecting_predicates);
+    auto new_cost = computeJoinCost(left, right, selectivity);
+
+    const BitSet combined_rels = left_rels | right_rels;
+    auto current_best = dp_table.find(combined_rels);
+    if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
+        return;
+
+    auto effective_kind = (join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind.value();
+    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
+    JoinOperator join_operator(
+        effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
+        std::ranges::to<std::vector>(connecting_predicates | std::views::transform([](const auto * predicate) { return *predicate; })));
+    auto new_best = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+
+    LOG_TEST(log, "DPhyp: new best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}",
+        new_best->dump(), new_best->left->dump(), new_best->right->dump(),
+        new_best->cost, new_best->estimated_rows ? toString(*new_best->estimated_rows) : "unknown");
+
+    dp_table[combined_rels] = std::move(new_best);
+}
+
+/// Build the hyperedge representation of the join graph used by DPhyp.
+/// Each join predicate is split into (left_rels, right_rels) endpoint sets.
+/// For a simple binary predicate A.x = B.y, left_rels = {A} and right_rels = {B}.
+/// The adjacency index `node_to_edge_ids` maps each relation to the hyperedges that touch it.
+void JoinOrderOptimizer::buildHyperedges()
+{
+    const size_t num_relations = query_graph.relation_stats.size();
+    node_to_edge_ids.assign(num_relations, {});
+    hyperedges.clear();
+
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge)
+            continue;
+
+        BitSet left_rels;
+        BitSet right_rels;
+
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Unknown && lhs && rhs)
+        {
+            left_rels  = lhs.getSourceRelations();
+            right_rels = rhs.getSourceRelations();
+        }
+        else
+        {
+            /// Non-binary predicate: treat the full source set as both endpoints.
+            left_rels  = edge.getSourceRelations();
+            right_rels = edge.getSourceRelations();
+        }
+
+        if (!left_rels.any() && !right_rels.any())
+            continue;
+
+        size_t hyperedge_id = hyperedges.size();
+        hyperedges.push_back({left_rels, right_rels});
+
+        for (auto node : left_rels)
+            if (node < num_relations)
+                node_to_edge_ids[node].push_back(hyperedge_id);
+        for (auto node : right_rels)
+            if (node < num_relations && !left_rels.test(node))
+                node_to_edge_ids[node].push_back(hyperedge_id);
+    }
+}
+
+/// Returns the set of all relations adjacent to `node_set` via any hyperedge,
+/// excluding `node_set` itself.
+///
+/// Per the DPhyp paper, for a directed hyperedge (L, R):
+///   - R is in N(node_set) if L is fully contained in node_set
+///   - L is in N(node_set) if R is fully contained in node_set
+///
+/// For undirected hyperedges (L == R, e.g. complex predicates spanning multiple tables),
+/// all nodes in the hyperedge are neighbors of each other.
+BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
+{
+    BitSet neighbors;
+    BitSet visited_edges;
+    for (auto node : node_set)
+    {
+        if (node >= node_to_edge_ids.size())
+            continue;
+        for (auto hyperedge_id : node_to_edge_ids[node])
+        {
+            if (visited_edges.test(hyperedge_id))
+                continue;
+            visited_edges.set(hyperedge_id);
+            const auto & edge = hyperedges[hyperedge_id];
+            if (edge.left == edge.right)
+            {
+                /// Undirected: any node present makes all others neighbors.
+                neighbors |= edge.left;
+            }
+            else
+            {
+                if (isSubsetOf(edge.left, node_set))
+                    neighbors |= edge.right;
+                if (isSubsetOf(edge.right, node_set))
+                    neighbors |= edge.left;
+            }
+        }
+    }
+    return neighbors.andNot(node_set);
+}
+
+/// Enumerate all non-empty subsets of `mask`, calling `func` for each.
+/// Uses an integer bitmask over the positions of set bits in `mask`.
+template <typename F>
+static void forEachNonEmptySubset(const BitSet & mask, F && func)
+{
+    std::vector<size_t> bit_positions;
+    for (auto bit : mask)
+        bit_positions.push_back(bit);
+
+    const size_t num_bits = bit_positions.size();
+    const uint64_t num_subsets = (num_bits < 64) ? (1ULL << num_bits) : std::numeric_limits<uint64_t>::max();
+
+    for (uint64_t subset_mask = 1; subset_mask < num_subsets; ++subset_mask)
+    {
+        BitSet subset;
+        for (size_t i = 0; i < num_bits; ++i)
+            if (subset_mask & (1ULL << i))
+                subset.set(bit_positions[i]);
+        func(subset);
+    }
+}
+
+/// Emit a CSG-CP (connected subgraph / complement partition) pair.
+/// Both `left_csg` and `right_csg` are disjoint connected subgraphs with at least one
+/// join predicate between them. Try joining them in both orders to allow the cost model
+/// to pick the better side as the build input.
+void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg)
+{
+    tryJoin(left_csg, right_csg);
+    tryJoin(right_csg, left_csg);
+}
+
+/// Recursively extend `complement` one node at a time, emitting (csg, complement+{v})
+/// for each neighbor v, then recursing. Multi-node complements are found by chaining.
+///
+/// We emit single-node extensions only (not all subsets of the neighborhood). With
+/// incremental exclusion, the neighborhood can grow with recursion depth; enumerating
+/// all subsets at each level would produce exponential work for caterpillar-like graphs.
+///
+/// Nodes are iterated in descending index order; each node v is excluded after its
+/// recursive call so lower-indexed neighbors stay reachable as intermediate waypoints.
+void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
+{
+    BitSet complement_neighborhood = getNeighborhood(complement).andNot(csg | complement | exclusion);
+    if (!complement_neighborhood)
+        return;
+
+    /// For each neighbor v (descending), emit (csg, complement+{v}) and recurse.
+    /// Add v to the exclusion after its call so lower-indexed nodes stay reachable.
+    std::vector<size_t> neighbor_nodes;
+    for (size_t n : complement_neighborhood)
+        neighbor_nodes.push_back(n);
+    BitSet incremental_exclusion = exclusion;
+    for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
+    {
+        BitSet extended_complement = complement;
+        extended_complement.set(*it);
+        emitCsgCmp(csg, extended_complement);
+        enumerateCmpRec(csg, extended_complement, incremental_exclusion);
+        incremental_exclusion.set(*it);
+    }
+}
+
+/// Enumerate all complement partitions for `csg` and emit each valid CSG-CMP pair.
+///
+/// The initial exclusion set contains `csg` itself and all lower-indexed relations,
+/// ensuring each unordered pair (S, T) is emitted exactly once across all seeds.
+///
+/// Direct complements (non-empty subsets of N(csg)) are emitted first. Then
+/// `enumerateCmpRec` is called once per individual neighbor node (not with the full N),
+/// using incremental exclusion, to find complements that extend beyond N(csg).
+void JoinOrderOptimizer::emitCsg(const BitSet & csg)
+{
+    size_t min_relation_idx = *csg.begin();
+
+    /// Build the initial exclusion: csg itself plus all lower-indexed relations.
+    BitSet exclusion = csg;
+    for (size_t rel = 0; rel < min_relation_idx; ++rel)
+        exclusion.set(rel);
+
+    BitSet csg_neighborhood = getNeighborhood(csg).andNot(exclusion);
+    if (!csg_neighborhood)
+        return;
+
+    /// Try every non-empty subset of the direct neighborhood as a complement seed.
+    forEachNonEmptySubset(csg_neighborhood, [&](const BitSet & complement_seed)
+    {
+        emitCsgCmp(csg, complement_seed);
+    });
+
+    /// Recurse outward from each individual neighbor node (descending order).
+    /// Incremental exclusion: add each processed node after its call so lower-indexed
+    /// neighbors remain reachable as intermediate waypoints during recursion.
+    std::vector<size_t> neighbor_nodes;
+    for (size_t n : csg_neighborhood)
+        neighbor_nodes.push_back(n);
+    BitSet incremental_exclusion = exclusion;
+    for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
+    {
+        BitSet single_node;
+        single_node.set(*it);
+        enumerateCmpRec(csg, single_node, incremental_exclusion);
+        incremental_exclusion.set(*it);
+    }
+}
+
+/// Recursively enumerate all connected subgraphs (CSGs) that contain `csg` by extending
+/// it with non-empty subsets of its neighborhood not in `exclusion`, then emit each found CSG.
+///
+/// `exclusion` prevents extending toward lower-indexed nodes that were already used as seeds,
+/// ensuring each CSG is processed exactly once.
+void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & exclusion)
+{
+    checkLimits();
+
+    BitSet neighborhood = getNeighborhood(csg).andNot(exclusion);
+    if (!neighborhood)
+        return;
+
+    forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
+    {
+        emitCsg(csg | extension);
+    });
+
+    BitSet extended_exclusion = exclusion | neighborhood;
+    forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
+    {
+        enumerateCsgRec(csg | extension, extended_exclusion);
+    });
+}
+
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
+{
+    const size_t num_relations = query_graph.relation_stats.size();
+
+    /// Initialize dp_table with a leaf entry for each base relation.
+    for (size_t i = 0; i < num_relations; ++i)
+    {
+        const auto & rel = query_graph.relation_stats[i];
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows);
+        dp_table[entry->relations] = entry;
+    }
+
+    buildHyperedges();
+
+    /// Main DPhyp loop: seed with each single-relation CSG in reverse index order.
+    /// Processing in reverse ensures the exclusion set always covers lower-indexed seeds,
+    /// so each unordered CSG pair is considered exactly once.
+    for (int i = static_cast<int>(num_relations) - 1; i >= 0; --i)
+    {
+        BitSet seed;
+        seed.set(static_cast<size_t>(i));
+
+        emitCsg(seed);
+
+        /// Exclusion: all relations with index smaller than `i`.
+        BitSet exclusion;
+        for (int j = 0; j < i; ++j)
+            exclusion.set(static_cast<size_t>(j));
+
+        enumerateCsgRec(seed, exclusion);
+    }
+
+    auto best = dp_table.find(BitSet::allSet(num_relations));
+    if (best != dp_table.end())
+        return best->second;
+
+    LOG_TRACE(log, "Failed to find best plan using DPhyp algorithm");
     return nullptr;
 }
 
