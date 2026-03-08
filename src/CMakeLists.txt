@@ -577,9 +577,9 @@ if (TARGET ch_contrib::protobuf)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::protobuf)
 endif ()
 
-if (TARGET clickhouse_grpc_protos)
-    target_link_libraries(dbms PUBLIC clickhouse_grpc_protos)
-endif()
+# if (TARGET clickhouse_grpc_protos)
+#     target_link_libraries(dbms PUBLIC clickhouse_grpc_protos)
+# endif()
 
 if (TARGET ch_contrib::hdfs)
     target_link_libraries(dbms PRIVATE ch_contrib::hdfs)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
