@@ -39,12 +39,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace Setting
 {
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
@@ -92,6 +94,21 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
     auto & context = scope.context;
+    auto raw_cancel_callback = context->hasQueryContext()? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
+
+    /// Wrap the cancel callback to check return value and throw exception if cancelled
+    std::function<bool()> cancel_callback;
+    if (raw_cancel_callback)
+    {
+        cancel_callback = [raw_cancel_callback]()
+        {
+            if (raw_cancel_callback())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+            return false;
+        };
+    }
+
+    const UInt64 interactive_delay_ms = std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
     Block scalar_block;
 
@@ -238,8 +255,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (chunk.getNumRows() == 0 && executor->pull(chunk))
+                if (cancel_callback)
                 {
+                    while (chunk.getNumRows() == 0 && executor->pull(chunk, interactive_delay_ms))
+                        cancel_callback();
+                }
+                else
+                {
+                    while (chunk.getNumRows() == 0 && executor->pull(chunk))
+                    {
+                    }
                 }
             }
 
@@ -280,8 +305,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Chunk tmp_chunk;
-                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
+                if (cancel_callback)
                 {
+                    while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk, interactive_delay_ms))
+                        cancel_callback();
+                }
+                else
+                {
+                    while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
+                    {
+                    }
                 }
 
                 if (tmp_chunk.getNumRows() != 0)
