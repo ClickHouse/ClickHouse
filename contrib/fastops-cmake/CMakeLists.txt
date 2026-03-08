@@ -1,7 +1,8 @@
-if(ARCH_AMD64 AND NOT OS_FREEBSD AND NOT OS_DARWIN)
+# ops_plain.cpp uses exp10 and exp10f which are GNU extensions and not available in FreeBSD
+if((ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)) AND NOT OS_FREEBSD)
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 elseif(ENABLE_FASTOPS)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 only, and not FreeBSD or Darwin")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 and aarch64 (with NEON) only")
 endif()
 
 if(NOT ENABLE_FASTOPS)
@@ -19,9 +20,16 @@ if(ARCH_AMD64)
 
     set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
     set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+
+    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp" "${LIBRARY_DIR}/fastops/core/avx_id.cpp")
+elseif(ARCH_AARCH64)
+    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/neon/ops_neon.cpp")
+
+    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/sve/ops_sve.cpp")
+    set_source_files_properties("${LIBRARY_DIR}/fastops/sve/ops_sve.cpp" PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
 endif()
 
-set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp" "${LIBRARY_DIR}/fastops/core/avx_id.cpp" "${LIBRARY_DIR}/fastops/fastops.cpp")
+set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/fastops.cpp")
 
 add_library(_fastops ${SRCS})
 
