@@ -106,115 +106,106 @@ namespace
         }
     }
 
-    UserPtr parseUser(
+
+
+    void parseUserAuthMethod(
         const Poco::Util::AbstractConfiguration & config,
-        String user_name,
-        const std::unordered_set<UUID> & allowed_profile_ids,
-        const std::unordered_set<UUID> & role_ids_from_users_config,
-        const AccessControl & access_control,
-        bool allow_no_password,
-        bool allow_plaintext_password,
-        LoggerPtr log)
+        const String & user_name,
+        std::shared_ptr<User> user,
+        const String & auth_method_path,
+        const std::optional<OneTimePasswordSecret> & otp_secret)
     {
         const bool validate = true;
-        auto user = std::make_shared<User>();
-        String user_config = "users." + user_name;
 
-        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct user name.
-        Poco::replaceInPlace(user_name, "\\.", ".");
-        user->setName(user_name);
+        bool has_no_password = config.has(auth_method_path + ".no_password");
 
-        bool has_no_password = config.has(user_config + ".no_password");
-        bool has_password_plaintext = config.has(user_config + ".password");
-        bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
-        bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
-        bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
-        bool has_ldap = config.has(user_config + ".ldap");
-        bool has_kerberos = config.has(user_config + ".kerberos");
+        const auto password_plaintext_config = auth_method_path + ".password";
+        bool has_password_plaintext = config.has(password_plaintext_config);
 
-        const auto certificates_config = user_config + ".ssl_certificates";
+        const auto password_sha256_hex_config = auth_method_path + ".password_sha256_hex";
+        bool has_password_sha256_hex = config.has(password_sha256_hex_config);
+
+        const auto scram_password_config = auth_method_path + ".password_scram_sha256_hex";
+        bool has_scram_password_sha256_hex = config.has(scram_password_config);
+
+        const auto password_double_sha1_hex_config = auth_method_path + ".password_double_sha1_hex";
+        bool has_password_double_sha1_hex = config.has(password_double_sha1_hex_config);
+
+        const auto ldap_config = auth_method_path + ".ldap";
+        bool has_ldap = config.has(ldap_config);
+
+        const auto kerberos_config = auth_method_path + ".kerberos";
+        bool has_kerberos = config.has(kerberos_config);
+
+        const auto certificates_config = auth_method_path + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
 
-        const auto ssh_keys_config = user_config + ".ssh_keys";
+        const auto ssh_keys_config = auth_method_path + ".ssh_keys";
         bool has_ssh_keys = config.has(ssh_keys_config);
 
-        const auto http_auth_config = user_config + ".http_authentication";
+        const auto http_auth_config = auth_method_path + ".http_authentication";
         bool has_http_auth = config.has(http_auth_config);
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
+        size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
             + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
-        if (num_password_fields > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
-                            "'http_authentication' are used to specify authentication info for user {}. "
-                            "Must be only one of them.", user_name);
+        if (num_authentication_types > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot specify multiple authentication methods for user {} at {}. "
+                "Specify only one authentication method.", user_name, auth_method_path);
 
-        if (num_password_fields < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
-                            "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
-
-        std::optional<OneTimePasswordSecret> otp_secret;
-        if (config.has(user_config + ".time_based_one_time_password"))
-        {
-            bool is_password_based = has_no_password || has_password_plaintext || has_password_sha256_hex
-                || has_password_double_sha1_hex || has_scram_password_sha256_hex;
-            if (!is_password_based)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "One-time password can be used only with password based authentication for user {}.", user_name);
-
-            String otp_secret_key = config.getString(user_config + ".time_based_one_time_password.secret");
-            OneTimePasswordParams otp_config(
-                config.getInt(user_config + ".time_based_one_time_password.digits", {}),
-                config.getInt(user_config + ".time_based_one_time_password.period", {}),
-                config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
-
-            otp_secret.emplace(otp_secret_key, otp_config);
-        }
+        if (num_authentication_types < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one authentication type (one of 'password', "
+                "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
+                "'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.", user_name, auth_method_path);
 
         if (has_no_password && otp_secret)
         {
             user->authentication_methods.emplace_back(AuthenticationType::NO_PASSWORD);
             user->authentication_methods.back().setPassword("", otp_secret, validate);
         }
+        else if (has_no_password)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::NO_PASSWORD);
+        }
         else if (has_password_plaintext)
         {
+            const auto password = config.getString(password_plaintext_config);
             user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), otp_secret, validate);
+            user->authentication_methods.back().setPassword(password, otp_secret, validate);
         }
         else if (has_password_sha256_hex)
         {
+            const auto password = config.getString(password_sha256_hex_config);
             user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), otp_secret, validate);
+            user->authentication_methods.back().setPasswordHashHex(password, otp_secret, validate);
         }
         else if (has_scram_password_sha256_hex)
         {
+            const auto password = config.getString(scram_password_config);
             user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), otp_secret, validate);
+            user->authentication_methods.back().setPasswordHashHex(password, otp_secret, validate);
         }
         else if (has_password_double_sha1_hex)
         {
+            const auto password = config.getString(password_double_sha1_hex_config);
             user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), otp_secret, validate);
+            user->authentication_methods.back().setPasswordHashHex(password, otp_secret, validate);
         }
         else if (has_ldap)
         {
-            bool has_ldap_server = config.has(user_config + ".ldap.server");
-            if (!has_ldap_server)
+            if (!config.has(ldap_config + ".server"))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
 
-            const auto ldap_server_name = config.getString(user_config + ".ldap.server");
-            if (ldap_server_name.empty())
+            const auto server = config.getString(ldap_config + ".server");
+            if (server.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
-
             user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-            user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+            user->authentication_methods.back().setLDAPServerName(server);
         }
         else if (has_kerberos)
         {
-            const auto realm = config.getString(user_config + ".kerberos.realm", "");
-
+            const auto realm = config.getString(kerberos_config + ".realm", "");
             user->authentication_methods.emplace_back(AuthenticationType::KERBEROS);
             user->authentication_methods.back().setKerberosRealm(realm);
         }
@@ -295,16 +286,141 @@ namespace
         }
         else if (has_http_auth)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::HTTP);
-            user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
-            auto scheme = config.getString(http_auth_config + ".scheme");
-            user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+            bool has_server_elt = config.has(http_auth_config + ".server");
+            bool has_scheme_elt = config.has(http_auth_config + ".scheme");
+
+            if (has_server_elt && has_scheme_elt)
+            {
+                auto server = config.getString(http_auth_config + ".server");
+                auto scheme = config.getString(http_auth_config + ".scheme");
+
+                if (server.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "HTTP authentication server name cannot be empty for user {}.", user_name);
+
+                user->authentication_methods.emplace_back(AuthenticationType::HTTP);
+                user->authentication_methods.back().setHTTPAuthenticationServerName(server);
+                user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+            }
+            else if (has_server_elt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Missing mandatory 'scheme' in 'http_authentication' for user {}.", user_name);
+            }
+            else if (has_scheme_elt)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Missing mandatory 'server' in 'http_authentication' for user {}.", user_name);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Missing mandatory 'server' and 'scheme' in 'http_authentication' for user {}.", user_name);
+            }
+        }
+    }
+
+    UserPtr parseUser(
+        const Poco::Util::AbstractConfiguration & config,
+        String user_name,
+        const std::unordered_set<UUID> & allowed_profile_ids,
+        const std::unordered_set<UUID> & role_ids_from_users_config,
+        const AccessControl & access_control,
+        bool allow_no_password,
+        bool allow_plaintext_password,
+        LoggerPtr log)
+    {
+        auto user = std::make_shared<User>();
+        String user_config = "users." + user_name;
+
+        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
+        /// We need to remove the backslash to get the correct user name.
+        Poco::replaceInPlace(user_name, "\\.", ".");
+        user->setName(user_name);
+
+        bool has_no_password = config.has(user_config + ".no_password");
+
+        const auto password_plaintext_config = user_config + ".password";
+        bool has_password_plaintext = config.has(password_plaintext_config);
+
+        const auto password_sha256_hex_config = user_config + ".password_sha256_hex";
+        bool has_password_sha256_hex = config.has(password_sha256_hex_config);
+
+        const auto scram_password_config = user_config + ".password_scram_sha256_hex";
+        bool has_scram_password_sha256_hex = config.has(scram_password_config);
+
+        const auto password_double_sha1_hex_config = user_config + ".password_double_sha1_hex";
+        bool has_password_double_sha1_hex = config.has(password_double_sha1_hex_config);
+
+        const auto ldap_config = user_config + ".ldap";
+        bool has_ldap = config.has(ldap_config);
+
+        const auto kerberos_config = user_config + ".kerberos";
+        bool has_kerberos = config.has(kerberos_config);
+
+        const auto certificates_config = user_config + ".ssl_certificates";
+        bool has_certificates = config.has(certificates_config);
+
+        const auto ssh_keys_config = user_config + ".ssh_keys";
+        bool has_ssh_keys = config.has(ssh_keys_config);
+
+        const auto http_auth_config = user_config + ".http_authentication";
+        bool has_http_auth = config.has(http_auth_config);
+
+        const auto auth_methods_config = user_config + ".auth_methods";
+        bool has_multiple_auth_methods = config.has(auth_methods_config);
+
+        size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+
+        if (has_multiple_auth_methods && num_authentication_types > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot specify both 'auth_methods' and individual authentication fields (password, ldap, etc.) for user {}. "
+                "Use either the new nested 'auth_methods' format or the legacy individual fields, not both.", user_name);
+
+        if (!has_multiple_auth_methods && num_authentication_types < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'auth_methods' or one of 'password', 'password_sha256_hex', "
+                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
+                            "'ssl_certificates', 'ssh_keys', 'http_authentication' must be specified for user {}.", user_name);
+
+        std::optional<OneTimePasswordSecret> otp_secret;
+        if (config.has(user_config + ".time_based_one_time_password"))
+        {
+            String otp_secret_key = config.getString(user_config + ".time_based_one_time_password.secret");
+            OneTimePasswordParams otp_config(
+                config.getInt(user_config + ".time_based_one_time_password.digits", {}),
+                config.getInt(user_config + ".time_based_one_time_password.period", {}),
+                config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
+
+            otp_secret.emplace(otp_secret_key, otp_config);
+        }
+
+        if (has_multiple_auth_methods)
+        {
+            // iterate authN elements in the auth_methods element
+            Poco::Util::AbstractConfiguration::Keys auth_methods;
+            config.keys(auth_methods_config, auth_methods);
+            for (const auto & auth_method : auth_methods)
+            {
+                parseUserAuthMethod(config, user_name, user, auth_methods_config + "." + auth_method, otp_secret);
+            }
         }
         else
+        {
+            parseUserAuthMethod(config, user_name, user, user_config, otp_secret);
+        }
+
+        if (user->authentication_methods.empty())
         {
             user->authentication_methods.emplace_back();
         }
 
+        if (user->authentication_methods.size() > 1 && has_no_password)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'no_password' cannot be specified with other auth fields for user {}.", user_name);
+        }
+
+        bool has_password_method = false;
         for (const auto & authentication_method : user->authentication_methods)
         {
             auto auth_type = authentication_method.getType();
@@ -315,6 +431,20 @@ namespace
                                 "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
                                 toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
             }
+
+            // disallow no password from being specified inside <auth_methods> when <no_password> is not set
+            if (auth_type == AuthenticationType::NO_PASSWORD && !has_no_password) {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "no_password cannot be specified inside <auth_methods>");
+            }
+           
+            // if there are no password based methods, configuring a one time password is considered invalid
+            if (AuthenticationTypeInfo::get(auth_type).is_password || auth_type == AuthenticationType::NO_PASSWORD) {
+                has_password_method = true;
+            }
+        }
+        
+        if (otp_secret && !has_password_method) {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "One-time password can be used only with password based authentication for user {}.", user_name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -875,5 +1005,4 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
         ids.emplace(generateID(type, key));
     return ids;
 }
-
 }
