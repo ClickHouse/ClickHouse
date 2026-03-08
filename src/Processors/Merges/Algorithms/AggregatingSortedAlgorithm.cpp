@@ -264,8 +264,9 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
-    UInt64 limit_)
-    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
+    UInt64 limit_,
+    bool disable_part_level_shortcut_)
+    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_, disable_part_level_shortcut_)
     , columns_definition(defineColumns(*header_, description_))
     , merged_data(max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_, columns_definition, limit_)
 {

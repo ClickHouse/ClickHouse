@@ -30,7 +30,8 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        bool disable_part_level_shortcut_ = false);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

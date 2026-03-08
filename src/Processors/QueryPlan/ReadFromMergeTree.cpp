@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -52,6 +53,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/MergeTree/MergeTreeFinalByValidation.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/JSONBuilder.h>
@@ -433,6 +435,22 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    /// Validate FINAL BY and cache the result so that
+    /// `spreadMarkRangesAmongStreamsFinal` can use it without re-validating.
+    /// When every expression is identity the result is equivalent to plain FINAL.
+    if (query_info.final_by_actions_dag)
+    {
+        auto final_by_ast = query_info.finalBy();
+        auto result = validateFinalBy(
+            query_info.final_by_actions_dag->clone(),
+            final_by_ast->children.size(),
+            storage_snapshot,
+            data.merging_params.mode);
+        final_by_dag = std::make_shared<const ActionsDAG>(std::move(result.dag));
+        final_by_sort_columns = std::move(result.sort_columns);
+        use_final_by = result.has_non_identity;
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -1502,7 +1520,8 @@ static void addMergingFinal(
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final,
-    UInt64 limit = 0)
+    UInt64 limit = 0,
+    bool disable_part_level_shortcut = false)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1525,12 +1544,12 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit, disable_part_level_shortcut);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, limit, disable_part_level_shortcut);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -1666,6 +1685,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     auto it = parts_with_ranges.begin();
     parts_to_merge_ranges.push_back(it);
 
+    /// Note: `doNotMergePartsAcrossPartitionsFinal` is intentionally NOT disabled for
+    /// FINAL BY.  When the user sets `do_not_merge_across_partitions_select_final = 1`
+    /// or the automatic decision fires, rows in different partitions will be merged
+    /// independently.  This means that if the partition boundary falls in the middle
+    /// of a FINAL BY bucket, the bucket will be split across partitions and aggregated
+    /// separately — which is the expected (and documented) behavior: the user opts in
+    /// to per-partition processing and accepts the boundary effect.
     bool do_not_merge_across_partitions_select_final = doNotMergePartsAcrossPartitionsFinal();
     if (do_not_merge_across_partitions_select_final)
     {
@@ -1734,7 +1760,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
-        bool no_merging_final = do_not_merge_across_partitions_select_final &&
+        /// When FINAL BY is active, we always need to merge even single parts because
+        /// the coarsened key means rows within a part must be re-aggregated.
+        bool no_merging_final = !use_final_by &&
+            do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
             !reader_settings.read_in_order;
@@ -1788,7 +1817,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// deleted rows.
                 bool split_parts_ranges_into_intersecting_and_non_intersecting_final
                     = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
-                          !reader_settings.read_in_order;
+                          !reader_settings.read_in_order && !use_final_by;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
@@ -1799,7 +1828,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     context,
                     std::move(in_order_reading_step_getter),
                     split_parts_ranges_into_intersecting_and_non_intersecting_final,
-                    settings[Setting::split_intersecting_parts_ranges_into_layers_final]);
+                    settings[Setting::split_intersecting_parts_ranges_into_layers_final] && !use_final_by);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1857,7 +1886,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             limit = final_limit;
         }
 
+        /// Apply FINAL BY (validated earlier) — add expression transforms and override sort description.
+        if (use_final_by)
+        {
+            auto final_by_actions = std::make_shared<ExpressionActions>(final_by_dag->clone());
+
+            for (auto & pipe : pipes)
+            {
+                pipe.addSimpleTransform([&final_by_actions](const SharedHeader & header)
+                                        { return std::make_shared<ExpressionTransform>(header, final_by_actions); });
+            }
+
+            /// Drop temporary columns introduced by the FINAL BY expression.
+            if (!pipes.empty())
+                out_projection = createProjection(pipes.front().getHeader());
+
+            sort_description.clear();
+            sort_description.insert(sort_description.end(), final_by_sort_columns.begin(), final_by_sort_columns.end());
+        }
+
         for (auto & pipe : pipes)
+            /// Note: `enable_vertical_final` is safe to pass through with FINAL BY because
+            /// it is only set to true for Replacing mode (see initializePipeline), which is
+            /// incompatible with FINAL BY (only Aggregating and Summing allowed).
             addMergingFinal(
                 pipe,
                 sort_description,
@@ -1865,7 +1916,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 storage_snapshot->metadata,
                 block_size.max_block_size_rows,
                 enable_vertical_final,
-                limit);
+                limit,
+                use_final_by);
 
         /// Collect minmax values for all partition key columns in this partition
         /// (used by sequential partition optimization later).
@@ -3053,7 +3105,6 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
     virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
     return true;
 }
-
 
 bool ReadFromMergeTree::readsInOrder() const
 {

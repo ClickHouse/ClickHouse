@@ -94,9 +94,18 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ++pos;
     }
 
-    /// FINAL
+    /// FINAL [BY expr_list]
     if (ParserKeyword(Keyword::FINAL).ignore(pos, expected))
+    {
         res->final = true;
+
+        if (ParserKeyword(Keyword::BY).ignore(pos, expected))
+        {
+            ParserExpressionList by_parser(false);
+            if (!by_parser.parse(pos, res->final_by, expected))
+                return false;
+        }
+    }
 
     /// SAMPLE number
     if (ParserKeyword(Keyword::SAMPLE).ignore(pos, expected))
@@ -120,6 +129,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->table_function);
     if (res->subquery)
         res->children.emplace_back(res->subquery);
+    if (res->final_by)
+        res->children.emplace_back(res->final_by);
     if (res->sample_size)
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)

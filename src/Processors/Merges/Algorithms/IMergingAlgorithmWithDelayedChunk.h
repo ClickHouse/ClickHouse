@@ -12,7 +12,7 @@ namespace DB
 class IMergingAlgorithmWithDelayedChunk : public IMergingAlgorithm
 {
 public:
-    IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_);
+    IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_, bool disable_part_level_shortcut_ = false);
 
     size_t prev_unequal_column = 0;
 
@@ -32,8 +32,13 @@ protected:
     bool rowsHaveDifferentSortColumns(const detail::RowRef & lhs, const detail::RowRef & rhs)
     {
         /// By the time this method is called, `inputs_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
-        /// initialized in either `initializeQueue` or `updateCursor`
-        if (lhs.source_stream_index == rhs.source_stream_index && inputs_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+        /// initialized in either `initializeQueue` or `updateCursor`.
+        /// When merging at coarser granularity (coarse merge key), rows within the same part may
+        /// share the coarse key even though they had distinct fine-grained keys, so this shortcut
+        /// must be disabled.
+        if (!disable_part_level_shortcut
+            && lhs.source_stream_index == rhs.source_stream_index
+            && inputs_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
@@ -55,6 +60,7 @@ private:
     SortCursorImpls cursors;
 
     std::vector<size_t> inputs_origin_merge_tree_part_level;
+    bool disable_part_level_shortcut = false;
 
     /// In merging algorithm, we need to compare current sort key with the last one.
     /// So, sorting columns for last row needed to be stored.
