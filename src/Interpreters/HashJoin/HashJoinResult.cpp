@@ -75,17 +75,31 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
-static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes, bool lazy_columns_indexing)
 {
-    if (isLazyReplicationUseful(column))
+    if (lazy_columns_indexing)
     {
-        if (!indexes)
-            indexes = convertOffsetsToIndexes(offsets);
-        column = ColumnReplicated::create(column, indexes);
+        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+            column = replicated->replicateKeepUnusedRows(offsets);
+        else
+        {
+            if (!indexes)
+                indexes = convertOffsetsToIndexes(offsets);
+            column = ColumnReplicated::create(column, indexes);
+        }
     }
     else
     {
-        column = column->replicate(offsets);
+        if (isLazyReplicationUseful(column))
+        {
+            if (!indexes)
+                indexes = convertOffsetsToIndexes(offsets);
+            column = ColumnReplicated::create(column, indexes);
+        }
+        else
+        {
+            column = column->replicate(offsets);
+        }
     }
 }
 
@@ -153,9 +167,9 @@ static void appendRightColumns(
         {
             ColumnPtr indexes;
             for (size_t i = 0; i < existing_columns; ++i)
-                replicateColumnLazily(columns_to_replicate[i], offsets, indexes);
+                replicateColumnLazily(columns_to_replicate[i], offsets, indexes, properties.enable_lazy_columns_indexing);
             for (size_t pos : right_keys_to_replicate)
-                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes);
+                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes, properties.enable_lazy_columns_indexing);
         }
         else
         {
@@ -386,7 +400,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
         if (properties.need_filter)
             scattered_block->filter(std::span<UInt64>{matched_rows});
-        scattered_block->filterBySelector();
+        if (properties.enable_lazy_columns_indexing)
+            scattered_block->filterBySelectorLazily();
+        else
+            scattered_block->filterBySelector();
 
         current_row_state.emplace(GenerateCurrentRowState{
             .block = std::move(*scattered_block).getSourceBlock(),
@@ -512,7 +529,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     if (properties.need_filter)
         current_scattered_block.filter(partial_matched_rows);
-    current_scattered_block.filterBySelector();
+    if (properties.enable_lazy_columns_indexing)
+        current_scattered_block.filterBySelectorLazily();
+    else
+        current_scattered_block.filterBySelector();
 
     current_row_state.emplace(GenerateCurrentRowState{
         .block = std::move(current_scattered_block).getSourceBlock(),

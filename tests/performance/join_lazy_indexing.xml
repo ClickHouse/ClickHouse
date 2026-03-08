@@ -1,0 +1,25 @@
+<test>
+    <create_query>CREATE TABLE small ( a Int32 )</create_query>
+    <create_query>CREATE TABLE large ( a Int32, b Int32, c Int32, d Int32, s1 String, s2 String, s3 String )</create_query>
+
+    <fill_query>INSERT INTO small SELECT number FROM numbers(10000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO large SELECT randUniform(1000, 11000), randUniform(10000, 99999), randUniform(10000, 99999), randUniform(10000, 99999), toString(randUniform(10000, 99999)), toString(randUniform(10000, 99999)), toString(randUniform(10000, 99999)) FROM numbers(100000000) ORDER BY rand()</fill_query>
+
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 0, join_algorithm = 'hash';</query>
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 1, join_algorithm = 'hash';</query>
+
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 0, join_algorithm = 'parallel_hash';</query>
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 1, join_algorithm = 'parallel_hash';</query>
+
+    <!-- Insert duplicates to trigger the columns replication path -->
+    <fill_query>INSERT INTO small SELECT number + 100000 FROM numbers(10) ORDER BY rand()</fill_query>
+
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 0, join_algorithm = 'hash';</query>
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 1, join_algorithm = 'hash';</query>
+
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 0, join_algorithm = 'parallel_hash';</query>
+    <query>SELECT * FROM large l JOIN small s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_optimize_join_lazy_indexing = 1, join_algorithm = 'parallel_hash';</query>
+
+    <drop_query>drop table small</drop_query>
+    <drop_query>drop table large</drop_query>
+</test>

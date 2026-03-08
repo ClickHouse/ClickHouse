@@ -169,6 +169,9 @@ public:
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 
+    /// Enables lazy columns indexing optimization on hash join variants
+    virtual void setEnableLazyColumnsIndexing(bool /*value*/) { }
+
 private:
     Block totals;
 };

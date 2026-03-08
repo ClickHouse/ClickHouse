@@ -660,6 +660,20 @@ void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_c
         nested_column->takeDynamicStructureFromColumn(source_column);
 }
 
+ColumnPtr ColumnReplicated::indexKeepUnusedRows(const IColumn & res_indexes, size_t limit) const
+{
+    auto nested_column_ptr = nested_column;
+    auto indexed_indexes = ColumnIndex(indexes.getIndexes()->index(res_indexes, limit));
+    return create(nested_column_ptr, std::move(indexed_indexes));
+}
+
+ColumnPtr ColumnReplicated::replicateKeepUnusedRows(const Offsets & offsets) const
+{
+    auto nested_column_ptr = nested_column;
+    auto replicated_indexes = ColumnIndex(indexes.getIndexes()->replicate(offsets));
+    return create(nested_column_ptr, std::move(replicated_indexes));
+}
+
 namespace
 {
 

@@ -140,6 +140,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             is_join_get,
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
+            join.enable_lazy_columns_indexing
         });
 
     if (next_scattered_block)
