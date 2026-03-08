@@ -24,6 +24,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -70,7 +71,13 @@ static void stripQualifiedNamesImpl(ASTPtr & ast, const DatabaseAndTableWithAlia
         IdentifierSemantic::setColumnShortName(*identifier, db_and_table);
 
     for (auto & child : ast->children)
+    {
+        /// Do not descend into subqueries — qualified names there may refer
+        /// to outer table columns and stripping them would change semantics.
+        if (child->as<ASTSelectWithUnionQuery>())
+            continue;
         stripQualifiedNamesImpl(child, db_and_table);
+    }
 }
 
 static void stripQualifiedNames(ASTPtr & ast, const StorageID & storage_id)
