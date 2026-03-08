@@ -93,7 +93,8 @@ private:
     struct Field;
     DB::NamesAndTypesList getNamesAndTypesFromList(
         size_t list_idx,
-        const Field * parent,
+        const std::string & parent_logical_path,
+        const std::string & parent_physical_path,
         DB::NameToNameMap & physical_names_map);
 
     struct Field
@@ -384,14 +385,15 @@ private:
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, nullptr, result.physical_names_map);
+    result.names_and_types = getNamesAndTypesFromList(0, "", "", result.physical_names_map);
     chassert(result.names_and_types.size() == type_lists[0]->size());
     return result;
 }
 
 DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     size_t list_idx,
-    const Field * parent,
+    const std::string & parent_logical_path,
+    const std::string & parent_physical_path,
     DB::NameToNameMap & physical_names_map)
 {
     DB::NamesAndTypesList names_and_types;
@@ -432,14 +434,23 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
 
             DB::WhichDataType which(field.type);
+            /// Compute full ancestor paths for this field so children at any
+            /// depth use the complete logical/physical path as the map key/value.
+            const std::string field_logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
+            const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
+                ? parent_physical_path + "." + field.physical_name
+                : field.physical_name;
+
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -452,7 +463,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, field_logical_path, field_physical_path, physical_names_map);
                 auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
@@ -473,17 +484,17 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         chassert(type);
         if (!field.physical_name.empty())
         {
-            if (parent)
-            {
-                chassert(!parent->physical_name.empty());
-                physical_names_map.emplace(
-                    fmt::format("{}.{}", parent->name, field.name),
-                    fmt::format("{}.{}", parent->physical_name, field.physical_name));
-            }
-            else
-            {
-                physical_names_map.emplace(field.name, field.physical_name);
-            }
+            /// Use the full ancestor path as the map key so that lookups in
+            /// replaceTypeNamesToPhysicalRecursively work at any nesting depth.
+            /// key:   "grandparent.parent.field"  (full logical path)
+            /// value: "grandparent_phys.parent_phys.field_phys" (full physical path)
+            const std::string logical_path = parent_logical_path.empty()
+                ? field.name
+                : parent_logical_path + "." + field.name;
+            const std::string physical_path = parent_physical_path.empty()
+                ? field.physical_name
+                : parent_physical_path + "." + field.physical_name;
+            physical_names_map.emplace(logical_path, physical_path);
         }
         names_and_types.emplace_back(field.name, type);
     }
