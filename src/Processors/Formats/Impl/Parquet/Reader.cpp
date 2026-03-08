@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -27,6 +28,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_DECOMPRESS;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
@@ -343,6 +345,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     if (format_filter_info->key_condition)
     {
+        std::unordered_set<String> columns_parquet;
+        for (const auto & column : file_metadata.schema)
+            columns_parquet.insert(column.name);
+
+        for (const auto & column : format_filter_info->key_condition->getKeyColumns())
+        {
+            if (!columns_parquet.contains(column.first))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key condition uses column {} which is not specified in parquet schema", column.first);
+        }
         for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
