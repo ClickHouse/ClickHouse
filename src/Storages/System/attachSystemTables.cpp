@@ -131,7 +131,7 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #endif
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Storages/System/StorageSystemStackTrace.h>
 #endif
 
@@ -209,7 +209,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers", "Contains information about Kafka consumers. Applicable for Kafka table engine (native ClickHouse integration).");
 #endif
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     attachNoDescription<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
 #endif
 #if USE_ROCKSDB
