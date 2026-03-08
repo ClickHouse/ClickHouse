@@ -112,6 +112,22 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
     return required_input_positions;
 }
 
+/// For lazy read we must not require computed columns (e.g. ALIAS) from the main read;
+/// they will be materialized in the lazy branch. Clear required_output_positions for any
+/// ExpressionStep output that is not in the input header.
+static void clearRequiredColumnsForComputedOutputs(
+    std::vector<bool> & required_output_positions,
+    const ExpressionStep & expr_step)
+{
+    const Block & output_header = *expr_step.getOutputHeader();
+    const Block & input_header = *expr_step.getInputHeaders().front();
+    for (size_t i = 0; i < output_header.columns() && i < required_output_positions.size(); ++i)
+    {
+        if (!input_header.has(output_header.getByPosition(i).name))
+            required_output_positions[i] = false;
+    }
+}
+
 /// Add filter column to required_output_positions.
 void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
 {
@@ -331,7 +347,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         IQueryPlanStep * step = node->step.get();
 
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
-            required_columns = getRequiredHeaderPositions(expr_step->getExpression(), *expr_step->getInputHeaders().front() , std::move(required_columns));
+        {
+            clearRequiredColumnsForComputedOutputs(required_columns, *expr_step);
+            required_columns = getRequiredHeaderPositions(expr_step->getExpression(), *expr_step->getInputHeaders().front(), std::move(required_columns));
+        }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
         {
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
