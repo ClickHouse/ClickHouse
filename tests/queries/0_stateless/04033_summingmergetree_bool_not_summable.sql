@@ -21,9 +21,9 @@ INSERT INTO test_summing_bool VALUES (1, 10, true), (1, 20, false), (1, 30, true
 
 OPTIMIZE TABLE test_summing_bool FINAL;
 
--- 'count' should be summed (10+20+30=60)
--- 'flag' should NOT be summed — it must remain a valid Bool (0 or 1)
+-- count should be summed (10+20+30=60)
+-- flag should NOT be summed -- it must remain a valid Bool (first value: true)
 -- Before the fix, flag was summed to 2 (true+false+true = 1+0+1), which is invalid
-SELECT id, count, toUInt8(flag) <= 1 as flag_is_valid_bool FROM test_summing_bool;
+SELECT id, count, flag FROM test_summing_bool;
 
 DROP TABLE test_summing_bool;
