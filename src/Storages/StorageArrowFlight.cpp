@@ -325,7 +325,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
         },
         {
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,
+            .source_access_type = AccessTypeObjects::Source::ARROWFLIGHT,
         });
 }
 
