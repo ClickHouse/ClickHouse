@@ -93,6 +93,7 @@ struct ProjectionDescription
         ASTPtr partition_columns,
         const Names & minmax_columns,
         const KeyDescription & primary_key,
+        const KeyDescription & sorting_key,
         ContextPtr query_context);
 
     ProjectionDescription() = default;
