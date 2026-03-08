@@ -662,7 +662,8 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
-    
+
+
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
     settings = {
@@ -680,6 +681,242 @@ def test_not_specified_catalog_type(started_cluster):
     """
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_create_table_as(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctas_ns"
+    src_table = "src_ctas"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.from_as` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE default.{src_table}
+        (
+            id Int64,
+            name String,
+            dt Date,
+            value Float64
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYearNumSinceEpoch(dt)
+        ORDER BY (id, name)
+    """
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.from_as`
+        AS default.{src_table} SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "from_as" in table_names
+
+    tbl = catalog.load_table(f"{namespace}.from_as")
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "dt", "value"]
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.from_as` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(f"DROP TABLE default.{src_table}")
+
+
+def test_create_table_as_with_override(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctov_ns"
+    src_table = "src_ctov"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.override` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE default.{src_table}
+        (
+            id Int64,
+            name String,
+            dt Date,
+            value Float64
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYearNumSinceEpoch(dt)
+        ORDER BY (id, name)
+    """
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.override`
+        AS default.{src_table}
+        PARTITION BY id
+        ORDER BY name
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "override" in table_names
+
+    tbl = catalog.load_table(f"{namespace}.override")
+    assert len(tbl.spec().fields) == 1
+    assert tbl.spec().fields[0].name == "id"
+    assert str(tbl.spec().fields[0].transform) == "identity"
+
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "dt", "value"]
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.override` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(f"DROP TABLE default.{src_table}")
+
+
+def test_create_table_explicit_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctex_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.explicit`
+        (
+            id Int64,
+            name String,
+            value Float64
+        )
+        PARTITION BY id
+        ORDER BY name
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "explicit" in table_names
+
+    tbl = catalog.load_table(f"{namespace}.explicit")
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "value"]
+
+    iceberg_types = {f.name: str(f.field_type) for f in tbl.schema().fields}
+    assert iceberg_types["id"] == "long"
+    assert iceberg_types["name"] == "string"
+    assert iceberg_types["value"] == "double"
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.to_drop` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.to_drop`
+        (
+            id Int64,
+            name String
+        )
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_drop" in table_names
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_drop` SETTINGS allow_database_iceberg=1"
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_drop" not in table_names
+
+
+def test_drop_table_if_exists(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_ie_ns"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.nonexistent` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_drop_table_purge(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_purge_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.to_purge` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.to_purge`
+        (
+            id Int64,
+            name String
+        )
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_purge" in table_names
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_purge` SETTINGS allow_database_iceberg=1, database_iceberg_purge_on_drop=1"
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "to_purge" not in table_names
+
 
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]

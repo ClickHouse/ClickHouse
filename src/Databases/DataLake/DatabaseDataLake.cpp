@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/URI.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -46,6 +47,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Storages/ColumnDefault.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/FailPoint.h>
 
 namespace DB
@@ -92,6 +96,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool database_iceberg_purge_on_drop;
 
 }
 
@@ -724,16 +729,85 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* lazy_init */true);
 }
 
+void DatabaseDataLake::createTable(
+    ContextPtr context_,
+    const String & name,
+    const StoragePtr & /*table*/,
+    const ASTPtr & query)
+{
+    auto catalog = getCatalog();
+    const auto & create = query->as<ASTCreateQuery &>();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    ColumnsDescription columns;
+    if (create.columns_list && create.columns_list->columns)
+    {
+        for (const auto & child : create.columns_list->columns->children)
+        {
+            const auto * col_decl = child->as<ASTColumnDeclaration>();
+            if (!col_decl || !col_decl->getType())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid column declaration in CREATE TABLE");
+
+            if (col_decl->default_specifier == ColumnDefaultSpecifier::Materialized
+                || col_decl->default_specifier == ColumnDefaultSpecifier::Alias
+                || col_decl->default_specifier == ColumnDefaultSpecifier::Ephemeral)
+                continue;
+
+            columns.add(ColumnDescription(col_decl->name, DataTypeFactory::instance().get(col_decl->getType())));
+        }
+    }
+
+    if (columns.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table without columns");
+
+    ASTPtr partition_by;
+    ASTPtr order_by;
+    if (create.storage)
+    {
+        if (create.storage->partition_by)
+            partition_by = create.storage->partition_by->clone();
+        if (create.storage->order_by)
+            order_by = create.storage->order_by->clone();
+    }
+
+    String location;
+    auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
+    if (!storage_endpoint.empty())
+    {
+        Poco::URI uri(storage_endpoint);
+        auto path = uri.getPath();
+        while (path.starts_with('/'))
+            path = path.substr(1);
+        while (path.ends_with('/'))
+            path = path.substr(0, path.size() - 1);
+
+        location = fmt::format("s3://{}/{}/{}", path, namespace_name, table_name);
+    }
+
+    auto [metadata_content, metadata_str] = Iceberg::createEmptyMetadataFile(
+        location,
+        columns,
+        partition_by,
+        order_by,
+        context_);
+
+    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content);
+
+    LOG_INFO(log, "Created table {}.{}", namespace_name, table_name);
+}
+
 void DatabaseDataLake::dropTable( /// NOLINT
     ContextPtr context_,
     const String & name,
     bool /*sync*/)
 {
-    auto table = tryGetTable(name, context_);
-    if (table)
-        table->drop();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
+    auto catalog = getCatalog();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    bool purge = context_->getSettingsRef()[Setting::database_iceberg_purge_on_drop];
+    catalog->dropTable(namespace_name, table_name, purge);
+
+    LOG_TRACE(log, "Dropped table {}.{} (purge={})", namespace_name, table_name, purge);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(

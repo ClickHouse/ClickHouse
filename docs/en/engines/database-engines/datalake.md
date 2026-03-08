@@ -62,6 +62,53 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 
+## Creating tables {#creating-tables}
+
+An Iceberg table in a `DataLakeCatalog` database can be created directly from ClickHouse.
+The table name must be quoted with backticks and include the namespace separated by a dot:
+
+```sql
+CREATE TABLE catalog_db.`namespace.table_name`
+(
+    id Int64,
+    name String,
+    value Float64
+)
+PARTITION BY id
+ORDER BY name
+SETTINGS allow_database_iceberg = 1;
+```
+
+You can also create an Iceberg table that inherits the schema of an existing table:
+
+```sql
+CREATE TABLE catalog_db.`namespace.table_name`
+AS other_db.source_table
+SETTINGS allow_database_iceberg = 1;
+```
+
+## Dropping tables {#dropping-tables}
+
+Tables can be dropped from a `DataLakeCatalog` database.
+`DROP TABLE` sends a delete request to the remote catalog, which removes
+the table entry from the catalog.
+
+```sql
+DROP TABLE catalog_db.`namespace.table_name`
+```
+
+By default, ClickHouse does not request the catalog to delete the underlying data. In order to do it, use the `database_iceberg_purge_on_drop` setting:
+
+```sql
+DROP TABLE catalog_db.`namespace.table_name`
+SETTINGS database_iceberg_purge_on_drop = 1
+```
+
+:::note
+Whether data files are actually deleted depends on the catalog itself.
+The `purgeRequested` flag is sent to the catalog, but the catalog may choose to ignore it.
+:::
+
 ## Examples {#examples}
 
 See below sections for examples of using the `DataLakeCatalog` engine:
@@ -78,9 +125,9 @@ SETTINGS
    warehouse = warehouse,
    onelake_tenant_id = tenant_id,
    oauth_server_uri = server_uri,
-   auth_scope = auth_scope, 
-   onelake_client_id = client_id, 
+   auth_scope = auth_scope,
+   onelake_client_id = client_id,
    onelake_client_secret = client_secret;
-SHOW TABLES IN databse_name;       
+SHOW TABLES IN databse_name;
 SELECT count() from database_name.table_name;
 ```

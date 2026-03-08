@@ -178,7 +178,9 @@ public:
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
     /// Drop table from catalog.
-    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+    /// If purge, the catalog is requested to also delete underlying data files.
+    /// Otherwise the table entry is removed from catalog metadata.
+    virtual void dropTable(const String & namespace_name, const String & table_name, bool purge) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
