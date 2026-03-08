@@ -7,6 +7,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -131,6 +132,21 @@ size_t CachedOnDiskReadBufferFromFile::getFileSize()
     if (!object_size.has_value())
         throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", info.source_file_path);
     return object_size.value();
+}
+
+std::optional<Field> CachedOnDiskReadBufferFromFile::getMetadata(const String & name) const
+{
+    if (state && state->buf)
+    {
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(state->buf.get()))
+            return provider->getMetadata(name);
+    }
+    if (info.remote_file_reader)
+    {
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(info.remote_file_reader.get()))
+            return provider->getMetadata(name);
+    }
+    return std::nullopt;
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(

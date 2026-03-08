@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCacheOriginInfo.h>
@@ -21,7 +22,7 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
+class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
@@ -73,6 +74,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
     std::optional<size_t> tryGetFileSize() override;
+    std::optional<Field> getMetadata(const String & name) const override;
 
     size_t getFileSize();
 

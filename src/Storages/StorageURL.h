@@ -29,6 +29,8 @@ class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
 
+bool urlPathHasListableGlobs(const String & uri);
+
 /**
  * This class represents table engine for external urls.
  * It sends HTTP GET to server when select is called and

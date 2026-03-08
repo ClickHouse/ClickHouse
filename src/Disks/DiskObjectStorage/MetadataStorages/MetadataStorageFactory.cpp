@@ -7,6 +7,7 @@
 #endif
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
@@ -220,6 +221,23 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
     });
 }
 
+void registerMetadataStorageFromIndexPages(MetadataStorageFactory & factory)
+{
+    factory.registerMetadataStorageType("web_index", [](
+        const std::string & /* name */,
+        const Poco::Util::AbstractConfiguration & /* config */,
+        const std::string & /* config_prefix */,
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+    {
+        checkSingleLocation(cluster);
+
+        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+
+        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*local_object_storage));
+    });
+}
+
 void registerMetadataStorages()
 {
     auto & factory = MetadataStorageFactory::instance();
@@ -227,6 +245,7 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
+    registerMetadataStorageFromIndexPages(factory);
 #if CLICKHOUSE_CLOUD
     registerMetadataStorageFromKeeper(factory);
 #endif
