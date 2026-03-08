@@ -96,8 +96,8 @@ class S3Downloader:
 
 class LocalUploader(CloudUploader):
 
-    def __init__(self, clickhouse_node):
-        super().__init__()
+    def __init__(self, clickhouse_node, use_relpath=False):
+        super().__init__(use_relpath=use_relpath)
         self.clickhouse_node = clickhouse_node
 
     def upload_file(self, local_path, remote_blob_path):

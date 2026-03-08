@@ -89,6 +89,7 @@ public:
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
         BaseStorageConfiguration::update(object_storage, local_context);
+        checkLocalCorrectness(object_storage, local_context);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
@@ -102,6 +103,7 @@ public:
         if (current_metadata != nullptr)
             return;
         BaseStorageConfiguration::update(object_storage, local_context);
+        checkLocalCorrectness(object_storage, local_context);
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
@@ -115,15 +117,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
         BaseStorageConfiguration::update(object_storage, local_context);
 
+        checkLocalCorrectness(object_storage, local_context);
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
     }
@@ -407,6 +403,17 @@ private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
 
+    void checkLocalCorrectness(ObjectStoragePtr object_storage, ContextPtr local_context)
+    {
+        if (object_storage->getType() == ObjectStorageType::Local)
+        {
+            auto user_files_path = local_context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                throw Exception(
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+        }
+    }
+
     void assertInitialized() const
     {
         if (!current_metadata)
@@ -422,6 +429,7 @@ private:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
+        checkLocalCorrectness(object_storage, local_context);
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(
