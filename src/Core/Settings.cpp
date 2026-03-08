@@ -7460,7 +7460,8 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
-If set to true, allow using the text index.
+Allow creating and altering text indexes.
+Existing text indexes are used (i.e. index lookup) even if this setting is false.
 )", 0, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
