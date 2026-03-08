@@ -26,6 +26,12 @@ void Stats::addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_in
     write_collector.add(microseconds, requests_inc, bytes_inc);
 }
 
+void Stats::addOp(Coordination::OpNum op_num, uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
+{
+    std::lock_guard lock(mutex);
+    op_collectors[op_num].add(microseconds, requests_inc, bytes_inc);
+}
+
 void Stats::StatsCollector::clear()
 {
     requests = 0;
@@ -38,10 +44,11 @@ void Stats::clear()
 {
     read_collector.clear();
     write_collector.clear();
+    op_collectors.clear();
     errors = 0;
 }
 
-std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency)
+std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency) const
 {
     assert(requests != 0);
     double seconds = static_cast<double>(work_time) / 1'000'000.0 / static_cast<double>(concurrency);
@@ -126,6 +133,23 @@ void Stats::report(size_t concurrency)
         std::cerr << "Write sampler:\n";
         print_all_percentiles(write_collector);
     }
+
+    /// Per-operation-type breakdown
+    if (!op_collectors.empty())
+    {
+        std::cerr << "\nPer-operation breakdown:\n";
+        for (auto & [op_num, collector] : op_collectors)
+        {
+            if (collector.requests == 0)
+                continue;
+
+            auto op_name = Coordination::opNumToString(op_num);
+            auto [rps, bps] = collector.getThroughput(concurrency);
+            std::cerr << "  " << op_name << ": " << collector.requests << " requests, "
+                      << rps << " RPS, p50 " << collector.getPercentile(50) << " ms, "
+                      << "p99 " << collector.getPercentile(99) << " ms\n";
+        }
+    }
 }
 
 void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp)
@@ -177,6 +201,22 @@ void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_t
 
     if (write_collector.requests != 0)
         results.AddMember("write_results", get_results(write_collector), results.GetAllocator());
+
+    /// Per-operation-type breakdown
+    if (!op_collectors.empty())
+    {
+        Value op_results(kObjectType);
+        for (auto & [op_num, collector] : op_collectors)
+        {
+            if (collector.requests == 0)
+                continue;
+
+            auto op_name = Coordination::opNumToString(op_num);
+            Value key(std::string(op_name).c_str(), allocator);
+            op_results.AddMember(key, get_results(collector), allocator);
+        }
+        results.AddMember("per_op_results", op_results, allocator);
+    }
 
     StringBuffer strbuf;
     strbuf.Clear();

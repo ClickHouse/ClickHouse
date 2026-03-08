@@ -1,285 +1,368 @@
 # Keeper Bench
 
-Keeper Bench is a tool for benchmarking Keeper or any ZooKeeper compatible systems.
+`keeper-bench` benchmarks ClickHouse Keeper (or any ZooKeeper-compatible service) in two modes:
 
-To run it call following command from the build folder:
+- Generate requests from a workload config (`generator` section).
+- Replay requests from a recorded request log (`--input-request-log`).
 
+## Quick start
+
+Replace placeholders in the commands below with paths in your environment.
+
+```bash
+# Generated workload from config
+clickhouse keeper-bench \
+    --config <config_file>
+
+# Replay workload from a request log
+clickhouse keeper-bench \
+    -h localhost:9181 \
+    --input-request-log <request_log_file>
 ```
-./utils/keeper-bench --config benchmark_config_file.yaml
-```
+
+An example config is available at `programs/keeper-bench/example.yaml`.
+
+## Command-line options
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--help` | | Print help and exit |
+| `--config` | | YAML/XML config file |
+| `--input-request-log` | | Replay requests from a request log file |
+| `--setup-nodes-snapshot-path` | | Directory containing Keeper snapshots used to build initial node state for replay |
+| `--concurrency` | `-c` | Number of parallel worker threads |
+| `--report-delay` | `-d` | Delay between periodic reports in seconds (`0` disables periodic reports) |
+| `--iterations` | `-i` | Total number of requests to execute (`0` means unlimited) |
+| `--time-limit` | `-t` | Stop producing new requests after this many seconds |
+| `--hosts` | `-h` | Host list, e.g. `-h host1:9181 host2:9181` |
+| `--continue_on_errors` | | Continue running after request exceptions |
+
+Rules:
+
+- `--config` or `--input-request-log` must be provided.
+- Command-line values override config values for overlapping fields.
+- Hosts can come from `--hosts` or from `connections` in config.
+- If config does not define `generator`, execution uses replay mode, so `--input-request-log` must be provided.
+
+## Modes
+
+### Generated mode (`generator`)
+
+Use when you want synthetic workload generation.
+
+Required:
+
+- `generator.requests` in config.
+- At least one host from `--hosts` or `connections`.
+
+Optional:
+
+- `setup` for creating initial Keeper tree.
+- `output` for JSON output.
+
+### Replay mode (`--input-request-log`)
+
+Use when you want to replay previously recorded Keeper traffic.
+
+Required:
+
+- `--input-request-log`.
+- At least one host from `--hosts` or `connections`.
+
+Optional:
+
+- `--setup-nodes-snapshot-path` to build/update initial snapshot state inferred from expected replay outcomes.
 
 ## Configuration file
 
-Keeper Bench runs need to be configured inside a yaml or XML file.
-An example of a configuration file can be found in `./utils/keeper-bench/example.yaml`
+Config can be YAML or XML.
 
 ### Table of contents
-- [Special Types](#special-types)
+
+- [Top-level keys](#top-level-keys)
+- [Special types](#special-types)
 - [General settings](#general-settings)
 - [Connections](#connections)
+- [Setup](#setup)
 - [Generator](#generator)
+- [Replay request log](#replay-request-log)
 - [Output](#output)
+- [Troubleshooting](#troubleshooting)
 
-<a name="special-types"></a>
+---
+
+## Top-level keys
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `concurrency` | integer | `1` | Worker threads |
+| `iterations` | integer | `0` | `0` means unlimited |
+| `report_delay` | float | `1.0` | Seconds between periodic reports; `0` disables |
+| `timelimit` | float | `0` | Seconds to stop producing new requests; `0` disables |
+| `continue_on_error` | bool | `false` | Continue after request exceptions |
+| `queue_depth` | integer | `1` | Producer queue depth per thread (`>= 1`) |
+| `pipeline_depth` | integer | `1` | In-flight async requests per worker (`>= 1`) |
+| `warmup_seconds` | float | `0` | Measurement warmup window |
+| `enable_tracing` | bool | `false` | Attach OpenTelemetry trace context |
+| `connections` | object | required if `--hosts` absent | Keeper endpoints and connection settings |
+| `setup` | object | optional | Data tree created before run |
+| `generator` | object | optional | Request generator (enables generated mode) |
+| `output` | object | optional | JSON output controls |
+
+---
+
 ## Special types
 
-### IntegerGetter
+These reusable types are used in `setup` and `generator` sections.
 
-Can be defined with constant integer or as a random value from a range.
+### `IntegerGetter`
+
+A constant integer, or a random value drawn uniformly from a range on each use.
 
 ```yaml
-key: integer
+# constant
+key: 42
+
+# random from [10, 20]
 key:
-    min_value: integer
-    max_value: integer
-```
-
-Example for a constant value:
-
-```yaml
-some_key: 2
-```
-
-Example for random value from [10, 20]:
-
-```yaml
-some_key:
     min_value: 10
     max_value: 20
 ```
 
-### StringGetter
+### `StringGetter`
 
-Can be defined with constant string or as a random string of some size.
+A constant string, or a random string whose length is an `IntegerGetter`.
 
 ```yaml
-key: string
+# constant
+key: "hello"
+
+# random string with length drawn from [10, 20]
 key:
-    random_string:
-        size: IntegerGetter
-```
-
-Example for a constant value:
-```yaml
-some_key: "string"
-```
-
-Example for a random string with a random size from [10, 20]:
-```yaml
-some_key:
     random_string:
         size:
             min_value: 10
             max_value: 20
 ```
 
+### `PathGetter`
 
-### PathGetter
-
-If a section contains one or more `path` keys, all `path` keys are collected into a list. \
-Additionally, paths can be defined with key `children_of` which will add all children of some path to the list.
+One or more ZooKeeper paths. Paths can be explicit or expanded from children of a parent.
 
 ```yaml
-path: string
+# explicit paths
 path:
-    children_of: string
+    - "/path1"
+    - "/path2"
+
+# children of a parent node
+path:
+    children_of: "/path3"
 ```
 
-Example for defining list of paths (`/path1`, `/path2` and children of `/path3`):
+Both forms can be used together and merged into one candidate set.
 
-```yaml
-main:
-    path:
-        - "/path1"
-        - "/path2"
-    path:
-        children_of: "/path3"
-```
+Notes:
 
-<a name="general-settings"></a>
+- Paths must start with `/`.
+- `children_of` is resolved at startup; if it has no children and no explicit paths are provided, an exception is raised.
+- Duplicate `path` keys in one section are supported when parsed by ClickHouse config loader (Poco-style key indexing).
+
+---
+
 ## General settings
 
 ```yaml
-# number of parallel queries (default: 1)
-concurrency: integer
+# number of worker threads (default: 1)
+concurrency: 20
 
-# amount of queries to be executed, set 0 to disable limit (default: 0)
-iterations: integer
+# total requests to execute; 0 = unlimited (default: 0)
+iterations: 10000
 
-# delay between intermediate reports in seconds, set 0 to disable reports (default: 1.0)
-report_delay: double
+# periodic report interval in seconds; 0 = disable (default: 1.0)
+report_delay: 4
 
-# stop launch of queries after specified time limit, set 0 to disable limit (default: 0)
-timelimit: double
+# stop producing new requests after this many seconds; 0 = no limit (default: 0)
+timelimit: 300
 
-# continue testing even if a query fails (default: false)
-continue_on_errors: boolean
+# continue on request exceptions (default: false)
+continue_on_error: true
+
+# producer queue capacity multiplier per worker; must be >= 1 (default: 1)
+queue_depth: 4
+
+# max in-flight requests per worker; must be >= 1 (default: 1)
+pipeline_depth: 8
+
+# ignore stats during first N seconds, then reset counters (default: 0)
+warmup_seconds: 5
+
+# attach OpenTelemetry tracing context to requests (default: false)
+enable_tracing: false
 ```
 
-<a name="connections"></a>
+---
+
 ## Connections
 
-Connection definitions that will be used throughout tests defined under `connections` key.
+Connections are defined under top-level `connections`.
 
-Following configurations can be defined under `connections` key or for each specific connection. \
-If it's defined under `connections` key, it will be used by default unless a specific connection overrides it.
+- Values directly under `connections` are defaults.
+- `connections.host` and `connections.connection` entries define concrete endpoints.
+- Each endpoint can open multiple sessions via `sessions`.
 
-```yaml
-secure: boolean
-operation_timeout_ms: integer
-session_timeout_ms: integer
-connection_timeout_ms: integer
-```
-
-Specific configuration can be defined with a string or with a detailed description.
+### Per-connection settings
 
 ```yaml
-host: string
-connection:
-    host: string
-
-    # number of sessions to create for host
-    sessions: integer
-    # any connection configuration defined above
+secure: boolean                  # use TLS (default: false)
+operation_timeout_ms: integer    # operation timeout (default: Keeper client default)
+session_timeout_ms: integer      # session timeout (default: Keeper client default)
+connection_timeout_ms: integer   # connect timeout (default: Keeper client default)
+use_compression: boolean         # protocol compression (default: false)
+use_xid_64: boolean              # use 64-bit xid (default: false)
+sessions: integer                # sessions per endpoint (default: 1)
 ```
 
-Example definition of 3 connections in total, 1 to `localhost:9181` and 2 to `localhost:9182` both will use secure connections:
+### Example
 
 ```yaml
 connections:
+    # defaults for all endpoints
     secure: true
+    operation_timeout_ms: 3000
 
+    # one session
     host: "localhost:9181"
+
+    # two sessions with per-endpoint overrides
     connection:
         host: "localhost:9182"
         sessions: 2
+        operation_timeout_ms: 2000
+        session_timeout_ms: 2000
 ```
 
-<a name="generator"></a>
-## Generator
+---
 
-Main part of the benchmark is the generator itself which creates necessary nodes and defines how the requests will be generated. \
-It is defined under `generator` key.
+## Setup
 
-### Setup
+`setup` defines nodes created before benchmarking.
 
-Setup defines nodes that are needed for test, defined under `setup` key.
+Important behavior:
 
-Each node is defined with a `node` key in the following format:
+- Before setup creation, the tool recursively removes each configured root node path.
+- On normal shutdown, it attempts to clean these root paths again.
+- `repeat` requires random `name`; otherwise an exception is raised.
+
+Structure:
 
 ```yaml
-node: StringGetter
-
 node:
     name: StringGetter
-    data: StringGetter
-    repeat: integer
-    node: Node
+    data: StringGetter           # optional
+    repeat: integer              # optional, requires random name
+    node: ...                    # nested children
 ```
 
-If only string is defined, a node with that name will be created. \
-Otherwise more detailed definition could be included to set data or the children of the node. \
-If `repeat` key is set, the node definition will be used multiple times. For a `repeat` key to be valid, the name of the node needs to be a random string.
+Example:
 
-Example for a setup:
+```yaml
+setup:
+    node:
+        name: "node1"
+        node:
+            repeat: 4
+            name:
+                random_string:
+                    size: 20
+            data: "payload"
+
+    node:
+        name:
+            random_string:
+                size: 10
+        repeat: 2
+```
+
+---
+
+## Generator
+
+`generator` controls synthetic workload generation.
 
 ```yaml
 generator:
-    setup:
-        node: "node1"
-            node:
-                name:
-                    random_string:
-                        size: 20
-                data: "somedata"
-                repeat: 4
-        node:
-            name:
-                random_string:
-                    size: 10
-            repeat: 2
+    # fixed seed for reproducibility; if omitted, random seed is generated and printed
+    seed: 12345
 ```
 
-We will create node `/node1` with no data and 4 children of random name of size 20 and data set to `somedata`. \
-We will also create 2 nodes with no data and random name of size 10 under `/` node.
+Requests are defined in `generator.requests`.
 
-### Requests
+- Supported request types: `create`, `set`, `get`, `list`, `multi`.
+- Each request entry can define `weight` (default `1`, must be `>= 1`).
+- Nested `multi` is not allowed.
 
-While benchmark is running, we are generating requests.
-
-Request generator is defined under `requests` key. \
-For each request `weight` (default: 1) can be defined which defines preference for a certain request.
-
-#### `create`
+### `create`
 
 ```yaml
 create:
-    # parent path for created nodes
-    path: string
-
-    # length of the name for the create node (default: 5)
-    name_length: IntegerGetter
-
-    # data for create nodes (default: "")
-    data: StringGetter
-
-    # value in range [0.0, 1.0> denoting how often a remove request should be generated compared to create request (default: 0)
-    remove_factor: double
+    path: "/bench/creates"           # PathGetter
+    name_length: 10                    # IntegerGetter, default: 5
+    data: "payload"                   # StringGetter, default: empty
+    remove_factor: 0.5                 # in [0.0, 1.0], default: 0
 ```
 
-#### `set`
+When `remove_factor` is enabled, some operations become random removes of previously created nodes.
+If unique name generation keeps colliding, the generator raises an exception after bounded retries.
+
+### `set`
 
 ```yaml
 set:
-    # paths on which we randomly set data
     path: PathGetter
-
-    # data to set
     data: StringGetter
 ```
 
-#### `get`
+### `get`
 
 ```yaml
 get:
-    # paths for which we randomly get data
     path: PathGetter
 ```
 
-#### `list`
+### `list`
 
 ```yaml
 list:
-    # paths for which we randomly do list request
     path: PathGetter
 ```
 
-#### `multi`
+### `multi`
 
 ```yaml
 multi:
-    # any request definition defined above can be added
-
-    # optional size for the multi request
-    size: IntegerGetter
+    size: IntegerGetter              # optional
+    # nested request generators (`create`/`set`/`get`/`list`) with optional `weight`
 ```
 
-Multi request definition can contain any other request generator definitions described above. \
-If `size` key is defined, we will randomly pick `size` amount of requests from defined request generators. \
-All request generators can have a higher pick probability by using `weight` key. \
-If `size` is not defined, multi request with same request generators will always be generated. \
-Both write and read multi requests are supported.
+Behavior:
 
-#### Example
+- If `size` is set, that many subrequests are sampled.
+- If `size` is omitted, one subrequest from each nested generator is included.
+
+### Example
 
 ```yaml
 generator:
+    seed: 42
     requests:
         create:
             path: "/test_create"
             name_length:
                 min_value: 10
                 max_value: 20
+            remove_factor: 0.5
+
         multi:
             weight: 20
             size: 10
@@ -292,26 +375,96 @@ generator:
                     children_of: "/test_get2"
 ```
 
-We defined a request geneator that will generate either a `create` or a `multi` request. \
-Each `create` request will create a node under `/test_create` with a randomly generated name with size from range `[10, 20]`. \
-`multi` request will be generated 20 times more than `create` request. \
-`multi` request will contain 10 requests and approximately twice as much get requests to children of "/test_get2".
+In this example, `multi` is selected about 20 times more often than `create`.
+Inside `multi`, gets from `/test_get2` are selected about 2 times more often than gets from `/test_get1`.
 
-<a name="output"></a>
+---
+
+## Replay request log
+
+Replay mode reads requests from `--input-request-log`.
+
+Behavior details:
+
+- Input format and schema are auto-detected.
+- Compressed files are supported through ClickHouse format/compression detection.
+- Replay preserves per-session request ordering via executor queues.
+
+Supported operation kinds in logs include `Create`, `Set`, `Remove`, `Check`, `CheckNotExists`, `Sync`, `Get`, `List`, `Exists`, `Multi`, and `MultiRead`.
+
+Expected log columns:
+
+- `hostname`
+- `request_event_time`
+- `thread_id`
+- `session_id`
+- `xid`
+- `has_watch`
+- `op_num`
+- `path`
+- `data`
+- `is_ephemeral`
+- `is_sequential`
+- `response_event_time`
+- `error`
+- `requests_size`
+- `version`
+
+If `--setup-nodes-snapshot-path` is provided during replay, the tool can infer required initial nodes from expected outcomes and write an updated snapshot.
+
+---
+
 ## Output
+
+### Stderr progress reports
+
+Periodic stderr reports (controlled by `report_delay`) include:
+
+- Total read/write request counts.
+- Read/write RPS and throughput.
+- Read/write latency percentiles (`0, 10, ..., 90, 95, 99, 99.9, 99.99`).
+- Per-operation breakdown (requests, RPS, p50, p99).
+
+### JSON output
+
+Configure JSON output with:
 
 ```yaml
 output:
-    # if defined, JSON output of results will be stored at the defined path
-    file: string
-    # or
+    file: "output.json"
+    # or:
     file:
-        # if defined, JSON output of results will be stored at the defined path
-        path: string
-
-        # if set to true, timestamp will be appended to the output file name (default: false)
-        with_timestamp: boolean
-
-    # if set to true, output will be printed to stdout also (default: false)
-    stdout: boolean
+        path: "output.json"
+        with_timestamp: true
+    stdout: true
 ```
+
+JSON fields:
+
+- `timestamp` (epoch milliseconds).
+- `read_results` (present only if read requests exist).
+- `write_results` (present only if write requests exist).
+- `per_op_results` (present only if per-op stats exist).
+
+Each result object contains:
+
+- `total_requests`
+- `requests_per_second`
+- `bytes_per_second`
+- `percentiles` (array of `{ "<percent>": <latency_ms> }` objects)
+
+---
+
+## Troubleshooting
+
+Common configuration exceptions:
+
+- `No config file or hosts defined`: provide `--hosts` or `connections`.
+- `Both --config and --input_request_log cannot be empty`: provide at least one mode input.
+- `queue_depth must be >= 1` / `pipeline_depth must be >= 1`: set both to positive values.
+- `Invalid path for request generator`: all paths must start with `/`.
+- `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
+- `Generator weight must be >= 1`: use positive weights only.
+- `remove_factor must be in [0.0, 1.0]`: keep probability in range.
+- `Nested multi requests are not allowed`: only one `multi` level is supported.
+- `Repeating node creation ..., but name is not randomly generated`: use random `name` when `repeat` is set.
