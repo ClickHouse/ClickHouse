@@ -1034,8 +1034,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
-                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
-                if (!storage_columns.has(column))
+                /// Try to resolve column, including subcolumns (e.g. JSON sub-paths like json.x).
+                auto resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
+
+                /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
+                if (!resolved_pair)
                     continue;
 
                 const auto column_default = storage_columns.getDefault(column);
@@ -1065,7 +1068,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 }
                 else
                 {
-                    column_node = std::make_shared<ColumnNode>(NameAndTypePair{column, storage_columns.getColumn(get_column_options, column).type }, modified_query_info.table_expression);
+                    column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
