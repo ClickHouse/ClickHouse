@@ -1,0 +1,17 @@
+database	String			Database name		
+table	String			Table name		
+table_uuid	UUID			Table UUID		
+part	String			Data part name		
+column	String			Column name		
+row_begin	UInt64			Starting row index (inclusive)		
+row_end	UInt64			Ending row index (exclusive)		
+rows	UInt64			Number of rows in cached block		
+bytes	UInt64			Size of cached column data in bytes		
+10000	49995000	74992500
+0
+10000
+System table and SYSTEM commands test passed
+3496500
+3496500
+ColumnsCacheHits	1
+ColumnsCacheMisses	1

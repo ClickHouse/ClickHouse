@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Common/DateLUTImpl.h>
@@ -806,6 +807,10 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+
+    /// Remove deserialized columns from cache
+    if (auto columns_cache = storage.getContext()->getColumnsCache())
+        columns_cache->removePart(storage.getStorageID().uuid, name);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1861,6 +1866,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         MergeTreeReaderSettings::createFromSettings(),
@@ -3023,6 +3029,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         settings,

@@ -41,6 +41,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -49,7 +50,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
-        storage_snapshot, storage_settings, uncompressed_cache,
+        storage_snapshot, storage_settings, uncompressed_cache, columns_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }

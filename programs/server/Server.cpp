@@ -208,6 +208,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -1953,6 +1956,16 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    size_t columns_cache_size = server_settings[ServerSetting::columns_cache_size];
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -2406,6 +2419,7 @@ try
             global_context->updateInterserverCredentials(config());
 
             global_context->updateUncompressedCacheConfiguration(config());
+            global_context->updateColumnsCacheConfiguration(config());
             global_context->updateMarkCacheConfiguration(config());
             global_context->updatePrimaryIndexCacheConfiguration(config());
             global_context->updateIndexUncompressedCacheConfiguration(config());

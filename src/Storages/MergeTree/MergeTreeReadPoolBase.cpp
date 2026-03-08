@@ -55,6 +55,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
+    , owned_columns_cache(pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -84,6 +85,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
+    , owned_columns_cache(pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -419,6 +421,7 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
     return
     {
         .uncompressed_cache = owned_uncompressed_cache.get(),
+        .columns_cache = owned_columns_cache.get(),
         .mark_cache = owned_mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
         .reader_settings = reader_settings,

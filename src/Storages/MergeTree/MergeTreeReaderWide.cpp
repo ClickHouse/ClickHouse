@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
@@ -13,6 +14,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Core/UUID.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
@@ -36,6 +38,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
+    ColumnsCache * columns_cache_,
     MarkCache * mark_cache_,
     DeserializationPrefixesCache * deserialization_prefixes_cache_,
     MarkRanges mark_ranges_,
@@ -50,6 +53,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         storage_snapshot_,
         storage_settings_,
         uncompressed_cache_,
+        columns_cache_,
         mark_cache_,
         mark_ranges_,
         settings_,
@@ -60,6 +64,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     , read_without_marks(
         settings.can_read_part_without_marks
         && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
+    , log(getLogger("MergeTreeReaderWide"))
 {
     try
     {
@@ -170,62 +175,350 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
-        deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
+        /// Check if we can serve from cache
+        /// Cache requires:
+        /// - columns_cache is available
+        /// - table has a valid UUID (Atomic/Replicated databases only)
+        /// - this is not a continuing read (continue_reading == false)
+        const bool cache_possible = columns_cache
+            && data_part_info_for_read->getTableUUID() != UUIDHelpers::Nil;
+        const bool cache_enabled = cache_possible && !continue_reading;
 
-        for (size_t pos = 0; pos < num_columns; ++pos)
+        /// New task starting - reset deferred cache write state from previous task.
+        if (!continue_reading)
+            cache_write_pending = false;
+
+        bool serving_from_cache = false;
+        std::vector<std::pair<ColumnsCacheKey, ColumnPtr>> cached_columns;
+
+        if (cache_enabled && settings.enable_columns_cache_reads)
         {
-            /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
-            if (isColumnDroppedByPendingMutation(pos))
+            /// Compute the row range we're trying to read.
+            /// When rows_offset > 0, the first rows_offset rows are skipped, so the actual
+            /// data starts at row_begin + rows_offset.
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
+            size_t row_begin = mark_row_begin + rows_offset;
+            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
+                ? index_granularity.getMarkStartingRow(current_task_last_mark)
+                : data_part_info_for_read->getRowCount();
+            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+
+            LOG_TEST(log, "Checking cache: row_begin={}, row_end_query={}, max_rows_to_read={}",
+                row_begin, row_end_query, max_rows_to_read);
+
+            /// Query cache for intersecting blocks for all columns
+            bool all_columns_have_cache = true;
+            cached_columns.reserve(num_columns);
+
+            for (size_t pos = 0; pos < num_columns; ++pos)
             {
-                res_columns[pos] = nullptr;
-                continue;
+                const auto & column_name = columns_to_read[pos].name;
+                auto intersecting = columns_cache->getIntersecting(
+                    data_part_info_for_read->getTableUUID(),
+                    data_part_info_for_read->getPartName(),
+                    column_name,
+                    row_begin,
+                    row_end_query);
+
+                /// We can serve from cache if we find exactly one block that fully contains
+                /// the requested range [row_begin, row_end_query).
+                /// This allows us to serve subset reads: if cached [a, b), we can serve [a', b')
+                /// where a' >= a and b' <= b.
+                if (intersecting.size() == 1
+                    && intersecting[0].first.row_begin <= row_begin
+                    && intersecting[0].first.row_end >= row_end_query)
+                {
+                    cached_columns.emplace_back(intersecting[0].first, intersecting[0].second->column);
+                    LOG_TEST(log, "Found cached block for column {}: cached=[{}, {}), requested=[{}, {})",
+                        column_name, intersecting[0].first.row_begin, intersecting[0].first.row_end, row_begin, row_end_query);
+                }
+                else
+                {
+                    all_columns_have_cache = false;
+                    LOG_TEST(log, "No suitable cached block for column {}: intersecting.size()={}, need full containment",
+                        column_name, intersecting.size());
+                    break;
+                }
             }
 
-            const auto & column_to_read = columns_to_read[pos];
-
-            /// The column is already present in the block so we will append the values to the end.
-            bool append = res_columns[pos] != nullptr;
-            if (!append)
-                res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
-
-            auto & column = res_columns[pos];
-            try
+            if (all_columns_have_cache)
             {
-                size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_to_read.getNameInStorage()];
-                auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+                /// Verify all cached blocks have the same row range.
+                /// Different columns may have been cached by different queries
+                /// with different task boundaries, resulting in different row ranges.
+                /// We must check BOTH row_begin and row_end to ensure the offset
+                /// calculation is correct for all columns.
+                size_t cached_row_begin_0 = cached_columns[0].first.row_begin;
+                size_t cached_row_end_0 = cached_columns[0].first.row_end;
+                bool consistent = true;
+                for (const auto & [key, col] : cached_columns)
+                {
+                    if (key.row_begin != cached_row_begin_0 || key.row_end != cached_row_end_0)
+                    {
+                        consistent = false;
+                        LOG_TEST(log, "Inconsistent cached block range: expected=[{}, {}), got=[{}, {})",
+                            cached_row_begin_0, cached_row_end_0, key.row_begin, key.row_end);
+                        break;
+                    }
+                }
 
-                readData(
-                    column_to_read,
-                    serializations[pos],
-                    column,
-                    from_mark,
-                    continue_reading,
-                    current_task_last_mark,
-                    max_rows_to_read,
-                    rows_offset,
-                    cache,
-                    deserialize_states_cache);
-
-                /// For elements of Nested, column_size_before_reading may be greater than column size
-                ///  if offsets are not empty and were already read, but elements are empty.
-                if (!column->empty())
-                    read_rows = std::max(read_rows, column->size() - column_size_before_reading);
+                if (consistent)
+                {
+                    /// Only serve from cache if the cached block covers the ENTIRE task range.
+                    /// When readRows is called with max_rows_to_read < total rows in task,
+                    /// a subsequent continuation read (continue_reading=true) will follow.
+                    /// Since serving from cache does not advance the file stream position,
+                    /// the continuation read would start from the wrong position.
+                    /// To avoid this, only serve from cache when no continuation is needed.
+                    if (row_end_query >= row_end_max)
+                    {
+                        serving_from_cache = true;
+                        LOG_TEST(log, "Serving from cache: all columns have consistent cached blocks");
+                    }
+                    else
+                    {
+                        LOG_TEST(log, "Skipping cache: max_rows_to_read ({}) < task rows ({}), "
+                            "continuation reads would have wrong stream position",
+                            max_rows_to_read, row_end_max - row_begin);
+                    }
+                }
             }
-            catch (Exception & e)
-            {
-                /// Better diagnostics.
-                e.addMessage("(while reading column " + column_to_read.name + ")");
-                throw;
-            }
-
-            if (column->empty() && max_rows_to_read > 0)
-                res_columns[pos] = nullptr;
         }
 
-        prefetched_streams.clear();
-        caches.clear();
+        if (serving_from_cache)
+        {
+            /// Serve from cached columns
+            /// The cached block may be larger than what we need, so calculate the subset to extract
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
+            size_t row_begin = mark_row_begin + rows_offset;
+            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
+                ? index_granularity.getMarkStartingRow(current_task_last_mark)
+                : data_part_info_for_read->getRowCount();
+            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+
+            const auto & cached_row_begin = cached_columns[0].first.row_begin;
+            const auto & cached_row_end = cached_columns[0].first.row_end;
+
+            /// Calculate offset within the cached block and how many rows to extract
+            size_t offset_in_cache = row_begin - cached_row_begin;
+            size_t rows_to_serve = std::min(row_end_query - row_begin, cached_row_end - row_begin);
+
+            /// Validate all cached columns have sufficient data before modifying res_columns.
+            /// The cache key's row range may not match the actual column size
+            /// if columns had different row counts when cached.
+            for (size_t pos = 0; pos < num_columns; ++pos)
+            {
+                const auto & cached_col = cached_columns[pos].second;
+                if (offset_in_cache + rows_to_serve > cached_col->size())
+                {
+                    LOG_WARNING(log, "Cache entry size mismatch for column {}: "
+                        "need offset {} + rows {} = {} but cached column has {} rows, "
+                        "falling back to disk read",
+                        columns_to_read[pos].name, offset_in_cache, rows_to_serve,
+                        offset_in_cache + rows_to_serve, cached_col->size());
+                    serving_from_cache = false;
+                    break;
+                }
+            }
+        }
+
+        if (serving_from_cache)
+        {
+            /// All cached columns validated - serve from cache
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+            size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
+            size_t row_begin = mark_row_begin + rows_offset;
+            size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
+                ? index_granularity.getMarkStartingRow(current_task_last_mark)
+                : data_part_info_for_read->getRowCount();
+            size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+
+            const auto & cached_row_begin = cached_columns[0].first.row_begin;
+            const auto & cached_row_end = cached_columns[0].first.row_end;
+
+            size_t offset_in_cache = row_begin - cached_row_begin;
+            size_t rows_to_serve = std::min(row_end_query - row_begin, cached_row_end - row_begin);
+
+            for (size_t pos = 0; pos < num_columns; ++pos)
+            {
+                const auto & column_to_read = columns_to_read[pos];
+                bool append = res_columns[pos] != nullptr;
+                if (!append)
+                    res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+
+                /// Extract the needed subset from the cached block
+                const auto & cached_col = cached_columns[pos].second;
+                auto cut_column = cached_col->cut(offset_in_cache, rows_to_serve);
+
+                if (!append)
+                {
+                    res_columns[pos] = std::move(cut_column);
+                }
+                else
+                {
+                    auto mutable_col = IColumn::mutate(std::move(res_columns[pos]));
+                    mutable_col->insertRangeFrom(*cut_column, 0, cut_column->size());
+                    res_columns[pos] = std::move(mutable_col);
+                }
+            }
+
+            read_rows = rows_to_serve;
+            LOG_TEST(log, "Served {} rows from cache (offset={}, requested=[{}, {}), cached=[{}, {}))",
+                read_rows, offset_in_cache, row_begin, row_end_query, cached_row_begin, cached_row_end);
+        }
+        else
+        {
+            /// Read from disk
+            prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
+            deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
+
+            /// On the first read of a task, record column sizes for deferred caching.
+            /// We defer cache writes until all continuation reads are done,
+            /// so we cache the full task range and avoid sharing column pointers
+            /// with in-progress reads (which would corrupt cached data via assumeMutable).
+            if (!continue_reading && cache_possible && settings.enable_columns_cache_writes)
+            {
+                const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+                cache_write_pending = true;
+                cache_row_begin = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
+                cache_task_last_mark = current_task_last_mark;
+                cache_column_sizes_at_task_start.resize(num_columns);
+            }
+
+            for (size_t pos = 0; pos < num_columns; ++pos)
+            {
+                /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
+                if (isColumnDroppedByPendingMutation(pos))
+                {
+                    res_columns[pos] = nullptr;
+                    continue;
+                }
+
+                const auto & column_to_read = columns_to_read[pos];
+
+                /// The column is already present in the block so we will append the values to the end.
+                bool append = res_columns[pos] != nullptr;
+                if (!append)
+                    res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+
+                auto & column = res_columns[pos];
+                size_t column_size_before_reading = column->size();
+
+                /// Record column sizes at task start for deferred caching.
+                if (!continue_reading && cache_write_pending)
+                    cache_column_sizes_at_task_start[pos] = column_size_before_reading;
+
+                try
+                {
+                    auto & cache = caches[column_to_read.getNameInStorage()];
+                    auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+
+                    readData(
+                        column_to_read,
+                        serializations[pos],
+                        column,
+                        from_mark,
+                        continue_reading,
+                        current_task_last_mark,
+                        max_rows_to_read,
+                        rows_offset,
+                        cache,
+                        deserialize_states_cache);
+
+                    /// For elements of Nested, column_size_before_reading may be greater than column size
+                    ///  if offsets are not empty and were already read, but elements are empty.
+                    if (!column->empty())
+                        read_rows = std::max(read_rows, column->size() - column_size_before_reading);
+                }
+                catch (Exception & e)
+                {
+                    /// Better diagnostics.
+                    e.addMessage("(while reading column " + column_to_read.name + ")");
+                    throw;
+                }
+
+                if (column->empty() && max_rows_to_read > 0)
+                    res_columns[pos] = nullptr;
+            }
+
+            /// Check if deferred cache write should execute.
+            /// We cache only when the full task range has been read (all continuation reads are done).
+            if (cache_write_pending && read_rows > 0)
+            {
+                const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+                size_t row_end_max = (cache_task_last_mark < index_granularity.getMarksCount())
+                    ? index_granularity.getMarkStartingRow(cache_task_last_mark)
+                    : data_part_info_for_read->getRowCount();
+
+                /// Compute total rows read across all calls for this task.
+                size_t total_rows_for_task = 0;
+                for (size_t pos = 0; pos < num_columns; ++pos)
+                {
+                    if (res_columns[pos] && !res_columns[pos]->empty()
+                        && res_columns[pos]->size() > cache_column_sizes_at_task_start[pos])
+                    {
+                        total_rows_for_task = std::max(
+                            total_rows_for_task,
+                            res_columns[pos]->size() - cache_column_sizes_at_task_start[pos]);
+                    }
+                }
+
+                if (cache_row_begin + total_rows_for_task >= row_end_max)
+                {
+                    /// All continuation reads are done - cache the full task range.
+                    size_t row_end = cache_row_begin + total_rows_for_task;
+
+                    LOG_TEST(log, "Caching columns (deferred): row_begin={}, row_end={}, rows={}",
+                        cache_row_begin, row_end, total_rows_for_task);
+
+                    for (size_t pos = 0; pos < num_columns; ++pos)
+                    {
+                        if (res_columns[pos] && !res_columns[pos]->empty()
+                            && !partially_read_columns.contains(columns_to_read[pos].name))
+                        {
+                            size_t rows_to_cache = res_columns[pos]->size() - cache_column_sizes_at_task_start[pos];
+                            if (rows_to_cache > 0)
+                            {
+                                /// Use cut to create an independent copy for the cache.
+                                ColumnPtr column_to_cache = res_columns[pos]->cut(
+                                    cache_column_sizes_at_task_start[pos], rows_to_cache);
+
+                                /// Use per-column row_end based on actual rows in this column,
+                                /// not the shared total_rows_for_task which may be larger if
+                                /// other columns had more rows (e.g. for Nested or complex types).
+                                size_t column_row_end = cache_row_begin + rows_to_cache;
+
+                                ColumnsCacheKey cache_key{
+                                    data_part_info_for_read->getTableUUID(),
+                                    data_part_info_for_read->getPartName(),
+                                    columns_to_read[pos].name,
+                                    cache_row_begin,
+                                    column_row_end};
+
+                                /// Check if this exact range is already in cache to avoid redundant writes.
+                                auto existing = columns_cache->get(cache_key);
+                                if (!existing || existing->rows != rows_to_cache)
+                                {
+                                    auto entry = std::make_shared<ColumnsCacheEntry>(
+                                        ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
+                                    columns_cache->set(cache_key, entry);
+
+                                    LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
+                                        columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);
+                                }
+                            }
+                        }
+                    }
+
+                    cache_write_pending = false;
+                }
+            }
+
+            prefetched_streams.clear();
+            caches.clear();
+        }
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,

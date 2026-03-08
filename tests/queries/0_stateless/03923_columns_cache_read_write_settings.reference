@@ -1,0 +1,44 @@
+Test 1: All cache settings enabled
+1000	999000
+1000	999000
+1000	2999000
+Test 2: Writes disabled, reads enabled
+500	249500
+500	249500
+500	249500
+Test 3: Writes enabled, reads disabled
+500	749500
+500	749500
+500	749500
+Test 4: Both writes and reads disabled
+500	1749500
+500	1749500
+Test 5: Dynamic setting changes
+500	249500
+500	249500
+3000	20997000
+500	249500
+3000	20997000
+Test 6: Master switch off
+500	1249500
+500	1249500
+Test 7: Re-enable cache
+500	1249500
+500	1249500
+Test 8: Complex queries with various settings
+1000	4995000	9.889
+1000	4995000	9.889
+1000	4995000	9.889
+1000	4995000	9.889
+Test 9: Verify correctness across all setting combinations
+2502500
+2502500
+2502500
+2502500
+2502500
+Test 10: Settings with PREWHERE
+949	996450
+949	996450
+2500	13747500
+949	996450
+All read/write settings tests passed

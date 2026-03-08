@@ -108,6 +108,7 @@
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/UncompressedCache.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -254,6 +255,8 @@ namespace CurrentMetrics
     extern const Metric MarkCacheFiles;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
+    extern const Metric ColumnsCacheBytes;
+    extern const Metric ColumnsCacheEntries;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
@@ -540,6 +543,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
+    mutable ColumnsCachePtr columns_cache TSA_GUARDED_BY(mutex);                      /// Cache of deserialized columns for MergeTree tables.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
     mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
@@ -3808,6 +3812,42 @@ UncompressedCachePtr Context::getUncompressedCache() const
 void Context::clearUncompressedCache() const
 {
     UncompressedCachePtr cache = getUncompressedCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->columns_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache has been already created.");
+
+    shared->columns_cache = std::make_shared<ColumnsCache>(cache_policy, CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, 0, size_ratio);
+}
+
+void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->columns_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("columns_cache_size", DEFAULT_COLUMNS_CACHE_MAX_SIZE);
+    shared->columns_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+ColumnsCachePtr Context::getColumnsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->columns_cache;
+}
+
+void Context::clearColumnsCache() const
+{
+    ColumnsCachePtr cache = getColumnsCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)

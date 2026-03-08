@@ -83,6 +83,8 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
+    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
+
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
     void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override

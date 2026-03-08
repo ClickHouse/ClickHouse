@@ -1,3 +1,4 @@
+-- Tags: no-random-settings
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 CREATE TABLE test (id UInt64, `amax` AggregateFunction(argMax, String, DateTime))

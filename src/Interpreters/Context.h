@@ -105,6 +105,8 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
@@ -1356,6 +1358,11 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    ColumnsCachePtr getColumnsCache() const;
+    void clearColumnsCache() const;
 
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;

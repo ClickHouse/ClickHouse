@@ -21,6 +21,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
+        ColumnsCache * columns_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
@@ -121,6 +122,15 @@ private:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
     bool read_without_marks = false;
+    LoggerPtr log;
+
+    /// State for deferred columns cache writes.
+    /// We defer cache writes until all continuation reads for a task range are done,
+    /// so we cache the full range and avoid sharing column pointers with in-progress reads.
+    bool cache_write_pending = false;
+    size_t cache_row_begin = 0;
+    size_t cache_task_last_mark = 0;
+    std::vector<size_t> cache_column_sizes_at_task_start;
 };
 
 }

@@ -33,6 +33,8 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool enable_reads_from_columns_cache;
+    extern const SettingsBool enable_writes_to_columns_cache;
 }
 
 namespace MergeTreeSetting
@@ -106,6 +108,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
+    result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
+    result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];

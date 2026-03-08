@@ -1082,7 +1082,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            result.addRows(stream.read(result.columns, rows_to_read, !last));
+            size_t rows_read = stream.read(result.columns, rows_to_read, !last);
+
+            result.addRows(rows_read);
             result.addGranule(rows_to_read, {starting_offset, granule_offset});
             space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }

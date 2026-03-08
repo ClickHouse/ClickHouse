@@ -10,6 +10,8 @@ namespace DB
 
 class UncompressedCache;
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
@@ -24,6 +26,7 @@ public:
         size_t preferred_block_size_bytes = 0;
 
         bool use_uncompressed_cache = false;
+        bool use_columns_cache = false;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
 
@@ -76,6 +79,7 @@ protected:
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
+    const ColumnsCachePtr owned_columns_cache;
     const PatchJoinCachePtr patch_join_cache;
     const Block header;
 

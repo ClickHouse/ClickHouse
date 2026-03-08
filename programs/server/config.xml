@@ -500,6 +500,12 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
+    <!-- Size of cache for deserialized columns from MergeTree tables.
+         In bytes. Cache is single for server. Memory is allocated only on demand.
+         Cache is used when 'use_columns_cache' user setting is turned on (off by default).
+      -->
+    <columns_cache_size>2147483648</columns_cache_size>
+
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
          You should not lower this value. -->

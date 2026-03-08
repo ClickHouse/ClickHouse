@@ -61,6 +61,8 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    bool enable_columns_cache_reads = false;
+    bool enable_columns_cache_writes = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;

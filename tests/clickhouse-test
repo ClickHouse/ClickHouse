@@ -1303,6 +1303,10 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        # Columns cache settings - randomize with 0.5 probability each
+        "use_columns_cache": lambda: random.randint(0, 1),
+        "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
+        "enable_writes_to_columns_cache": lambda: random.randint(0, 1),
     }
 
     dependent_settings = {

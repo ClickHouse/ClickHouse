@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <base/types.h>
 
 namespace DB
@@ -95,6 +96,8 @@ public:
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual String getTableName() const = 0;
+
+    virtual UUID getTableUUID() const { return UUIDHelpers::Nil; }
 
     virtual void reportBroken() = 0;
 

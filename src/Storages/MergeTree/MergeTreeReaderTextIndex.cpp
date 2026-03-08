@@ -44,6 +44,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->storage_snapshot,
         main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
+        /*columns_cache=*/ nullptr,
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)

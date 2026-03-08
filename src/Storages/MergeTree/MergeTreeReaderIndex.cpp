@@ -19,6 +19,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           main_reader_->storage_settings,
           nullptr,
           nullptr,
+          nullptr,
           main_reader_->all_mark_ranges,
           main_reader_->settings)
     , index_read_result(std::move(index_read_result_))

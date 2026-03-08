@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-parallel
+-- Tags: no-parallel-replicas, no-parallel, no-random-settings
 -- Test depends on mark cache, don't run with others in parallel
 
 drop table if exists data;

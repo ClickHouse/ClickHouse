@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsBool use_columns_cache;
 }
 
 namespace ErrorCodes
@@ -229,6 +230,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
+        .use_columns_cache = ctx_settings[Setting::use_columns_cache],
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };

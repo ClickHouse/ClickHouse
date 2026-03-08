@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -542,6 +543,20 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
+    DECLARE(String, columns_cache_policy, DEFAULT_COLUMNS_CACHE_POLICY, R"(Columns cache policy name.)", 0) \
+    DECLARE(UInt64, columns_cache_size, DEFAULT_COLUMNS_CACHE_MAX_SIZE, R"(
+    Maximum size (in bytes) for the columns cache, which stores deserialized columns from MergeTree tables.
+
+    The columns cache eliminates repeated decompression and deserialization for frequently accessed columns.
+    The cache is used if the query-level option `use_columns_cache` is enabled.
+
+    :::note
+    A value of `0` means disabled.
+
+    This setting can be modified at runtime and will take effect immediately.
+    :::
+    )", 0) \
+    DECLARE(Double, columns_cache_size_ratio, DEFAULT_COLUMNS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the columns cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -1726,6 +1741,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
