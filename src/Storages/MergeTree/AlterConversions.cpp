@@ -146,10 +146,10 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
     return type == MutationCommand::READ_COLUMN;
 }
 
-bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
+bool AlterConversions::isSupportedMetadataMutation(const MutationCommand & command)
 {
-    return type == MutationCommand::RENAME_COLUMN
-        || type == MutationCommand::DROP_COLUMN;
+    return command.type == MutationCommand::RENAME_COLUMN
+        || (command.type == MutationCommand::DROP_COLUMN && !command.clear);
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)

@@ -557,7 +557,7 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
             return true;
 
         /// Metadata mutations must be included into the snapshot regardless of the parameters.
-        if (AlterConversions::isSupportedMetadataMutation(command.type))
+        if (AlterConversions::isSupportedMetadataMutation(command))
             return true;
     }
 
@@ -607,7 +607,7 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
 {
     for (const auto & command : commands | std::views::reverse)
     {
-        bool is_supported = AlterConversions::isSupportedMetadataMutation(command.type)
+        bool is_supported = AlterConversions::isSupportedMetadataMutation(command)
             || (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
 
@@ -6030,7 +6030,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const PartitionIds & partition_ids) const
 {
     auto txn = local_context->getCurrentTransaction();
     DataPartsVector res;
@@ -6923,9 +6923,13 @@ private:
 
 void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    std::optional<std::unordered_set<String>> partition_ids;
+    PartitionIds partition_ids;
     if (partitions)
+    {
+        if (partitions->empty())
+            return; // explicitly restore nothing
         partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
+    }
 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
@@ -6947,7 +6951,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
                             String{data_path_in_backup_fs / part_name});
         }
 
-        if (partition_ids && !partition_ids->contains(part_info->getPartitionId()))
+        if (!containsInPartitionIdsOrEmpty(partition_ids, part_info->getPartitionId()))
             continue;
 
         restorer.addDataRestoreTask(
@@ -7401,49 +7405,74 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
              visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
-std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
+PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
-    std::unordered_set<String> partition_ids;
-    for (const auto & ast : asts)
-        partition_ids.emplace(getPartitionIDFromQuery(ast, local_context));
-    return partition_ids;
+    if (auto num_asts = asts.size(); !num_asts)
+    {
+        /// unlikely possible
+        return PartitionIds{};
+    }
+    else if (num_asts == 1)
+    {
+        const auto & ast = asts.front();
+        return PartitionIds{getPartitionIDFromQuery(ast, local_context)};
+    }
+    else
+    {
+        /// add all elements all together to avoid moves inside plain_set
+        std::vector<String> area;
+        area.reserve(num_asts);
+        for (const auto & ast : asts)
+            area.push_back(getPartitionIDFromQuery(ast, local_context));
+
+        return PartitionIds{area.begin(), area.end()};
+    }
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
+PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
-    std::set<String> affected_partition_ids;
-
-    for (const auto & command : commands)
+    if (auto num_cmds = commands.size(); !num_cmds)
+        return PartitionIds{};
+    else if (num_cmds == 1)
     {
+        const auto & command = commands.front();
         if (!command.partition)
+            return PartitionIds{};
+        else
+            return PartitionIds{getPartitionIDFromQuery(command.partition, query_context)};
+    }
+    else
+    {
+        std::vector<String> area;
+        area.reserve(commands.size());
+
+        for (const auto & command : commands)
         {
-            affected_partition_ids.clear();
-            break;
+            if (!command.partition)
+                return PartitionIds{};
+
+            area.push_back(getPartitionIDFromQuery(command.partition, query_context));
         }
 
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
-        );
+        return PartitionIds{area.begin(), area.end()};
     }
-
-    return affected_partition_ids;
 }
 
-std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = readLockParts();
-    std::unordered_set<String> res;
+    std::vector<std::string> area;
     std::string_view prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (prev_id == part->info.getPartitionId())
             continue;
 
-        res.insert(part->info.getPartitionId());
+        area.push_back(part->info.getPartitionId());
         prev_id = part->info.getPartitionId();
     }
-    return res;
+    return PartitionIds(area.begin(), area.end());
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
@@ -10851,7 +10880,7 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
             has_alter_mutation = true;
         }
 
-        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
+        if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command))
         {
             mutation_counters.num_metadata += increment;
             has_metadata_mutation = true;

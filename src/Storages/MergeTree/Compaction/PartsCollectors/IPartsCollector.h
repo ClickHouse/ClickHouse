@@ -11,7 +11,7 @@
 namespace DB
 {
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 
 struct CollectedPartsRanges
 {
