@@ -33,7 +33,7 @@ namespace DataLake
 static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
-static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
+static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL", "TABLE_STREAMING_LIVE_TABLE", "TABLE_MATERIALIZED_VIEW"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
 struct UnityCatalogFullSchemaName
@@ -178,6 +178,27 @@ bool UnityCatalog::tryGetTableMetadata(
                 {
                     location = object->get("storage_location").extract<String>();
                     result.setLocation(location);
+                }
+                else if (hasValueAndItsNotNone("properties", object))
+                {
+                    /// For streaming tables and materialized views, the storage location
+                    /// is not in "storage_location" but inside "properties".
+                    const Poco::JSON::Object::Ptr & properties = object->getObject("properties");
+                    if (hasValueAndItsNotNone("spark.internal.streaming_table.backing_table_path", properties))
+                    {
+                        location = properties->get("spark.internal.streaming_table.backing_table_path").extract<String>();
+                        result.setLocation(location);
+                    }
+                    else if (hasValueAndItsNotNone("spark.internal.pipelines.backing_table_path", properties))
+                    {
+                        location = properties->get("spark.internal.pipelines.backing_table_path").extract<String>();
+                        result.setLocation(location);
+                    }
+                    else
+                    {
+                        result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it doesn't have storage location. " \
+                            "It means that it's not a DeltaLake table, and it's unreadable with Unity catalog in ClickHouse", full_table_name));
+                    }
                 }
                 else
                 {
