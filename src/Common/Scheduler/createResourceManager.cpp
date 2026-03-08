@@ -1,6 +1,6 @@
 #include <Common/Scheduler/createResourceManager.h>
-#include <Common/Scheduler/Nodes/CustomResourceManager.h>
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/CustomResourceManager.h>
+#include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

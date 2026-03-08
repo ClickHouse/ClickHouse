@@ -148,6 +148,21 @@ public:
             ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
+        /// Check if request has failed and reset exception for reuse of thread-local request.
+        /// Should be called before finish() to determine if finish() should be skipped.
+        bool consumeException()
+        {
+            // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
+            chassert(state == Dequeued);
+            if (exception)
+            {
+                exception = nullptr;
+                state = Finished;
+                return true;
+            }
+            return false;
+        }
+
         void assertFinished()
         {
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
@@ -211,7 +226,9 @@ public:
         consume(consumed);
         if (link)
         {
-            request.finish(real_cost, link);
+            // finish() and failed() are alternatives - skip finish() if request was failed
+            if (!request.consumeException())
+                request.finish(real_cost, link);
             link.reset();
         }
     }
