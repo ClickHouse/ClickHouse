@@ -407,17 +407,18 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 /// First, try the simple prefix extraction (handles ^prefix patterns without groups/alternation).
                 String prefix = extractFixedPrefixFromRegularExpression(expression);
 
-                /// If simple extraction failed, use comprehensive regex analysis.
-                /// This handles patterns like ^(exact)$, ^(prefix.*), and ^(a|b|c)$
-                /// by extracting the common required_substring prefix.
-                /// Only for anchored patterns (starting with ^) to ensure the prefix
-                /// corresponds to the start of the string, not a substring.
+                /// If simple extraction failed, use comprehensive regex analysis
+                /// for anchored patterns (starting with ^).
                 if (prefix.empty() && !expression.empty() && expression[0] == '^')
                 {
                     auto analysis = OptimizedRegularExpression::analyze(expression);
 
-                    /// If analysis found alternatives (e.g. ^(a|b|c)$), compute common prefix.
-                    if (!analysis.alternatives.empty())
+                    /// Use alternatives only when the group starts immediately after ^,
+                    /// i.e. the pattern is ^(alt1|alt2|...). This guarantees alternatives
+                    /// are prefixes of the matched string. Patterns like ^.*(a|b) have
+                    /// non-literal content between ^ and the group, so their alternatives
+                    /// are substrings — using them would cause false negatives.
+                    if (!analysis.alternatives.empty() && expression.size() >= 2 && expression[1] == '(')
                     {
                         /// Find the longest common prefix of all alternatives.
                         prefix = analysis.alternatives[0];
@@ -432,10 +433,10 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                                 break;
                         }
                     }
-                    else if (!analysis.required_substring.empty() && analysis.required_substring_is_prefix)
-                    {
+
+                    /// Fall back to required_substring if it's a confirmed prefix.
+                    if (prefix.empty() && !analysis.required_substring.empty() && analysis.required_substring_is_prefix)
                         prefix = analysis.required_substring;
-                    }
                 }
 
                 if (prefix.empty())
