@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FunctionCallStats.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
@@ -688,6 +689,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+                FunctionCallStats::instance().increment(action.node->function->getName(), num_rows);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (res_column.column->getDataType() != res_column.type->getColumnType())

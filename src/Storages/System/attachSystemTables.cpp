@@ -28,6 +28,7 @@
 #include <Storages/System/StorageSystemFailPoints.h>
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Storages/System/StorageSystemFunctionsStats.h>
 #include <Storages/System/StorageSystemUserDefinedFunctions.h>
 #include <Storages/System/StorageSystemWorkloads.h>
 #include <Storages/System/StorageSystemResources.h>
@@ -192,6 +193,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemUserDirectories>(context, system_database, "user_directories", "Contains the information about configured user directories - directories on the file system from which ClickHouse server is allowed to read user provided data.");
     attach<StorageSystemPrivileges>(context, system_database, "privileges", "Contains a list of all available privileges that could be granted to a user or role.");
     attach<StorageSystemErrors>(context, system_database, "errors", "Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.");
+    attach<StorageSystemFunctionsStats>(context, system_database, "functions_stats", "Contains per-function call statistics including call count and rows processed. Useful for identifying expensive or frequently called functions.");
     attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.");
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attachNoDescription<StorageSystemProjections>(context, system_database, "projections", "Contains all the information about all the projections in tables, similar to system.data_skipping_indices.");
