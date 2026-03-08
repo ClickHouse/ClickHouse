@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
+#include <optional>
 
 namespace DB
 {

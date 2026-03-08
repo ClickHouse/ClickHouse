@@ -99,7 +99,7 @@ PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const Str
     , log(getLogger("PaimonTableClient"))
 {}
 
-std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
+std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
     const auto schema_files = listFiles(
@@ -137,6 +137,13 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
         schema_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
     }
     return *std::max_element(schema_files_with_versions.begin(), schema_files_with_versions.end());
+}
+
+std::pair<Int32, String> PaimonTableClient::getTableSchemaInfoById(Int32 schema_id) const
+{
+    std::filesystem::path schema_path
+        = std::filesystem::path(table_location) / PAIMON_SCHEMA_DIR / fmt::format("{}{}", PAIMON_SCHEMA_PREFIX, schema_id);
+    return {schema_id, schema_path};
 }
 
 /// schema
@@ -177,7 +184,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
             }
         }
         latest_snapshot_path
-            = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
+            = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
     }
 
     /// check latest hint is real latest snapshot
@@ -186,7 +193,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
         Int64 next_snapshot_version = snapshot_version + 1;
         StoredObject store_object(
             std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
-            / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
+            / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
         if (!object_storage->exists(store_object))
         {
             return std::make_pair(snapshot_version, latest_snapshot_path);
@@ -202,7 +209,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
         {
             String relative_path = path_with_metadata.relative_path;
             String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
-            return file_name.starts_with(PAIMON_SNAPSHOT_PRIFIX);
+            return file_name.starts_with(PAIMON_SNAPSHOT_PREFIX);
         });
     if (snapshot_files.empty())
         return std::nullopt;
@@ -213,7 +220,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
     auto parse_version = [](const String & relative_file_path)
     {
         String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
-        String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PRIFIX) + strlen(PAIMON_SNAPSHOT_PRIFIX));
+        String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PREFIX) + strlen(PAIMON_SNAPSHOT_PREFIX));
         Int64 current_version;
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
