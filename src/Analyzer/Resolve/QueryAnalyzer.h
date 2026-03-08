@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <Analyzer/TableNode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -204,6 +205,10 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context);
 
+    IdentifierResolveResult tryResolveIdentifierFromCTE(
+        const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
+
     IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context);
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
@@ -294,6 +299,9 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
+    std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;

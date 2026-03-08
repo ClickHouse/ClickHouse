@@ -16,7 +16,7 @@ Common Table Expressions represent named subqueries.
 They can be referenced by name anywhere in a `SELECT` query where a table expression is allowed.
 Named subqueries can be referenced by name in the scope of the current query or in the scopes of child subqueries.
 
-Every reference to a Common Table Expression in `SELECT` queries is always replaced by the subquery from it's definition.
+Every reference to a Common Table Expression in `SELECT` queries is always replaced by the subquery from it's definition if the CTE is not explicitly defined as materialized (see [Materialized Common Table Expressions](#materialized-common-table-expressions)).
 Recursion is prevented by hiding the current CTE from the identifier resolution process.
 
 Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
@@ -24,7 +24,7 @@ Please note that CTEs do not guarantee the same results in all places they are c
 ### Syntax {#common-table-expressions-syntax}
 
 ```sql
-WITH <identifier> AS <subquery expression>
+WITH <identifier> AS [MATERIALIZED] <subquery expression>
 ```
 
 ### Example {#common-table-expressions-example}
@@ -46,6 +46,127 @@ WHERE num IN (SELECT num FROM cte_numbers)
 If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
+
+## Materialized Common Table Expressions {#materialized-common-table-expressions}
+
+By default, ClickHouse inlines the subquery of a CTE at each point of reference, re-executing it every time.
+Adding the `MATERIALIZED` keyword instructs ClickHouse to execute the CTE subquery **exactly once**, store the results in a temporary table, and serve all references from that table.
+This is especially useful when the same CTE is referenced multiple times in a query (e.g., in self-joins or multiple `IN` subqueries), because the underlying computation only happens once.
+
+:::note
+Materialized CTEs are an **experimental** feature.
+They require the [analyzer](/operations/analyzer) and the setting `enable_materialized_cte` to be enabled.
+:::
+
+### Syntax {#materialized-common-table-expressions-syntax}
+
+```sql
+WITH <identifier> AS MATERIALIZED (<subquery>)
+SELECT ...
+```
+
+### When to use {#materialized-cte-when-to-use}
+
+Materialized CTEs are most beneficial when:
+
+- The same CTE is referenced **more than once** in a query.
+Without `MATERIALIZED`, each reference re-executes the subquery independently.
+- The CTE contains **non-deterministic** functions like `generateRandom`.
+Materializing ensures all references see the same data.
+- The CTE involves **expensive computations** (aggregations, joins, large scans) that should not be repeated.
+
+:::tip
+If a materialized CTE is only referenced once, ClickHouse automatically inlines it back into a regular subquery to avoid unnecessary overhead.
+:::
+
+### Examples {#materialized-common-table-expressions-examples}
+
+**Example 1:** Self-join on a materialized CTE
+
+Without `MATERIALIZED`, both sides of the join would execute the subquery independently.
+With `MATERIALIZED`, the table is scanned once and both join sides read from the same temporary table.
+
+```sql
+SET enable_materialized_cte = 1;
+
+CREATE TABLE users (uid Int16, name String, age Int16) ENGINE = Memory;
+INSERT INTO users VALUES (1231, 'John', 33), (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+WITH
+    a AS MATERIALIZED (SELECT * FROM users WHERE name = 'Alice')
+SELECT count() FROM a AS l JOIN a AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       1 │
+└─────────┘
+```
+
+**Example 2:** Deterministic results with non-deterministic functions
+
+Regular CTEs with `generateRandom` produce different results at each reference point.
+Materializing the CTE ensures consistency:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH cte_numbers AS MATERIALIZED
+(
+    SELECT num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers);
+```
+
+Because both references read from the same materialized data, the result is always `1000000`.
+
+**Example 3:** Chaining materialized CTEs
+
+Materialized CTEs can reference other materialized CTEs.
+ClickHouse resolves dependencies and materializes them in the correct order:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    a AS MATERIALIZED (SELECT uid, name FROM users),
+    b AS MATERIALIZED (SELECT uid FROM a)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+The order of CTE definitions does not matter — forward references are allowed:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    b AS MATERIALIZED (SELECT uid FROM a),
+    a AS MATERIALIZED (SELECT uid FROM users)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+### Restrictions {#materialized-cte-restrictions}
+
+- **Experimental setting required**: The setting `enable_materialized_cte` must be enabled.
+- **Analyzer required**: Materialized CTEs only work with the [analyzer](/operations/analyzer) enabled (`enable_analyzer = 1`).
+- **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
+- **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
 

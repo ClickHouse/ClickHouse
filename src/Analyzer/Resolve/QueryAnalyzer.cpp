@@ -1,28 +1,29 @@
-#include <Analyzer/Utils.h>
-#include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/ValidationUtils.h>
-#include <Analyzer/HashUtils.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/MatcherNode.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/LambdaNode.h>
-#include <Analyzer/SortNode.h>
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/UnionNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/MatcherNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/RecursiveCTE.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -55,6 +56,7 @@
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <memory>
 #include <ranges>
 
 namespace DB
@@ -67,6 +69,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -193,6 +196,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 
     validateCorrelatedSubqueries(node);
+    inlineMaterializedCTEIfNeeded(node, reused_materialized_cte, context);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -1128,6 +1132,84 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
+/* Try to resolve identifier as Common Table Expression (CTE)
+ *
+ * CTE is set to be MATERIALIZED, the corresponding CTE subquery is resolved and
+ * replaced with table node in the CTE map.
+ */
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
+    const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope
+)
+{
+    auto full_name = identifier_lookup.identifier.getFullName();
+    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+    /// CTE may reference table expressions with the same name, e.g.:
+    ///
+    /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+    ///
+    /// Since recursive CTEs are handled in different place, `test1` identifier inside of CTE
+    /// references to table <default database name>.test1.
+    /// This means that the example above is equivalent to the following query:
+    ///
+    /// SELECT * FROM test1;
+    ///
+    /// To accomplish this behaviour it's not allowed to resolve identifiers to
+    /// CTE that is being resolved.
+    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+        return {};
+
+    auto & cte_node = cte_query_node_it->second;
+    auto * query_node = cte_node->as<QueryNode>();
+    auto * union_node = cte_node->as<UnionNode>();
+
+    bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
+    if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+    {
+        resolveExpressionNode(cte_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+        bool is_correlated = (query_node && query_node->isCorrelated()) || (union_node && union_node->isCorrelated());
+        if (is_correlated)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Materialized CTE '{}' cannot be correlated. In scope {}",
+                full_name,
+                scope.scope_node->formatASTForErrorMessage());
+
+        const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+        NamesAndTypesList columns;
+        for (const auto & projection_column : projection_columns)
+            columns.emplace_back(projection_column.name, projection_column.type);
+
+        auto query_context = scope.context->getQueryContext();
+        auto storage_holder = TemporaryTableHolder(
+            query_context,
+            ColumnsDescription(std::move(columns), false),
+            ConstraintsDescription{},
+            nullptr /*query*/,
+            true /*create_for_global_subquery*/);
+
+        auto temporary_table_name = fmt::format("_materialized_cte_{}", toString(cte_node->getTreeHash()));
+        auto table_node = std::make_shared<TableNode>(storage_holder, full_name, cte_node, scope.context);
+        table_node->setTemporaryTableName(temporary_table_name);
+        table_node->setAlias(full_name);
+
+        query_context->addExternalTable(temporary_table_name, std::move(storage_holder));
+
+        cte_node = table_node;
+    }
+    else if (auto * table_node = cte_node->as<TableNode>())
+    {
+        if (table_node->isMaterializedCTE())
+        {
+            reused_materialized_cte.insert(table_node->getMaterializedCTE());
+        }
+    }
+
+    return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
+}
+
 /** Try to resolve identifier recursively in parent scopes.
   *
   * If identifier is resolved to expression it must be resolved in the context of the current scope.
@@ -1194,9 +1276,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto * subquery_node = resolved_identifier->as<QueryNode>();
         auto * union_node = resolved_identifier->as<UnionNode>();
+        auto * table_node = resolved_identifier->as<TableNode>();
 
         /// Resolved to CTE in parent scope.
-        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+        bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE()) || (table_node && table_node->isMaterializedCTE());
         /// Resolved to lambda argument.
         bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
@@ -1355,28 +1438,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
+    /// Try to resolve identifier from Common Table Expressions (CTE)
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
-        auto full_name = identifier_lookup.identifier.getFullName();
-        auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
-
-        /// CTE may reference table expressions with the same name, e.g.:
-        ///
-        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
-        ///
-        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
-        /// references to table <default database name>.test1.
-        /// This means that the example above is equivalent to the following query:
-        ///
-        /// SELECT * FROM test1;
-        ///
-        /// To accomplish this behaviour it's not allowed to resolve identifiers to
-        /// CTE that is being resolved.
-        if (cte_query_node_it != scope.cte_name_to_query_node.end()
-            && !ctes_in_resolve_process.contains(cte_query_node_it->second))
-        {
-            resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
-        }
+        resolve_result = tryResolveIdentifierFromCTE(identifier_lookup, scope);
     }
 
     /// Try to resolve identifier from parent scopes
@@ -2801,8 +2866,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     /// If table identifier is resolved as CTE clone it and resolve
                     auto * subquery_node = resolved_identifier_node->as<QueryNode>();
                     auto * union_node = resolved_identifier_node->as<UnionNode>();
+                    auto * table_node = resolved_identifier_node->as<TableNode>();
                     bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
 
+                    /// Non-materialized CTEs must be resolved here
                     if (resolved_as_cte)
                     {
                         auto original_cte_node = resolved_identifier_node;
@@ -2833,6 +2900,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             resolveUnion(resolved_identifier_node, subquery_scope);
 
                         ctes_in_resolve_process.erase(original_cte_node);
+                    }
+                    else if (table_node != nullptr && table_node->isMaterializedCTE())
+                    {
+                        resolved_identifier_node = resolved_identifier_node->clone();
                     }
                 }
             }
