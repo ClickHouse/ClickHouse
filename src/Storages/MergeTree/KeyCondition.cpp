@@ -410,12 +410,13 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 /// If simple extraction failed, use comprehensive regex analysis.
                 /// This handles patterns like ^(exact)$, ^(prefix.*), and ^(a|b|c)$
                 /// by extracting the common required_substring prefix.
-                if (prefix.empty())
+                /// Only for anchored patterns (starting with ^) to ensure the prefix
+                /// corresponds to the start of the string, not a substring.
+                if (prefix.empty() && !expression.empty() && expression[0] == '^')
                 {
                     auto analysis = OptimizedRegularExpression::analyze(expression);
 
-                    /// If analysis found exact alternatives (e.g. ^(a|b|c)$), compute common prefix.
-                    /// All alternatives must start from the beginning (is_trivial or required_substring_is_prefix).
+                    /// If analysis found alternatives (e.g. ^(a|b|c)$), compute common prefix.
                     if (!analysis.alternatives.empty())
                     {
                         /// Find the longest common prefix of all alternatives.
