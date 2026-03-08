@@ -26,14 +26,14 @@ Expression ((Project names + Projection))
         Parts: 20/100
         Granules: 20/100
         Distributed:
-          Address: 127.0.0.1:9000
-          Parts send: 56
-          Parts received: 8
-          Granules send: 56
-          Granules received: 8
           Address: 127.0.0.2:9000
           Parts send: 44
           Parts received: 12
           Granules send: 44
           Granules received: 12
+          Address: 127.0.0.1:9000
+          Parts send: 56
+          Parts received: 8
+          Granules send: 56
+          Granules received: 8
       Ranges: 20

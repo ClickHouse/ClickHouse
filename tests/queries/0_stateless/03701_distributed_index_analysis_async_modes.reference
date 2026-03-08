@@ -1,0 +1,27 @@
+-- { echo }
+select count() from system.parts where database = currentDatabase() and table = 'test_dia_modes';
+9
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1, use_hedged_requests=1, async_socket_for_remote=1;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1, use_hedged_requests=1, async_socket_for_remote=0;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1, use_hedged_requests=0, async_socket_for_remote=1;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1, use_hedged_requests=0, async_socket_for_remote=0;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first', distributed_index_analysis=1, use_hedged_requests=1, async_socket_for_remote=1;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first', distributed_index_analysis=1, use_hedged_requests=1, async_socket_for_remote=0;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first', distributed_index_analysis=1, use_hedged_requests=0, async_socket_for_remote=1;
+49999995000000
+select sum(key) from test_dia_modes settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first', distributed_index_analysis=1, use_hedged_requests=0, async_socket_for_remote=0;
+49999995000000
+cluster=parallel_replicas, hedged=1, async=1, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas, hedged=1, async=0, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas, hedged=0, async=1, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas, hedged=0, async=0, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas_unavailable_first, hedged=1, async=1, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas_unavailable_first, hedged=1, async=0, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas_unavailable_first, hedged=0, async=1, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
+cluster=parallel_replicas_unavailable_first, hedged=0, async=0, Micros>0=1, Scheduled=7, Unavailable matches=1, Fallback=0, MissingParts=0
