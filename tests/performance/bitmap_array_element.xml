@@ -3,10 +3,10 @@
         WITH
             (
                 SELECT bitmapBuild(groupArray(number))
-                FROM numbers(3000000)
+                FROM numbers(8000000)
             ) AS a,
             [a, a, a] AS b
         SELECT sum(bitmapCardinality(b[(number % 3) + 1]))
-        FROM numbers(10000)
+        FROM numbers(27000)
     </query>
 </test>

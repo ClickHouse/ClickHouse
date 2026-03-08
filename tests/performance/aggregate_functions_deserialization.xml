@@ -14,7 +14,7 @@
             now() + number AS t,
             initializeAggregation('avgState', number),
             initializeAggregation('argMaxState', number, t)
-        FROM numbers(50000000)
+        FROM numbers(95000000)
     </fill_query>
 
     <query>SELECT v1 FROM agg_deserialize FORMAT Null</query>

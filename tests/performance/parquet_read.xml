@@ -1,6 +1,6 @@
 <test>
     <fill_query>
-        INSERT INTO FUNCTION file('test_pq', Parquet) SELECT * FROM generateRandom('int64_column Nullable(Int64), tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32)),array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))), map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') limit 1000000
+        INSERT INTO FUNCTION file('test_pq', Parquet) SELECT * FROM generateRandom('int64_column Nullable(Int64), tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32)),array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))), map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') limit 18000000
     </fill_query>
 
     <query>

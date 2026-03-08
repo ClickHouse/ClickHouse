@@ -61,8 +61,8 @@
         LIFETIME(0)
     </create_query>
 
-    <fill_query>INSERT INTO simple_key_dictionary_source_table SELECT number, number FROM numbers(3_000_000)</fill_query>
-    <fill_query>INSERT INTO complex_key_dictionary_source_table SELECT number, toString(number), number FROM numbers(2_000_000)</fill_query>
+    <fill_query>INSERT INTO simple_key_dictionary_source_table SELECT number, number FROM numbers(1500000)</fill_query>
+    <fill_query>INSERT INTO complex_key_dictionary_source_table SELECT number, toString(number), number FROM numbers(1000000)</fill_query>
 
     <fill_query>SYSTEM RELOAD DICTIONARY simple_key_{layout_suffix}_dictionary_l0_{load_factor}</fill_query>
     <fill_query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_l0_{load_factor}</fill_query>
@@ -71,16 +71,16 @@
     <query>SYSTEM RELOAD DICTIONARY complex_key_{layout_suffix}_dictionary_l0_{load_factor}</query>
 
     <query>
-        WITH rand64() % 3_000_000 as key
+        WITH rand64() % 1500000 as key
         SELECT dictHas('default.simple_key_{layout_suffix}_dictionary_l0_{load_factor}', key)
-        FROM numbers(3_000_000)
+        FROM numbers(4500000)
         FORMAT Null
     </query>
 
     <query>
-        WITH (rand64() % 2_000_000, toString(rand64() % 2_000_000)) as key
+        WITH (rand64() % 1000000, toString(rand64() % 1000000)) as key
         SELECT dictHas('default.complex_key_{layout_suffix}_dictionary_l0_{load_factor}', key)
-        FROM numbers(2_000_000)
+        FROM numbers(700000)
         FORMAT Null
     </query>
 

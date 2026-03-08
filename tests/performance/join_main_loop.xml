@@ -1,7 +1,7 @@
 <test>
   <query>
     SELECT number
-    FROM numbers_mt(1e8) AS n inner join
+    FROM numbers_mt(380000000) AS n inner join
     (
         SELECT 157::UInt64 AS p
         FROM system.one
@@ -12,7 +12,7 @@
 
   <query>
     SELECT number
-    FROM numbers_mt(1e9) AS n inner join
+    FROM numbers_mt(2100000000) AS n inner join
     (
         SELECT 157::UInt64 AS p
         FROM system.one
@@ -23,7 +23,7 @@
 
   <query>
     SELECT number
-    FROM numbers_mt(1e8) AS n any inner join
+    FROM numbers_mt(380000000) AS n any inner join
     (
         SELECT 157::UInt64 AS p
         FROM system.one
@@ -34,7 +34,7 @@
 
   <query>
     SELECT number
-    FROM numbers_mt(1e9) AS n any inner join
+    FROM numbers_mt(2300000000) AS n any inner join
     (
         SELECT 157::UInt64 AS p
         FROM system.one
@@ -77,15 +77,15 @@
 
   <query>
     SELECT count()
-    FROM numbers_mt(5e6) AS lhs
-    RIGHT JOIN numbers_mt(1e5) AS rhs ON (lhs.number = (rhs.number + 1000000000)) OR ((lhs.number % 100000) = rhs.number)
+    FROM numbers_mt(8500000) AS lhs
+    RIGHT JOIN numbers_mt(170000) AS rhs ON (lhs.number = (rhs.number + 1000000000)) OR ((lhs.number % 100000) = rhs.number)
     FORMAT `Null`
   </query>
   
   <query>
     SELECT count()
-    FROM numbers_mt(1e7) AS lhs
-    INNER JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
+    FROM numbers_mt(19000000) AS lhs
+    INNER JOIN numbers_mt(190000) AS rhs ON (lhs.number % 100000) = rhs.number
     FORMAT Null
     SETTINGS max_threads = 1, join_algorithm = 'hash'
   </query>

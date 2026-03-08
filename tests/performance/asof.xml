@@ -36,7 +36,7 @@
                 toStartOfDay(now()) + INTERVAL (seconds_since_start_of_day % 86000) SECOND AS date,
                 fingerprint % 50 as fingerprint,
                 multiIf(language % 2 == 0, 'es', 'en') as lang
-            FROM generateRandom('seconds_since_start_of_day UInt32, fingerprint UInt8, language UInt8') LIMIT 5000000
+            FROM generateRandom('seconds_since_start_of_day UInt32, fingerprint UInt8, language UInt8') LIMIT 8600000
         ) AS visits
         ON (visits.fingerprint = origins.fingerprint AND visits.date &gt;= origins.date)
         FORMAT Null
@@ -47,13 +47,13 @@
             <name>num_unique_sessions</name>
             <values>
                 <value>1000</value>
-                <value>1000000</value>
+                <value>500000</value>
             </values>
         </substitution>
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>1000000</value>
+                <value>500000</value>
             </values>
         </substitution>
     </substitutions>

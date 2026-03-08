@@ -1,0 +1,59 @@
+<test>
+    <create_query>
+        CREATE TABLE 
+            window_test_fast(id Int64, value Int64, partition Int64, msg String) 
+        Engine=MergeTree 
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO window_test_fast 
+        SELECT number, rand(1) % 500, number % 3000, randomPrintableASCII(2) FROM numbers(1500000)
+    </fill_query>
+
+    <query>
+        SELECT id, 
+            AVG(value) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame1, 
+            MAX(value) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame2,
+            sipHash64(frame1),
+            sipHash64(frame2)
+        FROM window_test_fast
+    </query>
+    
+    <query>
+        SELECT id AS key, 
+            sipHash64(sum(frame)) AS value 
+        FROM (
+            SELECT id, 
+                AVG(value) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame 
+            FROM window_test_fast) 
+        GROUP BY key 
+        ORDER BY key, value
+    </query>
+
+    <query>
+        SELECT id % 100000 AS key, 
+            sipHash64(sum(frame)) AS value 
+        FROM (
+            SELECT id, 
+                AVG(value) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame 
+            FROM window_test_fast) 
+        GROUP BY key 
+        ORDER BY key, value
+    </query>
+
+    <query>
+        SELECT id, 
+            AVG(value) OVER (PARTITION by partition ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame 
+        FROM window_test_fast 
+        ORDER BY id
+    </query>
+
+    <query>
+        SELECT DISTINCT AVG(value) OVER (PARTITION by partition ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS frame 
+        FROM window_test_fast 
+        ORDER BY frame
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS window_test_fast</drop_query>
+</test>

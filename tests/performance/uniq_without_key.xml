@@ -3,7 +3,7 @@
         <substitution>
            <name>uniq_keys</name>
            <values>
-               <value>10000</value>
+               <value>27200</value>
                <value>50000</value>
                <value>100000</value>
                <value>250000</value>
@@ -23,11 +23,11 @@
     <query>SELECT count(distinct a) FROM t_{uniq_keys}</query>
     <query>SELECT uniqExact(a) FROM t_{uniq_keys}</query>
 
-    <query>SELECT uniqExact(number) from numbers_mt(1e7)</query>
-    <query>SELECT uniqExact(number) from numbers_mt(5e7)</query>
+    <query>SELECT uniqExact(number) from numbers_mt(17000000)</query>
+    <query>SELECT uniqExact(number) from numbers_mt(13000000)</query>
 
-    <query>SELECT uniqExact(number, number) from numbers_mt(5e6)</query>
-    <query>SELECT uniqExact(number, number) from numbers_mt(1e7)</query>
+    <query>SELECT uniqExact(number, number) from numbers_mt(15000000)</query>
+    <query>SELECT uniqExact(number, number) from numbers_mt(22000000)</query>
 
     <drop_query>drop table t_{uniq_keys}</drop_query>
 </test>

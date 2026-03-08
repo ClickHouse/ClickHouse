@@ -29,6 +29,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {key} AS k, {func}(ResolutionWidth) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, {func}(ResolutionWidth) FROM hits_10m_single GROUP BY k FORMAT Null</query>
     <query>SELECT {key_slow} AS k, {func}(ResolutionWidth) FROM hits_10m_single GROUP BY k FORMAT Null</query>
 </test>

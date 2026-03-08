@@ -1,6 +1,6 @@
 <test>
   <create_query>
-    CREATE TABLE test (a UInt64, b UInt64) ENGINE = MergeTree() ORDER BY () AS SELECT number, intDiv(number, 10) FROM numbers_mt(1e8);
+    CREATE TABLE test (a UInt64, b UInt64) ENGINE = MergeTree() ORDER BY () AS SELECT number, intDiv(number, 10) FROM numbers_mt(25000000);
   </create_query>
 
   <substitutions>
@@ -8,7 +8,7 @@
         <name>threads</name>
         <values>
             <value>1</value>
-            <value>2</value>
+            <value>3</value>
             <value>4</value>
             <value>8</value>
         </values>

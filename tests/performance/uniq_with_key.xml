@@ -16,7 +16,7 @@
 
     <create_query>create table t_{uniq_keys}(a UInt64, b UInt64) engine=MergeTree order by tuple()</create_query>
 
-    <fill_query>insert into t_{uniq_keys} select number, number % {uniq_keys} from numbers_mt(5e7)</fill_query>
+    <fill_query>insert into t_{uniq_keys} select number, number % {uniq_keys} from numbers_mt(10000000)</fill_query>
 
     <query>SELECT uniqExact(a) FROM t_{uniq_keys} group by b</query>
 

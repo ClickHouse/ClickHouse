@@ -75,14 +75,14 @@
         if(number % 20 = 0, NULL, toDecimal128(number % 1000000, 20)) AS col_decimal128,
         [if(number % 3 = 0, NULL, number % 10000), if(number % 5 = 0, NULL, (number % 10000)+1), if(number % 7 = 0, NULL, (number % 10000)+2)] AS col_array,
         if(number % 22 = 0, NULL, concat('LC', toString(number % 1000))) AS col_low_cardinality
-        FROM numbers(1000000)
+        FROM numbers(1200000)
     </fill_query>
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format}_with_nullable_columns ENGINE = File({format}) AS SELECT * FROM source_table</create_query>
 
     <fill_query>INSERT INTO table_{format}_with_nullable_columns SELECT * FROM source_table</fill_query>
 
-    <query>SELECT * FROM table_{format}_with_nullable_columns LIMIT 1000 FORMAT Null</query>
+    <query>SELECT * FROM table_{format}_with_nullable_columns LIMIT 10000 FORMAT Null</query>
     <query>SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
     <query>SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
     <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>

@@ -1,4 +1,4 @@
 <test>
-    <query>SELECT lowerUTF8(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT upperUTF8(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT lowerUTF8(SearchPhrase) FROM hits_10m_single FORMAT Null</query>
+    <query>SELECT upperUTF8(SearchPhrase) FROM hits_10m_single FORMAT Null</query>
 </test>

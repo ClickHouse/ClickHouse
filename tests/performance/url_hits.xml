@@ -37,8 +37,8 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func_fast}(URL))</query>
-    <query>SELECT count() FROM hits_10m_single  WHERE NOT ignore({func_slow}(URL))</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore({func_fast}(URL))</query>
+    <query>SELECT count() FROM (SELECT URL FROM hits_10m_single LIMIT 6000000) WHERE NOT ignore({func_slow}(URL))</query>
 
     <!-- firstSignificantSubdomain/firstSignificantSubdomainCustom -->
     <query>SELECT count() FROM test.hits WHERE NOT ignore(firstSignificantSubdomain(URL)) SETTINGS max_threads=1</query>

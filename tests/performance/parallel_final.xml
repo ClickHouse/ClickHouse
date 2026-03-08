@@ -34,26 +34,26 @@
     <create_query>create table replacing_final_1024p_rnd (key1 UInt32, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1) partition by key1 % 1024 </create_query>
     <create_query>create table replacing_final_1p_ord (key1 UInt64, key2 UInt64, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2)</create_query>
 
-    <!-- 16 parts, 8192 * 1024 rows each -->
-    <fill_query>insert into replacing_final_16p_ord select number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into replacing_final_16p_rnd select sipHash64(number), number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into replacing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into replacing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into replacing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into replacing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <!-- 16 parts, 8192 * 1024 * 3 rows each -->
+    <fill_query>insert into replacing_final_16p_ord select number, number, 1, number from numbers_mt(25000000) </fill_query>
+    <fill_query>insert into replacing_final_16p_rnd select sipHash64(number), number, 1, number from numbers_mt(25000000) </fill_query>
+    <fill_query>insert into replacing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(25000000) </fill_query>
+    <fill_query>insert into replacing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(25000000) </fill_query>
+    <fill_query>insert into replacing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(25000000) </fill_query>
+    <fill_query>insert into replacing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(25000000) </fill_query>
 
-    <!-- 1024 parts, 8192 * 2 rows each -->
-    <fill_query>insert into replacing_final_1024p_ord select number, 1, number from numbers_mt(16777216) </fill_query>
-    <fill_query>insert into replacing_final_1024p_rnd select number, 1, number from numbers_mt(16777216) </fill_query>
+    <!-- 1024 parts, ~50K rows each -->
+    <fill_query>insert into replacing_final_1024p_ord select number, 1, number from numbers_mt(50000000) </fill_query>
+    <fill_query>insert into replacing_final_1024p_rnd select number, 1, number from numbers_mt(50000000) </fill_query>
 
-    <!-- 1 big part of 5e7 rows -->
-    <fill_query>insert into replacing_final_1p_ord select number, number + 1, 1, number from numbers_mt(5e7)</fill_query>
+    <!-- 1 big part of 150M rows -->
+    <fill_query>insert into replacing_final_1p_ord select number, number + 1, 1, number from numbers_mt(150000000)</fill_query>
 
     <fill_query>optimize table {replacing} final</fill_query>
 
     <query>SELECT count() FROM {replacing} final</query>
     <query>SELECT sum(s) FROM {replacing} final group by key1 limit 10</query>
-    <query>SELECT sum(s) FROM {replacing} final group by key1 % 8192 limit 10</query>
+    <query>SELECT sum(s) FROM {replacing} final group by key1 % 8192 limit 160</query>
 
     <drop_query>DROP TABLE IF EXISTS {replacing}</drop_query>
 

@@ -5,7 +5,7 @@
     -->
     <query><![CDATA[
         select CounterID, UserID, count(*) user_hits
-        from hits_100m_single
+        from hits_10m_single
         where CounterID < 10000
         group by CounterID, UserID
         order by user_hits desc
@@ -21,7 +21,7 @@
                     over (partition by CounterID order by user_hits desc
                         rows unbounded preceding)
                     user_rank
-            from hits_100m_single
+            from hits_10m_single
             where CounterID < 10000
             group by CounterID, UserID
         )
@@ -43,7 +43,7 @@
                     over (partition by CounterID order by user_hits desc
                         range unbounded preceding)
                     user_rank
-            from hits_100m_single
+            from hits_10m_single
             where CounterID < 10000
             group by CounterID, UserID
         )
@@ -59,7 +59,7 @@
             (SELECT EventTime,
                 count(*) OVER (ORDER BY EventTime ASC
                     RANGE BETWEEN 10 PRECEDING AND 10 FOLLOWING) AS c
-            FROM hits_10m_single)
+            FROM (SELECT EventTime FROM hits_10m_single LIMIT 5000000))
         FORMAT Null
     </query>
 
@@ -86,7 +86,7 @@
             max(number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o)
         format Null
     </query>
@@ -97,7 +97,7 @@
             dense_rank() over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o)
         format Null
     </query>
@@ -107,7 +107,7 @@
         select leadInFrame(number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o
             rows between unbounded preceding and unbounded following)
         format Null
@@ -118,7 +118,7 @@
         select any(number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o
             rows between 1 following and 1 following)
         format Null
@@ -128,7 +128,7 @@
         select leadInFrame(number, number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o
             rows between unbounded preceding and unbounded following)
         format Null
@@ -138,7 +138,7 @@
         select leadInFrame(number, number, number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
-                from numbers(10000000)) t
+                from numbers(1800000)) t
         window w as (partition by p order by o
             rows between unbounded preceding and unbounded following)
         format Null

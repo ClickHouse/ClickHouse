@@ -1,0 +1,13 @@
+<test>
+    <query>
+        select toString(number) as haystack, like(haystack, '%x_')
+        from(select * from numbers_mt(30000000))
+        format Null
+    </query>
+
+    <query>
+        select toString(number) as haystack, match(haystack, '.*x.')
+        from(select * from numbers_mt(30000000))
+        format Null
+    </query>
+</test>

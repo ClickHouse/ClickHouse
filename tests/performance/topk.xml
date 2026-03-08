@@ -19,5 +19,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT {func}({key}) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT {func}({key}) FROM (SELECT {key} FROM hits_100m_single LIMIT 40000000) FORMAT Null</query>
 </test>

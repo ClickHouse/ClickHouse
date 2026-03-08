@@ -23,7 +23,7 @@
             rand(),
             randomPrintableASCII(8),
             randomPrintableASCII(8),
-        FROM numbers_mt(50000000) SETTINGS max_insert_threads=8
+        FROM numbers_mt(33000000) SETTINGS max_insert_threads=8
     </fill_query>
 
     <fill_query>SYSTEM STOP MERGES test_lwu_merge</fill_query>

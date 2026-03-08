@@ -1,7 +1,7 @@
 <!-- Performance test for basic operations on Int256 values -->
 <test>
     <create_query>CREATE TABLE IF NOT EXISTS tab (i1 Int256, i2 Int256, u1 UInt256, u2 UInt256) ENGINE = Memory()</create_query>
-    <fill_query>INSERT INTO tab SELECT * FROM generateRandom('i1 Int256, i2 Int256, u1 UInt256, u2 UInt256') LIMIT 1000000</fill_query>
+    <fill_query>INSERT INTO tab SELECT * FROM generateRandom('i1 Int256, i2 Int256, u1 UInt256, u2 UInt256') LIMIT 450000</fill_query>
 
     <settings>
         <max_threads>1</max_threads>

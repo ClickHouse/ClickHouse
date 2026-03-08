@@ -10,9 +10,9 @@
         <substitution>
             <name>ratio</name>
             <values>
-                <value>10</value>
-                <value>100</value>
-                <value>1000</value>
+                <value>26</value>
+                <value>267</value>
+                <value>2673</value>
             </values>
         </substitution>
     </substitutions>
@@ -36,7 +36,7 @@
             number % {ratio} = 0 ? rand(1) : 0,
             number % {ratio} = 0 ? rand(2) : 0,
             number % {ratio} = 0 ? randomPrintableASCII(64, 3) : ''
-        FROM numbers(100000000)
+        FROM numbers(240000000)
     </fill_query>
 
     <query>SELECT u8 FROM test_{serialization}_{ratio} FORMAT Null</query>
@@ -46,10 +46,10 @@
     <query>SELECT erf(u64) FROM test_{serialization}_{ratio} FORMAT Null</query>
     <query>SELECT lower(str) FROM test_{serialization}_{ratio} FORMAT Null</query>
 
-    <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY u64 DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY u64 DESC LIMIT 220 FORMAT Null</query>
     <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY str DESC LIMIT 100 FORMAT Null</query>
     <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY u8, u64 DESC LIMIT 100 FORMAT Null</query>
-    <query>SELECT * FROM test_{serialization}_{ratio} ORDER BY u8, u64 DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT * FROM test_{serialization}_{ratio} ORDER BY u8, u64 DESC LIMIT 190 FORMAT Null</query>
 
     <query>SELECT sum(u64) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
     <query>SELECT uniq(str) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
