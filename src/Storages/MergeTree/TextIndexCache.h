@@ -142,4 +142,28 @@ using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
+class TokensCardinalitiesCache
+{
+public:
+    explicit TokensCardinalitiesCache(std::vector<String> all_search_tokens_);
+
+    void update(const TokenToPostingsInfosMap & token_infos, const NameSet & missing_tokens, size_t total_rows);
+    void sortTokens(std::vector<String> & tokens) const;
+
+private:
+    const std::vector<String> all_search_tokens;
+
+    struct CardinalityAggregate
+    {
+        size_t cardinality = 0;
+        size_t checked_rows = 0;
+
+        bool operator==(const CardinalityAggregate & other) const = default;
+    };
+
+    mutable std::mutex mutex;
+    using CardinalitiesMap = std::unordered_map<String, CardinalityAggregate>;
+    CardinalitiesMap cardinalities TSA_GUARDED_BY(mutex);
+};
+
 }

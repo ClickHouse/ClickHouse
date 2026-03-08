@@ -217,6 +217,19 @@ bool RowsRange::intersects(const RowsRange & other) const
     return (begin <= other.begin && other.begin <= end) || (other.begin <= begin && begin <= other.end);
 }
 
+std::optional<RowsRange> RowsRange::intersectWith(const RowsRange & other) const
+{
+    if (!intersects(other))
+        return std::nullopt;
+
+    return RowsRange(std::max(begin, other.begin), std::min(end, other.end));
+}
+
+RowsRange RowsRange::unionWith(const RowsRange & other) const
+{
+    return RowsRange(std::min(begin, other.begin), std::max(end, other.end));
+}
+
 std::vector<size_t> TokenPostingsInfo::getBlocksToRead(const RowsRange & range) const
 {
     std::vector<size_t> blocks;
@@ -323,6 +336,159 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 }
 
+void TextIndexAnalyzer::QueryBuilder::markFailed()
+{
+    is_failed = true;
+    rows_range.reset();
+    postings.reset();
+}
+
+void TextIndexAnalyzer::QueryBuilder::addMissingToken()
+{
+    if (query->search_mode == TextSearchMode::All)
+        markFailed();
+}
+
+void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
+{
+    if (is_failed)
+        return;
+
+    if (!rows_range)
+    {
+        rows_range = token_rows_range;
+    }
+    else if (query->search_mode == TextSearchMode::Any)
+    {
+        rows_range = rows_range->unionWith(token_rows_range);
+    }
+    else if (query->search_mode == TextSearchMode::All)
+    {
+        rows_range = rows_range->intersectWith(token_rows_range);
+
+        if (!rows_range)
+            markFailed();
+    }
+}
+
+void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
+{
+    if (is_failed)
+        return;
+
+    if (!postings)
+    {
+        postings = *token_postings;
+    }
+    else if (query->search_mode == TextSearchMode::Any)
+    {
+        *postings |= *token_postings;
+    }
+    else
+    {
+        *postings &= *token_postings;
+
+        if (postings->cardinality() == 0)
+            markFailed();
+    }
+}
+
+TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
+{
+    for (const auto & [hash, query] : condition_text.getAllSearchQueries())
+    {
+        query_builders[hash].query = query;
+
+        for (const auto & token : query->tokens)
+        {
+            query_count_by_token[token]++;
+            queries_by_token[token].push_back(hash);
+        }
+    }
+}
+
+const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
+{
+    auto hash = query.getHash().get128();
+    auto it = query_builders.find(hash);
+
+    if (it == query_builders.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search  query with function '{}'", query.function_name);
+
+    return it->second;
+}
+
+void TextIndexAnalyzer::addMissingToken(std::string_view token)
+{
+    missing_tokens.emplace(token);
+
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addMissingToken();
+    });
+}
+
+void TextIndexAnalyzer::addLargePostings(std::string_view token)
+{
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addLargePostings();
+    });
+}
+
+void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+{
+    chassert(!token_info->ranges.empty());
+    RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addRowsRange(rows_range);
+        if (token_info->embedded_postings)
+            query_builder.addPostings(token_info->embedded_postings);
+    });
+
+    token_infos[token] = token_info;
+    if (token_info->embedded_postings)
+        tokens_with_postings.emplace(token);
+}
+
+void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
+{
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addPostings(postings);
+    });
+
+    tokens_with_postings.emplace(token);
+}
+
+template <typename Operation>
+void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
+{
+    const auto & token_queries = queries_by_token.at(token);
+
+    for (const auto & query_hash : token_queries)
+    {
+        auto & query_builder = query_builders[query_hash];
+        if (query_builder.is_failed)
+            continue;
+
+        operation(query_builder);
+
+        if (query_builder.is_failed)
+        {
+            has_failed_queries = true;
+
+            for (const auto & other_token : query_builder.query->tokens)
+            {
+                chassert(query_count_by_token[other_token] > 0);
+                --query_count_by_token[other_token];
+            }
+        }
+    }
+}
+
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
@@ -341,10 +507,10 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     is_empty = false;
-    remaining_tokens.clear();
+    analyzer.emplace(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
 
     analyzeDictionary(*index_stream, *dictionary_stream, state);
-    readPostingsForRareTokens(*postings_stream, state);
+    analyzePostings(*postings_stream, state);
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionary(
@@ -352,20 +518,29 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     MergeTreeIndexReaderStream & dictionary_stream,
     MergeTreeIndexDeserializationState & state)
 {
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    auto cardinalities_cache = condition_text.cardinalitiesCache();
     auto tokens_to_read = fillTokensFromCache(state);
+
     if (tokens_to_read.empty())
+    {
+        cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
         return;
+    }
 
     auto sparse_index = loadSparseIndex(header_stream, state);
     if (sparse_index->empty())
         return;
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
     auto tokens_cache = condition_text.tokensCache();
+    cardinalities_cache->sortTokens(tokens_to_read);
 
-    std::sort(tokens_to_read.begin(), tokens_to_read.end());
-    std::vector<std::pair<size_t, std::vector<std::string_view>>> blocks_to_read;
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
+
+    /// Collect blocks ids in the same order as tokens are sorted by cardinality.
+    std::vector<size_t> blocks_ids_to_read;
+    std::unordered_map<size_t, std::vector<std::string_view>> block_id_to_tokens;
 
     for (const auto & token : tokens_to_read)
     {
@@ -373,75 +548,69 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
         if (idx != 0)
             --idx;
 
-        if (blocks_to_read.empty() || blocks_to_read.back().first != idx)
-        {
-            chassert(blocks_to_read.empty() || idx > blocks_to_read.back().first);
-            blocks_to_read.emplace_back(idx, std::vector<std::string_view>());
-        }
+        auto [it, inserted] = block_id_to_tokens.try_emplace(idx);
+        if (inserted)
+            blocks_ids_to_read.emplace_back(idx);
 
-        blocks_to_read.back().second.emplace_back(token);
+        it->second.emplace_back(token);
     }
 
-    for (const auto & [block_idx, needed_tokens] : blocks_to_read)
+    for (const auto & block_idx : blocks_ids_to_read)
     {
+        auto & needed_tokens = block_id_to_tokens[block_idx];
+
+        std::erase_if(needed_tokens, [&](const auto & token)
+        {
+            return !analyzer->isTokenNeeded(token);
+        });
+
+        if (needed_tokens.empty())
+            continue;
+
         /// Seek to the dictionary block and deserialize tokens.
         UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
         dictionary_stream.seekToMark({offset_in_file, 0});
         auto * data_buffer = dictionary_stream.getDataBuffer();
 
         ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
-
         auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
         const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
-        size_t num_tokens = block_tokens.size();
+        auto [matched_indices, missing_tokens] = matchTokens(block_tokens, std::move(needed_tokens));
 
-        /// Use binary search to find indices of needed tokens in the block.
-        std::vector<size_t> matched_indices;
-        matched_indices.reserve(needed_tokens.size());
-
-        auto idx_range = collections::range(0, num_tokens);
-        auto it_begin = idx_range.begin();
-
-        for (const auto & token : needed_tokens)
+        for (const auto & token : missing_tokens)
         {
-            auto it = std::lower_bound(it_begin, idx_range.end(), token, [&block_tokens](size_t lhs_idx, std::string_view rhs_ref)
-            {
-                return block_tokens.getDataAt(lhs_idx) < rhs_ref;
-            });
-
-            it_begin = it;
-            size_t idx_in_block = it - idx_range.begin();
-
-            if (idx_in_block < num_tokens && block_tokens.getDataAt(idx_in_block) == token)
-                matched_indices.emplace_back(idx_in_block);
+            analyzer->addMissingToken(token);
         }
 
-        if (global_search_mode == TextSearchMode::All && matched_indices.size() != needed_tokens.size())
+        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
         {
-            remaining_tokens.clear();
+            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
             return;
         }
-
-        if (matched_indices.empty())
-            continue;
 
         /// Deserialize only the token infos for matched tokens.
         auto infos = TextIndexSerialization::deserializeTokenInfos(
             *data_buffer,
-            num_tokens,
+            block_tokens.size(),
             matched_indices,
             postings_serialization);
 
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
-            auto token_info = std::make_shared<TokenPostingsInfo>(std::move(infos[i]));
             auto token_hash = TextIndexTokensCache::hash(index_id_for_caches, token);
+            tokens_cache->set(token_hash, infos[i]);
+            analyzer->addTokenInfo(token, infos[i]);
+        }
 
-            tokens_cache->set(token_hash, token_info);
-            remaining_tokens.emplace(std::move(token), std::move(token_info));
+        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        {
+            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            return;
         }
     }
+
+    cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
 }
 
 std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
@@ -463,7 +632,7 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     {
         if (cached_infos[i])
         {
-            remaining_tokens.emplace(all_search_tokens[i], cached_infos[i]);
+            analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
             ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         }
         else
@@ -474,6 +643,39 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     }
 
     return tokens_to_read;
+}
+
+std::pair<std::vector<size_t>, NameSet> MergeTreeIndexGranuleText::matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens)
+{
+    NameSet missing_tokens;
+    std::vector<size_t> matched_indices;
+    matched_indices.reserve(needed_tokens.size());
+
+    size_t num_tokens = all_tokens.size();
+    auto idx_range = collections::range(0, num_tokens);
+    auto it_begin = idx_range.begin();
+
+    /// Sort tokens lexicographically for correct binary search in the dictionary.
+    std::sort(needed_tokens.begin(), needed_tokens.end());
+
+    for (const auto & token : needed_tokens)
+    {
+        /// Use binary search to find indices of needed tokens in the block.
+        auto it = std::lower_bound(it_begin, idx_range.end(), token, [&all_tokens](size_t lhs_idx, std::string_view rhs_ref)
+        {
+            return all_tokens.getDataAt(lhs_idx) < rhs_ref;
+        });
+
+        it_begin = it;
+        size_t idx_in_block = it - idx_range.begin();
+
+        if (idx_in_block < num_tokens && all_tokens.getDataAt(idx_in_block) == token)
+            matched_indices.emplace_back(idx_in_block);
+        else
+            missing_tokens.insert(String(token));
+    }
+
+    return {std::move(matched_indices), std::move(missing_tokens)};
 }
 
 DictionarySparseIndexPtr MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
@@ -511,74 +713,67 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
-void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     using enum PostingsSerialization::Flags;
+    const auto & token_infos = analyzer->getTokenInfos();
 
-    for (const auto & [token, token_info] : remaining_tokens)
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const auto & global_search_mode = condition_text.getGlobalSearchMode();
+
+    for (const auto & [token, token_info] : token_infos)
     {
-        if (token_info->header & EmbeddedPostings)
+        if (!analyzer->isTokenNeeded(token) || analyzer->hasPostingsForToken(token))
+            continue;
+
+        if (!(token_info->header & SingleBlock))
         {
-            chassert(token_info->embedded_postings);
-            rare_tokens_postings.emplace(token, token_info->embedded_postings);
-            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+            analyzer->addLargePostings(token);
         }
-        else if (token_info->header & SingleBlock)
+        else
         {
             chassert(token_info->offsets.size() == 1);
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
-            rare_tokens_postings.emplace(token, std::move(block));
+            analyzer->addPostings(token, std::move(block));
         }
+
+        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+            break;
     }
 }
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
-    return sizeof(*this)
-        + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
-        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
+    /// TODO: Implement memory usage calculation.
+    return sizeof(*this);
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
+    if (query.tokens.empty())
+        return false;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
     if (!current_range.has_value())
+        return !query_builder.is_failed;
+
+    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+        return false;
+
+    auto intersection = query_builder.rows_range->intersectWith(*current_range);
+    if (!intersection.has_value())
+        return false;
+
+    if (!query_builder.has_large_postings && query_builder.postings)
     {
-        return std::ranges::any_of(query.tokens, [this](const auto & token)
-        {
-            return remaining_tokens.contains(token);
-        });
+        PostingList range_posting;
+        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
+
+        if (range_posting.and_cardinality(*query_builder.postings) == 0)
+            return false;
     }
 
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-    for (const auto & token : query.tokens)
-    {
-        auto it = remaining_tokens.find(token);
-        if (it == remaining_tokens.end())
-            continue;
-
-        bool has_any_range = std::ranges::any_of(it->second->ranges, [this](const auto & range)
-        {
-            return current_range->intersects(range);
-        });
-
-        if (!has_any_range)
-            continue;
-
-        /// We read postings only for tokens that has one block.
-        /// Otherwise, assume that the token is not useful
-        /// for filtering and is present in all granules.
-        auto postings = getPostingsForRareToken(token);
-        if (!postings)
-            return true;
-
-        auto intersection = *postings & range_posting;
-        if (!intersection.isEmpty())
-            return true;
-    }
-
-    return false;
+    return true;
 }
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
@@ -591,49 +786,30 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
+    if (query.tokens.empty())
+        return true;
+
+    const auto & query_builder = analyzer->getQueryBuilder(query);
     if (!current_range.has_value())
+        return !query_builder.is_failed;
+
+    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+        return false;
+
+    auto intersection = query_builder.rows_range->intersectWith(*current_range);
+    if (!intersection.has_value())
+        return false;
+
+    if (query_builder.postings)
     {
-        return std::ranges::all_of(query.tokens, [this](const auto & token)
-        {
-            return remaining_tokens.contains(token);
-        });
-    }
+        PostingList range_posting;
+        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
-    PostingList intersection;
-    intersection.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-    for (const auto & token : query.tokens)
-    {
-        auto it = remaining_tokens.find(token);
-        if (it == remaining_tokens.end())
+        if (range_posting.and_cardinality(*query_builder.postings) == 0)
             return false;
-
-        bool has_any_range = std::ranges::any_of(it->second->ranges, [this](const auto & range)
-        {
-            return current_range->intersects(range);
-        });
-
-        if (!has_any_range)
-            return false;
-
-        /// We read postings only for tokens that has one block.
-        /// Otherwise, assume that the token is not useful
-        /// for filtering and is present in all granules.
-        if (auto postings = getPostingsForRareToken(token))
-        {
-            intersection &= *postings;
-            if (intersection.cardinality() == 0)
-                return false;
-        }
     }
 
     return true;
-}
-
-PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const
-{
-    auto it = rare_tokens_postings.find(token);
-    return it == rare_tokens_postings.end() ? nullptr : it->second;
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
@@ -947,6 +1123,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
             info.offsets.emplace_back(0);
             info.ranges.emplace_back(postings->minimum(), postings->maximum());
             info.embedded_postings = std::move(postings);
+            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
     }
     else
@@ -1023,20 +1200,20 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
     }
 }
 
-std::vector<TokenPostingsInfo> TextIndexSerialization::deserializeTokenInfos(
+std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
     ReadBuffer & istr,
     size_t num_tokens,
     const std::vector<size_t> & matched_indices,
     PostingsSerialization & postings_serialization)
 {
-    chassert(matched_indices.back() < num_tokens);
-    chassert(std::is_sorted(matched_indices.begin(), matched_indices.end()));
-
-    std::vector<TokenPostingsInfo> result;
+    std::vector<TokenPostingsInfoPtr> result;
     result.reserve(matched_indices.size());
 
     if (matched_indices.empty())
         return result;
+
+    chassert(matched_indices.back() < num_tokens);
+    chassert(std::is_sorted(matched_indices.begin(), matched_indices.end()));
 
     for (size_t i = 0, j = 0; i < num_tokens && j < matched_indices.size(); ++i)
     {
@@ -1047,7 +1224,7 @@ std::vector<TokenPostingsInfo> TextIndexSerialization::deserializeTokenInfos(
         }
 
         auto info = deserializeTokenInfo(istr, &postings_serialization);
-        result.emplace_back(std::move(info));
+        result.emplace_back(std::make_shared<TokenPostingsInfo>(std::move(info)));
         ++j;
     }
 

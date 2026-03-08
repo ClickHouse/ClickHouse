@@ -10,7 +10,6 @@
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
 /// A part of "direct read from text index" optimization.
@@ -44,9 +43,12 @@ public:
 private:
     void createEmptyColumns(Columns & columns) const;
 
-    /// Returns postings for all all tokens required for the given mark.
-    PostingsMap readPostingsIfNeeded(size_t mark);
-    /// Returns postings for all blocks of the given token required for the given range.
+    /// Returns combined postings per column for the given mark.
+    std::vector<PostingList> buildPostingsForMark(size_t mark);
+    /// Returns combined posting list for a single query by taking the prebuilt
+    /// postings from the analyzer and reading large postings blocks as needed.
+    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);
+    /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
@@ -57,7 +59,7 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
-    void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
+    void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
 
     size_t getNumRowsInGranule(size_t index_mark) const;
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;

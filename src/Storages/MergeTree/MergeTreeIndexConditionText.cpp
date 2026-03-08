@@ -117,6 +117,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
+    cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
 }
 
 bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & element)
