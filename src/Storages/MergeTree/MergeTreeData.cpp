@@ -3377,6 +3377,16 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         {
             res.emplace_back(*it_to_delete);
             modifyPartState(it_to_delete, DataPartState::Deleting, parts_lock);
+
+            /// Eagerly clear caches and columns description while storage is still alive,
+            /// so that part destructors don't need to access storage.
+            (*it_to_delete)->clearCaches();
+            (*it_to_delete)->clearColumnsDescription();
+            for (const auto & [_, proj_part] : (*it_to_delete)->getProjectionParts())
+            {
+                proj_part->clearCaches();
+                proj_part->clearColumnsDescription();
+            }
         }
     }
 
@@ -3931,6 +3941,17 @@ void MergeTreeData::dropAllData()
             continue;
         }
         modifyPartState(it, DataPartState::Deleting, lock);
+
+        /// Eagerly clear caches and columns description while storage is still alive,
+        /// so that part destructors don't need to access storage.
+        (*it)->clearCaches();
+        (*it)->clearColumnsDescription();
+        for (const auto & [_, proj_part] : (*it)->getProjectionParts())
+        {
+            proj_part->clearCaches();
+            proj_part->clearColumnsDescription();
+        }
+
         all_parts.push_back(*it);
     }
     if (skipped_parts > 0)
@@ -5942,6 +5963,17 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
+
+            /// Eagerly clear caches and columns description while storage is still alive,
+            /// so that part destructors don't need to access storage.
+            original_active_part->clearCaches();
+            original_active_part->clearColumnsDescription();
+            for (const auto & [_, proj_part] : original_active_part->getProjectionParts())
+            {
+                proj_part->clearCaches();
+                proj_part->clearColumnsDescription();
+            }
+
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);
 

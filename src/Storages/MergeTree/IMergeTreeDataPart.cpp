@@ -429,7 +429,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    if (columns_description)
+    if (!cleared_columns_description && columns_description)
     {
         columns_description.reset();
         columns_description_with_collected_nested.reset();
@@ -793,7 +793,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     }
 }
 
-void IMergeTreeDataPart::clearCaches()
+void IMergeTreeDataPart::clearCaches() const
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
         return;
@@ -806,6 +806,19 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+}
+
+void IMergeTreeDataPart::clearColumnsDescription() const
+{
+    if (cleared_columns_description.exchange(true))
+        return;
+
+    /// Only deref the cache entry; do NOT reset the shared_ptrs.
+    /// Background tasks (e.g. MutateTask) may still hold references to this part
+    /// and access columns_description concurrently. The shared_ptrs will be
+    /// released naturally when the part is destroyed.
+    if (columns_description)
+        storage.decrefColumnsDescriptionForColumns(columns);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
