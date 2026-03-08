@@ -102,6 +102,13 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
     graph->cancel();
+
+    /// After graph->cancel(), onCancel() has been called on all processors synchronously.
+    /// Some processors (e.g. RemoteSource) drain remaining packets during onCancel(),
+    /// which may produce additional progress (e.g. Progress packets from parallel replicas).
+    /// This progress is accumulated in ISource::read_progress and will be collected by
+    /// finalizeExecution() which runs after all worker threads have been joined,
+    /// ensuring no concurrent access to processor state.
 }
 
 void PipelineExecutor::cancelReading()
@@ -235,8 +242,7 @@ void PipelineExecutor::finalizeExecution()
     checkTimeLimit();
 
     auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
-        return;
+    bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
@@ -245,8 +251,16 @@ void PipelineExecutor::finalizeExecution()
         {
             /// Single thread, do not hold mutex
             all_processors_finished = false;
-            break;
+
+            /// When not cancelled, we will throw below, so no need to continue.
+            if (!is_cancelled)
+                break;
+
+            /// When cancelled, fall through to also collect remaining progress from
+            /// non-finished processors. This is safe because all execution threads
+            /// have stopped by this point, so no concurrent access to processor state.
         }
+
         if (node->processor && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
@@ -270,8 +284,11 @@ void PipelineExecutor::finalizeExecution()
         }
     }
 
-    if (!all_processors_finished)
+    if (!is_cancelled && !all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+
+    if (finalize_callback)
+        finalize_callback();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot)

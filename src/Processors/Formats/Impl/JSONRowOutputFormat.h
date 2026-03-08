@@ -61,6 +61,9 @@ protected:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    bool hasDeferredStatistics() const override;
+    void writeDeferredStatisticsAndFinalize() override;
+
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }

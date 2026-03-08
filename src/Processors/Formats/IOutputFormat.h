@@ -64,6 +64,10 @@ public:
 
     void finalize();
 
+    /// Called after PipelineExecutor::finalizeExecution() has collected all remaining progress
+    /// (e.g. from parallel replicas draining). Writes the deferred statistics section and closes the document.
+    void completeDeferredStatistics();
+
     virtual bool expectMaterializedColumns() const { return true; }
     virtual bool supportsSpecialSerializationKinds() const { return false; }
 
@@ -135,6 +139,14 @@ protected:
     virtual void consumeExtremes(Chunk) {}
     virtual void finalizeImpl() {}
     virtual void finalizeBuffers() {}
+
+    /// Override to return true when the format wants to defer writing statistics
+    /// until after all progress has been collected (two-phase finalization).
+    virtual bool hasDeferredStatistics() const { return false; }
+
+    /// Override to write the deferred statistics section and close the document.
+    /// Called in phase 2 after all progress from connection draining has been collected.
+    virtual void writeDeferredStatisticsAndFinalize() {}
     virtual void writePrefix() {}
     virtual void writeSuffix() {}
     virtual void resetFormatterImpl() {}
@@ -215,6 +227,7 @@ protected:
 private:
     size_t rows_read_before = 0;
     bool are_totals_written = false;
+    bool statistics_deferred = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;

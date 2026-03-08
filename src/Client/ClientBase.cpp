@@ -793,6 +793,13 @@ try
 
         output_format->setAutoFlush();
 
+        /// Replay any progress that was received from the server before the output format was initialized.
+        if (!pending_output_format_progress.empty())
+        {
+            output_format->onProgress(pending_output_format_progress);
+            pending_output_format_progress.reset();
+        }
+
         if ((!select_into_file || select_into_file_and_stdout)
             && stdout_is_a_tty
             && stdin_is_a_tty
@@ -1536,6 +1543,8 @@ void ClientBase::onProgress(const Progress & value)
 
     if (output_format)
         output_format->onProgress(value);
+    else
+        pending_output_format_progress.incrementPiecewiseAtomically(value);
 
     if (need_render_progress && tty_buf)
     {
@@ -1714,6 +1723,7 @@ void ClientBase::resetOutput()
     }
 
     output_format.reset();
+    pending_output_format_progress.reset();
 
     logs_out_stream.reset();
 

@@ -1,5 +1,6 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -65,11 +66,18 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
+    auto set_deferred_statistics_callback = [&](PipelineExecutor & executor)
+    {
+        if (pipeline.output_format)
+            executor.setFinalizeCallback([fmt = pipeline.output_format]() { fmt->completeDeferredStatistics(); });
+    };
+
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        set_deferred_statistics_callback(*data->executor);
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
@@ -102,6 +110,7 @@ void CompletedPipelineExecutor::execute()
     {
         PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+        set_deferred_statistics_callback(executor);
         executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     }
 }

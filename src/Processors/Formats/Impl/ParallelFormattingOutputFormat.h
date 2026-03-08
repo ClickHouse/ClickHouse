@@ -94,6 +94,7 @@ public:
         auto internal_formatter = internal_formatter_creator(buf);
         save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
         supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
+        has_deferred_statistics = internal_formatter->hasDeferredStatistics();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -185,6 +186,9 @@ private:
 
     void finalizeImpl() override;
 
+    bool hasDeferredStatistics() const override { return has_deferred_statistics && exception_message.empty(); }
+    void writeDeferredStatisticsAndFinalize() override;
+
     void resetFormatterImpl() override
     {
         /// Resetting parallel formatting is not obvious and it's not used anywhere
@@ -257,6 +261,7 @@ private:
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
     bool supports_non_default_serialization_kinds;
+    bool has_deferred_statistics;
 
     String exception_message;
     bool exception_is_rethrown = false;

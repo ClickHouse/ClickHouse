@@ -8,6 +8,7 @@
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <functional>
 #include <queue>
 #include <memory>
 
@@ -80,6 +81,10 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
+    /// Set callback to be called at the end of finalizeExecution(),
+    /// after all remaining progress has been collected.
+    void setFinalizeCallback(std::function<void()> callback) { finalize_callback = std::move(callback); }
+
 private:
     ExecutingGraphPtr graph;
 
@@ -108,6 +113,8 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
+
+    std::function<void()> finalize_callback;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

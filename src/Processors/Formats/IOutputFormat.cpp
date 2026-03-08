@@ -171,6 +171,16 @@ void IOutputFormat::finalizeUnlocked()
     writeSuffixIfNeeded();
     finalizeImpl();
 
+    if (hasDeferredStatistics())
+    {
+        /// Phase 1 complete: everything except statistics is written.
+        /// Phase 2 (statistics + closing delimiter) will happen in completeDeferredStatistics()
+        /// after PipelineExecutor::finalizeExecution() collects remaining progress.
+        statistics_deferred = true;
+        finalized = true;
+        return;
+    }
+
     if (auto_flush)
         flushImpl();
 
@@ -182,6 +192,28 @@ void IOutputFormat::finalize()
 {
     std::lock_guard lock(writing_mutex);
     finalizeUnlocked();
+
+    /// For the direct-call path (not via pipeline executor),
+    /// immediately write deferred statistics since there is no finalizeExecution() to do it later.
+    if (statistics_deferred)
+    {
+        writeDeferredStatisticsAndFinalize();
+        flushImpl();
+        finalizeBuffers();
+        statistics_deferred = false;
+    }
+}
+
+void IOutputFormat::completeDeferredStatistics()
+{
+    std::lock_guard lock(writing_mutex);
+    if (!statistics_deferred)
+        return;
+
+    writeDeferredStatisticsAndFinalize();
+    flushImpl();
+    finalizeBuffers();
+    statistics_deferred = false;
 }
 
 void IOutputFormat::setTotals(const Block & totals)

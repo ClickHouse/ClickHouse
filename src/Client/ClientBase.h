@@ -383,6 +383,10 @@ protected:
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
+    /// Progress received from server before output_format was initialized.
+    /// When the output format is created, this buffered progress is replayed into it.
+    Progress pending_output_format_progress;
+
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
