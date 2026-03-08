@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Storages/IStorage.h>
 
