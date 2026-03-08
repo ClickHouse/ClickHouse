@@ -33,7 +33,6 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/EventNotifier.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/Throttler.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -1047,8 +1046,6 @@ private:
 
     const String TMP_PREFIX_REPLACE_PARTITION_FROM = "tmp_replace_from_";
     std::unique_ptr<ReplicatedMergeTreeLogEntryData> replacePartitionFromImpl(
-        const Stopwatch & watch,
-        ProfileEventsScope & profile_events_scope,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & src_data,
         const String & partition_id,

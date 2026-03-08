@@ -1696,7 +1696,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_future_part,
             projection->metadata,
             global_ctx->merge_entry,
-            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
+            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, (*global_ctx->merge_entry)->thread_group),
             global_ctx->time_of_merge,
             global_ctx->context,
             *global_ctx->holder,

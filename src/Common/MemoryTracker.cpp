@@ -743,7 +743,7 @@ void MemoryTracker::setParent(MemoryTracker * elem)
 {
     /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached
     /// to a query thread group or a user group, because this memory will be (🤞) freed outside of these scopes.
-    if (level == VariableContext::Thread && DB::current_thread)
+    if ((level == VariableContext::Scope || level == VariableContext::Thread) && DB::current_thread)
         DB::current_thread->flushUntrackedMemory();
 
     parent.store(elem, std::memory_order_relaxed);

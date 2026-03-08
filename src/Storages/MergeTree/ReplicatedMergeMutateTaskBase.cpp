@@ -5,10 +5,11 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/ErrorCodes.h>
-#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -42,9 +43,6 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
-    /// Metrics will be saved in the local profile_counters.
-    ProfileEventsScope profile_events_scope(&profile_counters);
-
     std::exception_ptr saved_exception;
 
     bool need_to_save_exception = true;
@@ -145,9 +143,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    std::optional<ThreadGroupSwitcher> switcher;
-    if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -310,5 +306,21 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
     }
 }
 
+
+ReplicatedMergeMutateTaskBase::ReplicatedMergeMutateTaskBase(
+    LoggerPtr log_,
+    StorageReplicatedMergeTree & storage_,
+    ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
+    IExecutableTask::TaskResultCallback & task_result_callback_)
+    : storage(storage_)
+    , selected_entry(selected_entry_)
+    , entry(*selected_entry->log_entry)
+    , log(log_)
+    /// This is needed to ask an asssignee to assign a new merge/mutate operation
+    /// It takes bool argument and true means that current task is successfully executed.
+    , task_result_callback(task_result_callback_)
+    , rng(randomSeed())
+{
+}
 
 }

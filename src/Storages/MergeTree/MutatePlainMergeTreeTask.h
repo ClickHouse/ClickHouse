@@ -28,16 +28,7 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
-        IExecutableTask::TaskResultCallback & task_result_callback_)
-        : storage(storage_)
-        , metadata_snapshot(std::move(metadata_snapshot_))
-        , merge_mutate_entry(std::move(merge_mutate_entry_))
-        , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(task_result_callback_)
-    {
-        for (auto & part : merge_mutate_entry->future_part->parts)
-            priority.value += part->getBytesOnDisk();
-    }
+        IExecutableTask::TaskResultCallback & task_result_callback_);
 
     bool executeStep() override;
     void cancel() noexcept override;
@@ -66,7 +57,6 @@ private:
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
-    std::unique_ptr<Stopwatch> stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
     Priority priority;
@@ -79,9 +69,8 @@ private:
     IExecutableTask::TaskResultCallback task_result_callback;
     MutateTaskPtr mutate_task;
 
-    ProfileEvents::Counters profile_counters;
-
     ContextMutablePtr task_context;
+    ThreadGroupPtr thread_group;
 
     ContextMutablePtr createTaskContext() const;
 };

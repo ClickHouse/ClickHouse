@@ -1,5 +1,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
@@ -589,6 +590,14 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
 
+    // we need query context to do inserts to target table with MV containing subqueries or joins
+    auto insert_context = Context::createCopy(context);
+    insert_context->makeQueryContext();
+    addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
+
+    auto thread_group = ThreadGroup::createForBackgroundOps(insert_context);
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::SYSTEM_LOG_FLUSH, true);
+
     try
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
@@ -633,11 +642,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
         ASTPtr query_ptr = std::move(insert);
-
-        // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
-        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(
             query_ptr,

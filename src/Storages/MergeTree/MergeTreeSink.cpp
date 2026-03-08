@@ -9,10 +9,9 @@
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
-
 
 namespace ProfileEvents
 {
@@ -109,8 +108,8 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     for (auto & current_block : part_blocks)
     {
-        ProfileEvents::Counters part_counters;
-        auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto current_deduplication_info = deduplication_info->cloneSelf();
 
@@ -136,13 +135,11 @@ void MergeTreeSink::consume(Chunk & chunk)
             }
         }
 
-        UInt64 elapsed_ns = 0;
         TemporaryPartPtr temp_part;
 
         {
             Stopwatch watch;
             temp_part = writeNewTempPart(current_block);
-            elapsed_ns = watch.elapsed();
         }
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
@@ -194,17 +191,13 @@ void MergeTreeSink::consume(Chunk & chunk)
             partitions = DelayedPartitions{};
         }
 
-        // partition_scope must be reset before part_counters is moved
-        partition_scope.reset();
-
         partitions.emplace_back(MergeTreeDelayedChunk::Partition
         {
             .log = storage.log.load(),
             .block_with_partition = std::move(current_block),
             .deduplication_info = std::move(current_deduplication_info),
             .temp_part = std::move(temp_part),
-            .elapsed_ns = elapsed_ns,
-            .part_counters = std::move(part_counters),
+            .thread_group = std::move(thread_group),
         });
 
         total_streams += current_streams;
@@ -225,8 +218,7 @@ void MergeTreeSink::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        Stopwatch watch;
-        auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
+        auto group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto retry_times = 0;
         while (true)
@@ -241,15 +233,14 @@ void MergeTreeSink::finishDelayedChunk()
             {
                 partition.temp_part->prewarmCaches();
 
-                profile_events_scope.reset();
-                partition.elapsed_ns += watch.elapsed();
-                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+                StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
 
                 PartLog::addNewPart(
                     storage.getContext(),
-                    PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
+                    PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
                     getDeduplicationBlockIds(deduplication_hashes));
-                StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
                 storage.background_operations_assignee.trigger();
@@ -292,13 +283,11 @@ void MergeTreeSink::finishDelayedChunk()
                     "All rows are deduplicated for part with block IDs: {}, skipping the part commit.",
                     fmt::join(conflicts, ", "));
 
-                profile_events_scope.reset();
-                partition.elapsed_ns += watch.elapsed();
-                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
 
                 PartLog::addNewPart(
                     storage.getContext(),
-                    PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
+                    PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
                     getDeduplicationBlockIds(deduplication_hashes),
                     ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated"));
 

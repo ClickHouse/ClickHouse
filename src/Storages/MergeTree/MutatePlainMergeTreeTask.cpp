@@ -5,7 +5,6 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
@@ -39,12 +38,12 @@ void MutatePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
 
     task_context = createTaskContext();
+    thread_group = ThreadGroup::createForBackgroundOps(task_context);
+
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
-
-    stopwatch = std::make_unique<Stopwatch>();
+        thread_group);
 
     const auto & mutation_ids = merge_mutate_entry->mutation_ids;
     chassert(!mutation_ids.empty());
@@ -55,11 +54,11 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
-            stopwatch->elapsed(),
+            thread_group->getGroupElapsedNs(),
             future_part->name,
             new_part,
             future_part->parts,
@@ -90,13 +89,9 @@ void MutatePlainMergeTreeTask::finish()
 bool MutatePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
-    /// Metrics will be saved in the local profile_counters.
-    ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    std::optional<ThreadGroupSwitcher> switcher;
-    if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -192,9 +187,23 @@ ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
     context->makeQueryContextForMutate(*storage.getSettings());
-    auto queryId = getQueryId();
-    context->setCurrentQueryId(queryId);
+    context->setCurrentQueryId(getQueryId());
     return context;
 }
 
+MutatePlainMergeTreeTask::MutatePlainMergeTreeTask(
+    StorageMergeTree & storage_,
+    StorageMetadataPtr metadata_snapshot_,
+    MergeMutateSelectedEntryPtr merge_mutate_entry_,
+    TableLockHolder table_lock_holder_,
+    IExecutableTask::TaskResultCallback & task_result_callback_)
+    : storage(storage_)
+    , metadata_snapshot(std::move(metadata_snapshot_))
+    , merge_mutate_entry(std::move(merge_mutate_entry_))
+    , table_lock_holder(std::move(table_lock_holder_))
+    , task_result_callback(task_result_callback_)
+{
+    for (auto & part : merge_mutate_entry->future_part->parts)
+        priority.value += part->getBytesOnDisk();
+}
 }

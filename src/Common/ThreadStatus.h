@@ -68,6 +68,7 @@ public:
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
+    ThreadGroupPtr parent;
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
@@ -116,14 +117,20 @@ public:
 
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
     /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// That method either creates new main thread group for the task, or creates a new thread group linked to current thread group if it exists.
+    static ThreadGroupPtr createForBackgroundOps(ContextPtr task_context);
 
-    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    /// That method either creates creates a new thread group linked to current thread group which has to exist
+    static ThreadGroupPtr createForScope();
+
+    /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
+    /// Current thread are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here
+    static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
     UInt64 getGroupElapsedMs() const;
+    UInt64 getGroupElapsedNs() const;
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();
@@ -144,9 +151,9 @@ private:
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
-    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
+    UInt64 elapsed_group_ns TSA_GUARDED_BY(mutex) = 0;
 
-    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+    static ThreadGroupPtr create(ContextPtr query_context);
 };
 
 /**
@@ -159,7 +166,7 @@ private:
  *           ...
  *       });
  */
-class ThreadGroupSwitcher : private boost::noncopyable
+class ThreadGroupSwitcher
 {
 public:
     /// If thread_group_ is nullptr or equal to current thread group, does nothing.
@@ -169,6 +176,10 @@ public:
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+
+    ThreadGroupSwitcher(const ThreadGroupSwitcher &) = delete;
+    ThreadGroupSwitcher & operator=(const ThreadGroupSwitcher &) = delete;
+
     ~ThreadGroupSwitcher();
 
 private:

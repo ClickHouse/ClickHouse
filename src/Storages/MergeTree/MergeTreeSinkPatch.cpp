@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/InsertDeduplication.h>
-#include <Common/ProfileEventsScope.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -32,7 +32,8 @@ void MergeTreeSinkPatch::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        ProfileEventsScope scoped_attach(&partition.part_counters);
+        auto thread_group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
+
         partition.temp_part->finalize();
 
         auto & part = partition.temp_part->part;
@@ -44,10 +45,11 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         if (!conflicts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-        auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), block_ids);
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
         storage.background_operations_assignee.trigger();

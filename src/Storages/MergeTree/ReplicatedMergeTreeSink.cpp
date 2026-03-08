@@ -21,7 +21,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/scope_guard.h>
@@ -292,10 +291,8 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     for (auto & current_block : part_blocks)
     {
-        Stopwatch watch;
-
-        ProfileEvents::Counters part_counters;
-        auto profile_events_scope = std::make_unique<ProfileEventsScope>(&part_counters);
+        auto thread_group = ThreadGroup::createForScope();
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         auto current_deduplication_info = deduplication_info->cloneSelf();
 
@@ -345,9 +342,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         all_partitions_block_ids.push_back(hash);
 
-        profile_events_scope.reset();
-        UInt64 elapsed_ns = watch.elapsed();
-
         size_t max_insert_delayed_streams_for_parallel_write;
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
@@ -378,8 +372,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
                 .block_with_partition = std::move(current_block),
                 .deduplication_info = std::move(current_deduplication_info),
                 .temp_part = std::move(temp_part),
-                .elapsed_ns = elapsed_ns,
-                .part_counters = std::move(part_counters),
+                .thread_group = std::move(thread_group),
             });
 
         total_streams += current_streams;
@@ -409,11 +402,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
         std::vector<std::string> block_ids_for_log;
 
         {
-            Stopwatch watch;
-            SCOPE_EXIT({
-                partition.elapsed_ns += watch.elapsed();
-            });
-            auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
+            ThreadGroupSwitcher switcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
             std::set<std::string> parts_to_wait_for_quorum;
 
@@ -526,10 +515,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
         }
 
         // profile_events_scope has to be destroyed in the scope above
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
         PartLog::addNewPart(
             storage.getContext(),
-            PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
+            PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
             block_ids_for_log, // it is either blocks for committed part, or conflicting blocks for deduplicated part
             status);
     }
@@ -543,8 +532,8 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     auto origin_zookeeper = storage.getZooKeeper();
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);
 
-    Stopwatch watch;
-    ProfileEventsScope profile_events_scope;
+    auto thread_group = ThreadGroup::createForScope();
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
     String original_part_dir = part->getDataPartStorage().getPartDirectory();
     auto try_rollback_part_rename = [this, &part, &original_part_dir] ()
@@ -629,13 +618,16 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
                     relative_path, part_dir, part->name, part->name);
             }
         }
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), deduplication_ids, ExecutionStatus(error, error_message));
+
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_ids, ExecutionStatus(error, error_message));
         return deduplicated;
     }
     catch (...)
     {
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         try_rollback_part_rename();
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), deduplication_ids, ExecutionStatus::fromCurrentException("", true));
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_ids, ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }

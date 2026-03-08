@@ -38,7 +38,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/ProfileEventsScope.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Common/FailPoint.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>

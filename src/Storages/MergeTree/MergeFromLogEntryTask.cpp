@@ -8,7 +8,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/FailPoint.h>
 
 #include <Common/DateLUTImpl.h>
@@ -59,11 +58,13 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
 {
 }
 
-
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
+
+    task_context = createTaskContext();
+    thread_group = ThreadGroup::createForBackgroundOps(task_context);
 
     fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
     {
@@ -74,12 +75,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
-    stopwatch_ptr = std::make_unique<Stopwatch>();
-    auto part_log_writer = [this, stopwatch = *stopwatch_ptr](const ExecutionStatus & execution_status)
+    auto part_log_writer = [&](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
-            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
+            PartLogElement::MERGE_PARTS, execution_status, thread_group->getGroupElapsedNs(),
             entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     };
 
@@ -344,15 +344,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMerge(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
-
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
@@ -485,4 +481,11 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 }
 
 
+ContextMutablePtr MergeFromLogEntryTask::createTaskContext() const
+{
+    auto result = Context::createCopy(storage.getContext()->getBackgroundContext());
+    result->makeQueryContextForMerge(*storage.getSettings());
+    result->setCurrentQueryId(getQueryId());
+    return result;
+}
 }

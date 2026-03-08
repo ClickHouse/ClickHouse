@@ -42,6 +42,8 @@ private:
 
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
 
+    ContextMutablePtr createTaskContext() const override;
+
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -60,7 +62,6 @@ private:
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
-    StopwatchUniquePtr stopwatch_ptr{nullptr};
 
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};

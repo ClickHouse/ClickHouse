@@ -5,6 +5,7 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ThreadStatus.h>
 #include <Common/randomSeed.h>
 
 
@@ -23,22 +24,12 @@ public:
         LoggerPtr log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
-        IExecutableTask::TaskResultCallback & task_result_callback_)
-        : storage(storage_)
-        , selected_entry(selected_entry_)
-        , entry(*selected_entry->log_entry)
-        , log(log_)
-        /// This is needed to ask an asssignee to assign a new merge/mutate operation
-        /// It takes bool argument and true means that current task is successfully executed.
-        , task_result_callback(task_result_callback_)
-        , rng(randomSeed())
-    {
-    }
+        IExecutableTask::TaskResultCallback & task_result_callback_);
 
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
     StorageID getStorageID() const override;
-    String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
+    String getQueryId() const final { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
 
     bool printExecutionException() const override { return print_exception; }
@@ -61,6 +52,8 @@ protected:
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
 
+    virtual ContextMutablePtr createTaskContext() const = 0;
+
     StorageReplicatedMergeTree & storage;
 
     /// A callback to reschedule merge_selecting_task after destroying merge_mutate_entry
@@ -71,11 +64,11 @@ protected:
     /// selected_entry is a RAII class, so the time of living must be the same as for the whole task
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry & entry;
+    /// here profile events for merge/mutate task will be stored, and then will be written to log together with part log
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     LoggerPtr log;
-    /// ProfileEvents for current part will be stored here
-    ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
+    ThreadGroupPtr thread_group;
 
 private:
     enum class CheckExistingPartResult : uint8_t

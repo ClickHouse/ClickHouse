@@ -111,7 +111,7 @@ struct MergeListElement : boost::noncopyable
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        ThreadGroupPtr thread_group_);
 
     MergeInfo getInfo() const;
 
