@@ -729,6 +729,31 @@ bool RestCatalog::getTableMetadataImpl(
                 result.setEndpoint(storage_endpoint);
                 break;
             }
+            case StorageType::Azure:
+            {
+                /// Azure ADLS Gen2 vended credentials use SAS tokens.
+                /// The config keys follow the pattern: adls.sas-token.<account_name>
+                /// or adls.sas-token.<account_name>.dfs.core.windows.net
+                /// We look for any key starting with "adls.sas-token." and use the first one found.
+                String sas_token;
+                std::vector<std::string> names;
+                config_object->getNames(names);
+                for (const auto & name : names)
+                {
+                    if (name.starts_with("adls.sas-token."))
+                    {
+                        sas_token = config_object->get(name).extract<String>();
+                        LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
+                        break;
+                    }
+                }
+
+                if (!sas_token.empty())
+                {
+                    result.setStorageCredentials(std::make_shared<AzureCredentials>(sas_token));
+                }
+                break;
+            }
             default:
                 break;
         }

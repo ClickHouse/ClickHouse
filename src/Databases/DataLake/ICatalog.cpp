@@ -75,6 +75,9 @@ void TableMetadata::setLocation(const std::string & location_)
     /// s3://<bucket>/path/to/table/data.
     /// We want to split s3://<bucket> and path/to/table/data.
 
+    /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
+    /// We want to split the bucket/container and path.
+
     auto pos = location_.find("://");
     if (pos == std::string::npos)
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
@@ -91,11 +94,28 @@ void TableMetadata::setLocation(const std::string & location_)
 
     location_without_path = location_.substr(0, pos_to_path);
     path = location_.substr(pos_to_path + 1);
-    bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
 
-    LOG_TEST(getLogger("TableMetadata"),
-             "Parsed location without path: {}, path: {}",
-             location_without_path, path);
+    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
+    /// The bucket (container) is the part before '@', not the whole string before '/'
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    auto at_pos = bucket_part.find('@');
+    if (at_pos != std::string::npos)
+    {
+        /// Azure ABFSS format: extract container (before @) and account (after @)
+        bucket = bucket_part.substr(0, at_pos);
+        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed Azure location - container: {}, account: {}, path: {}",
+                 bucket, azure_account_with_suffix, path);
+    }
+    else
+    {
+        /// Standard format (S3, GCS, etc.)
+        bucket = bucket_part;
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed location without path: {}, path: {}",
+                 location_without_path, path);
+    }
 }
 
 std::string TableMetadata::getLocation() const
@@ -125,6 +145,18 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
     std::string location = endpoint_;
     if (location.ends_with('/'))
         location.pop_back();
+
+    /// For Azure storage, the endpoint format is: https://<account>.dfs.core.windows.net
+    /// We need to construct: https://<account>.dfs.core.windows.net/<container>/<path>
+    /// The bucket variable contains the container name for Azure.
+    if (!azure_account_with_suffix.empty())
+    {
+        /// Azure storage - endpoint should be https://<account>.dfs.core.windows.net
+        /// Construct the full URL with container and path
+        if (location.ends_with(bucket))
+            return std::filesystem::path(location) / path / "";
+        return std::filesystem::path(location) / bucket / path / "";
+    }
 
     if (location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
