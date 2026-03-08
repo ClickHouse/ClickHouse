@@ -148,16 +148,20 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             const auto * database = element.anyDatabase() ? nullptr : &element.database;
             const auto * table = element.anyTable() ? nullptr : &element.table;
 
+            String access_object = element.parameter;
+            if (element.hasFilter())
+                access_object = access_object + "('" + element.filter + "')";
+
             if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, &column, element.is_partial_revoke, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option);
             }
         }
     };
