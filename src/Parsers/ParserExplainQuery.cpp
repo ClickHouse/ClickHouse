@@ -25,6 +25,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_estimates(Keyword::ESTIMATE);
     ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
+    ParserKeyword s_substrait(Keyword::SUBSTRAIT);
 
     if (s_explain.ignore(pos, expected))
     {
@@ -46,6 +47,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::CurrentTransaction;
+        else if (s_substrait.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::Substrait;
     }
     else
         return false;
@@ -97,6 +100,13 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
     {
         /// Nothing to parse
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::Substrait)
+    {
+        if (select_p.parse(pos, query, expected))
+            explain_query->setExplainedQuery(std::move(query));
+        else
+            return false;
     }
     else if (select_only)
     {
