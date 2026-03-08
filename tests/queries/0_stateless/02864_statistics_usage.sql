@@ -32,7 +32,7 @@ ALTER TABLE tab MATERIALIZE STATISTICS ALL;
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After add and materialize statistic';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
-SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active;
+SELECT name, column, statistics from system.parts_columns where (database = currentDatabase()) AND (table = 'tab') AND active order by name, column;
 
 OPTIMIZE TABLE tab FINAL;
 SELECT 'After merge';

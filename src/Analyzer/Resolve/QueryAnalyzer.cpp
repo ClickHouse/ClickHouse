@@ -111,9 +111,11 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool ignore_in_subqueries_, bool use_storage_snapshot_without_data_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , ignore_in_subqueries(ignore_in_subqueries_)
+    , use_storage_snapshot_without_data(use_storage_snapshot_without_data_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -1388,7 +1390,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, use_storage_snapshot_without_data);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)

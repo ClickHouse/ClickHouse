@@ -117,7 +117,7 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_);
+    explicit QueryAnalyzer(bool only_analyze_, bool ignore_in_subqueries_ = false, bool use_storage_snapshot_without_data_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
@@ -330,6 +330,18 @@ private:
     std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     const bool only_analyze;
+
+    /// When true, the second argument of IN functions (subqueries) is not
+    /// resolved.  This is used for dry-run / validation-only mode where the
+    /// subquery may reference tables that do not exist.  The result type of
+    /// IN is always UInt8 regardless of the subquery contents.
+    const bool ignore_in_subqueries;
+
+    /// When true, tables resolved from the database catalog use
+    /// getStorageSnapshotWithoutData instead of getStorageSnapshot.
+    /// This avoids acquiring locks that may already be held by the
+    /// caller (e.g. mutation background thread).
+    const bool use_storage_snapshot_without_data;
 };
 
 }

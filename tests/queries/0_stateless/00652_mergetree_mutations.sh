@@ -24,8 +24,8 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations(d, x, s) VALUES \
 # Try some malformed queries that should fail validation.
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
-# TODO: Queries involving alias columns are not supported yet and should fail on submission.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations UPDATE s = s || '' WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
+# Queries involving alias columns are now supported with the new analyzer.
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations UPDATE s = s || '' WHERE a = 0"
 
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations DELETE WHERE x % 2 = 1"
@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations(d, x, s) VALUES \
     ('2000-01-01', 5, 'e'), ('2000-02-01', 5, 'e')"
 
 # Wait until the last mutation is done.
-wait_for_mutation "mutations" "mutation_7.txt"
+wait_for_mutation "mutations" "mutation_8.txt"
 
 # Check that the table contains only the data that should not be deleted.
 ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM mutations ORDER BY d, x"
