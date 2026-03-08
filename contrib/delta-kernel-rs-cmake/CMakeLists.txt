@@ -6,9 +6,8 @@ include(ExternalProject)
 
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-# MSAN: Disabled because ring does not generate the appropriate symbols
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM (note: outdated with the switch back to `native-tls`)
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
@@ -23,7 +22,7 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine-rustls, test-ffi, tracing"
+    FEATURES "default-engine-native-tls, test-ffi, tracing"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
@@ -36,7 +35,10 @@ corrosion_set_env_vars(delta_kernel_ffi
         "OPENSSL_LIBS=ssl:crypto"
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
-        "OPENSSL_INCLUDE_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/common/")
+        "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/"
+        # The build-script for `openssl-sys` expects all includes to be in one path
+        # but the CMake build for OpenSSL results in headers in two different places
+        "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
