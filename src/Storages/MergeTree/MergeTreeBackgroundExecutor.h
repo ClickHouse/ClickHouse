@@ -82,8 +82,8 @@ struct TaskRuntimeData
             task.reset();
     }
 
-    /// Cached at construction — valid even after resetTask() nulls the task pointer.
-    /// Used by removeTasksCorrespondingToStorage to identify items during destruction.
+    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
+    /// even after resetTask() has nullified the task pointer.
     StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
@@ -125,12 +125,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->storage_id == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -170,11 +170,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }

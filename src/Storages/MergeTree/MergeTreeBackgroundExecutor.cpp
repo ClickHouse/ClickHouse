@@ -322,12 +322,13 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
         }
 
-        /// No lock here.
+        /// No lock here. The storage is being deleted, do the heavy work outside the lock.
+        /// removeTasksCorrespondingToStorage has already found this item and is waiting on is_done,
+        /// so the storage won't be destroyed until we signal completion below.
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
             item_->cancel();
         }
-
         /// release_task handles destruction outside the lock, then cleanup under the lock.
         release_task(std::move(item_));
     };
@@ -348,7 +349,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             if (watch_on_completed.elapsedMilliseconds() > 1000)
             {
-                LOG_WARNING(log, "Execution of callback took {} ms in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                LOG_WARNING(log, "Execution of callback onCompleted took {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
                     watch_on_completed.elapsedMilliseconds(), __PRETTY_FUNCTION__, StackTrace().toString());
             }
         }
