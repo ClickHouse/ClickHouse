@@ -1,0 +1,13 @@
+John\0\0\0\0
+John
+John
+abc\0def
+FixedString(8)	8
+8
+\0\0\0\0\0\0\0\0
+
+\0John
+John\0A
+{"s":"John\u0000\u0000\u0000\u0000"}
+{"s":"John"}
+null
