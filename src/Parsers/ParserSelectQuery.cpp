@@ -11,9 +11,7 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
-#include <Poco/String.h>
 
 
 namespace DB
@@ -303,6 +301,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
+        /// Probe for unquoted ALL keyword before parsing the expression list.
+        /// ParserKeyword only matches BareWord tokens, so quoted identifiers like `all` won't match.
+        /// This allows ORDER BY `all` to refer to a column named "all" rather than ORDER BY ALL.
+        bool all_keyword_matched = false;
+        {
+            auto pos_before_all = pos;
+            if (s_all.ignore(pos, expected))
+                all_keyword_matched = true;
+            pos = pos_before_all;
+        }
+
         if (!order_list.parse(pos, order_expression_list, expected))
             return false;
 
@@ -323,12 +332,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     interpolate_expression_list = make_intrusive<ASTExpressionList>();
             }
         }
-        else if (order_expression_list->children.size() == 1)
+        else if (all_keyword_matched && order_expression_list->children.size() == 1)
         {
-            /// ORDER BY ALL
-            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
-            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
-                select_query->order_by_all = true;
+            /// ORDER BY ALL (only when ALL was an unquoted keyword, not a quoted identifier)
+            select_query->order_by_all = true;
         }
     }
 
