@@ -1169,6 +1169,24 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
     }
+
+    /// Always compute min/max part offset from granule offsets.
+    /// Patch parts reading (MergeTreePatchReaderMerge) requires these values
+    /// to determine which patches are relevant for the current block,
+    /// even when `_part_offset` column is not explicitly requested.
+    if (!result.min_part_offset.has_value())
+    {
+        if (result.granule_offsets.empty())
+        {
+            result.min_part_offset = 0;
+            result.max_part_offset = 0;
+        }
+        else
+        {
+            result.min_part_offset = result.granule_offsets.front().starting_offset;
+            result.max_part_offset = result.granule_offsets.back().starting_offset + result.rows_per_granule.back() - 1;
+        }
+    }
 }
 
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)

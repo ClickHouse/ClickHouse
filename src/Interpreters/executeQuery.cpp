@@ -2020,20 +2020,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
+        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+        context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+        auto fuzz_session_context = Context::createCopy(context);
+        fuzz_session_context->makeSessionContext();
+
+        auto fuzz_context = Context::createCopy(fuzz_session_context);
+        fuzz_context->makeQueryContext();
+        fuzz_context->resetInputCallbacks();
+        fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
+        fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+        fuzz_context->setCurrentQueryId("");
+
         try
         {
-            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-            context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
-            auto fuzz_session_context = Context::createCopy(context);
-            fuzz_session_context->makeSessionContext();
-
-            auto fuzz_context = Context::createCopy(fuzz_session_context);
-            fuzz_context->makeQueryContext();
-            fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
-            fuzz_context->setCurrentQueryId("");
-
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
             if (result.second.pipeline.initialized())
@@ -2058,6 +2060,13 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         }
         catch (...)
         {
+            /// Reset transactions before context destruction to prevent std::terminate.
+            /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
+            /// which uses getCurrentExceptionCode with bare `throw;` - that only works
+            /// inside a catch handler, not during stack unwinding.
+            fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);

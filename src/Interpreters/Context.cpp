@@ -266,6 +266,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -1501,6 +1502,11 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
                 "The number of active parts ({}) exceeds the warning limit of {}.",
                 active_parts, shared->max_part_num_to_warn.load());
     }
+    if ((*settings)[Setting::ast_fuzzer_runs] > 0)
+        common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
+            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). This is intended for testing only and is not suitable for production.",
+            (*settings)[Setting::ast_fuzzer_runs].value);
+
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
