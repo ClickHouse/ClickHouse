@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
@@ -952,6 +953,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
+
+        /// Validate that the number of columns on the left side of IN matches the number of columns
+        /// in the subquery on the right side. This must happen during analysis, before constant folding
+        /// can optimize away the IN expression and silently hide the mismatch.
+        auto in_second_argument_type = in_second_argument->getNodeType();
+        if (in_second_argument_type == QueryTreeNodeType::QUERY || in_second_argument_type == QueryTreeNodeType::UNION)
+        {
+            size_t left_columns_count = 1;
+            auto left_type = removeNullable(in_first_argument->getResultType());
+            if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get()))
+                left_columns_count = left_tuple_type->getElements().size();
+
+            size_t right_columns_count = 0;
+            if (const auto * query_node = in_second_argument->as<QueryNode>())
+                right_columns_count = query_node->getProjectionColumns().size();
+            else if (const auto * union_node = in_second_argument->as<UnionNode>())
+                right_columns_count = union_node->computeProjectionColumns().size();
+
+            if (right_columns_count > 0 && left_columns_count != right_columns_count)
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                    "Number of columns in section IN doesn't match. {} at left, {} at right.",
+                    left_columns_count, right_columns_count);
         }
     }
 
