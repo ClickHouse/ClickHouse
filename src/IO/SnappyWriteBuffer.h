@@ -13,12 +13,17 @@ class SnappyWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
     using Base = BufferWithOwnMemory<WriteBuffer>;
 public:
+
     explicit SnappyWriteBuffer(
-        std::unique_ptr<WriteBuffer> out_,
+        std::unique_ptr<WriteBuffer>& out_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
-
+    explicit SnappyWriteBuffer(
+        WriteBuffer * out_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0);
     explicit SnappyWriteBuffer(
         WriteBuffer & out_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,

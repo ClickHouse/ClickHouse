@@ -80,6 +80,7 @@ int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseSimpleSnappy(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
@@ -148,6 +149,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"obfuscator", mainEntryClickHouseObfuscator},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+    {"simple-snappy", mainEntryClickHouseSimpleSnappy},
     {"su", mainEntryClickHouseSU},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
