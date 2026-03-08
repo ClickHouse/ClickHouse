@@ -70,14 +70,14 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
 
         try
         {
-            runner.runBenchmark();
+            bool failed = runner.runBenchmark();
+            return failed ? 1 : 0;
         }
         catch (...)
         {
             std::cout << "Got exception while trying to run benchmark: " << DB::getCurrentExceptionMessage(true) << std::endl;
+            return 1;
         }
-
-        return 0;
     }
     catch (...)
     {

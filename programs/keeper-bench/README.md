@@ -113,7 +113,7 @@ report_delay: double
 timelimit: double
 
 # continue testing even if a query fails (default: false)
-continue_on_errors: boolean
+continue_on_error: boolean
 ```
 
 <a name="connections"></a>

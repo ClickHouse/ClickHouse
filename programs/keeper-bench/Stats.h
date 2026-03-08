@@ -17,11 +17,10 @@ struct Stats
     {
         std::atomic<size_t> requests{0};
         uint64_t requests_bytes = 0;
-        uint64_t work_time = 0;
         Sampler sampler;
 
         /// requests/second, bytes/second
-        std::pair<double, double> getThroughput(size_t concurrency);
+        std::pair<double, double> getThroughput(size_t concurrency, uint64_t total_thread_ns_);
         double getPercentile(double percent);
 
         void add(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);
@@ -30,6 +29,10 @@ struct Stats
 
     StatsCollector read_collector;
     StatsCollector write_collector;
+
+    std::atomic<uint64_t> total_thread_ns {0};
+    std::atomic<uint64_t> queue_wait_ns {0};
+    std::atomic<uint64_t> response_wait_ns {0};
 
     void addRead(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);
     void addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_inc);

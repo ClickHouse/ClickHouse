@@ -68,7 +68,8 @@ public:
 
     bool tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener);
 
-    void runBenchmark();
+    /// Returns false if stopped early because of errors.
+    bool runBenchmark();
 
     ~Runner();
 private:
@@ -88,7 +89,7 @@ private:
 
     void parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
-    void runBenchmarkWithGenerator();
+    bool runBenchmarkWithGenerator();
     void runBenchmarkFromLog();
 
     void writeOutputString(const std::string & output_string, int64_t start_timestamp_ms);
@@ -100,7 +101,8 @@ private:
     std::string input_request_log;
     std::string setup_nodes_snapshot_path;
 
-    size_t concurrency = 1;
+    size_t concurrency = 1; // number of threads
+    size_t max_requests_in_flight = 1; // per thread
 
     std::optional<ThreadPool> pool;
 
@@ -113,6 +115,7 @@ private:
 
     std::atomic<size_t> requests_executed = 0;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> stopped_early_because_of_error = false;
 
     std::shared_ptr<Stats> info;
     bool print_to_stdout = false;
