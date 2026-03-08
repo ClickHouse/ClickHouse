@@ -47,6 +47,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
+#include <Common/SettingsChanges.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 namespace DB
 {
@@ -943,6 +945,43 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
+        const ASTFunction * function_define = database_engine_define->engine;
+
+        ASTs engine_args;
+        if (function_define->arguments)
+            engine_args = function_define->arguments->children;
+
+        std::string url;
+        bool from_named_collection = false;
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, /* throw_unknown_collection */false))
+        {
+            from_named_collection = true;
+            url = named_collection->getOrDefault<String>("url", "");
+
+            SettingsChanges collection_changes;
+            for (const auto & key : named_collection->getKeys())
+            {
+                if (key == "url")
+                    continue;
+                collection_changes.emplace_back(key, named_collection->get<String>(key));
+            }
+            /// Named collection values are applied first, then SETTINGS clause overrides them
+            /// (loadFromQuery was already called above).
+            /// To achieve the correct precedence we: apply collection, then re-apply SETTINGS.
+            auto settings_overrides = database_settings.allChanged();
+            database_settings.applyChanges(collection_changes);
+            database_settings.applyChanges(settings_overrides);
+        }
+        else
+        {
+            for (auto & engine_arg : engine_args)
+                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+
+            if (!engine_args.empty())
+                url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
+        }
+
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
         /// There is no URL you need to provide in constructor, even if we would want it
@@ -952,27 +991,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ///  mock glue catalog in tests only.
         bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
 
-        const ASTFunction * function_define = database_engine_define->engine;
-
-        ASTs engine_args;
-        if (requires_arguments && !function_define->arguments)
-        {
+        if (!from_named_collection && requires_arguments && engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
-        }
-
-        if (function_define->arguments)
-        {
-            engine_args = function_define->arguments->children;
-            if (requires_arguments && engine_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
-        }
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
-
-        std::string url;
-        if (!engine_args.empty())
-            url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
@@ -980,6 +1000,12 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         {
             engine_func->arguments = make_intrusive<ASTExpressionList>();
         }
+
+        /// When using a named collection, the cloned engine AST still contains
+        /// the named collection reference in its arguments. Clear them so that
+        /// per-table engine gets only the table endpoint filled by tryGetTableImpl.
+        if (from_named_collection)
+            engine_func->arguments->children.clear();
 
         switch (catalog_type)
         {

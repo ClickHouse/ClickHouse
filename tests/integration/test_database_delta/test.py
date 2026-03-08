@@ -22,16 +22,7 @@ from datetime import date
 import uuid
 
 from helpers.test_tools import TSV
-
-
-def start_unity_catalog(node):
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
-        ]
-    )
+from helpers.unity_catalog import start_unity_catalog
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +177,93 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             print("Data ClickHouse\n", data_clickhouse)
             print("Data Spark\n", data_spark)
             assert data_clickhouse == data_spark
+
+
+def test_named_collection(started_cluster):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    db_name = f"nc_test_{test_uuid}"
+    collection_name = f"nc_{test_uuid}"
+
+    node1.query(f"drop database if exists {db_name}")
+    node1.query(
+        f"CREATE NAMED COLLECTION {collection_name} AS "
+        f"url = 'http://localhost:8080/api/2.1/unity-catalog', "
+        f"warehouse = 'unity', catalog_type = 'unity', vended_credentials = false"
+    )
+    node1.query(
+        f"CREATE DATABASE {db_name} ENGINE = DataLakeCatalog({collection_name})",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+    default_tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name} LIKE 'default%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+    print("Default tables (named collection)", default_tables)
+    assert default_tables == [
+        "default.marksheet",
+        "default.marksheet_uniform",
+        "default.numbers",
+        "default.user_countries",
+    ]
+
+    data = node1.query(
+        f"SELECT * FROM {db_name}.`default.marksheet` ORDER BY 1,2,3"
+    )
+    assert len(data.strip()) > 0
+
+    node1.query(f"DROP DATABASE {db_name}")
+    node1.query(f"DROP NAMED COLLECTION {collection_name}")
+
+
+def test_named_collection_with_overrides(started_cluster):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    db_name = f"nc_override_test_{test_uuid}"
+    collection_name = f"nc_override_{test_uuid}"
+
+    node1.query(f"drop database if exists {db_name}")
+    node1.query(
+        f"CREATE NAMED COLLECTION {collection_name} AS "
+        f"url = 'http://localhost:8080/api/2.1/unity-catalog', "
+        f"warehouse = 'unity', catalog_type = 'unity', vended_credentials = true"
+    )
+    # Override vended_credentials from true to false via inline key-value override
+    node1.query(
+        f"CREATE DATABASE {db_name} ENGINE = DataLakeCatalog({collection_name}, vended_credentials = false)",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+    default_tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name} LIKE 'default%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+    print("Default tables (named collection with overrides)", default_tables)
+    assert default_tables == [
+        "default.marksheet",
+        "default.marksheet_uniform",
+        "default.numbers",
+        "default.user_countries",
+    ]
+
+    data = node1.query(
+        f"SELECT * FROM {db_name}.`default.marksheet` ORDER BY 1,2,3"
+    )
+    assert len(data.strip()) > 0
+
+    node1.query(f"DROP DATABASE {db_name}")
+    node1.query(f"DROP NAMED COLLECTION {collection_name}")
 
 
 def test_multiple_schemes_tables(started_cluster):
