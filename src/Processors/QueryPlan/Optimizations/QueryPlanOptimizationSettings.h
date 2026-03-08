@@ -72,6 +72,9 @@ struct QueryPlanOptimizationSettings
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
 
+    /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
+    bool enable_join_transitive_predicates = false;
+
     /// --- Second-pass optimizations
     bool optimize_prewhere;
     bool read_in_order;

@@ -436,6 +436,14 @@ std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
     return arguments;
 }
 
+JoinActionRef JoinActionRef::resolveAliases() const
+{
+    const auto * node = getNode();
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return JoinActionRef(node, getData());
+}
+
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
 {
     auto data_ptr = data.lock();
