@@ -520,6 +520,8 @@ namespace
                 operator_name = "/";
             else if (ctx->MOD())
                 operator_name = "%";
+            else if (ctx->ATAN2())
+                operator_name = "atan2";
             else
                 throwInconsistentSchema("MultOp", ctx->getText());
 

@@ -42,10 +42,9 @@ struct TimeSeriesColumnNames
     /// The function prometheusQuery() doesn't output them.
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
+    static constexpr const char * OriginalGroup = "original_group";
+    static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * Values = "values";
-
-    /// TODO: This column is not used, remove it.
-    static constexpr const char * Scalar = "scalar";
 };
 
 }
