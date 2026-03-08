@@ -1,0 +1,31 @@
+default behavior
+1	10
+1	20
+2	0
+array_join_use_nulls=1
+1	10
+1	20
+2	\N
+null check
+1	0
+1	0
+2	1
+already nullable
+1	10
+1	20
+2	\N
+string type
+1	a
+1	b
+2	\N
+regular array join
+1	10
+1	20
+unaligned left array join
+1	10	100
+1	20	\N
+2	\N	\N
+array_join_use_nulls=0
+1	10
+1	20
+2	0

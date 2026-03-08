@@ -9,6 +9,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
@@ -1137,7 +1138,7 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_, bool array_join_use_nulls_)
     : Step({})
     , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
@@ -1149,7 +1150,10 @@ ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_jo
         if (array_join_columns.contains(column.name))
         {
             const auto & array = getArrayJoinDataType(column.type);
-            column.type = array->getNestedType();
+            auto nested_type = array->getNestedType();
+            if (array_join_use_nulls_)
+                nested_type = makeNullableSafe(nested_type);
+            column.type = nested_type;
             /// Arrays are materialized
             column.column = nullptr;
         }

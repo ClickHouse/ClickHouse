@@ -41,6 +41,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
@@ -63,6 +64,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
@@ -4211,6 +4213,9 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
                 result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
 
             result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+
+            if (array_join_node_typed.isLeft() && scope.context->getSettingsRef()[Setting::array_join_use_nulls])
+                result_type = makeNullableSafe(result_type);
 
             String array_join_column_name;
 

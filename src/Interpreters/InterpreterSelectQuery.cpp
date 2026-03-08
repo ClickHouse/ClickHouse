@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_global_with_statement;
@@ -1887,6 +1888,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             if (expressions.array_join)
             {
+                expressions.array_join->array_join_use_nulls = settings[Setting::array_join_use_nulls];
                 QueryPlanStepPtr array_join_step
                     = std::make_unique<ArrayJoinStep>(
                         query_plan.getCurrentHeader(),

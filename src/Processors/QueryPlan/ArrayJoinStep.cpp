@@ -34,7 +34,7 @@ static ITransformingStep::Traits getTraits()
 ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
     : ITransformingStep(
         input_header_,
-        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
+        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns, array_join_.is_left && array_join_.array_join_use_nulls)),
         getTraits())
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
@@ -45,12 +45,12 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
 
 void ArrayJoinStep::updateOutputHeader()
 {
-    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
+    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns, array_join.is_left && array_join.array_join_use_nulls));
 }
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
+    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication, array_join.is_left && array_join.array_join_use_nulls);
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
@@ -99,6 +99,8 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (is_unaligned)
         flags |= 2;
+    if (array_join.array_join_use_nulls)
+        flags |= 4;
 
     writeIntBinary(flags, ctx.out);
 
@@ -114,12 +116,14 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
+    bool array_join_use_nulls = bool(flags & 4);
 
     UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
     array_join.is_left = is_left;
+    array_join.array_join_use_nulls = array_join_use_nulls;
     array_join.columns.resize(num_columns);
 
     for (auto & column : array_join.columns)
