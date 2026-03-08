@@ -2,6 +2,8 @@ disable AUTO_INCREMENT compatibility mode
 create table failed, column +type +AUTO_INCREMENT, compatibility disabled
 enable AUTO_INCREMENT compatibility mode
 create table, +type +AUTO_INCREMENT
+AUTO_INCREMENT serialization follows current database engine
+1
 create table, column +AUTO_INCREMENT -type
 id	Int32					
 create table, several columns +/-type +AUTO_INCREMENT

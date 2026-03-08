@@ -111,6 +111,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
             default_expression->format(ostr, format_settings, state, nested_frame);
         }
     }
+    else if (default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+    {
+        ostr << ' ' << toString(default_specifier);
+    }
 
     if (auto comment = getComment())
     {

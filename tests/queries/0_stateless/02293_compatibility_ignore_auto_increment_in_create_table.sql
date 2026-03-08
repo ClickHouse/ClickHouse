@@ -20,6 +20,14 @@ CREATE TABLE ignore_auto_increment (
     id int AUTO_INCREMENT
 ) ENGINE=MergeTree() ORDER BY tuple();
 
+select 'AUTO_INCREMENT serialization follows current database engine';
+SELECT if(
+    (SELECT engine FROM system.databases WHERE name = currentDatabase()) = 'Replicated',
+    positionCaseInsensitive(create_table_query, '`id` Int32 AUTO_INCREMENT') > 0,
+    positionCaseInsensitive(create_table_query, '`id` Int32 AUTO_INCREMENT') = 0)
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'ignore_auto_increment';
+
 select 'create table, column +AUTO_INCREMENT -type';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
 CREATE TABLE ignore_auto_increment (

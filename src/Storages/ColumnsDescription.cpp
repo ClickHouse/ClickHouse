@@ -98,8 +98,11 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     name = other.name;
     type = other.type;
     default_desc = other.default_desc;
+    null_modifier = other.null_modifier;
+    auto_increment = other.auto_increment;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
+    collation = other.collation ? other.collation->clone() : nullptr;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -115,10 +118,16 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
     name = std::move(other.name);
     type = std::move(other.type);
     default_desc = std::move(other.default_desc);
+    null_modifier = std::move(other.null_modifier);
+    auto_increment = other.auto_increment;
+    other.auto_increment = false;
     comment = std::move(other.comment);
 
     codec = other.codec ? other.codec->clone() : nullptr;
     other.codec.reset();
+
+    collation = other.collation ? other.collation->clone() : nullptr;
+    other.collation.reset();
 
     settings = std::move(other.settings);
 
@@ -137,8 +146,11 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
+        && null_modifier == other.null_modifier
+        && auto_increment == other.auto_increment
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
+        && ast_to_str(collation) == ast_to_str(other.collation)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -158,6 +170,18 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
     writeEscapedString(type->getName(), buf);
+
+    if (null_modifier.has_value())
+    {
+        writeChar('\t', buf);
+        DB::writeText(*null_modifier ? "NULL" : "NOT NULL", buf);
+    }
+
+    if (auto_increment)
+    {
+        writeChar('\t', buf);
+        DB::writeText("AUTO_INCREMENT", buf);
+    }
 
     if (default_desc.expression)
     {
@@ -194,6 +218,13 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*ttl, state), buf);
     }
 
+    if (collation)
+    {
+        writeChar('\t', buf);
+        DB::writeText("COLLATE ", buf);
+        writeEscapedString(formatASTStateAware(*collation, state), buf);
+    }
+
     if (!settings.empty())
     {
         writeChar('\t', buf);
@@ -223,7 +254,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         String modifiers;
         readEscapedStringUntilEOL(modifiers, buf);
 
-        ParserColumnDeclaration column_parser(/* require type */ true);
+        ParserColumnDeclaration column_parser(/* require type */ true, /* allow null modifiers */ true);
         ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
@@ -244,11 +275,20 @@ void ColumnDescription::readText(ReadBuffer & buf)
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
 
+            if (auto col_collation = col_ast->getCollation())
+                collation = col_collation;
+
             if (auto col_settings = col_ast->getSettings())
                 settings = col_settings->as<ASTSetQuery &>().changes;
 
             if (auto col_statistics_desc = col_ast->getStatisticsDesc())
                 statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_statistics_desc, name, type);
+
+            if (col_ast->null_modifier.has_value() && !*col_ast->null_modifier)
+                null_modifier = false;
+
+            if (col_ast->default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+                auto_increment = true;
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

@@ -88,8 +88,11 @@ struct ColumnDescription
     String name;
     DataTypePtr type;
     ColumnDefault default_desc;
+    std::optional<bool> null_modifier;
+    bool auto_increment = false;
     String comment;
     ASTPtr codec;
+    ASTPtr collation;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
