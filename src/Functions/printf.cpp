@@ -254,7 +254,9 @@ private:
 
             /// Build single-row argument columns for this row
             ColumnsWithTypeAndName row_args(arguments.size());
-            row_args[0] = {ColumnConst::create(ColumnString::create(1, format), 1), arguments[0].type, arguments[0].name};
+            auto fmt_col = ColumnString::create();
+            fmt_col->insert(format);
+            row_args[0] = {ColumnConst::create(std::move(fmt_col), 1), arguments[0].type, arguments[0].name};
             for (size_t i = 1; i < arguments.size(); ++i)
             {
                 auto single_val_col = arguments[i].column->cut(row, 1);
