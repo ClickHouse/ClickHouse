@@ -736,6 +736,8 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
             .repeatable(false)
             .binding("version"));
     BaseDaemon::defineOptions(options);
+
+    ServerSettings::addToProgramOptions(options);
 }
 
 
