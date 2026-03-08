@@ -123,6 +123,15 @@ struct CgroupsV1Reader : ICgroupsReader
         return readMetricsFromStatFile(buf, {"rss"}, {}, &warnings_printed);
     }
 
+    uint64_t readInactiveFileMemory() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        /// Use total_inactive_file for cgroups v1 to get the hierarchical value
+        /// (includes child cgroups), matching Kubernetes cadvisor behavior.
+        return readMetricsFromStatFile(buf, {"total_inactive_file"}, {}, &warnings_printed);
+    }
+
     std::string dumpAllStats() override
     {
         std::lock_guard lock(mutex);
@@ -145,6 +154,13 @@ struct CgroupsV2Reader : ICgroupsReader
         std::lock_guard lock(mutex);
         stat_buf.rewind();
         return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
+    }
+
+    uint64_t readInactiveFileMemory() override
+    {
+        std::lock_guard lock(mutex);
+        stat_buf.rewind();
+        return readMetricsFromStatFile(stat_buf, {"inactive_file"}, {}, &warnings_printed);
     }
 
     std::string dumpAllStats() override

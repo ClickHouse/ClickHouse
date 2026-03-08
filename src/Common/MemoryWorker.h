@@ -30,6 +30,8 @@ struct ICgroupsReader
 
     virtual uint64_t readMemoryUsage() = 0;
 
+    virtual uint64_t readInactiveFileMemory() = 0;
+
     virtual std::string dumpAllStats() = 0;
 };
 

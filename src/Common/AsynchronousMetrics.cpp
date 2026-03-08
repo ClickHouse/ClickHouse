@@ -1530,6 +1530,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
             new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
+
+            /// Read inactive_file after setting existing metrics so a failure here
+            /// doesn't suppress the already-working CGroupMemoryTotal/CGroupMemoryUsed.
+            uint64_t inactive_file = cgroupmem_reader->readInactiveFileMemory();
+            new_values["CGroupMemoryInactiveFile"] = { inactive_file, "The amount of memory used for inactive file pages in cgroup, in bytes. This value can be used together with the total cgroup memory usage to calculate the working set size (WSS) as reported by Kubernetes." };
         }
         catch (...)
         {
