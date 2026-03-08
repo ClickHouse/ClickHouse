@@ -1,16 +1,17 @@
-#include <Storages/System/StorageSystemParts.h>
 #include <atomic>
 #include <memory>
 #include <string_view>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Storages/System/StorageSystemParts.h>
 
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/TransactionVersionMetadata.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 
 
 namespace
@@ -351,7 +352,7 @@ void StorageSystemParts::processNextStorage(
         {
             auto txn = context->getCurrentTransaction();
             if (txn)
-                columns[res_index++]->insert(part->version.isVisible(*txn));
+                columns[res_index++]->insert(part->version->isVisible(txn->getSnapshot(), txn->tid));
             else
                 columns[res_index++]->insert(part_state == State::Active);
         }
@@ -361,16 +362,17 @@ void StorageSystemParts::processNextStorage(
             return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
         };
 
+        auto current_version_info = part->version->getInfo();
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
+            columns[res_index++]->insert(get_tid_as_field(current_version_info.creation_tid));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.removal_tid_lock.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(part->version->getRemovalTIDLockHash());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
+            columns[res_index++]->insert(get_tid_as_field(part->version->getRemovalTIDForLogging()));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(current_version_info.creation_csn);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(current_version_info.removal_csn);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->hasLightweightDelete());
         if (columns_mask[src_index++])
