@@ -238,6 +238,11 @@ std::optional<String> optimizeUseNormalProjections(
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
+    /// Clear row_level_filter - it will be included in the prewhere_info below via splitAndFillPrewhereInfo.
+    /// The QueryDAG::build() already collected the RLS filter into query.dag/filter_nodes.
+    /// Keeping row_level_filter here would cause it to be applied twice and fail because
+    /// the projection's sample block doesn't necessarily match the original table's layout.
+    projection_query_info.row_level_filter = nullptr;
     if (query.dag)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
