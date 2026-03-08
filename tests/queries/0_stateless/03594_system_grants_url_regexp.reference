@@ -1,0 +1,2 @@
+S3(\'s3://foo/*\')
+URL(\'http://localhost:912.*\')
