@@ -117,6 +117,35 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
         )
     )
 
+def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    table_name = "demo_event"
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    spark.conf.set("spark.sql.iceberg.commit.sync", "true")
+
+    spark.sql(
+        f"""
+            CREATE TABLE {table_name} 
+            ( 
+            `#event` STRING NOT NULL ,
+            `#data_lifecycle` STRING NOT NULL, 
+            `#time` TIMESTAMP NOT NULL , 
+            `#log_id` STRING NOT NULL , 
+            `#ingest_time` TIMESTAMP ) 
+            USING iceberg 
+            PARTITIONED BY (`#event`, `#time`) 
+            TBLPROPERTIES ( 
+            'identifier-fields' = '[#data_lifecycle,#event,#log_id]', 
+            'sort-order' = '#data_lifecycle ASC NULLS FIRST, #event ASC NULLS FIRST, #time ASC NULLS FIRST'
+            )
+        """
+    )
+
+    instance.query(f"SELECT * FROM icebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/demo_events', url = 'http://minio1:9001/{started_cluster_iceberg_with_spark.minio_bucket}/')")
+    spark.sql(f"DROP TABLE {table_name}")
+
+
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_read_in_order_with_complex_bucket(started_cluster_iceberg_with_spark,  storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
