@@ -2309,13 +2309,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    // Zero index_granularity is nonsensical.
-    if (index_granularity < 1)
+    if (!index_granularity && !index_granularity_bytes)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "index_granularity: value {} makes no sense",
-            index_granularity.value);
+            "Table settings index_granularity and index_granularity_bytes cannot both be zero");
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.

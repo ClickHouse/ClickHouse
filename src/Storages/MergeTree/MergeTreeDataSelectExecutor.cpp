@@ -1430,7 +1430,8 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// When index_granularity = 0 (pure byte-driven granularity), skip the row-based estimate.
+    size_t res = rows_granularity ? (rows_setting + rows_granularity - 1) / rows_granularity : 0;
 
     if (bytes_granularity == 0)
         return res;
@@ -1443,7 +1444,11 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 {
     size_t marks = 1;
 
-    if (rows_setting + rows_granularity <= rows_setting) /// overflow
+    if (rows_granularity == 0)
+    {
+        /// Pure byte-driven granularity (index_granularity = 0), skip row-based estimate.
+    }
+    else if (rows_setting + rows_granularity <= rows_setting) /// overflow
         marks = max_marks;
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;

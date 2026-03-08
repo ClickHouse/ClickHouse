@@ -107,10 +107,10 @@ size_t computeIndexGranularity(
         }
     }
 
-    /// We should be less or equal than fixed index granularity.
+    /// We should be less or equal than fixed index granularity if it is set.
     /// But if block size is a granule size then do not adjust it.
     /// Granularity greater than fixed granularity might come from compact part.
-    if (!blocks_are_granules)
+    if (!blocks_are_granules && fixed_index_granularity_rows)
         index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
 
     /// Very rare case when index granularity bytes less than single row.
