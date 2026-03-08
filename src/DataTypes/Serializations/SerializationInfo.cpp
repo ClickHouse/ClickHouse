@@ -35,6 +35,7 @@ constexpr auto KEY_NAME = "name";
 constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
 constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
+constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
 
 }
 
@@ -397,6 +398,11 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
             type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+
+        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
+        /// so old versions can read this info if the flag is disabled.
+        if (settings.propagate_types_serialization_versions_to_nested_types)
+            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
     }
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -433,6 +439,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
         if (key == KEY_VERSION)
@@ -446,6 +453,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && key == KEY_TYPES_SERIALIZATION_VERSIONS)
         {
             type_versions_obj = value.extract<Poco::JSON::Object::Ptr>();
+        }
+        else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
+        {
+            propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
         }
         else
         {
@@ -494,7 +505,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         false /* Cannot choose kind when constructing from JSON */,
         version,
         string_serialization_version,
-        nullable_serialization_version);
+        nullable_serialization_version,
+        propagate_types_serialization_versions_to_nested_types);
 
     SerializationInfoByName infos(settings);
     if (columns_array)
