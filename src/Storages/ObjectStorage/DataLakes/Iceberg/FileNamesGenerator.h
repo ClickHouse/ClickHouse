@@ -46,6 +46,15 @@ public:
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
+    void setDataDir(const String & data_table_dir, const String & data_storage_dir)
+    {
+        data_dir = data_table_dir;
+        if (data_dir.empty() || data_dir.back() != '/')
+            data_dir += "/";
+        storage_data_dir = data_storage_dir;
+        if (storage_data_dir.empty() || storage_data_dir.back() != '/')
+            storage_data_dir += "/";
+    }
 
 private:
     Poco::UUIDGenerator uuid_generator;

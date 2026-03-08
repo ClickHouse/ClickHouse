@@ -1,7 +1,9 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/JSONString.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -49,6 +51,7 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 namespace DataLake
@@ -1052,7 +1055,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1080,7 +1083,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -1117,64 +1120,84 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    /// Build request body with field order matching Iceberg REST spec for compatibility.
+    Poco::JSON::Object::Ptr request_body(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
+
     {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
+        Poco::JSON::Object::Ptr identifier(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
         namespaces->add(namespace_name);
         identifier->set("namespace", namespaces);
-
+        identifier->set("name", table_name);
         request_body->set("identifier", identifier);
     }
 
+    Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
     if (new_snapshot->has("parent-snapshot-id"))
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
         if (parent_snapshot_id != -1)
         {
-            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            Poco::JSON::Object::Ptr requirement(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
             requirement->set("type", "assert-ref-snapshot-id");
             requirement->set("ref", "main");
             requirement->set("snapshot-id", parent_snapshot_id);
-
-            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
             requirements->add(requirement);
-
-            request_body->set("requirements", requirements);
         }
+    }
+    if (requirements->size() > 0)
+        request_body->set("requirements", requirements);
+
+    Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+    {
+        Poco::JSON::Object::Ptr snapshot_ordered(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
+        snapshot_ordered->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
+        snapshot_ordered->set("parent-snapshot-id", new_snapshot->getValue<Int64>("parent-snapshot-id"));
+        if (new_snapshot->has("sequence-number"))
+            snapshot_ordered->set("sequence-number", new_snapshot->getValue<Int64>("sequence-number"));
+        snapshot_ordered->set("timestamp-ms", new_snapshot->getValue<Int64>("timestamp-ms"));
+        snapshot_ordered->set("manifest-list", new_snapshot->getValue<String>("manifest-list"));
+        if (new_snapshot->has("summary"))
+        {
+            auto summary_src = new_snapshot->getObject("summary");
+            Poco::JSON::Object::Ptr summary_ordered(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
+            const char * summary_keys[] = {"operation", "added-files-size", "added-data-files", "added-records",
+                "total-data-files", "total-delete-files", "total-records", "total-files-size",
+                "total-position-deletes", "total-equality-deletes"};
+            for (const char * key : summary_keys)
+                if (summary_src->has(key))
+                    summary_ordered->set(key, summary_src->get(key));
+            snapshot_ordered->set("summary", summary_ordered);
+        }
+        if (new_snapshot->has("schema-id"))
+            snapshot_ordered->set("schema-id", new_snapshot->getValue<Int32>("schema-id"));
+
+        Poco::JSON::Object::Ptr add_snapshot(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
+        add_snapshot->set("action", "add-snapshot");
+        add_snapshot->set("snapshot", snapshot_ordered);
+        updates->add(add_snapshot);
     }
 
     {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
-            add_snapshot->set("action", "add-snapshot");
-            add_snapshot->set("snapshot", new_snapshot);
-            updates->add(add_snapshot);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
-            set_snapshot->set("action", "set-snapshot-ref");
-            set_snapshot->set("ref-name", "main");
-            set_snapshot->set("type", "branch");
-            set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
-
-            updates->add(set_snapshot);
-        }
-        request_body->set("updates", updates);
+        Poco::JSON::Object::Ptr set_snapshot(new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER));
+        set_snapshot->set("action", "set-snapshot-ref");
+        set_snapshot->set("ref-name", "main");
+        set_snapshot->set("type", "branch");
+        set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
+        updates->add(set_snapshot);
     }
+    request_body->set("updates", updates);
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, false);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_WARNING(log, "Failed to commit snapshot for {}.{}: {}", namespace_name, table_name, ex.displayText());
         return false;
     }
     return true;
@@ -1182,7 +1205,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string() + "?purgeRequested=False";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try

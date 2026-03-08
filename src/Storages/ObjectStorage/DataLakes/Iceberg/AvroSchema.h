@@ -187,6 +187,13 @@ static constexpr const char * manifest_list_v2_schema = R"(
             ],
             "doc": "Summary for each partition",
             "field-id": 507
+        },
+        {
+            "name": "key_metadata",
+            "type": ["null", "bytes"],
+            "doc": "Encryption key metadata blob",
+            "default": null,
+            "field-id": 519
         }
     ]
 }
@@ -556,7 +563,7 @@ static constexpr const char * manifest_entry_v2_schema = R"(
                     },
                     {
                         "name": "equality_ids",
-                        "type": ["null", {"type": "array", "items": "int", "element-id": 136}],
+                        "type": ["null", {"type": "array", "items": "long", "element-id": 136}],
                         "doc": "Field ids used to determine row equality for delete files",
                         "field-id": 135
                     },

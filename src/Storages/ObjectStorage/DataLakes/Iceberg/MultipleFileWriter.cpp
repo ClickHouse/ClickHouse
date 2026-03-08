@@ -41,7 +41,8 @@ void MultipleFileWriter::startNewFile()
     current_file_num_bytes = 0;
     auto filename = filename_generator.generateDataFileName();
 
-    data_file_names.push_back(filename.path_in_storage);
+    data_file_metadata_names.push_back(filename.path_in_metadata);
+    data_file_storage_names.push_back(filename.path_in_storage);
     buffer = object_storage->writeObject(
         StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
@@ -92,7 +93,7 @@ void MultipleFileWriter::cancel()
 
 void MultipleFileWriter::clearAllDataFiles() const
 {
-    for (const auto & data_filename : data_file_names)
+    for (const auto & data_filename : data_file_storage_names)
         object_storage->removeObjectIfExists(StoredObject(data_filename));
 }
 

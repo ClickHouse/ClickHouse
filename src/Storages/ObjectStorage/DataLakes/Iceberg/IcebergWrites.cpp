@@ -52,7 +52,6 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -268,10 +267,13 @@ void generateManifestFile(
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-    Poco::JSON::Stringifier::stringify(metadata->getArray(Iceberg::f_schemas)->getObject(current_schema_id), oss, 4);
+    auto schema_obj = metadata->getArray(Iceberg::f_schemas)->getObject(current_schema_id);
+    if (!schema_obj->has("identifier-field-ids"))
+        schema_obj->set("identifier-field-ids", Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(schema_obj, oss);
     std::string json_representation = removeEscapedSlashes(oss.str());
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -279,9 +281,11 @@ void generateManifestFile(
     writer.setMetadata(Iceberg::f_schema, json_representation);
 
     std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
+    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
-    writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
+    writer.setMetadata("partition-spec-id", std::to_string(partition_spec_id));
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
+    writer.setMetadata("content", content_type == Iceberg::FileContentType::DATA ? "data" : "deletes");
     for (const auto & data_file_name : data_file_names)
     {
         avro::GenericDatum manifest_datum(root_schema);
@@ -314,10 +318,19 @@ void generateManifestFile(
 
         if (version > 1)
         {
-            Int64 sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-
-            set_versioned_field(sequence_number, Iceberg::f_sequence_number);
-            set_versioned_field(sequence_number, Iceberg::f_file_sequence_number);
+            auto set_null_union = [&](const String & field_name)
+            {
+                size_t field_index;
+                if (schema.root()->nameIndex(field_name, field_index))
+                {
+                    const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
+                    avro::GenericUnion null_union(union_schema);
+                    null_union.selectBranch(0);
+                    manifest.field(field_name) = avro::GenericDatum(union_schema, null_union);
+                }
+            };
+            set_null_union(Iceberg::f_sequence_number);
+            set_null_union(Iceberg::f_file_sequence_number);
         }
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
@@ -456,6 +469,11 @@ void generateManifestList(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
+    writer.setMetadata(Iceberg::f_metadata_snapshot_id, std::to_string(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id)));
+    writer.setMetadata(Iceberg::f_metadata_sequence_number, std::to_string(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)));
+    if (new_snapshot->has(Iceberg::f_parent_snapshot_id))
+        writer.setMetadata(Iceberg::f_parent_snapshot_id, std::to_string(new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id)));
     for (const auto & manifest_entry_name : manifest_entry_names)
     {
         avro::GenericDatum entry_datum(schema.root());
@@ -504,8 +522,8 @@ void generateManifestList(
         else
         {
             entry.field(Iceberg::f_added_files_count) = 1;
-            entry.field(Iceberg::f_existing_files_count)
-                = summary->getValue<Int32>(Iceberg::f_total_data_files);
+            // This manifest only contains the new file(s); no existing files in this manifest (PyIceberg/Unity use 0).
+            entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
 
             if (summary->has(Iceberg::f_added_position_deletes))
@@ -526,6 +544,32 @@ void generateManifestList(
             0,
             Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
+
+        if (version > 1)
+        {
+            auto set_null_union_field = [&](const String & field_name)
+            {
+                size_t field_index;
+                if (schema.root()->nameIndex(field_name, field_index))
+                {
+                    const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
+                    avro::GenericUnion null_union(union_schema);
+                    null_union.selectBranch(0); // null
+                    entry.field(field_name) = avro::GenericDatum(union_schema, null_union);
+                }
+            };
+            {
+                size_t field_index;
+                if (schema.root()->nameIndex(Iceberg::f_partitions, field_index))
+                {
+                    const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
+                    avro::GenericUnion partitions_union(union_schema);
+                    partitions_union.selectBranch(1); // array branch — empty list
+                    entry.field(Iceberg::f_partitions) = avro::GenericDatum(union_schema, partitions_union);
+                }
+            }
+            set_null_union_field(Iceberg::f_key_metadata);
+        }
 
         writer.write(entry_datum);
     }
@@ -604,7 +648,18 @@ void generateManifestList(
                         writer.write(new_datum);
                     }
                     else
-                        writer.write(datum);
+                    {
+                        const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+                        avro::GenericDatum new_datum(schema.root());
+                        avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+                        for (int fi = 0; fi < static_cast<int>(schema.root()->leaves()); ++fi)
+                        {
+                            const std::string & name = schema.root()->nameAt(fi);
+                            if (old_entry.hasField(name))
+                                new_entry.field(name) = old_entry.field(name);
+                        }
+                        writer.write(new_datum);
+                    }
                 }
                 break;
             }
@@ -672,6 +727,30 @@ IcebergStorageSink::IcebergStorageSink(
             bucket += "/";
         filename_generator = FileNamesGenerator(
             bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
+
+        if (metadata->has(Iceberg::f_properties))
+        {
+            auto properties = metadata->getObject(Iceberg::f_properties);
+            if (properties->has("write.data.path"))
+            {
+                auto write_data_path = properties->getValue<String>("write.data.path");
+                if (!write_data_path.empty())
+                {
+                    if (write_data_path.back() != '/')
+                        write_data_path += "/";
+
+                    String storage_data_path = write_data_path;
+                    if (bucket.size() > config_path.size())
+                    {
+                        String s3_prefix = bucket.substr(0, bucket.size() - config_path.size());
+                        if (write_data_path.starts_with(s3_prefix))
+                            storage_data_path = write_data_path.substr(s3_prefix.size());
+                    }
+
+                    filename_generator.setDataDir(write_data_path + "data/", storage_data_path + "data/");
+                }
+            }
+        }
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -881,6 +960,11 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries;
     Int64 manifest_lengths = 0;
 
+    auto object_key = [](const String & path) -> String
+    {
+        return path.starts_with('/') ? path.substr(1) : path;
+    };
+
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
         if (!retry_because_of_metadata_conflict)
@@ -890,9 +974,9 @@ bool IcebergStorageSink::initializeMetadata()
         }
 
         for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            object_storage->removeObjectIfExists(StoredObject(object_key(manifest_filename_in_storage)));
 
-        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        object_storage->removeObjectIfExists(StoredObject(object_key(storage_manifest_list_name)));
 
         if (retry_because_of_metadata_conflict)
         {
@@ -956,7 +1040,7 @@ bool IcebergStorageSink::initializeMetadata()
             manifest_entries.push_back(manifest_entry_name);
 
             auto buffer_manifest_entry = object_storage->writeObject(
-                StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+                StoredObject(object_key(storage_manifest_entry_name)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
                 generateManifestFile(
@@ -984,7 +1068,7 @@ bool IcebergStorageSink::initializeMetadata()
         }
         {
             auto buffer_manifest_list = object_storage->writeObject(
-                StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+                StoredObject(object_key(storage_manifest_list_name)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
             try
             {

@@ -34,7 +34,7 @@ public:
 
     const std::vector<String> & getDataFiles() const
     {
-        return data_file_names;
+        return data_file_metadata_names;
     }
 
     const DataFileStatistics & getResultStatistics() const
@@ -48,7 +48,8 @@ private:
     DataFileStatistics stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
-    std::vector<String> data_file_names;
+    std::vector<String> data_file_metadata_names;
+    std::vector<String> data_file_storage_names;
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
