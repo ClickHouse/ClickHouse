@@ -168,7 +168,9 @@ Example:
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+  ) ENGINE = SummingMergeTree()
+  ORDER BY (day, level)
+  SETTINGS index_granularity = 8192;
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
