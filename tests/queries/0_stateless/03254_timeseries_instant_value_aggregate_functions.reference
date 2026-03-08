@@ -15,15 +15,15 @@ idelta	[10,10,10,-30,60,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20
 Row 1:
 ──────
 metric_id: 142
-c1:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c2:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c3:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c4:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.123', '1734004861', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c5:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.123', '1734004860.123', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c6:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.1', '1734004860.123', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c7:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c8:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
-c9:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.12', '1734004861', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c1:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810, 1734004860, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c2:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810, 1734004860, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c3:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810, 1734004860, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c4:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810.123, 1734004861, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c5:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810.123, 1734004860.123, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c6:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810.1, 1734004860.123, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c7:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810, 1734004860, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c8:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810, 1734004860, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
+c9:        AggregateFunction(timeSeriesInstantRateToGrid(1734004810.12, 1734004861, 10, 60), Array(DateTime64(3, 'UTC')), Array(Float64))
 Row 1:
 ──────
 metric_id: 142
