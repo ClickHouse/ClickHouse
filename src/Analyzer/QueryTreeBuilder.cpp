@@ -310,8 +310,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
-    if (enable_order_by_all)
-        current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
+    bool order_by_all_enabled = select_query_typed.order_by_all && enable_order_by_all;
+    if (order_by_all_enabled)
+        current_query_tree->setIsOrderByAll(true);
     current_query_tree->setOriginalAST(select_query);
 
     auto current_context = current_query_tree->getContext();
@@ -400,7 +401,46 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto select_order_by_list = select_query_typed.orderBy();
     if (select_order_by_list)
-        current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);
+    {
+        if (order_by_all_enabled)
+        {
+            /// ORDER BY ALL is enabled. Create a placeholder SortNode with the correct direction.
+            /// The actual expansion to all SELECT columns will happen in QueryAnalyzer::expandOrderByAll.
+            auto * all_elem = select_order_by_list->children[0]->as<ASTOrderByElement>();
+
+            auto sort_direction = all_elem->direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+            std::optional<SortDirection> nulls_sort_direction;
+            if (all_elem->nulls_direction_was_explicitly_specified)
+                nulls_sort_direction = all_elem->nulls_direction == 1 ? SortDirection::ASCENDING : SortDirection::DESCENDING;
+
+            auto placeholder_expr = std::make_shared<ConstantNode>(Field{"__order_by_all_placeholder__"});
+            auto sort_node = std::make_shared<SortNode>(std::move(placeholder_expr), sort_direction, nulls_sort_direction);
+
+            auto list_node = std::make_shared<ListNode>();
+            list_node->getNodes().push_back(std::move(sort_node));
+            current_query_tree->getOrderByNode() = std::move(list_node);
+        }
+        else if (select_query_typed.order_by_all)
+        {
+            /// ORDER BY ALL was parsed but `enable_order_by_all` is disabled.
+            /// Build an ORDER BY list with `all` as a column reference.
+            auto * all_elem = select_order_by_list->children[0]->as<ASTOrderByElement>();
+
+            auto order_by_list = make_intrusive<ASTExpressionList>();
+            auto elem = make_intrusive<ASTOrderByElement>();
+            elem->direction = all_elem->direction;
+            elem->nulls_direction = all_elem->nulls_direction;
+            elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
+            elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
+            order_by_list->children.push_back(std::move(elem));
+
+            current_query_tree->getOrderByNode() = buildSortList(order_by_list, current_context);
+        }
+        else
+        {
+            current_query_tree->getOrderByNode() = buildSortList(select_order_by_list, current_context);
+        }
+    }
 
     auto interpolate_list = select_query_typed.interpolate();
     if (interpolate_list)

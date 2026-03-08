@@ -35,6 +35,19 @@ namespace ErrorCodes
 }
 
 
+void ASTFunction::setNoEmptyArgs(bool value)
+{
+    flags<ASTFunctionFlags>().no_empty_args = value;
+    /// Also clear the empty arguments node to keep formatting round-trip consistent:
+    /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
+    if (value && arguments && arguments->children.empty())
+    {
+        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
+        arguments.reset();
+    }
+}
+
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
@@ -148,7 +161,6 @@ ASTPtr ASTFunction::clone() const
 
     return res;
 }
-
 
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -502,7 +514,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
             }
 
-            if (!written && name == "tupleElement"sv)
+            if (!written && name == "tupleElement"sv && arguments->children.size() == 2)
             {
                 // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
@@ -517,6 +529,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 //
                 // So instead of printing it as regular tuple,
                 // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                //
+                // Only use dot-syntax for 2-argument tupleElement (expr.field).
+                // The 3-argument form tupleElement(expr, field, default) cannot use
+                // dot-syntax because the default value would be lost during formatting.
                 bool tuple_arguments_valid = true;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
@@ -641,7 +657,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
-        if (!written && name == "array"sv)
+        if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -657,7 +673,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
             ostr << '(';
 
@@ -787,6 +803,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.current_function = this;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
+
     }
 
     if (need_parens)

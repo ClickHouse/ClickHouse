@@ -85,18 +85,18 @@ D	1	20
 A	2	30
 C	\N	40
   -- column aliases
+B	3
 D	1
 A	2
-B	3
 C	\N
 D	1
 A	2
 B	3
 C	\N
   -- expressions
-A 2
 B 3
 D 1
+A 2
 \N
 A 2
 B 3

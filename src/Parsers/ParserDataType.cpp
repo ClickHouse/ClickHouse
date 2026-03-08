@@ -5,6 +5,7 @@
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
@@ -53,16 +54,24 @@ bool parseEnumValues(
             return false;
         }
 
-        /// Check for prefixed string literals like b'...' or x'...' - fall back to generic parser
+        String elem_name;
         char first_char = *pos->begin;
         if (first_char == 'b' || first_char == 'B' || first_char == 'x' || first_char == 'X')
-            return false;
-
-        String elem_name;
-        ReadBufferFromMemory in(pos->begin, pos->size());
-        if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
-            return false;
-        ++pos;
+        {
+            /// Binary/hex string literals (b'...', x'...') - use full parser to decode
+            ASTPtr literal_ast;
+            ParserStringLiteral string_literal_parser;
+            if (!string_literal_parser.parse(pos, literal_ast, expected))
+                return false;
+            elem_name = literal_ast->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+        {
+            ReadBufferFromMemory in(pos->begin, pos->size());
+            if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
+                return false;
+            ++pos;
+        }
 
         /// Must have explicit value - if not, fall back to generic parser for auto-assignment
         if (pos->type != TokenType::Equals)
@@ -520,7 +529,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    data_type_node->children.push_back(expr_list_args);
+    /// Only attach arguments if non-empty, so that e.g. `Tuple()` produces the same
+    /// AST as `Tuple` (no children). This keeps the formatting roundtrip consistent:
+    /// formatImpl omits parentheses for empty arguments, and reparsing without
+    /// parentheses produces a node with no children.
+    if (!expr_list_args->children.empty())
+        data_type_node->children.push_back(expr_list_args);
 
     node = data_type_node;
     return true;

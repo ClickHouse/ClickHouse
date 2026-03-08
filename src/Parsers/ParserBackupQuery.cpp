@@ -233,7 +233,20 @@ namespace
 
     bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
     {
-        return ParserArray{}.parse(pos, cluster_host_ids, expected);
+        /// Accept both [...] and array(...) syntax for formatting roundtrip consistency.
+        if (ParserArray{}.parse(pos, cluster_host_ids, expected))
+            return true;
+
+        ASTPtr tmp;
+        if (!ParserFunction{}.parse(pos, tmp, expected))
+            return false;
+
+        auto * func = tmp->as<ASTFunction>();
+        if (!func || func->name != "array")
+            return false;
+
+        cluster_host_ids = std::move(tmp);
+        return true;
     }
 
     bool parseClusterHostIDsSetting(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)

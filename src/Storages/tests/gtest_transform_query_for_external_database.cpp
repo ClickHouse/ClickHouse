@@ -239,6 +239,9 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
     check(state, 1, {"field", "value"},
           "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'), ('qux', 'baz'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('qux', 'baz')))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithTable)

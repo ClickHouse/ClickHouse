@@ -61,3 +61,9 @@ format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
 
 # Array with tuple element access (should not add extra parens around array)
 format_query "SELECT [['hello']].1;"
+
+# SETTINGS on SelectWithUnionQuery: parenthesized subqueries preserve SETTINGS attachment
+format_query "(SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1"
+
+# SETTINGS on SelectWithUnionQuery inside EXPLAIN AST
+format_query "EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null"
