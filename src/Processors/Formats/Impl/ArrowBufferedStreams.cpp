@@ -270,6 +270,13 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     }
 
     // fallback to loading the entire file in memory
+    if (format_name == "Parquet")
+    {
+        LOG_WARNING(
+            getLogger("ArrowBufferedInputStream"),
+            "Cannot read {} as seekable stream, falling back to loading the entire file into memory",
+            format_name);
+    }
     return asArrowFileLoadIntoMemory(in, is_cancelled, format_name, magic_bytes);
 }
 
