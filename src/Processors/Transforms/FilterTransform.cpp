@@ -1,12 +1,19 @@
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Columns/ColumnsCommon.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Core/Field.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PredicateAtomExtractor.h>
+#include <Interpreters/PredicateStatisticsLog.h>
+#include <Storages/IStorage.h>
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -22,6 +29,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+struct PredicateAtomsHolder
+{
+    std::vector<PredicateAtom> atoms;
+};
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 predicate_statistics_sample_rate;
+}
 
 namespace ErrorCodes
 {
@@ -105,6 +122,28 @@ FilterTransform::FilterTransform(
 
     if (condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+
+    /// predicate statistics collection
+    if (auto global_context = Context::getGlobalContextInstance())
+    {
+        predicate_stats_sample_rate = global_context->getServerSettings()[ServerSetting::predicate_statistics_sample_rate];
+        if (predicate_stats_sample_rate > 0)
+        {
+            predicate_stats_log = global_context->getPredicateStatisticsLog();
+            if (predicate_stats_log && expression)
+            {
+                const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+                while (node->type == ActionsDAG::ActionType::ALIAS)
+                    node = node->children[0];
+                auto atoms = extractPredicateAtoms(node);
+                if (!atoms.empty())
+                {
+                    predicate_atoms = std::make_unique<PredicateAtomsHolder>(PredicateAtomsHolder{std::move(atoms)});
+                    collect_predicate_stats = true;
+                }
+            }
+        }
+    }
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -143,9 +182,13 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
+    bool actually_filtered = !on_totals && !isVirtualRow(chunk);
     doTransform(chunk);
+    auto chunk_rows_after = chunk.getNumRows();
     if (rows_filtered)
-        *rows_filtered += chunk_rows_before - chunk.getNumRows();
+        *rows_filtered += chunk_rows_before - chunk_rows_after;
+    if (collect_predicate_stats && actually_filtered && chunk_rows_before > 0)
+        collectPredicateStatistics(chunk_rows_before, chunk_rows_after, chunk);
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -318,5 +361,62 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         }
     }
 }
+
+void FilterTransform::collectPredicateStatistics(size_t num_rows_before_filtration, size_t num_rows_after_filtration, const Chunk & chunk)
+{
+    ++chunk_counter;
+    if (chunk_counter % predicate_stats_sample_rate != 0)
+        return;
+
+    time_t now = time(nullptr);
+    UInt16 today = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    Float64 selectivity = static_cast<Float64>(num_rows_after_filtration) / static_cast<Float64>(num_rows_before_filtration);
+    String query_id(CurrentThread::getQueryId());
+
+    /// resolve database/table from MarkRangesInfo, caching to avoid repeated DatabaseCatalog lookups
+    /// without MarkRangesInfo there is no table identity — skip logging
+    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_ranges_info)
+        return;
+
+    if (mark_ranges_info->table_uuid != cached_table_uuid)
+    {
+        cached_table_uuid = mark_ranges_info->table_uuid;
+        cached_database.clear();
+        cached_table.clear();
+        auto db_and_table = DatabaseCatalog::instance().tryGetByUUID(cached_table_uuid);
+        if (db_and_table.first && db_and_table.second)
+        {
+            auto storage_id = db_and_table.second->getStorageID();
+            cached_database = storage_id.database_name;
+            cached_table = storage_id.table_name;
+        }
+    }
+
+    if (cached_database.empty())
+        return;
+
+    /// for conjunctive filters (multiple atoms), the selectivity recorded here is the
+    /// combined pass rate, which is a lower bound on each individual atom's selectivity.
+    /// this logic aligns well with physical design advisor logic, no need to leave only atoms
+    for (const auto & atom : predicate_atoms->atoms)
+    {
+        PredicateStatisticsLogElement elem;
+        elem.event_date = today;
+        elem.event_time = now;
+        elem.database = cached_database;
+        elem.table = cached_table;
+        elem.column_name = atom.column_name;
+        elem.predicate_class = atom.predicate_class;
+        elem.function_name = atom.function_name;
+        elem.input_rows = num_rows_before_filtration;
+        elem.passed_rows = num_rows_after_filtration;
+        elem.selectivity = selectivity;
+        elem.query_id = query_id;
+        predicate_stats_log->add(std::move(elem));
+    }
+}
+
+FilterTransform::~FilterTransform() = default;
 
 }
