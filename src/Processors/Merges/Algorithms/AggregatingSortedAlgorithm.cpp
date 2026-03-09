@@ -143,9 +143,12 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     UInt64 max_block_size_rows_,
     UInt64 max_block_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
-    ColumnsDefinition & def_)
+    ColumnsDefinition & def_,
+    UInt64 limit)
     : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_), def(def_)
 {
+    if (limit)
+        setLimit(limit);
 }
 
 void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Block & header, const IMergingAlgorithm::Inputs & inputs)
@@ -260,10 +263,11 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     SortDescription description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_)
+    std::optional<size_t> max_dynamic_subcolumns_,
+    UInt64 limit_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(*header_, description_))
-    , merged_data(max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_, columns_definition)
+    , merged_data(max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_, columns_definition, limit_)
 {
 }
 
@@ -319,6 +323,14 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
         {
             if (merged_data.isGroupStarted())
                 merged_data.finishGroup();
+
+            /// Check limit first — signal finished so the pipeline terminates
+            /// without relying on downstream closing the port.
+            if (merged_data.reachedLimit())
+            {
+                last_key.reset();
+                return Status(merged_data.pull(), true);
+            }
 
             /// if there are enough rows accumulated and the last one is calculated completely
             if (merged_data.hasEnoughRows())

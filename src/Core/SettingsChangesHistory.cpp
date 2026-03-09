@@ -73,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+            {"optimize_final_limit_pushdown", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"},
+            {"optimize_final_sequential_partitions", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

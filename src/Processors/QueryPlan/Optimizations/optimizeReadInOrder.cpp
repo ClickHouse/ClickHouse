@@ -226,7 +226,7 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit, bool & has_filter_step)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -262,7 +262,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, has_filter_step);
 
     if (typeid_cast<DistinctStep *>(step))
     {
@@ -284,6 +284,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     {
         /// Should ignore limit if there is filtering.
         limit = 0;
+        has_filter_step = true;
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
@@ -486,6 +487,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
 
+    /// Count of consecutive fixed (constant) sorting key columns from the start.
+    /// Incremented only while all previous columns were also fixed.
+    size_t num_leading_fixed = 0;
+    bool leading_fixed_streak = true;
+
     bool can_optimize_virtual_row = true;
 
     struct MatchInfo
@@ -544,6 +550,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
             match_infos.push_back({.source = sort_column_node});
             ++next_description_column;
             ++next_sort_key;
+            leading_fixed_streak = false;
         }
         else
         {
@@ -575,6 +582,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
+                    if (leading_fixed_streak)
+                        ++num_leading_fixed;
                     continue;
                 }
 
@@ -595,6 +604,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
                 ++next_description_column;
                 ++next_sort_key;
+                leading_fixed_streak = false;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
@@ -612,6 +622,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
+                if (leading_fixed_streak)
+                    ++num_leading_fixed;
             }
             else
             {
@@ -668,7 +680,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (order_key_prefix_descr.size() < description.size() || pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
-    auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
+    auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit, num_leading_fixed);
 
     std::optional<ActionsDAG> virtual_row_conversion;
     if (can_optimize_virtual_row)
@@ -1072,7 +1084,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1123,10 +1136,33 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                order_info.input_order->num_leading_fixed_sort_key_columns);
 
             if (!can_read)
                 return nullptr;
+
+            /// For FINAL queries, set the limit for merge algorithms separately.
+            /// buildSortingDAG clears input_order_info->limit when there are
+            /// filters/prewhere (to prevent storage-level TopN from reading too
+            /// few rows), but the FINAL merge can still use the limit safely
+            /// when filtering is done only via PREWHERE (which runs within each
+            /// part before the merge). When a FilterStep exists in the plan,
+            /// the filter runs AFTER the merge, so limit pushdown is not safe.
+            ///
+            /// Additionally, the limit may only be pushed down when the sorting
+            /// key fully covers the ORDER BY columns. If the ORDER BY extends
+            /// beyond or diverges from the sorting key (e.g. ORDER BY a, c with
+            /// key (a, b)), the SortingStep above will re-sort by the extra
+            /// columns. Pushing limit into the merge would discard rows that
+            /// might appear in the correct top-N after the full re-sort.
+            ///
+            /// sort_description_for_merging is a subsequence of description
+            /// (ORDER BY) built by the matching loop, so equality of sizes
+            /// means every ORDER BY column was successfully matched.
+            bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
+            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && sorting_key_covers_order_by)
+                reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1167,6 +1203,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return nullptr;
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
@@ -1192,7 +1229,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1214,7 +1252,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                order_info.input_order->num_leading_fixed_sort_key_columns);
             if (!can_read)
                 return {};
         }
@@ -1313,7 +1352,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1336,7 +1376,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit))
+            order_info.input_order->limit,
+            order_info.input_order->num_leading_fixed_sort_key_columns))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

@@ -314,8 +314,11 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, size_t num_leading_fixed_sort_key_columns = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    /// Set the limit for FINAL merge algorithms. Unlike input_order_info->limit,
+    /// this is not cleared by filters/prewhere on fixed sorting key prefix columns.
+    void setFinalLimit(UInt64 final_limit_) { final_limit = final_limit_; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -528,6 +531,11 @@ private:
     bool allow_query_condition_cache = true;
 
     ExpressionActionsPtr virtual_row_conversion;
+
+    /// Limit for FINAL merge algorithms (set separately from input_order_info->limit
+    /// because filters/prewhere clear that limit for storage-level TopN, but the FINAL
+    /// merge can still use it when the filter is on a fixed prefix of the sorting key).
+    UInt64 final_limit = 0;
 
     std::optional<size_t> number_of_current_replica;
 
