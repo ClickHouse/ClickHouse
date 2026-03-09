@@ -1,8 +1,6 @@
 -- Tags: no-msan, long, no-azure-blob-storage
 -- msan: too slow
 
-SET optimize_in_to_equal = 0;
-
 SELECT '-- Single partition by function';
 
 DROP TABLE IF EXISTS 03173_single_function;

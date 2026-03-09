@@ -7,6 +7,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-export CLICKHOUSE_URL="${CLICKHOUSE_URL}&optimize_in_to_equal=0"
 python3 "$CURDIR"/00386_long_in_pk.python
 
