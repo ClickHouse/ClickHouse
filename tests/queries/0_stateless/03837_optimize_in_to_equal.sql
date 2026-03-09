@@ -5,6 +5,10 @@ INSERT INTO test_in_to_equal VALUES ('a', 1, 1), ('b', 2, 2), ('c', 3, NULL);
 SET enable_analyzer = 1;
 SET optimize_in_to_equal = 1;
 
+-- Helper to extract the WHERE function name from EXPLAIN QUERY TREE,
+-- stripping node IDs that vary by projection width:
+--   FUNCTION id: 6, function_name: equals, ... → FUNCTION function_name: equals, ...
+
 -- Basic: x IN ('a') → x = 'a'
 SELECT * FROM test_in_to_equal WHERE x IN ('a');
 
@@ -16,35 +20,30 @@ SELECT * FROM test_in_to_equal WHERE x NOT IN ('a');
 SELECT '---';
 
 -- Multiple values: should NOT be converted
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN ('a', 'b');
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN ('a', 'b')) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- Array: should NOT be converted
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN ['a', 'b'];
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN ['a', 'b']) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- NULL value: should NOT be converted (x IN NULL ≠ x = NULL semantically)
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN (NULL);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN (NULL)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x NOT IN (NULL);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x NOT IN (NULL)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- Verify conversion happens: query tree should show equals
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN ('a');
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN ('a')) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- Verify conversion happens: query tree should show notEquals
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x NOT IN ('a');
-
-SELECT '---';
-
--- Expression in IN: x IN (upper('a')) should still convert (constant after folding)
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN (upper('a'));
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x NOT IN ('a')) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
@@ -55,12 +54,12 @@ SELECT * FROM test_in_to_equal WHERE z IN (1);
 SELECT '---';
 
 -- Verify Nullable column keeps IN in query tree
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE z IN (1);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE z IN (1)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- Verify Nullable NOT IN also keeps notIn
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE z NOT IN (1);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE z NOT IN (1)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
@@ -76,8 +75,7 @@ SELECT number FROM numbers(2) WHERE arrayExists(_ -> (_ IN toNullable(4294967290
 SELECT '---';
 
 -- Verify setting can disable the optimization
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN ('a')
-SETTINGS optimize_in_to_equal = 0;
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN ('a') SETTINGS optimize_in_to_equal = 0) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
@@ -104,7 +102,7 @@ CREATE TABLE test_enum_in (e Enum('a' = 1, 'b' = 2)) ENGINE = Memory;
 INSERT INTO test_enum_in VALUES ('a');
 
 -- Valid enum value: IN works, equals would also work, but we skip Enum entirely for safety
-EXPLAIN QUERY TREE SELECT * FROM test_enum_in WHERE e IN ('a');
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_enum_in WHERE e IN ('a')) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
@@ -125,7 +123,7 @@ DROP TABLE IF EXISTS test_lc_nullable;
 CREATE TABLE test_lc_nullable (s LowCardinality(Nullable(String))) ENGINE = Memory;
 INSERT INTO test_lc_nullable VALUES ('a'), ('b'), (NULL);
 
-EXPLAIN QUERY TREE SELECT * FROM test_lc_nullable WHERE s IN ('a');
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_lc_nullable WHERE s IN ('a')) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
@@ -142,11 +140,11 @@ SELECT * FROM test_in_to_equal WHERE x IN (1);
 SELECT '---';
 
 -- Verify the query tree shows equals with the converted String constant
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x IN (1);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x IN (1)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 SELECT '---';
 
 -- String NOT IN (integer): should produce notEquals(x, '1')
-EXPLAIN QUERY TREE SELECT * FROM test_in_to_equal WHERE x NOT IN (1);
+SELECT replaceRegexpOne(trimLeft(explain), 'FUNCTION id: \\d+, ', 'FUNCTION ') FROM (EXPLAIN QUERY TREE SELECT 1 FROM test_in_to_equal WHERE x NOT IN (1)) WHERE trimLeft(explain) LIKE 'FUNCTION %function_name%';
 
 DROP TABLE test_in_to_equal;

@@ -38,8 +38,10 @@ public:
 
         const auto & function_name = function_node->getFunctionName();
 
-        bool is_in = (function_name == "in" || function_name == "globalIn");
-        bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn");
+        bool is_in = (function_name == "in" || function_name == "globalIn"
+                      || function_name == "nullIn" || function_name == "globalNullIn");
+        bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn"
+                          || function_name == "notNullIn" || function_name == "globalNotNullIn");
         if (!is_in && !is_not_in)
             return;
 

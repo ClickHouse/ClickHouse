@@ -1,6 +1,7 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
+SET optimize_in_to_equal = 1;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (
