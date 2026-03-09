@@ -1387,6 +1387,7 @@ class SettingsRandomizer:
         "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
         "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
+        "force_primary_key_reverse_order": lambda: random.randint(0, 1),
         "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),

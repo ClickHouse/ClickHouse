@@ -5420,7 +5420,7 @@ Possible values:
 - 0 - No delay (default)
 - N - Delay in milliseconds
 )", 0) \
-    DECLARE(Bool, force_primary_key_reverse_order, true, R"(
+    DECLARE(Bool, force_primary_key_reverse_order, false, R"(
 Automatically force all ORDER BY columns in CREATE TABLE to DESC for testing purposes.
 When enabled, every column in ORDER BY will be set to DESC regardless of original direction.
 This is useful for stress-testing the reverse key functionality across all functional tests.
