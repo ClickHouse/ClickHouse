@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Disable force_primary_key_reverse_order: tests row policies with MergeTree, output depends on key direction
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --query "
 
 DROP TABLE IF EXISTS 02703_rptable;
 DROP TABLE IF EXISTS 02703_rptable_another;

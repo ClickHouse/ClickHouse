@@ -1,9 +1,8 @@
 -- Tags: no-parallel, no-replicated-database
--- Disable force_primary_key_reverse_order: tests materialized views with system logs, output depends on key direction
-SET force_primary_key_reverse_order = 0;
-
 -- Tag no-parallel: due to attaching to system.query_log
 -- Tag no-replicated-database: Replicated database will has extra queries
+-- Disable force_primary_key_reverse_order: tests materialized views with system logs, output depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 -- Attach MV to system.query_log and check that writing query_log will not fail
 
@@ -31,5 +30,6 @@ system flush logs query_log;
 select replaceAll(query, '\n', '\\n'), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
     where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+    and query not ilike '%force_primary_key_reverse_order%'
     order by event_time_microseconds
     format CSV;
