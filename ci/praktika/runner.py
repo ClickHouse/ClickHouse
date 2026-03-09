@@ -314,15 +314,18 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
-            # Use a hash of the real worktree path as container name so
-            # multiple worktrees can run tests in parallel without conflicts.
-            # The same path always produces the same name, allowing cleanup.
+            # Derive a stable container name from the worktree path and job name
+            # so that different jobs (or the same job in different worktrees)
+            # never share a name, while the name is deterministic enough to
+            # allow cleanup of stale containers from previous runs.
             container_name = (
                 "praktika_"
                 + hashlib.sha1(
-                    Path(current_dir).resolve().as_posix().encode()
+                    (Path(current_dir).resolve().as_posix() + ":" + job.name).encode()
                 ).hexdigest()[:12]
             )
+            if not job.timeout_shell_cleanup:
+                job.timeout_shell_cleanup = f"docker rm -f {container_name}"
             workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
@@ -337,13 +340,25 @@ class Runner:
                         f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
                     )
                     workdir = ""
-            if not Shell.check(
-                f"if docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}; then docker rm -f {container_name}; fi",
-                verbose=True,
+            if Shell.check(
+                f"docker ps --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
             ):
                 raise RuntimeError(
-                    f"Failed to remove existing docker container '{container_name}'"
+                    f"Docker container '{container_name}' is already running. "
+                    f"Another instance of job [{job.name}] may be active in this worktree."
                 )
+            if Shell.check(
+                f"docker ps -a --format '{{{{.Names}}}}' | grep -qx {container_name}",
+                verbose=False,
+            ):
+                print(
+                    f"Found stopped container '{container_name}' from a previous run — removing it"
+                )
+                if not Shell.check(f"docker rm {container_name}", verbose=True):
+                    raise RuntimeError(
+                        f"Failed to remove stopped container '{container_name}'"
+                    )
             if job.enable_gh_auth:
                 # pass gh auth seamlessly into the docker container
                 gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
@@ -546,7 +561,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
+        if run_exit_code == 0:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:

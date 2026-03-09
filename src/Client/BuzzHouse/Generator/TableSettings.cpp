@@ -47,7 +47,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'", "'compatibility'"};
+             static const DB::Strings choices = {"'throw'", "'drop'", "'rebuild'", "'compatibility'"};
              return rg.pickRandomly(choices);
          },
          {"'throw'", "'drop'", "'rebuild'", "'compatibility'"},
@@ -105,7 +105,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
+             static const DB::Strings choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomly(choices);
          },
          {"'ignore'", "'throw'", "'drop'", "'rebuild'"},
@@ -130,7 +130,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'v1'", "'v2'", "'v3'"};
+             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'"};
              return rg.pickRandomly(choices);
          },
          {"'v1'", "'v2'", "'v3'"},
@@ -179,7 +179,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
+             static const DB::Strings choices = {"'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomly(choices);
          },
          {"'throw'", "'drop'", "'rebuild'"},
@@ -250,7 +250,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
+             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
              return rg.pickRandomly(choices);
          },
          {"'Simple'", "'Trivial'", "'StochasticSimple'"},
@@ -352,7 +352,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'v1'", "'v2'", "'v3'"};
+             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'"};
              return rg.pickRandomly(choices);
          },
          {"'v1'", "'v2'", "'v3'"},
@@ -363,7 +363,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
              return rg.pickRandomly(choices);
          },
          {"'map'", "'map_with_buckets'", "'advanced'"},
@@ -372,7 +372,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
              return rg.pickRandomly(choices);
          },
          {"'map'", "'map_with_buckets'", "'advanced'"},
@@ -427,7 +427,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'none'", "'local'", "'any'"};
+             static const DB::Strings choices = {"'none'", "'local'", "'any'"};
              return rg.pickRandomly(choices);
          },
          {"'none'", "'local'", "'any'"},
@@ -436,7 +436,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'basic'", "'with_types'"};
+             static const DB::Strings choices = {"'basic'", "'with_types'"};
              return rg.pickRandomly(choices);
          },
          {"'basic'", "'with_types'"},
@@ -506,7 +506,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'single_stream'", "'with_size_stream'"};
+             static const DB::Strings choices = {"'single_stream'", "'with_size_stream'"};
              return rg.pickRandomly(choices);
          },
          {"'single_stream'", "'with_size_stream'"},
@@ -515,7 +515,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
+             static const DB::Strings choices = {"'basic'", "'allow_sparse'"};
              return rg.pickRandomly(choices);
          },
          {"'basic'", "'allow_sparse'"},
@@ -642,7 +642,7 @@ static std::unordered_map<String, CHSetting> fileTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+                static const DB::Strings choices = {"'read'", "'pread'", "'mmap'"};
                 return rg.pickRandomly(choices);
             },
             {"'read'", "'pread'", "'mmap'"},
@@ -695,7 +695,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                static const DB::Strings choices = {"'default'", "'stream'", "'dead_letter_queue'"};
                 return rg.pickRandomly(choices);
             },
             {"'default'", "'stream'", "'dead_letter_queue'"},
@@ -706,7 +706,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
+                static const DB::Strings choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
                 return rg.pickRandomly(choices);
             },
             {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"},
@@ -769,7 +769,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'keep'", "'delete'", "'move'", "'tag'"};
+                    static const DB::Strings choices = {"'keep'", "'delete'", "'move'", "'tag'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
@@ -783,7 +783,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'path'", "'partition'"};
+                    static const DB::Strings choices = {"'path'", "'partition'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'path'", "'partition'"},
@@ -809,7 +809,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'none'", "'hive'", "'regex'"};
+                    static const DB::Strings choices = {"'none'", "'hive'", "'regex'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'none'", "'hive'", "'regex'"},

@@ -262,6 +262,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString parquet_metadata_cache_policy;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
+    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
@@ -810,7 +814,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
                 PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -822,7 +826,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
                 PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -834,7 +838,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -846,7 +850,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_PID_TOO_LOW,
                PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -858,7 +862,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
                 PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -873,7 +877,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -892,7 +896,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
                 PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -903,7 +907,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
                 PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -918,7 +922,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
         }
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -2036,6 +2040,18 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+#endif
+#if USE_PARQUET
+    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
+    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
+    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
+    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
+    if (parquet_metadata_cache_size > max_cache_size)
+    {
+        parquet_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
+    }
+    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;

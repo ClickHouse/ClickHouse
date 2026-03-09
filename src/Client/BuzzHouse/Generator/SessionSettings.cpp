@@ -28,7 +28,7 @@ static const auto nastyStrings = [](RandomGenerator & rg, FuzzConfig &)
 static const auto setSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices = {"''", "'ALL'", "'DISTINCT'"};
+        static const DB::Strings choices = {"''", "'ALL'", "'DISTINCT'"};
         return rg.pickRandomly(choices);
     },
     {},
@@ -157,7 +157,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+                static const DB::Strings choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
                 return rg.pickRandomly(choices);
             },
             {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
@@ -281,7 +281,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"0", "1", "'auto'"};
+                static const DB::Strings choices = {"0", "1", "'auto'"};
                 return rg.pickRandomly(choices);
             },
             {"0", "1", "'auto'"},
@@ -324,7 +324,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
+                static const DB::Strings choices = {"'enable'", "'force_enable'", "'disable'"};
                 return rg.pickRandomly(choices);
             },
             {"'enable'", "'force_enable'", "'disable'"},
@@ -336,7 +336,7 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'lz4'", "'none'"};
+                static const DB::Strings choices = {"'lz4'", "'none'"};
                 return rg.pickRandomly(choices);
             },
             {},
@@ -367,7 +367,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'state'", "'value'", "'array'"};
+             static const DB::Strings choices = {"'state'", "'value'", "'array'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -391,7 +391,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'heavy'", "'lightweight'", "'lightweight_force'"};
+             static const DB::Strings choices = {"'heavy'", "'lightweight'", "'lightweight_force'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -428,7 +428,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
+             static const DB::Strings choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
              return rg.pickRandomly(choices);
          },
          {"'best_effort'", "'best_effort_us'", "'basic'"},
@@ -449,7 +449,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'file'", "'bucket'"};
+             static const DB::Strings choices = {"'file'", "'bucket'"};
              return rg.pickRandomly(choices);
          },
          {"'file'", "'bucket'"},
@@ -464,7 +464,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'left'", "'right'"};
+             static const DB::Strings choices = {"'left'", "'right'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -485,7 +485,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
              return rg.pickRandomly(choices);
          },
@@ -495,7 +495,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ignore'", "'saturate'", "'throw'"};
+             static const DB::Strings choices = {"'ignore'", "'saturate'", "'throw'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -524,7 +524,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'nothing'", "'on_error'", "'all'"};
+             static const DB::Strings choices = {"'nothing'", "'on_error'", "'all'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -549,7 +549,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"''", "'Persisted'", "'Streaming'"};
+             static const DB::Strings choices = {"''", "'Persisted'", "'Streaming'"};
              return rg.pickRandomly(choices);
          },
          {"''", "'Persisted'", "'Streaming'"},
@@ -560,7 +560,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'deny'", "'local'", "'global'", "'allow'"};
+             static const DB::Strings choices = {"'deny'", "'local'", "'global'", "'allow'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -660,7 +660,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'none'",
                     "'metadata'",
                     "'manifest_list_metadata'",
@@ -683,7 +683,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
              }
              else
              {
-                 static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
+                 static const std::vector<uint32_t> values = {1, 2, 3, 5, 10, 15, 20};
                  const auto now = std::chrono::system_clock::now();
 
                  /// Convert to milliseconds since epoch
@@ -796,7 +796,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -805,7 +805,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'disable'", "'enable'", "'backward_compatible_choice'"};
+             static const DB::Strings choices = {"'disable'", "'enable'", "'backward_compatible_choice'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -814,8 +814,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
-                 = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
+             static const DB::Strings choices = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -830,7 +829,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "2", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "2", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -846,7 +845,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ALL'", "'ANY'", "''"};
+             static const DB::Strings choices = {"'ALL'", "'ANY'", "''"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -870,7 +869,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'alter_update'", "'lightweight_update'", "'lightweight_update_force'"};
+             static const DB::Strings choices = {"'alter_update'", "'lightweight_update'", "'lightweight_update_force'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -880,7 +879,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {
+             static const DB::Strings choices = {
                  "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
              return rg.pickRandomly(choices);
          },
@@ -894,7 +893,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
+             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
              return rg.pickRandomly(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
@@ -980,7 +979,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'lz4_frame'", "'zstd'", "'none'"};
+             static const DB::Strings choices = {"'lz4_frame'", "'zstd'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -994,7 +993,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'null'", "'deflate'", "'snappy'", "'zstd'"};
+             static const DB::Strings choices = {"'null'", "'deflate'", "'snappy'", "'zstd'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1030,7 +1029,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'lz4'", "'snappy'", "'zlib'", "'zstd'", "'none'"};
+             static const DB::Strings choices = {"'lz4'", "'snappy'", "'zlib'", "'zstd'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1053,7 +1052,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'snappy'", "'lz4'", "'brotli'", "'zstd'", "'gzip'", "'none'"};
+             static const DB::Strings choices = {"'snappy'", "'lz4'", "'brotli'", "'zstd'", "'gzip'", "'none'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1076,7 +1075,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
+             static const DB::Strings choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1087,7 +1086,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"0", "1", "'auto'"};
+             static const DB::Strings choices = {"0", "1", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1124,8 +1123,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
-                 = {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"};
+             static const DB::Strings choices = {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
@@ -1195,7 +1193,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
              return rg.pickRandomly(choices);
          },
@@ -1213,7 +1211,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'when_necessary'", "'always'", "'user_display'"};
+             static const DB::Strings choices = {"'when_necessary'", "'always'", "'user_display'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1222,7 +1220,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'Backticks'", "'DoubleQuotes'", "'BackticksMySQL'"};
+             static const DB::Strings choices = {"'Backticks'", "'DoubleQuotes'", "'BackticksMySQL'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1237,7 +1235,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1260,7 +1258,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices
+             static const DB::Strings choices
                  = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
              return rg.pickRandomly(choices);
          },
@@ -1279,7 +1277,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'sync'", "'auto'"};
+             static const DB::Strings choices = {"'sync'", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1316,7 +1314,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'auto'", "'postfilter'", "'prefilter'"};
+             static const DB::Strings choices = {"'auto'", "'postfilter'", "'prefilter'"};
              return rg.pickRandomly(choices);
          },
          {"'auto'", "'postfilter'", "'prefilter'"},
@@ -1331,7 +1329,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'async'", "'wait'", "'wait_unknown'"};
+             static const DB::Strings choices = {"'async'", "'wait'", "'wait_unknown'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1642,10 +1640,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
     if (fc.enable_overflow_settings)
     {
-        static const auto & overflowSetting = CHSetting(
+        static const auto overflowSetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'throw'", "'break'", "'any'"};
+                static const DB::Strings choices = {"'throw'", "'break'", "'any'"};
                 return rg.pickRandomly(choices);
             },
             {},
@@ -1691,7 +1689,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
     if (fc.enable_memory_settings)
     {
-        static const auto & memorySetting = CHSetting(
+        static const auto memorySetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
                 return std::to_string(rg.thresholdGenerator<uint64_t>(
@@ -1744,7 +1742,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'by_names'", "'by_names_case_insensitive'", "'by_values'"};
+                  static const DB::Strings choices = {"'by_names'", "'by_names_case_insensitive'", "'by_values'"};
                   return rg.pickRandomly(choices);
               },
               {},
@@ -1758,7 +1756,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'None'", "'Escaped'", "'Quoted'", "'CSV'", "'JSON'", "'XML'", "'Raw'"};
+                  static const DB::Strings choices = {"'None'", "'Escaped'", "'Quoted'", "'CSV'", "'JSON'", "'XML'", "'Raw'"};
                   return rg.pickRandomly(choices);
               },
               {},
@@ -1806,7 +1804,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           CHSetting(
               [](RandomGenerator & rg, FuzzConfig &)
               {
-                  static const DB::Strings & choices = {"'ext'", "'str'", "'bin'"};
+                  static const DB::Strings choices = {"'ext'", "'str'", "'bin'"};
                   return rg.pickRandomly(choices);
               },
               {},

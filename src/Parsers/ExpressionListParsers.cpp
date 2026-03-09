@@ -216,9 +216,6 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_exp_list->children.push_back(aggregate_function);
 
     auto select_query = make_intrusive<ASTSelectQuery>();
-    select_query->children.push_back(select_exp_list);
-    select_query->children.push_back(tables_in_select);
-
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
@@ -1266,6 +1263,27 @@ private:
     bool is_operator;
 };
 
+/// Check if all elements are ASTLiteral nodes without aliases, and their field types
+/// are either scalar or match `allowed_compound_type`. This mirrors the cases that
+/// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
+/// tuples inside tuples) with scalar leaf literals and no aliases.
+static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types::Which allowed_compound_type)
+{
+    for (const auto & elem : elements)
+    {
+        const auto * literal = elem->as<ASTLiteral>();
+        if (!literal)
+            return false;
+        if (!elem->tryGetAlias().empty())
+            return false;
+        auto field_type = literal->value.getType();
+        if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
+            if (field_type != allowed_compound_type)
+                return false;
+    }
+    return true;
+}
+
 /// Layer for priority brackets and the tuple function
 class RoundBracketsLayer : public Layer
 {
@@ -1291,16 +1309,26 @@ public:
             if (!is_tuple && elements.size() == 1)
             {
                 /// Special case for (('a', 'b')) = tuple(('a', 'b'))
-                /// This is needed for IN semantics: (field, value) IN (('foo', 'bar'))
-                /// should be a 1-element set, not a flat 2-element tuple.
-                /// But skip promotion when the element has an alias, because the
-                /// extra tuple() wrapper changes how the alias is formatted and
-                /// breaks AST formatting roundtrip (e.g. ON ((1, 0.648) AS a7)
-                /// would reparse as ON tuple((1, 0.648) AS a7)).
+                /// When a single element is an ASTLiteral(Tuple), unwrap it into
+                /// individual elements so that getResultImpl re-converts them to
+                /// a single ASTLiteral(Tuple) — preserving the same AST shape as
+                /// the original inner parse, without an extra tuple() wrapper.
+                /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
-                    if (literal->value.getType() == Field::Types::Tuple)
-                        if (elements[0]->tryGetAlias().empty())
-                            is_tuple = true;
+                {
+                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    {
+                        /// Save the tuple value before clearing elements,
+                        /// because elements.clear() destroys the ASTLiteral
+                        /// that owns it.
+                        Tuple tup = literal->value.safeGet<Tuple>();
+                        elements.clear();
+                        elements.reserve(tup.size());
+                        for (auto & elem : tup)
+                            elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
+                        is_tuple = true;
+                    }
+                }
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
@@ -1318,9 +1346,24 @@ protected:
     {
         // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
+        {
             node = std::move(elements[0]);
+        }
+        else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
+        {
+            /// Produce ASTLiteral(Tuple) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which requires >= 2 elements
+            /// for tuples and accepts same-bracket nesting only).
+            Tuple tup;
+            tup.reserve(elements.size());
+            for (auto & elem : elements)
+                tup.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(tup));
+        }
         else
+        {
             node = makeASTOperator("tuple", std::move(elements));
+        }
 
         return true;
     }
@@ -1341,7 +1384,20 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTOperator("array", std::move(elements));
+        if (allElementsAreCompatibleLiterals(elements, Field::Types::Array))
+        {
+            /// Produce ASTLiteral(Array) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which accepts same-bracket nesting only).
+            Array arr;
+            arr.reserve(elements.size());
+            for (auto & elem : elements)
+                arr.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(arr));
+        }
+        else
+        {
+            node = makeASTOperator("array", std::move(elements));
+        }
         return true;
     }
 };

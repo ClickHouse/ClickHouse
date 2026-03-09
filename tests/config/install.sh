@@ -375,6 +375,8 @@ fi
 
 if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_async_inserts.xml $DEST_SERVER_PATH/users.d/
+else
+    ln -sf $SRC_PATH/users.d/disable_async_inserts.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then

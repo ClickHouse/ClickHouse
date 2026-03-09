@@ -149,12 +149,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        batch_num: Batch number for naming output file
+        job_params: List of job parameters for naming output file
     """
     import subprocess
     from pathlib import Path
@@ -166,7 +166,9 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
         print("No profraw files found", flush=True)
         return
 
-    final_file = f"./it-{batch_num}.profdata"
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
+    final_file = f"./it-{joined_job_params}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(
@@ -857,7 +859,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merge_profraw_files(llvm_profdata_cmd, batch_num)
+        merge_profraw_files(llvm_profdata_cmd, job_params)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")

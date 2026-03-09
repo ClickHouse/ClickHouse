@@ -33,6 +33,36 @@ tar -xzf /tmp/ci_logs.tar.gz ci/tmp/pytest_parallel.jsonl
 grep "test_name" ci/tmp/pytest_parallel.jsonl | python3 -c "import sys,json; [print(json.loads(l).get('longrepr','')) for l in sys.stdin if 'failed' in l]"
 ```
 
+To analyze CI performance comparison results (slower/faster queries, unstable queries), use the tool at `.claude/tools/fetch_perf_report.py`. It fetches the machine-readable `all-query-metrics.tsv` from S3 for each performance shard, filters to `client_time`, and classifies queries as changed or unstable using the same thresholds as `compare.sh`.
+
+```bash
+# Show performance changes for a PR (default: changed + unstable queries only)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345"
+
+# Filter by architecture
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --arch amd
+
+# Show only per-shard summary (no individual queries)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --summary
+
+# Filter by test name
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --test group_by
+
+# Show all queries (not just changes)
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --all --sort times
+
+# JSON output for structured analysis
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --json
+
+# TSV output for piping
+python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --tsv
+
+# Also accepts CI HTML URLs
+python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=12345&sha=abc123"
+```
+
+Key options: `--arch <amd|arm|all>` to filter architecture, `--metric <name>` to change metric (default `client_time`), `--shard <n>` for a specific shard, `--test <name>` / `--query <text>` for substring filtering, `--sort <diff|times|threshold|test>` for ordering, `--summary` for shard-level overview only, `--json` / `--tsv` for machine-readable output.
+
 To compile and run C++ code snippets against the ClickHouse codebase without modifying any source files, use the tool at `.claude/tools/cppexpr.sh`. This is a wrapper around `utils/c++expr` that auto-detects build directories and handles working directory setup. When asked about the size, layout, or alignment of ClickHouse data structures, or asked to compare performance of code snippets, use this tool to get a definitive answer instead of guessing.
 
 ```bash
@@ -81,13 +111,14 @@ python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" --perf-map 
 # Compare codegen between two builds
 python3 .claude/tools/analyze-assembly.py --before <old_binary> --after <new_binary> "<function_name>"
 
+# Analyze function at a specific address (useful for heavily-templated symbols)
+python3 .claude/tools/analyze-assembly.py <binary> 0x0dc7c780
+
 # Verbose mode to see tool commands
 python3 .claude/tools/analyze-assembly.py <binary> "<function_name>" -v
 ```
 
-Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. The tool caches symbol tables by build-id for fast repeated queries.
-
-**IMPORTANT**: `--select N` does NOT imply `--search`. When using a regex pattern with `--select`, you MUST also pass `--search`, e.g. `--search --select 1`. Without `--search`, the pattern is treated as a literal exact match and will fail.
+Key options: `--search` for regex matching, `--fuzzy` for substring matching, `--select N` to pick from ambiguous results, `--all` to analyze all matches, `--context N` to show surrounding symbols, `--max-instructions N` to control output size, `--mca --mcpu=<model>` for llvm-mca throughput analysis, `--perf-map <file>` for runtime-weighted scoring, `--before`/`--after` for diff mode. Hex addresses (e.g. `0x0dc7c780`) are resolved to the enclosing symbol automatically — useful when symbol names are too long for regex matching. The tool caches symbol tables by build-id for fast repeated queries.
 
 You can build multiple versions of ClickHouse inside `build_*` directories, such as `build`, `build_debug`, `build_asan`, etc.
 
@@ -96,6 +127,11 @@ You can run integration tests as in `tests/integration/README.md` using: `python
 When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
+
+When adding a new test, first run the following command to find the current test with the last prefix index, then increment the resulting index by 1, and use this as the prefix for the new test name:
+```
+ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
+```
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
@@ -106,6 +142,10 @@ When writing messages, say ASan, not ASAN, and similar (because there are two wo
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
 
 Do not use `-j` argument with ninja; do not use `nproc` - let it decide automatically.
+
+When building ClickHouse (running ninja), always redirect output to the build log file in the build directory. Always use a subagent to analyze the log and return only a concise summary.
+
+When running tests, always redirect output to a log file in the build directory (e.g. `<build_directory>/test_<test_name>.log`). Use unique file names per test so multiple tests can run in parallel. Always use a subagent to analyze each log and return only a concise summary.
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message.
 
@@ -119,8 +159,6 @@ When there are crucial findings (when I corrected your behavior, you when you fo
 
 Always load and apply the following skills:
 
-- .claude/skills/build
-- .claude/skills/test
 - .claude/skills/fix-sync
 - .claude/skills/alloc-profile
 - .claude/skills/bisect

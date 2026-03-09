@@ -192,8 +192,16 @@ function fuzz
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${TARGETED_QUERIES_FILE:-}" ]] && [[ -f "${TARGETED_QUERIES_FILE}" ]];
+        then
+            QUERIES_FILE="$(cat "${TARGETED_QUERIES_FILE}")"
+            echo "Using targeted AST fuzzer corpus from ${TARGETED_QUERIES_FILE}"
+        else
+            QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        fi
+        COMPATIBILITY_SETTING="${FUZZER_COMPATIBILITY:-26.1}"
+        echo "Using AST fuzzer compatibility setting: ${COMPATIBILITY_SETTING}"
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --compatibility=${COMPATIBILITY_SETTING} --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"

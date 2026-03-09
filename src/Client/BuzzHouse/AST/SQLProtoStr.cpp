@@ -2383,11 +2383,20 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
-    if (mfunc.has_part())
+    if (mfunc.has_plist())
     {
-        ret += ", '";
-        ret += mfunc.part();
-        ret += "'";
+        ret += ", [";
+        for (int i = 0; i < mfunc.plist().parts_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += mfunc.plist().parts(i);
+            ret += "'";
+        }
+        ret += "]";
     }
     ret += ")";
 }
@@ -2986,6 +2995,44 @@ CONV_FN(IndexParam, ip)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupOut, bout)
+{
+    const BackupOut_BackupOutput & output = bout.out();
+
+    ret += BackupOut_BackupOutput_Name(output);
+    if (output != BackupOut_BackupOutput_Null)
+    {
+        ret += "(";
+        for (int i = 0; i < bout.out_params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            BackupParamToString(ret, bout.out_params(i));
+        }
+        ret += ")";
+    }
+}
+
 CONV_FN(DatabaseEngineParam, dep)
 {
     using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
@@ -2996,20 +3043,11 @@ CONV_FN(DatabaseEngineParam, dep)
             ret += dep.svalue();
             ret += "'";
             break;
-        case DatabaseEngineParamType::kDatabase:
-            ret += "'";
-            DatabaseToString(ret, dep.database());
-            ret += "'";
-            break;
-        case DatabaseEngineParamType::kDisk:
-            ret += "Disk('";
-            ret += dep.disk().disk();
-            ret += "', '";
-            DatabaseToString(ret, dep.disk().database());
-            ret += "')";
-            break;
         case DatabaseEngineParamType::kExpr:
             ExprToString(ret, dep.expr());
+            break;
+        case DatabaseEngineParamType::kBackupOut:
+            BackupOutToString(ret, dep.backup_out());
             break;
         default:
             ret += "d0";
@@ -4032,8 +4070,11 @@ CONV_FN(RefreshableView, rv)
         ret += " OFFSET ";
         RefreshIntervalToString(ret, rv.offset());
     }
-    ret += " RANDOMIZE FOR ";
-    RefreshIntervalToString(ret, rv.randomize());
+    if (rv.has_randomize())
+    {
+        ret += " RANDOMIZE FOR ";
+        RefreshIntervalToString(ret, rv.randomize());
+    }
     if (rv.has_depends())
     {
         ret += " DEPENDS ON ";
@@ -5297,42 +5338,9 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
-CONV_FN(BackupParam, bp)
-{
-    using BackupParamType = BackupParam::BackupParamOneofCase;
-    switch (bp.backup_param_oneof_case())
-    {
-        case BackupParamType::kSvalue:
-            ret += "'";
-            ret += bp.svalue();
-            ret += "'";
-            break;
-        case BackupParamType::kRvalue:
-            ret += bp.rvalue();
-            break;
-        default:
-            ret += "backup.data";
-    }
-}
-
-CONV_FN(BackupParams, bparams)
-{
-    ret += "(";
-    for (int i = 0; i < bparams.out_params_size(); i++)
-    {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        BackupParamToString(ret, bparams.out_params(i));
-    }
-    ret += ")";
-}
-
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
-    const BackupRestore_BackupOutput & output = backup.out();
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
@@ -5349,11 +5357,7 @@ CONV_FN(BackupRestore, backup)
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
     ret += " ";
-    ret += BackupRestore_BackupOutput_Name(output);
-    if (output != BackupRestore_BackupOutput_Null)
-    {
-        BackupParamsToString(ret, backup.params());
-    }
+    BackupOutToString(ret, backup.out());
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";

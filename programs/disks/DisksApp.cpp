@@ -138,7 +138,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             return {arguments.back()};
         }
@@ -156,7 +156,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return {last_token};
     }
@@ -245,7 +245,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             error_string = err.what();
         }
-        catch (...)
+        catch (...) // Ok: report unknown exception
         {
             error_string = "Unknown exception";
         }

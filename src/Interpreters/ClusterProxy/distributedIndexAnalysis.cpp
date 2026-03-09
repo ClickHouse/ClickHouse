@@ -224,6 +224,7 @@ namespace DB
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
+    ASTPtr sampling_filter,
     const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
@@ -319,9 +320,16 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     auto external_tables = execution_context->getExternalTables();
 
     std::optional<std::string> filter_query = std::nullopt;
-    if (filter_actions_dag)
     {
-        auto filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
+        ASTPtr filter_ast;
+        if (filter_actions_dag)
+            filter_ast = getFilterAST(*filter_actions_dag, indexes_column_names, execution_context, &external_tables);
+
+        if (filter_ast && sampling_filter)
+            filter_ast = makeASTForLogicalAnd({filter_ast, sampling_filter});
+        else if (sampling_filter)
+            filter_ast = sampling_filter;
+
         if (filter_ast)
             filter_query = filter_ast->formatWithSecretsOneLine();
     }
