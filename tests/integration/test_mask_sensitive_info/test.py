@@ -6,7 +6,7 @@ import string
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, with_default_target_node
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
@@ -21,6 +21,16 @@ node = cluster.add_instance(
     with_zookeeper=True,
     with_azurite=True,
     # Disable `with_remote_database_disk` as `test_create_table` might access minIO and expect `DNS_ERROR`. However, minIO might be enabled when `with_remote_database_disk` is enabled;
+    with_remote_database_disk=False,
+)
+node_unity = cluster.add_instance(
+    "node_unity",
+    main_configs=[
+        "configs/overrides.xml",
+    ],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
+    with_azurite=True,
     with_remote_database_disk=False,
     image="clickhouse/integration-test-with-unity-catalog",
     with_installed_binary=False,
@@ -39,8 +49,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def check_logs(must_contain=[], must_not_contain=[]):
-    node.query("SYSTEM FLUSH LOGS")
+@with_default_target_node(node)
+def check_logs(must_contain=[], must_not_contain=[], target_node=None):
+    target_node.query("SYSTEM FLUSH LOGS")
 
     for str in must_contain:
         escaped_str = (
@@ -49,7 +60,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
+        assert target_node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
 
     for str in must_not_contain:
         escaped_str = (
@@ -58,24 +69,25 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert not node.contains_in_log(
+        assert not target_node.contains_in_log(
             escaped_str, exclusion_substring=base_search_query
         )
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
-        assert system_query_log_contains_search_pattern(escaped_str)
+        assert system_query_log_contains_search_pattern(escaped_str, target_node=target_node)
 
     for str in must_not_contain:
         escaped_str = str.replace("'", "\\'")
-        assert not system_query_log_contains_search_pattern(escaped_str)
+        assert not system_query_log_contains_search_pattern(escaped_str, target_node=target_node)
 
 
 # Returns true if "system.query_log" has a query matching a specified pattern.
-def system_query_log_contains_search_pattern(search_pattern):
+@with_default_target_node(node)
+def system_query_log_contains_search_pattern(search_pattern, target_node=None):
     return (
         int(
-            node.query(
+            target_node.query(
                 f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'"
             ).strip()
         )
@@ -474,7 +486,7 @@ def test_create_database_datalake():
 
     # Scenario A: Secrets as named collection key-value overrides.
     # Create a named collection with non-secret base config.
-    node.query(
+    node_unity.query(
         "CREATE NAMED COLLECTION IF NOT EXISTS datalake_nc AS "
         "url = 'http://localhost:12345', "
         "catalog_type = 'unity', "
@@ -504,7 +516,7 @@ def test_create_database_datalake():
     test_cases_a = [make_test_case_a(i) for i in range(len(database_engines_a))]
 
     for database_name, query in test_cases_a:
-        node.query(query, settings=settings)
+        node_unity.query(query, settings=settings)
 
     must_contain_a = [
         f"CREATE DATABASE datalake_db_a{i} ENGINE = DataLakeCatalog(datalake_nc, {key} = '[HIDDEN]')"
@@ -514,19 +526,20 @@ def test_create_database_datalake():
     check_logs(
         must_contain=must_contain_a,
         must_not_contain=[password],
+        target_node=node_unity,
     )
 
     for secret_key, password_toggle in product(enumerate(secret_keys), enumerate(["[HIDDEN]", password])):
         i, key = secret_key
         toggle, secret = password_toggle
         assert (
-            node.query(f"SHOW CREATE DATABASE datalake_db_a{i} {show_secrets}={toggle}")
+            node_unity.query(f"SHOW CREATE DATABASE datalake_db_a{i} {show_secrets}={toggle}")
             == f"CREATE DATABASE datalake_db_a{i}\\n"
             f"ENGINE = DataLakeCatalog(datalake_nc, {key} = \\'{secret}\\')\n"
         )
 
         assert (
-            node.query(
+            node_unity.query(
                 f"SELECT engine_full FROM system.databases WHERE name = 'datalake_db_a{i}' "
                 f"{show_secrets}={toggle}"
             )
@@ -540,10 +553,10 @@ def test_create_database_datalake():
         )
 
     for database_name, query in test_cases_a:
-        node.query(f"DROP DATABASE IF EXISTS {database_name}")
+        node_unity.query(f"DROP DATABASE IF EXISTS {database_name}")
 
     # Scenario B: Secrets stored inside the named collection.
-    node.query(
+    node_unity.query(
         f"CREATE NAMED COLLECTION IF NOT EXISTS datalake_nc_secrets AS "
         f"url = 'http://localhost:12345', "
         f"catalog_type = 'unity', "
@@ -552,7 +565,7 @@ def test_create_database_datalake():
         f"catalog_credential = '{password2}'"
     )
 
-    node.query(
+    node_unity.query(
         "CREATE DATABASE datalake_db_b0 ENGINE = DataLakeCatalog(datalake_nc_secrets)",
         settings=settings,
     )
@@ -562,11 +575,12 @@ def test_create_database_datalake():
             "CREATE NAMED COLLECTION",
         ],
         must_not_contain=[password2],
+        target_node=node_unity,
     )
 
-    node.query("DROP DATABASE IF EXISTS datalake_db_b0")
-    node.query("DROP NAMED COLLECTION IF EXISTS datalake_nc")
-    node.query("DROP NAMED COLLECTION IF EXISTS datalake_nc_secrets")
+    node_unity.query("DROP DATABASE IF EXISTS datalake_db_b0")
+    node_unity.query("DROP NAMED COLLECTION IF EXISTS datalake_nc")
+    node_unity.query("DROP NAMED COLLECTION IF EXISTS datalake_nc_secrets")
 
 
 def test_table_functions():
