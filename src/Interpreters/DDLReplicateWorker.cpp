@@ -150,6 +150,13 @@ void DDLReplicateWorker::shutdown()
 {
     DDLWorker::shutdown();
     wait_current_task_change.notify_all();
+
+    /// Explicitly clear active node holder with the component guard set,
+    /// because EphemeralNodeHolder destructor calls tryRemove on ZooKeeper
+    /// which requires a component to be set when enforce_keeper_component_tracking is enabled.
+    auto component_guard = Coordination::setCurrentComponent("DDLReplicateWorker");
+    active_node_holder.reset();
+    active_node_holder_zookeeper.reset();
 }
 
 bool DDLReplicateWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)

@@ -135,7 +135,11 @@ bool DatabaseReplicator::isEnabled()
 
 void DatabaseReplicator::shutdown()
 {
-    database_replicator.reset();
+    if (database_replicator)
+    {
+        database_replicator->shutdownImpl();
+        database_replicator.reset();
+    }
 }
 
 String DatabaseReplicator::getName() const
@@ -162,6 +166,13 @@ void DatabaseReplicator::startup()
     ddl_worker_initialized = true;
 }
 
+void DatabaseReplicator::shutdownImpl()
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicator::shutdown");
+    shutdownDDLWorker();
+    resetDDLWorker();
+}
+
 UInt64 DatabaseReplicator::getLocalDigest() const
 {
     UInt64 local_digest = 0;
@@ -175,6 +186,7 @@ UInt64 DatabaseReplicator::getLocalDigest() const
 
 void DatabaseReplicator::tryConnectToZooKeeperAndInit()
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicator::tryConnectToZooKeeperAndInit");
     if (!getContext()->hasZooKeeper())
     {
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
@@ -473,7 +485,6 @@ void DatabaseReplicator::commitAlterDatabase(const String & database_name, Conte
 void DatabaseReplicator::commitRenameDatabase(
     const String & database_name,
     const String & to_database_name,
-    bool exchange,
     ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
@@ -485,9 +496,6 @@ void DatabaseReplicator::commitRenameDatabase(
     /// The database is already renamed locally.
     /// So we should get the new statement by to_database_name
     String statement_renamed = getCreateDatabaseStatement(to_database_name);
-    String statement_exchanged;
-    if (exchange)
-        statement_exchanged = getCreateDatabaseStatement(database_name);
 
     if (txn->isInitialQuery())
     {
@@ -496,22 +504,12 @@ void DatabaseReplicator::commitRenameDatabase(
 
         String zk_statement;
         Coordination::Stat stat;
-        String zk_statement_to;
-        Coordination::Stat stat_to;
 
         auto zookeeper = txn->getZooKeeper();
         zookeeper->tryGet(metadata_zk_path, zk_statement, &stat);
-        zookeeper->tryGet(metadata_zk_path_to, zk_statement_to, &stat_to);
 
         if (!txn->isCreateOrReplaceQuery())
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, stat.version));
-
-        if (exchange)
-        {
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, stat_to.version));
-            if (!txn->isCreateOrReplaceQuery())
-                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, zk_statement_to, zkutil::CreateMode::Persistent));
-        }
 
         /// In case of CREATE OR REPLACE there is no statement for the temporary table in ZK, so we use the local definition
         if (txn->isCreateOrReplaceQuery())
@@ -521,22 +519,17 @@ void DatabaseReplicator::commitRenameDatabase(
     }
 
     auto digest_renamed = DB::getMetadataHash(to_database_name, statement_renamed);
-    auto digest_exchanged = DB::getMetadataHash(database_name, statement_exchanged);
 
     std::lock_guard lock{metadata_mutex};
     auto from_it = local_digests.find(database_name);
     if (from_it == local_digests.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "commitRenameDatabase: database {} does not exist", database_name);
-    if (!exchange && local_digests.contains(to_database_name))
+    if (local_digests.contains(to_database_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "commitRenameDatabase: database {} already exists", to_database_name);
     UInt64 new_digest = metadata_digest;
     new_digest -= from_it->second;
     new_digest += digest_renamed;
-    if (exchange)
-    {
-        new_digest -= DB::getMetadataHash(to_database_name, statement_exchanged);
-        new_digest += digest_exchanged;
-    }
+
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -545,10 +538,7 @@ void DatabaseReplicator::commitRenameDatabase(
 
     metadata_digest = new_digest;
     local_digests[to_database_name] = digest_renamed;
-    if (exchange)
-        from_it->second = digest_exchanged;
-    else
-        local_digests.erase(from_it);
+    local_digests.erase(from_it);
     assertDigest(query_context);
 }
 

@@ -33,6 +33,7 @@ public:
     static void shutdown();
 
     void startup();
+    void shutdownImpl();
 
     /// Returns true if the given database should be replicated.
     /// Predefined databases (system, information_schema, etc.) and the default database are excluded.
@@ -52,7 +53,6 @@ public:
     void commitRenameDatabase(
         const String & database_name,
         const String & to_database_name,
-        bool exchange,
         ContextPtr query_context);
 private:
     const DDLReplicatorSettings & getSettings() const override;

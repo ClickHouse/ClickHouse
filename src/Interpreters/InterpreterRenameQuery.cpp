@@ -73,6 +73,17 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
+    /// For RENAME DATABASE, check DatabaseReplicator *before* acquiring DDL guards.
+    /// The DDL worker will re-enter InterpreterRenameQuery on the same thread, and DDL guards
+    /// (backed by std::mutex) are not reentrant, which would cause a self-deadlock.
+    if (rename.database)
+    {
+        if (rename.exchange)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EXCHANGE DATABASES is not supported");
+        if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
+            return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+    }
+
     auto & database_catalog = DatabaseCatalog::instance();
 
     /// Must do it in consistent order.
@@ -187,7 +198,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     return {};
 }
 
-BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
+BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
 {
     assert(descriptions.size() == 1);
     assert(descriptions.front().from_table_name.empty());
@@ -197,10 +208,6 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery & rename,
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
-    /// Forward database-level DDL through DatabaseReplicator if enabled.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
-        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
-
     auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
 
     if (db)
@@ -209,7 +216,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery & rename,
         db->renameDatabase(getContext(), new_name);
 
         if (DatabaseReplicator::isEnabled())
-            DatabaseReplicator::instance().commitRenameDatabase(old_name, new_name, rename.exchange, getContext());
+            DatabaseReplicator::instance().commitRenameDatabase(old_name, new_name, getContext());
     }
 
     return {};
