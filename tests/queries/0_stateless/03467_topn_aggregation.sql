@@ -593,6 +593,49 @@ ORDER BY m DESC
 LIMIT 1
 SETTINGS optimize_topn_aggregation = 0;
 
+-- =====================================================
+-- Float64 with NaN: consistent handling (Mode 2)
+-- =====================================================
+DROP TABLE IF EXISTS t_topn_nan;
+CREATE TABLE t_topn_nan (grp String, val Float64)
+ENGINE = MergeTree ORDER BY grp;
+
+INSERT INTO t_topn_nan SELECT
+    arrayJoin(['a','b','c','d','e','f']) AS grp,
+    multiIf(grp='a', 100, grp='b', 0.0/0.0, grp='c', 300, grp='d', 0.0/0.0, grp='e', 50, 200) AS val;
+
+SELECT '-- NaN DESC: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
+SELECT '-- NaN DESC: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- NaN ASC: optimized';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
+SELECT '-- NaN ASC: reference';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;
 DROP TABLE t_topn_unsorted;
@@ -602,3 +645,4 @@ DROP TABLE t_topn_argminmax;
 DROP TABLE t_topn_ties;
 DROP TABLE t_topn_lc;
 DROP TABLE t_topn_limit1;
+DROP TABLE t_topn_nan;

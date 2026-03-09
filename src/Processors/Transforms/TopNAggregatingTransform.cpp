@@ -259,7 +259,7 @@ IColumn::Permutation TopNAggregatingTransform::getSortPermutation(const IColumn 
     IColumn::Permutation perm;
     order_col.getPermutation(
         direction, IColumn::PermutationSortStability::Unstable,
-        output_limit, /*nan_direction_hint=*/1, perm);
+        output_limit, sort_direction, perm);
     return perm;
 }
 
@@ -354,7 +354,7 @@ ColumnPtr TopNAggregatingTransform::buildThresholdKeepMask(const ColumnPtr & col
     if (!threshold_active)
         return {};
     PaddedPODArray<Int8> compare_results;
-    column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, 1);
+    column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, sort_direction);
     if (compare_results.size() != rows)
         return {};
 

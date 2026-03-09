@@ -226,3 +226,19 @@ g195	9995
 99999	99999
 -- LIMIT 1 high cardinality: reference
 99999	99999
+-- NaN DESC: optimized
+c	300
+f	200
+a	100
+-- NaN DESC: reference
+c	300
+f	200
+a	100
+-- NaN ASC: optimized
+e	50
+a	100
+f	200
+-- NaN ASC: reference
+e	50
+a	100
+f	200
