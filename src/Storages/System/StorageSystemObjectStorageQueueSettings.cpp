@@ -10,16 +10,10 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 template <ObjectStorageType type>
 ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDescription()
@@ -71,7 +65,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
             {
                 StoragePtr storage = iterator->table();
                 if (!storage)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
+                    continue;
                 if (auto * queue_table = dynamic_cast<StorageObjectStorageQueue *>(storage.get()))
                 {
                     add_table(iterator, *queue_table);

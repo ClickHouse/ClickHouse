@@ -27,11 +27,6 @@ static constexpr auto TIME_SCALE = 3;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
@@ -105,7 +100,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             {
                 StoragePtr storage = iterator->table();
                 if (!storage)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
+                    continue;
 
                 TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
