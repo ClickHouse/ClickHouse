@@ -1117,7 +1117,8 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
-    global_context->initializeSystemLogs();
+    if (!getClientConfiguration().has("no-system-tables"))
+        global_context->initializeSystemLogs();
 
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())
