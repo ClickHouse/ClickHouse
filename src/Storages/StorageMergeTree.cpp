@@ -692,6 +692,9 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             MergeTreeMutationEntry & entry = it->second;
+            if (!entry.affectsPartition(failed_part->info.getPartitionId()))
+                continue;
+
             if (is_successful)
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
@@ -3084,6 +3087,10 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     {
         if (mutation_version <= part_data_version)
             break;
+
+        auto partition_ids = part->storage.getPartitionIdsAffectedByCommands(*commands, part->storage.getContext());
+        if (!containsInPartitionIdsOrEmpty(partition_ids, part->info.getPartitionId()))
+            continue;
 
         addSupportedCommands(*commands, mutation_version, result);
     }
