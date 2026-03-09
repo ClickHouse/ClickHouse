@@ -256,6 +256,7 @@ struct QueryPlanSettings
     bool optimize = true;
     bool keep_logical_steps = false;
     bool json = false;
+    bool pretty = false;
 
     constexpr static char name[] = "PLAN";
 
@@ -269,6 +270,7 @@ struct QueryPlanSettings
             {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
+            {"pretty", pretty},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
@@ -640,12 +642,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto format_settings = getFormatSettings(query_context);
                 format_settings.json.quote_64bit_integers = false;
 
-                JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
+                JSONBuilder::FormatSettings json_format_settings{
+                    .settings = format_settings,
+                    .solid = !settings.pretty
+                };
                 JSONBuilder::FormatContext format_context{.out = buf};
 
                 plan_array->format(json_format_settings, format_context);
 
-                single_line = true;
+                single_line = !settings.pretty;
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);

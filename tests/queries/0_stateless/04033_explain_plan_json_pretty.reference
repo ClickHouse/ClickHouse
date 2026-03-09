@@ -1,0 +1,16 @@
+[{"Plan":{"Node Type":"Expression","Node Id":"Expression_5","Description":"(Project names + (Projection + Change column names to column identifiers))","Plans":[{"Node Type":"ReadFromSystemOne","Node Id":"ReadFromSystemOne_0"}]}}]
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Description": "(Project names + (Projection + Change column names to column identifiers))",
+      "Plans": [
+        {
+          "Node Type": "ReadFromSystemOne",
+          "Node Id": "ReadFromSystemOne_0"
+        }
+      ]
+    }
+  }
+]
