@@ -164,6 +164,25 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageTest)
 }
 
 
+TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
+{
+    const auto version = GetParam();
+    auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
+    auto result = reader->readMemoryUsageAndInactiveFile();
+
+    if (version == ICgroupsReader::CgroupsVersion::V1)
+    {
+        ASSERT_EQ(result.usage, 2232029184); /* rss */
+        ASSERT_EQ(result.inactive_file, 2841305088); /* total_inactive_file */
+    }
+    else
+    {
+        ASSERT_EQ(result.usage, 11967193184); /* anon + sock + kernel */
+        ASSERT_EQ(result.inactive_file, 8693084160); /* inactive_file */
+    }
+}
+
+
 TEST_P(CgroupsMemoryUsageObserverFixture, DumpAllStatsTest)
 {
     const auto version = GetParam();

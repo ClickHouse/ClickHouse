@@ -123,13 +123,19 @@ struct CgroupsV1Reader : ICgroupsReader
         return readMetricsFromStatFile(buf, {"rss"}, {}, &warnings_printed);
     }
 
-    uint64_t readInactiveFileMemory() override
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
     {
         std::lock_guard lock(mutex);
         buf.rewind();
+        auto all = readAllMetricsFromStatFile(buf);
+        CgroupsMemoryUsageAndInactive result;
+        if (auto it = all.find("rss"); it != all.end())
+            result.usage = it->second;
         /// Use total_inactive_file for cgroups v1 to get the hierarchical value
         /// (includes child cgroups), matching Kubernetes cadvisor behavior.
-        return readMetricsFromStatFile(buf, {"total_inactive_file"}, {}, &warnings_printed);
+        if (auto it = all.find("total_inactive_file"); it != all.end())
+            result.inactive_file = it->second;
+        return result;
     }
 
     std::string dumpAllStats() override
@@ -156,11 +162,18 @@ struct CgroupsV2Reader : ICgroupsReader
         return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
     }
 
-    uint64_t readInactiveFileMemory() override
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"inactive_file"}, {}, &warnings_printed);
+        auto all = readAllMetricsFromStatFile(stat_buf);
+        CgroupsMemoryUsageAndInactive result;
+        for (const auto & key : {"anon", "sock", "kernel"})
+            if (auto it = all.find(key); it != all.end())
+                result.usage += it->second;
+        if (auto it = all.find("inactive_file"); it != all.end())
+            result.inactive_file = it->second;
+        return result;
     }
 
     std::string dumpAllStats() override
