@@ -147,7 +147,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cascades optimizer: no implementation found for group #{} satisfying required properties {}.\n"
                 "Group state:\n{}",
-                group_id, props.dump(), group->dump());
+                group_id, props.dump(), group->dump(cost_config));
 
         while (best->inputs.size() == 1
                && visited_expressions.contains(best.get()))
@@ -160,8 +160,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
                 if (!props.isSatisfiedBy(candidate->properties))
                     continue;
                 if (!alternative
-                    || alternative->cost->subtree_cost.weighted_total(cost_config)
-                       > candidate->cost->subtree_cost.weighted_total(cost_config))
+                    || alternative->cost->subtree_cost.total(cost_config)
+                       > candidate->cost->subtree_cost.total(cost_config))
                     alternative = candidate;
             }
             if (!alternative)
@@ -169,7 +169,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
                     "Cascades optimizer: cycle detected in best-implementation chain at group #{} "
                     "with no acyclic alternative. Expression '{}', properties {}.\n"
                     "Group state:\n{}",
-                    group_id, best->dump(), props.dump(), group->dump());
+                    group_id, best->dump(cost_config), props.dump(), group->dump(cost_config));
             best = alternative;
         }
 
@@ -230,7 +230,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 
         result->getRootNode()->cost_estimation = CostEstimationInfo
             {
-                .cost = frame.expression->cost->subtree_cost.weighted_total(cost_config),
+                .cost = frame.expression->cost->subtree_cost.total(cost_config),
                 .rows = memo.getGroup(frame.group_id)->statistics->estimated_row_count
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));

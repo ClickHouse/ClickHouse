@@ -118,7 +118,7 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
     auto cost = cost_estimator.estimateCost(expression);
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
-        group_id, expression->getDescription(), cost.subtree_cost.total());
+        group_id, expression->getDescription(), cost.subtree_cost.total(memo.getCostConfig()));
     group->updateBestImplementation(expression, memo.getCostConfig());
 }
 
@@ -172,7 +172,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 
     auto group = getGroup(expression->group_id);
     auto cost = cost_estimator.estimateCost(expression);
-    Float64 subtree_weighted = cost.subtree_cost.weighted_total(cost_config);
+    Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
 
     Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
     if (std::isfinite(current_best) && subtree_weighted >= current_best)
@@ -186,7 +186,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
-        expression->group_id, expression->getDescription(), cost.subtree_cost.total());
+        expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
     group->updateBestImplementation(expression, cost_config);
     return true;
 }

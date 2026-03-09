@@ -52,14 +52,14 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     for (auto best_it = best_implementations.begin(); best_it != best_implementations.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&
-            (*best_it)->cost->subtree_cost.weighted_total(cost_config) <= expression->cost->subtree_cost.weighted_total(cost_config))
+            (*best_it)->cost->subtree_cost.total(cost_config) <= expression->cost->subtree_cost.total(cost_config))
         {
             /// There is already a cheaper implementation that satisfies the same properties
             return;
         }
 
         if ((*best_it)->properties.isSatisfiedBy(expression->properties) &&
-            (*best_it)->cost->subtree_cost.weighted_total(cost_config) > expression->cost->subtree_cost.weighted_total(cost_config))
+            (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config))
         {
             best_it = best_implementations.erase(best_it);
         }
@@ -78,7 +78,7 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
     for (const auto & expression : best_implementations)
     {
         if (required_properties.isSatisfiedBy(expression->properties) &&
-            (!found_best || found_best->cost->subtree_cost.weighted_total(cost_config) > expression->cost->subtree_cost.weighted_total(cost_config)))
+            (!found_best || found_best->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config)))
         {
             found_best = expression;
         }
@@ -102,10 +102,10 @@ Float64 Group::getBestCostForProperties(const ExpressionProperties & required_pr
     auto best = getBestImplementation(required_properties, cost_config);
     if (!best.expression)
         return std::numeric_limits<Float64>::infinity();
-    return best.cost.subtree_cost.weighted_total(cost_config);
+    return best.cost.subtree_cost.total(cost_config);
 }
 
-void Group::dump(WriteBuffer & out, String indent) const
+void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String indent) const
 {
     if (statistics.has_value())
     {
@@ -116,7 +116,7 @@ void Group::dump(WriteBuffer & out, String indent) const
     for (const auto & expression : logical_expressions)
     {
         out << indent << indent;
-        expression->dump(out);
+        expression->dump(out, cost_config);
         out << "\n";
     }
 
@@ -124,7 +124,7 @@ void Group::dump(WriteBuffer & out, String indent) const
     for (const auto & expression : physical_expressions)
     {
         out << indent << indent;
-        expression->dump(out);
+        expression->dump(out, cost_config);
         out << "\n";
     }
 
@@ -132,17 +132,17 @@ void Group::dump(WriteBuffer & out, String indent) const
     {
         out << indent << "Best for " << best->properties.dump() << ":\n"
             << indent << indent
-            << "Cost: " << best->cost->cost.total() << " (subtree: " << best->cost->subtree_cost.total();
+            << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
         if (best->cost->cost.sequential > 0)
             out << ", seq: " << best->cost->cost.sequential;
         out << ") : " << best->getDescription() << "\n";
     }
 }
 
-String Group::dump() const
+String Group::dump(const CostConfig & cost_config) const
 {
     WriteBufferFromOwnString out;
-    dump(out);
+    dump(out, cost_config);
     return out.str();
 }
 

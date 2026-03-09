@@ -49,7 +49,7 @@ void GroupExpression::setApplied(const IOptimizationRule & rule, const Expressio
     applied_rules.insert(full_name);
 }
 
-void GroupExpression::dump(WriteBuffer & out) const
+void GroupExpression::dump(WriteBuffer & out, const CostConfig & cost_config) const
 {
     properties.dump(out);
     out << " '" << getDescription() << "'";
@@ -59,13 +59,13 @@ void GroupExpression::dump(WriteBuffer & out) const
     for (const auto & input : inputs)
         out << " #" << input.group_id;
     if (cost.has_value())
-        out << " cost: " << cost->subtree_cost.total();
+        out << " cost: " << cost->subtree_cost.total(cost_config);
 }
 
-String GroupExpression::dump() const
+String GroupExpression::dump(const CostConfig & cost_config) const
 {
     WriteBufferFromOwnString out;
-    dump(out);
+    dump(out, cost_config);
     return out.str();
 }
 

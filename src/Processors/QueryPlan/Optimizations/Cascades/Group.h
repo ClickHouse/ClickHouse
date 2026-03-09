@@ -52,8 +52,8 @@ public:
     /// the given properties, or infinity if none exists.
     Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
-    void dump(WriteBuffer & out, String indent = {}) const;
-    String dump() const;
+    void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
+    String dump(const CostConfig & cost_config) const;
 
     std::vector<GroupExpressionPtr> logical_expressions;
     std::vector<GroupExpressionPtr> physical_expressions;

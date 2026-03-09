@@ -31,9 +31,7 @@ struct Cost
     Float64 io = 0;
     Float64 sequential = 0;
 
-    Float64 total() const { return cpu + memory + network + io + sequential; }
-
-    Float64 weighted_total(const CostConfig & config) const
+    Float64 total(const CostConfig & config) const
     {
         return cpu * config.cpu_weight + memory * config.memory_weight
              + network * config.network_weight + io * config.io_weight

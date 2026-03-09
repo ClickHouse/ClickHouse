@@ -41,8 +41,8 @@ public:
     bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
     void setApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties);
 
-    void dump(WriteBuffer & out) const;
-    String dump() const;
+    void dump(WriteBuffer & out, const CostConfig & cost_config) const;
+    String dump(const CostConfig & cost_config) const;
     String fingerprint() const;
 
     GroupId group_id = INVALID_GROUP_ID;

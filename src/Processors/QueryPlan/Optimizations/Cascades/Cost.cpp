@@ -72,7 +72,7 @@ static GroupPtr getInputGroupWithStats(Memo & memo, const GroupExpressionPtr & e
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "CostEstimator: statistics not derived for input group #{} of expression '{}' (group #{}).\n"
             "Input group state:\n{}",
-            expression->inputs[input_index].group_id, expression->getDescription(), expression->group_id, input_group->dump());
+            expression->inputs[input_index].group_id, expression->getDescription(), expression->group_id, input_group->dump(memo.getCostConfig()));
     return input_group;
 }
 
@@ -85,7 +85,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "CostEstimator: statistics not derived for group #{} (expression '{}') before estimateCost.\n"
             "Group state:\n{}",
-            expression->group_id, expression->getDescription(), group->dump());
+            expression->group_id, expression->getDescription(), group->dump(memo.getCostConfig()));
 
     const Float64 distribution_node_count = static_cast<Float64>(std::max<size_t>(expression->properties.distribution.node_count, 1));
 

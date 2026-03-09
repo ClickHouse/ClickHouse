@@ -28,14 +28,14 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         {
             bool group_fully_processed = group->isExplored() && group->isOptimizedFor(required_properties);
             bool within_budget = std::isfinite(cost_limit)
-                && best.cost.subtree_cost.weighted_total(cost_config) <= cost_limit;
+                && best.cost.subtree_cost.total(cost_config) <= cost_limit;
             if (group_fully_processed || within_budget)
             {
                 if (group_fully_processed)
                     group->setFullyDoneFor(required_properties);
                 LOG_TEST(optimizer_context.log, "Pruned OptimizeGroupTask group #{}: "
                     "best cost {} <= limit {}",
-                    group_id, best.cost.subtree_cost.weighted_total(cost_config), cost_limit);
+                    group_id, best.cost.subtree_cost.total(cost_config), cost_limit);
                 return;
             }
         }
@@ -229,7 +229,7 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
 void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TEST(optimizer_context.log, "OptimizeInputsTask group #{} expression {}",
-        expression->group_id, expression->dump());
+        expression->group_id, expression->dump(optimizer_context.getMemo().getCostConfig()));
 
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
@@ -242,7 +242,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         const auto & cost_config = optimizer_context.getMemo().getCostConfig();
         auto group = optimizer_context.getGroup(expression->group_id);
         auto cost = optimizer_context.getCostEstimator().estimateCost(expression);
-        Float64 subtree_weighted = cost.subtree_cost.weighted_total(cost_config);
+        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
 
         Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
         if (std::isfinite(current_best) && subtree_weighted >= current_best)
@@ -256,7 +256,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 
         expression->cost = cost;
         LOG_TEST(optimizer_context.log, "group #{} expression '{}' cost {}",
-            expression->group_id, expression->getDescription(), cost.subtree_cost.total());
+            expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
         group->updateBestImplementation(expression, cost_config);
         return;
     }
