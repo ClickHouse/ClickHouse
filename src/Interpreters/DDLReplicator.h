@@ -8,6 +8,8 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <mutex>
 #include <atomic>
 
@@ -113,6 +115,8 @@ protected:
     void shutdownDDLWorker();
     void resetDDLWorker();
 
+    void fillClusterAuthInfo(const String & collection_name, const Poco::Util::AbstractConfiguration & config);
+
     const String zookeeper_name;
     const String zookeeper_path;
     const String shard_name;
@@ -124,6 +128,14 @@ protected:
     /// via the "all_groups" cluster.  Empty means all replicas are in one implicit group.
     /// Only used by DatabaseReplicated currently.
     String replica_group_name;
+
+    struct
+    {
+        String cluster_username{"default"};
+        String cluster_password;
+        String cluster_secret;
+        bool cluster_secure_connection{false};
+    } cluster_auth_info;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_recovering = false;

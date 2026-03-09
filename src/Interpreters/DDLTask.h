@@ -182,6 +182,7 @@ struct DDLReplicateTask : public DDLTaskBase
 {
     DDLReplicateTask(const String & name, const String & path, DDLReplicator * replicator);
 
+    void parseQueryFromEntry(ContextPtr context) override;
     String getShardID() const override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;

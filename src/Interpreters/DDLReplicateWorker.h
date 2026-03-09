@@ -62,6 +62,7 @@ protected:
         String & out_reason,
         const ZooKeeperPtr & zookeeper,
         bool dry_run,
+        bool & is_dummy_task,
         Coordination::Stat * entry_stats = nullptr);
 
     void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override {}

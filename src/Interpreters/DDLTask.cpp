@@ -634,6 +634,12 @@ DDLReplicateTask::DDLReplicateTask(const String & name, const String & path, DDL
     host_id_str = replicator->getFullReplicaName();
 }
 
+void DDLReplicateTask::parseQueryFromEntry(ContextPtr context)
+{
+    DDLTaskBase::parseQueryFromEntry(context);
+    formatRewrittenQuery(context);
+}
+
 String DDLReplicateTask::getShardID() const
 {
     return replicator->shard_name;

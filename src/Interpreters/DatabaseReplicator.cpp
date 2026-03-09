@@ -150,6 +150,8 @@ const DDLReplicatorSettings & DatabaseReplicator::getSettings() const
 
 void DatabaseReplicator::startup()
 {
+    initializeLocalDigest();
+
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker || ddl_worker_initialized)
     {
@@ -597,7 +599,7 @@ ASTPtr DatabaseReplicator::parseQueryFromMetadataInZooKeeper(ContextPtr context_
         context_->getSettingsRef()[Setting::max_parser_depth],
         context_->getSettingsRef()[Setting::max_parser_backtracks]);
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.table || !create.database)
+    if (create.table || !create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", database_name, query);
     create.setDatabase(database_name);
     create.attach = false;

@@ -24,6 +24,7 @@
 #include <Common/quoteString.h>
 #include <base/scope_guard.h>
 
+#include <fmt/format.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -380,6 +381,19 @@ std::map<String, String> DDLReplicator::getConsistentMetadataSnapshotImpl(
     LOG_DEBUG(getLogger(), "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
 
     return name_to_metadata;
+}
+
+void DDLReplicator::fillClusterAuthInfo(const String & collection_name, const Poco::Util::AbstractConfiguration & config_ref)
+{
+    const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+
+    if (!config_ref.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+    cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
+    cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
+    cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
+    cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
 bool DDLReplicator::checkDigestValid(const ContextPtr & local_context) const

@@ -448,7 +448,8 @@ void DDLReplicateWorker::initializeReplication()
 
 DDLTaskPtr DDLReplicateWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run)
 {
-    return initAndCheckTaskImpl(entry_name, out_reason, zookeeper, dry_run);
+    bool is_dummy_task = false;
+    return initAndCheckTaskImpl(entry_name, out_reason, zookeeper, dry_run, is_dummy_task);
 }
 
 DDLTaskPtr DDLReplicateWorker::initAndCheckTaskImpl(
@@ -456,8 +457,10 @@ DDLTaskPtr DDLReplicateWorker::initAndCheckTaskImpl(
     String & out_reason,
     const ZooKeeperPtr & zookeeper,
     bool dry_run,
+    bool & is_dummy_task,
     Coordination::Stat * entry_stats)
 {
+    is_dummy_task = false;
     if (!dry_run)
     {
         std::lock_guard lock{mutex};
@@ -567,6 +570,7 @@ DDLTaskPtr DDLReplicateWorker::initAndCheckTaskImpl(
     if (task->entry.query.empty())
     {
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
+        is_dummy_task = true;
         return {};
     }
 

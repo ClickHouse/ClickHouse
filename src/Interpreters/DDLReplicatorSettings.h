@@ -20,6 +20,7 @@ struct SettingChange;
 /// List of available types supported in DDLReplicatorSettings object
 #define DDL_REPLICATOR_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64)
 
