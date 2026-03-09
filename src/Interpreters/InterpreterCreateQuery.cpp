@@ -1046,7 +1046,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!as_table_saved.empty())
         create.is_create_empty = false;
 
-    if (getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+    if (!internal && mode <= LoadingStrictnessLevel::CREATE
+        && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
         applyForceReverseOrder(create.storage);
 
     return properties;
