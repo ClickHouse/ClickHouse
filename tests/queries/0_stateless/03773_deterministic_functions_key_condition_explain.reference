@@ -1,7 +1,6 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
-SET optimize_in_to_equal = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (
@@ -486,7 +485,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               toUUID(p)
-            Condition: (toUUID(p) in 1-element set)
+            Condition: (toUUID(p) in [\'017adbc0-98b5-0000-3f74-619a368fe65d\', \'017adbc0-98b5-0000-3f74-619a368fe65d\'])
             Parts: 1/2
             Granules: 1/2
             Search Algorithm: binary search
@@ -518,7 +517,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               toUUID(p)
-            Condition: (toUUID(p) notIn 1-element set)
+            Condition: (toUUID(p) not in [\'017adbc0-98b5-0000-3f74-619a368fe65d\', \'017adbc0-98b5-0000-3f74-619a368fe65d\'])
             Parts: 2/2
             Granules: 2/2
             Search Algorithm: generic exclusion search
@@ -540,7 +539,6 @@ Expression ((Project names + Projection))
             Search Algorithm: generic exclusion search
           Ranges: 2
 SET enable_analyzer = 0;
-SET optimize_in_to_equal = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (
