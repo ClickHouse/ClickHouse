@@ -1,8 +1,10 @@
 #include <Databases/DatabaseOnDisk.h>
-#include <Storages/System/attachInformationSchemaTables.h>
-#include <Storages/System/attachSystemTablesImpl.h>
+#include <Storages/System/attachViews.h>
+
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/System/attachSystemTablesImpl.h>
+#include "Interpreters/SystemLog.h"
 
 
 namespace DB
@@ -517,17 +519,22 @@ static constexpr std::string_view collations = R"(
     FROM system.collations
 )";
 
+static constexpr std::string_view system_user_query_log = R"(
+    ATTACH VIEW user_query_log
+    (
+        hostname String,
+        current_database String,
+        query String
+    )
+    AS SELECT hostname, current_database, query FROM system.query_log PREWHERE user = currentUser()
+)";
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
-static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
+static void createView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query, const bool is_system_db = false)
 {
     try
     {
-        assert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
-               database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
-        if (database.getEngineName() != "Memory")
-            return;
-
         String metadata_resource_name = view_name + ".sql";
         if (query.empty())
             return;
@@ -542,6 +549,12 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.attach = false;
         ast_create.setDatabase(database.getDatabaseName());
 
+        if (is_system_db)
+        {
+            ast_create.uuid = UUIDHelpers::makeUUIDv4FromHash({query.data(), query.size()});
+            DatabaseCatalog::instance().addUUIDMapping(ast_create.uuid);
+        }
+
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
@@ -551,8 +564,10 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
-        database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
-
+        if (!is_system_db)
+        {
+            database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
+        }
     }
     catch (...)
     {
@@ -562,16 +577,27 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 
 void attachInformationSchema(ContextMutablePtr context, IDatabase & information_schema_database)
 {
-    createInformationSchemaView(context, information_schema_database, "schemata", schemata);
-    createInformationSchemaView(context, information_schema_database, "tables", tables);
-    createInformationSchemaView(context, information_schema_database, "views", views);
-    createInformationSchemaView(context, information_schema_database, "columns", columns);
-    createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
-    createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
-    createInformationSchemaView(context, information_schema_database, "statistics", statistics);
-    createInformationSchemaView(context, information_schema_database, "engines", engines);
-    createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
-    createInformationSchemaView(context, information_schema_database, "collations", collations);
+    assert(information_schema_database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
+              information_schema_database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+    if (information_schema_database.getEngineName() != "Memory")
+        return;
+
+    createView(context, information_schema_database, "schemata", schemata);
+    createView(context, information_schema_database, "tables", tables);
+    createView(context, information_schema_database, "views", views);
+    createView(context, information_schema_database, "columns", columns);
+    createView(context, information_schema_database, "key_column_usage", key_column_usage);
+    createView(context, information_schema_database, "referential_constraints", referential_constraints);
+    createView(context, information_schema_database, "statistics", statistics);
+    createView(context, information_schema_database, "engines", engines);
+    createView(context, information_schema_database, "character_sets", character_sets);
+    createView(context, information_schema_database, "collations", collations);
+}
+
+void attachSystemViews(ContextMutablePtr context, IDatabase & system_database)
+{
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+    createView(context, system_database, "user_query_log", system_user_query_log, true /*is_system_db=*/);
 }
 
 }

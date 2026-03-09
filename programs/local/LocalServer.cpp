@@ -18,7 +18,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/System/attachViews.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>

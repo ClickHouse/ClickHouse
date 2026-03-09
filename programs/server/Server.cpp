@@ -85,7 +85,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/System/attachViews.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>

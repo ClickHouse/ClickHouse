@@ -49,6 +49,9 @@ SELECT count() FROM information_schema.TABLES WHERE table_schema = currentDataba
 SELECT count() FROM INFORMATION_SCHEMA.tables WHERE table_schema = currentDatabase() AND table_name = 't';
 SELECT count() FROM information_schema.taBLES WHERE table_schema  =currentDatabase() AND table_name = 't'; -- { serverError UNKNOWN_TABLE }
 
+SELECT '-- system.user_query_log';
+SELECT count(*) > 10 FROM system.user_query_log;
+
 DROP VIEW mv;
 DROP VIEW v;
 DROP TABLE t;

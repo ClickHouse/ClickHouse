@@ -72,3 +72,5 @@ def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N	def	default	PRIMARY	def	def
 -- information_schema.statistics
 1
 1
+-- system.user_query_log
+1
