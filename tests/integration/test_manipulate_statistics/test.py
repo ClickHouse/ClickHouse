@@ -154,7 +154,8 @@ def test_single_node_normal(started_cluster):
     node1.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
-        ENGINE = MergeTree() ORDER BY a;
+        ENGINE = MergeTree() ORDER BY a
+        SETTINGS auto_statistics_types = '';
     """
     )
     run_test_single_node(started_cluster)
@@ -167,13 +168,15 @@ def test_replicated_table_ddl(started_cluster):
     node1.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
-        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a;
+        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a
+        SETTINGS auto_statistics_types = '';
     """
     )
     node2.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
-        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '2') ORDER BY a;
+        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '2') ORDER BY a
+        SETTINGS auto_statistics_types = '';
     """
     )
 
@@ -185,7 +188,7 @@ def test_replicated_table_ddl(started_cluster):
 
     assert (
         node2.query("SHOW CREATE TABLE test_stat")
-        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS index_granularity = 8192\n"
+        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS auto_statistics_types = \\\'\\\', index_granularity = 8192\n"
     )
 
     node2.query("insert into test_stat values(1,2,3), (2,3,4)")

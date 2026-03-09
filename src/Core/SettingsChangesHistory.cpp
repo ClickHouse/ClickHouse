@@ -55,6 +55,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
+            {"materialize_statistics_on_insert", true, false, "Disable materialization of statistics on insert after enabling auto statistics"},
+            {"allow_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistics", false, true, "Statistics are now GA"},
+            {"allow_experimental_statistic", false, true, "Statistics are now GA"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
@@ -1084,6 +1088,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
@@ -1095,6 +1100,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
