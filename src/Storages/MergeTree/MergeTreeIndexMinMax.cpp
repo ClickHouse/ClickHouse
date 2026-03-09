@@ -59,7 +59,7 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
     hyperrectangle.clear();
     Field min_val;
@@ -67,7 +67,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        switch (version)
+        switch (state.version)
         {
             case 1:
                 if (!datatypes[i]->isNullable())
@@ -111,7 +111,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
                 break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", state.version);
         }
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);

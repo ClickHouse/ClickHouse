@@ -52,6 +52,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+
+    IndexGranulesMap index_granules;
+
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -62,21 +65,24 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+        auto [filtered_ranges, extra_data] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
             key_condition_rpn_template,
             part.data_part,
             ranges,
-            part.read_hints,
+            part.skip_indexes_extra_data,
             reader_settings,
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
-            log).first;
+            log);
 
+        ranges = std::move(filtered_ranges);
+        for (auto & [name, granule] : extra_data.index_granules)
+            index_granules[name] = std::move(granule);
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
                         (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
         total_granules = ranges.getNumberOfMarks();
@@ -103,6 +109,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         for (auto i = range.begin; i < range.end; ++i)
             (*res).granules_selected[i] = true;
     }
+
+    res->index_granules = std::move(index_granules);
 
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
     {

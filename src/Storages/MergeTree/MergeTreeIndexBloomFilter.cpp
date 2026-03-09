@@ -79,10 +79,10 @@ size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
     return sum;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
 {
-    if (version != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+    if (state.version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", state.version);
 
     readVarUInt(total_rows, istr);
 

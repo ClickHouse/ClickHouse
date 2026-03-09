@@ -1,4 +1,9 @@
 #include <unordered_set>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -10,6 +15,8 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <IO/WriteBufferFromString.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
@@ -78,21 +85,58 @@ protected:
 
         std::unordered_set<std::string> processed_parts;
 
+        auto insert_part_name = [&](size_t res_index, const String & name)
+        {
+            assert_cast<ColumnString &>(*res_columns[res_index]).insertData(name.data(), name.size());
+        };
+
+        auto insert_ranges = [&](size_t res_index, const MarkRanges & mark_ranges)
+        {
+            auto & col_array = assert_cast<ColumnArray &>(*res_columns[res_index]);
+            auto & col_tuple = assert_cast<ColumnTuple &>(col_array.getData());
+            auto & col_begin = assert_cast<ColumnUInt64 &>(col_tuple.getColumn(0));
+            auto & col_end = assert_cast<ColumnUInt64 &>(col_tuple.getColumn(1));
+
+            for (const auto & range : mark_ranges)
+            {
+                col_begin.insertValue(range.begin);
+                col_end.insertValue(range.end);
+            }
+
+            col_array.getOffsets().push_back(col_tuple.size());
+        };
+
+        auto insert_extra_data = [&](size_t res_index, const IndexGranulesMap & granules)
+        {
+            auto & col_map = assert_cast<ColumnMap &>(*res_columns[res_index]);
+            auto & col_array = col_map.getNestedColumn();
+            auto & col_tuple = col_map.getNestedData();
+            auto & col_keys = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+            auto & col_values = assert_cast<ColumnString &>(col_tuple.getColumn(1));
+
+            for (const auto & [name, granule] : granules)
+            {
+                WriteBufferFromOwnString out;
+                granule->serializeBinary(out);
+                auto serialized = out.str();
+                col_keys.insertData(name.data(), name.size());
+                col_values.insertData(serialized.data(), serialized.size());
+            }
+
+            col_array.getOffsets().push_back(col_tuple.size());
+        };
+
         for (const auto & ranges_in_part : ranges)
         {
             size_t src_index = 0;
             size_t res_index = 0;
-            if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(ranges_in_part.data_part->name);
 
-            /// ranges
             if (columns_mask[src_index++])
-            {
-                Array field;
-                for (const auto & range : ranges_in_part.ranges)
-                    field.push_back(Tuple{range.begin, range.end});
-                res_columns[res_index++]->insert(std::move(field));
-            }
+                insert_part_name(res_index++, ranges_in_part.data_part->name);
+            if (columns_mask[src_index++])
+                insert_ranges(res_index++, ranges_in_part.ranges);
+            if (columns_mask[src_index++])
+                insert_extra_data(res_index++, ranges_in_part.skip_indexes_extra_data.index_granules);
 
             processed_parts.insert(ranges_in_part.data_part->name);
         }
@@ -105,10 +149,13 @@ protected:
 
             size_t src_index = 0;
             size_t res_index = 0;
+
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(part->name);
+                insert_part_name(res_index++, part->name);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insertDefault();
+                insert_ranges(res_index++, {});
+            if (columns_mask[src_index++])
+                insert_extra_data(res_index++, {});
         }
 
         size_t rows = res_columns.front()->size();

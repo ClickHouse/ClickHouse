@@ -240,12 +240,9 @@ public:
 
         if (inserted)
         {
-            ranges_in_data_parts.emplace_back(
-                initial_ranges_in_data_parts[part_index].data_part,
-                initial_ranges_in_data_parts[part_index].parent_part,
-                initial_ranges_in_data_parts[part_index].part_index_in_query,
-                initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
-                MarkRanges{mark_range});
+            RangesInDataPart new_part(initial_ranges_in_data_parts[part_index]);
+            new_part.ranges = MarkRanges{mark_range};
+            ranges_in_data_parts.emplace_back(std::move(new_part));
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }

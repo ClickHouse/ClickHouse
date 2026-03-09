@@ -695,11 +695,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto & top_k_filter_info = filter_context.top_k_filter_info;
     const auto & reader_settings = filter_context.reader_settings;
     const auto & log = filter_context.log;
+
     size_t num_streams = filter_context.num_streams;
     bool use_skip_indexes = filter_context.indexes.use_skip_indexes;
-    bool use_skip_indexes_for_disjunctions_ = filter_context.indexes.use_skip_indexes_for_disjunctions;
-    bool use_skip_indexes_on_data_read_ = filter_context.indexes.use_skip_indexes_on_data_read;
-    bool use_skip_indexes_if_final_exact_mode_ = filter_context.indexes.use_skip_indexes_if_final_exact_mode;
+    bool use_skip_indexes_on_data_read = filter_context.indexes.use_skip_indexes_on_data_read;
+    bool use_skip_indexes_if_final_exact_mode = filter_context.indexes.use_skip_indexes_if_final_exact_mode;
     bool find_exact_ranges = filter_context.find_exact_ranges;
     bool is_final_query = filter_context.query_info.isFinal();
     bool has_projections = filter_context.has_projections;
@@ -778,8 +778,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// and in the callback that writes to the partial_disjunction_result bitset.
     /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
     /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
-    bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
-                                && !use_skip_indexes_on_data_read_
+    bool use_skip_indexes_for_disjunctions = filter_context.indexes.use_skip_indexes_for_disjunctions
+                                && !use_skip_indexes_on_data_read
                                 && key_condition_rpn_template.has_value()
                                 && key_condition_rpn_template->getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
@@ -789,7 +789,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         if (index->isVectorSimilarityIndex())
             return false;
 
-        return use_skip_indexes_on_data_read_;
+        return use_skip_indexes_on_data_read;
     };
 
     /// Let's find what range to read from each part.
@@ -833,8 +833,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
 
@@ -843,7 +845,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
-            if (is_final_query && use_skip_indexes_if_final_exact_mode_)
+            if (is_final_query && use_skip_indexes_if_final_exact_mode)
             {
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
@@ -913,13 +915,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
-                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                        std::tie(ranges.ranges, ranges.skip_indexes_extra_data) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition,
                             key_condition_rpn_template,
                             ranges.data_part,
                             ranges.ranges,
-                            ranges.read_hints,
+                            ranges.skip_indexes_extra_data,
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
@@ -930,8 +932,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
@@ -1161,7 +1165,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         [&](const auto & part)
         {
             size_t index = &part - parts_with_ranges.data();
-            if (is_final_query && use_skip_indexes_if_final_exact_mode_ && skip_index_used_in_part[index])
+            if (is_final_query && use_skip_indexes_if_final_exact_mode && skip_index_used_in_part[index])
             {
                 /// retain this part even if empty due to FINAL
                 return false;
@@ -1824,13 +1828,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     return res;
 }
 
-std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+std::pair<MarkRanges, SkipIndexesExtraData> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     const std::optional<KeyCondition> & key_condition_rpn_template,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const RangesInDataPartReadHints & in_read_hints,
+    const SkipIndexesExtraData & in_extra_data,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
@@ -1843,7 +1847,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return {ranges, in_read_hints};
+        return {ranges, in_extra_data};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -1863,7 +1867,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
     if (index_helper->isVectorSimilarityIndex() && !all_match)
     {
-        return {ranges, in_read_hints};
+        return {ranges, in_extra_data};
     }
 
     MarkRanges index_ranges;
@@ -1886,7 +1890,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
-    RangesInDataPartReadHints read_hints = in_read_hints;
+    SkipIndexesExtraData extra_data = in_extra_data;
 
     auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
     {
@@ -1929,6 +1933,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
             }
         }
+
+        if (granule)
+            extra_data.index_granules[index_helper->index.name] = std::move(granule);
     }
     else if (bulk_filtering)
     {
@@ -1948,7 +1955,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
-            return {res, read_hints};
+            return {res, extra_data};
 
         auto it = filtered_granules.begin();
         current_granule_num = 0;
@@ -2001,10 +2008,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    extra_data.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
                     /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.vector_search_results.value().rows;
+                    auto rows = extra_data.vector_search_results.value().rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2012,8 +2019,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!(read_hints.vector_search_results.value().distances.has_value()))
-                        read_hints = {};
+                    if (!(extra_data.vector_search_results.value().distances.has_value()))
+                        extra_data = {};
 
                     for (auto row : rows)
                     {
@@ -2056,7 +2063,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         }
     }
 
-    return {res, read_hints};
+    return {res, extra_data};
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(

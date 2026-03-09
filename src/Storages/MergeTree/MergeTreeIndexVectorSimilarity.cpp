@@ -252,7 +252,7 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
     LOG_TRACE(logger, "Wrote vector similarity index: {}", statistics.toString());
 }
 
-void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & /*state*/)
 {
     LOG_TRACE(logger, "Start loading vector similarity index");
 

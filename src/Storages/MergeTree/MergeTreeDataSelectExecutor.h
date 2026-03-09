@@ -80,13 +80,13 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
+    static std::pair<MarkRanges, SkipIndexesExtraData> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const RangesInDataPartReadHints & in_read_hints,
+        const SkipIndexesExtraData & in_extra_data,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,

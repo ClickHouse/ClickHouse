@@ -105,7 +105,7 @@ struct IMergeTreeIndexGranule
     /// - IMergeTreeIndex::getDeserializedFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
-    virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+    virtual void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) = 0;
 
     /// Deserialize with multiple streams.
     /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.

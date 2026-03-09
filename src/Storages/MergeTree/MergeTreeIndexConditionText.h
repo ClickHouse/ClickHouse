@@ -15,6 +15,9 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
+class TokensCardinalitiesCache;
+using TokensCardinalitiesCachePtr = std::shared_ptr<TokensCardinalitiesCache>;
+
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
@@ -86,6 +89,8 @@ public:
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
+    TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
+    const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
@@ -166,6 +171,8 @@ private:
     TextIndexHeaderCachePtr header_cache;
     /// Cache for posting lists of tokens.
     TextIndexPostingsCachePtr postings_cache;
+    /// Cache for tokens cardinalities
+    TokensCardinalitiesCachePtr cardinalities_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

@@ -19,7 +19,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return hyperrectangle.empty(); }
 
