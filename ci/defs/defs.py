@@ -1,4 +1,4 @@
-from praktika import Artifact, Docker, Job, Secret
+from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
 # i.e. "ClickHouse/ci/tmp"

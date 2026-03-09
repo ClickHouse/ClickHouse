@@ -1,7 +1,12 @@
 import argparse
 import os
 import time
+import sys
 from pathlib import Path
+
+repo_path = Path(__file__).resolve().parent.parent.parent
+repo_path_normalized = str(repo_path)
+sys.path.append(str(repo_path / "ci"))
 
 from ci.defs.defs import ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
@@ -14,8 +19,7 @@ from ci.praktika.utils import ContextManager, MetaClasses, Shell, Utils
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
-repo_path_normalized = "/ClickHouse"
-build_dir_normalized = f"{repo_path_normalized}/ci/tmp/fast_build"
+build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
 
 def clone_submodules():
@@ -258,8 +262,9 @@ def main():
 
     if res and JobStages.CONFIG in stages:
         commands = [
+            f"mkdir -p {temp_dir}/etc/clickhouse-server",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
@@ -272,7 +277,10 @@ def main():
         )
         res = results[-1].is_ok()
 
-    CH = ClickHouseProc(fast_test=True)
+    CH = ClickHouseProc(fast_test=True,
+        ch_config_dir=f"{temp_dir}/etc/clickhouse-server",
+        ch_var_lib_dir=f"{temp_dir}/var/lib/clickhouse",
+    )
     attach_debug = False
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
