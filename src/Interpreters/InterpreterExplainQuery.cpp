@@ -205,13 +205,17 @@ struct QueryASTSettings
 {
     bool graph = false;
     bool optimize = false;
+    bool json = false;
+    bool pretty = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
-        {"optimize", optimize}
+        {"optimize", optimize},
+        {"json", json},
+        {"pretty", pretty}
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -470,6 +474,26 @@ bool explainQueryTree(
     return true;
 }
 
+static JSONBuilder::ItemPtr dumpASTAsJSON(const IAST & ast)
+{
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+    map->add("id", ast.getID(' '));
+
+    String alias = ast.tryGetAlias();
+    if (!alias.empty())
+        map->add("alias", alias);
+
+    if (!ast.children.empty())
+    {
+        auto children_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & child : ast.children)
+            children_array->add(dumpASTAsJSON(*child));
+        map->add("children", std::move(children_array));
+    }
+
+    return map;
+}
+
 }
 
 QueryPipeline InterpreterExplainQuery::executeImpl()
@@ -508,7 +532,20 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
-            if (settings.graph)
+            if (settings.json)
+            {
+                auto json_item = dumpASTAsJSON(*ast.getExplainedQuery());
+                auto format_settings = getFormatSettings(query_context);
+                format_settings.json.quote_64bit_integers = false;
+                JSONBuilder::FormatSettings json_format_settings{
+                    .settings = format_settings,
+                    .solid = !settings.pretty
+                };
+                JSONBuilder::FormatContext format_context{.out = buf};
+                json_item->format(json_format_settings, format_context);
+                single_line = !settings.pretty;
+            }
+            else if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
                 dumpAST(*ast.getExplainedQuery(), buf);

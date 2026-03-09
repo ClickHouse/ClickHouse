@@ -1,0 +1,25 @@
+{"id":"SelectWithUnionQuery","children":[{"id":"ExpressionList","children":[{"id":"SelectQuery","children":[{"id":"ExpressionList","children":[{"id":"Function plus","alias":"sum","children":[{"id":"ExpressionList","children":[{"id":"Identifier a"},{"id":"Identifier b"}]}]}]},{"id":"TablesInSelectQuery","children":[{"id":"TablesInSelectQueryElement","children":[{"id":"TableExpression","children":[{"id":"TableIdentifier t"}]}]}]},{"id":"Function greater","children":[{"id":"ExpressionList","children":[{"id":"Identifier a"},{"id":"Literal UInt64_1"}]}]}]}]}]}
+{
+  "id": "SelectWithUnionQuery",
+  "children": [
+    {
+      "id": "ExpressionList",
+      "children": [
+        {
+          "id": "SelectQuery",
+          "children": [
+            {
+              "id": "ExpressionList",
+              "children": [
+                {
+                  "id": "Literal UInt64_1"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+{"id":"CreateQuery t","children":[{"id":"Identifier t"},{"id":"Columns definition","children":[{"id":"ExpressionList","children":[{"id":"ColumnDeclaration a","children":[{"id":"DataType UInt32"}]},{"id":"ColumnDeclaration b","children":[{"id":"DataType String"}]}]}]},{"id":"Storage definition","children":[{"id":"Function MergeTree"},{"id":"Identifier a"}]}]}
