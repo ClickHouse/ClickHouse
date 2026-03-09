@@ -1,8 +1,9 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas
--- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 -- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
 SET force_primary_key_reverse_order = 0;
+
+-- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas
+-- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 -- { echo ON }
 

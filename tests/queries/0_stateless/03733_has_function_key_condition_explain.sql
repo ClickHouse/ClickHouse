@@ -1,8 +1,9 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
--- add_minmax_index_for_numeric_columns=0: Different plan
--- EXPLAIN output may differ
 -- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
 SET force_primary_key_reverse_order = 0;
+
+-- add_minmax_index_for_numeric_columns=0: Different plan
+-- EXPLAIN output may differ
 
 -- { echoOn }
 

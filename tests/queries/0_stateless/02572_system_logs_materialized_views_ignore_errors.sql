@@ -30,6 +30,5 @@ system flush logs query_log;
 select replaceAll(query, '\n', '\\n'), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
     where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-    and query not ilike '%force_primary_key_reverse_order%'
     order by event_time_microseconds
     format CSV;
