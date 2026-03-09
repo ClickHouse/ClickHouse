@@ -53,6 +53,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
+            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
