@@ -109,6 +109,8 @@ def main():
             "datalakecatalog",
             "arrowflight",
             "alias",
+            "kafka",
+            "backup",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(
@@ -253,6 +255,7 @@ def main():
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_optimize_ttl_delete",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

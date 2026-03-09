@@ -177,6 +177,13 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
 }
 
 /**
+ * Check if a status represents a failure
+ */
+function isFailureStatus(status) {
+  return status === 'failed' || status === 'FAIL' || status === 'failure';
+}
+
+/**
  * Parse test results from the JSON data
  */
 function parseTestResults(jsonData) {
@@ -192,12 +199,22 @@ function parseTestResults(jsonData) {
         // Nested results
         extractTests(result.results, prefix ? `${prefix}/${result.name}` : result.name);
       } else {
-        // Leaf result - this is a test
+        // Leaf result - this is a test or build step
         const test = {
           name: prefix ? `${prefix}/${result.name}` : result.name,
           status: result.status || 'UNKNOWN',
           duration: result.duration || 0
         };
+
+        // Include info field (contains build log tail for build failures)
+        if (result.info) {
+          test.info = result.info;
+        }
+
+        // Include links from this result
+        if (result.links && result.links.length > 0) {
+          test.links = result.links;
+        }
 
         // Extract CIDB links from ext.hlabels
         if (result.ext && result.ext.hlabels) {
@@ -391,7 +408,7 @@ async function fetchReport(inputUrl, options = {}) {
           }
 
           const { testResults = [] } = result;
-          const failed = testResults.filter(t => t.status === 'failed' || t.status === 'FAIL');
+          const failed = testResults.filter(t => isFailureStatus(t.status));
           const passed = testResults.filter(t => t.status === 'success' || t.status === 'OK');
           const skipped = testResults.filter(t => t.status === 'skipped' || t.status === 'SKIPPED');
 
@@ -417,6 +434,20 @@ async function fetchReport(inputUrl, options = {}) {
                 for (const cidbLink of test.cidbLinks) {
                   console.log(`         📊 CIDB: ${cidbLink}`);
                 }
+              }
+              if (test.links && test.links.length > 0) {
+                for (const link of test.links) {
+                  console.log(`         🔗 ${link}`);
+                }
+              }
+              if (test.info) {
+                const lines = test.info.split('\n').filter(l => l.trim());
+                const tail = lines.slice(-30);
+                console.log('         --- log tail ---');
+                for (const line of tail) {
+                  console.log(`         ${line}`);
+                }
+                console.log('         --- end ---');
               }
             }
           }
@@ -516,7 +547,7 @@ async function fetchReport(inputUrl, options = {}) {
     // For multi-report mode, don't filter by failed here - we'll show all in summary
     if (options.failedOnly && !options.isSingleReport) {
       filteredResults = filteredResults.filter(t =>
-        t.status === 'failed' || t.status === 'FAIL'
+        isFailureStatus(t.status)
       );
     }
 
@@ -528,20 +559,35 @@ async function fetchReport(inputUrl, options = {}) {
     // Print results for standalone report
     console.log('=== Test Results ===\n');
 
-    const failed = filteredResults.filter(t => t.status === 'failed' || t.status === 'FAIL');
+    const failed = filteredResults.filter(t => isFailureStatus(t.status));
     const passed = filteredResults.filter(t => t.status === 'success' || t.status === 'OK');
     const skipped = filteredResults.filter(t => t.status === 'skipped' || t.status === 'SKIPPED');
 
     console.log(`Total: ${filteredResults.length} | ✅ Passed: ${passed.length} | ❌ Failed: ${failed.length} | ⏭️  Skipped: ${skipped.length}\n`);
 
     if (failed.length > 0) {
-      console.log('--- Failed Tests ---');
+      console.log('--- Failures ---');
       for (const test of failed) {
         console.log(`❌ FAIL  ${test.name}  (${test.duration}s)`);
         if (options.showCidb && test.cidbLinks && test.cidbLinks.length > 0) {
           for (const cidbLink of test.cidbLinks) {
             console.log(`   📊 CIDB: ${cidbLink}`);
           }
+        }
+        if (test.links && test.links.length > 0) {
+          for (const link of test.links) {
+            console.log(`   🔗 ${link}`);
+          }
+        }
+        if (test.info) {
+          // Show last 30 non-empty lines of info (build log tail with actual errors)
+          const lines = test.info.split('\n').filter(l => l.trim());
+          const tail = lines.slice(-30);
+          console.log('   --- log tail ---');
+          for (const line of tail) {
+            console.log(`   ${line}`);
+          }
+          console.log('   --- end ---');
         }
       }
       console.log('');

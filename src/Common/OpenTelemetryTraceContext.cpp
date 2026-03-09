@@ -94,7 +94,7 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
         auto value = value_supplier();
         return value.empty() ? false : addAttributeImpl(name, value);
     }
-    catch (...)
+    catch (...) // Ok: noexcept function, ignore supplier exception
     {
         /// Ignore exception raised by value_supplier
         return false;

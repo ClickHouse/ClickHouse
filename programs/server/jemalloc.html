@@ -2244,6 +2244,7 @@
                 }
                 if (outputFormat === 'Collapsed') {
                     settings += `, jemalloc_profile_text_collapsed_use_count = ${useCount ? 1 : 0}`;
+                    settings += `, max_block_size = 500`;
                 }
                 const query = `SELECT * FROM system.jemalloc_profile_text SETTINGS ${settings}`;
                 const response = await fetch(buildUrl(query), {

@@ -381,7 +381,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         {
             /// Always run query on peer server
             fmt::print(stdout, "Running query on peer server\n");
-            peer_success &= external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+            peer_success &= !external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
         }
         if (can_compare && fuzz_config->compare_success_results && peer_success != !have_error)
         {
@@ -482,6 +482,8 @@ bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
 
+    have_error = false;
+    error_code = 0;
     if (!processQueryText(full_query))
     {
         have_error = true;
@@ -672,18 +674,21 @@ bool Client::buzzHouse()
                 const uint32_t peer_oracle = 20
                     * static_cast<uint32_t>(fuzz_config->allow_query_oracles
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                const uint32_t roundtrip_oracle = 10
+                    * static_cast<uint32_t>(fuzz_config->allow_query_oracles
+                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t external_call
                     = 10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
                 const uint32_t health_check = 3 * static_cast<uint32_t>(fuzz_config->allow_health_check);
                 const uint32_t run_query = 910;
-                const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client
-                    + external_call + health_check + run_query;
+                const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle
+                    + restart_client + external_call + health_check + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
-                if ((correctness_oracle || settings_oracle || dump_oracle || peer_oracle)
-                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
+                if ((correctness_oracle || settings_oracle || dump_oracle || peer_oracle || roundtrip_oracle)
+                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + 1))
                 {
                     qo.resetOracleValues();
                 }
@@ -861,7 +866,7 @@ bool Client::buzzHouse()
                     fuzz_config->outf << full_query2 << std::endl;
                     if (clickhouse_only)
                     {
-                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2) ? 0 : 1;
+                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
                     }
                     else
                     {
@@ -870,7 +875,30 @@ bool Client::buzzHouse()
                     }
                     qo.processSecondOracleQueryResult(err_res, *external_integrations, "Peer table query");
                 }
-                else if (restart_client && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + 1))
+                else if (
+                    roundtrip_oracle
+                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + 1))
+                {
+                    /// Roundtrip oracle: check that encode/decode and encrypt/decrypt preserve data
+                    const auto & tbl = rg.pickRandomly(
+                        gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content));
+
+                    sq2.Clear();
+                    qo.generateRoundtripOracleQueries(rg, gen, tbl.get(), sq1, sq2);
+
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, "Roundtrip oracle");
+                }
+                else if (restart_client && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + restart_client + 1))
                 {
                     fuzz_config->outf << restart_cmd << std::endl;
                     gen.setInTransaction(false);
@@ -878,7 +906,9 @@ bool Client::buzzHouse()
                 }
                 else if (
                     external_call
-                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + 1))
+                    && nopt
+                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + restart_client
+                           + external_call + 1))
                 {
                     const uint64_t nseed = rg.nextInFullRange();
                     const auto & tbl
@@ -896,8 +926,8 @@ bool Client::buzzHouse()
                 else if (
                     health_check
                     && nopt
-                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + health_check
-                           + 1))
+                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + restart_client
+                           + external_call + health_check + 1))
                 {
                     fuzz_config->outf << health_check_cmd << std::endl;
                     fuzz_config->validateClickHouseHealth();
@@ -905,8 +935,8 @@ bool Client::buzzHouse()
                 else if (
                     run_query
                     && nopt
-                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + health_check
-                           + run_query + 1))
+                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + roundtrip_oracle + restart_client
+                           + external_call + health_check + run_query + 1))
                 {
                     gen.generateNextStatement(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
@@ -927,6 +957,11 @@ bool Client::buzzHouse()
     }
     if (!no_timeout)
     {
+        /// Don't let the last query's error code become the exit code
+        have_error = false;
+        error_code = 0;
+        server_exception.reset();
+        client_exception.reset();
         LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
     }
     if (!no_eof)

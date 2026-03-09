@@ -1176,7 +1176,7 @@ static BlockIO executeQueryImpl(
             try
             {
                 /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, and format it again, you get the same string.
+                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 auto format_ast = [](ASTPtr ast)
@@ -1225,6 +1225,18 @@ static BlockIO executeQueryImpl(
                 }
 
                 chassert(ast2);
+
+                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
+                {
+                    WriteBufferFromOwnString ast_tree1;
+                    WriteBufferFromOwnString ast_tree2;
+                    out_ast->dumpTree(ast_tree1);
+                    ast2->dumpTree(ast_tree2);
+
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                        ast_tree1.str(), ast_tree2.str());
+                }
 
                 String formatted2 = format_ast(ast2);
 
@@ -1296,7 +1308,7 @@ static BlockIO executeQueryImpl(
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -2026,7 +2038,11 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto fuzz_context = Context::createCopy(context);
+            auto fuzz_session_context = Context::createCopy(context);
+            fuzz_session_context->makeSessionContext();
+
+            auto fuzz_context = Context::createCopy(fuzz_session_context);
+            fuzz_context->makeQueryContext();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2034,12 +2050,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pulling())
+                if (result.second.pipeline.pushing())
                 {
-                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                    result.second.pipeline.cancel();
                 }
-                CompletedPipelineExecutor executor(result.second.pipeline);
-                executor.execute();
+                else
+                {
+                    if (result.second.pipeline.pulling())
+                    {
+                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    }
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
+                }
             }
 
             base_ast = fuzzed_ast;
@@ -2235,7 +2259,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (...)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,

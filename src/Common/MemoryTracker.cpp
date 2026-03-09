@@ -247,7 +247,7 @@ void incrementAllocationWithoutCheck(Int64 size)
                 .memory_blocked_context = memory_blocked_context,
             });
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
             /// Ignore failures, we have ProfileEvents anyway
         }

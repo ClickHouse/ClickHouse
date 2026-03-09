@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
 

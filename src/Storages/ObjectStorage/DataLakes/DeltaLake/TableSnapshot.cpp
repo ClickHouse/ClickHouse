@@ -285,7 +285,7 @@ public:
                 }
             }
         }
-        catch (...)
+        catch (...) // Ok: exception saved via setScanException for later handling
         {
             setScanException();
             data_files_cv.notify_all();

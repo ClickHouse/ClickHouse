@@ -47,6 +47,7 @@ private:
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
     bool can_test_oracle_result;
+    bool can_test_success;
     bool measure_performance;
     bool compare_explain;
 
@@ -69,6 +70,7 @@ public:
                                                 : std::filesystem::temp_directory_path())
         , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
+        , can_test_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }
@@ -81,6 +83,12 @@ public:
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+
+    /// Roundtrip oracle: verifies that encoding/encryption functions compose correctly.
+    /// Query 1: SELECT count() FROM t  (baseline total)
+    /// Query 2: SELECT count() FROM t WHERE roundtrip(col) = col
+    /// Both queries must return the same value, catching any roundtrip failures.
+    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(
