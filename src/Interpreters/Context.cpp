@@ -3338,15 +3338,7 @@ String Context::getDatabaseNamespaceSeparator() const
 std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
 {
     std::unordered_set<String> result;
-    String value;
-    try
-    {
-        value = getConfigRef().getString("shared_databases_across_namespaces", "");
-    }
-    catch (...)
-    {
-        return result;
-    }
+    String value = getConfigRef().getString("shared_databases_across_namespaces", "");
     if (value.empty())
         return result;
 
