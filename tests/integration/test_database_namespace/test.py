@@ -30,8 +30,8 @@ def setup_cluster():
         # Create tenant users with DATABASE NAMESPACE
         node.query("CREATE USER tenant1_user DATABASE NAMESPACE tenant1")
         node.query("CREATE USER tenant2_user DATABASE NAMESPACE tenant2")
-        node.query("GRANT ALL ON *.* TO tenant1_user")
-        node.query("GRANT ALL ON *.* TO tenant2_user")
+        node.query("GRANT CURRENT GRANTS ON *.* TO tenant1_user")
+        node.query("GRANT CURRENT GRANTS ON *.* TO tenant2_user")
 
         yield cluster
     finally:
@@ -441,7 +441,7 @@ def test_information_schema():
 # ============================================================
 def test_alter_user_namespace():
     q("CREATE USER tenant3_user DATABASE NAMESPACE tenant3")
-    q("GRANT ALL ON *.* TO tenant3_user")
+    q("GRANT CURRENT GRANTS ON *.* TO tenant3_user")
 
     def q3(query, **kwargs):
         return node.query(query, user="tenant3_user", **kwargs)
