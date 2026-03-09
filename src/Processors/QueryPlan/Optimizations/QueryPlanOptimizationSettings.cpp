@@ -62,7 +62,6 @@ namespace Setting
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
-    extern const SettingsDouble join_runtime_filter_build_saturation_threshold;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
@@ -216,7 +215,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
-    join_runtime_filter_build_saturation_threshold = from[Setting::join_runtime_filter_build_saturation_threshold];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())

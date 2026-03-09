@@ -92,7 +92,7 @@ const ReadFromMergeTree * getMergeTreeStep(QueryPlan::Node * node)
 
 struct JoinKeyStats
 {
-    UInt64 ndv;
+    UInt64 distinct_values;
     UInt64 total_rows;
 };
 
@@ -183,7 +183,7 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
     if (limit_value && final_total_rows > *limit_value)
         final_total_rows = *limit_value;
 
-    return JoinKeyStats{.ndv = n, .total_rows = final_total_rows};
+    return JoinKeyStats{.distinct_values = n, .total_rows = final_total_rows};
 }
 
 /**
@@ -217,7 +217,7 @@ static bool shouldDisableRuntimeFilter(
     size_t build_side_row_count = 0) /// Fallback row count from the plan step if stats are missing.
 {
     // If the threshold is 1.0 (or higher), the user has explicitly disabled this optimization.
-    if (optimization_settings.join_runtime_filter_build_saturation_threshold >= 1.0)
+    if (optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits >= 1.0)
         return false;
 
     // Determine 'n' (NDV).
@@ -225,8 +225,8 @@ static bool shouldDisableRuntimeFilter(
     // 1. Specific column NDV from statistics (most accurate).
     // 2. Fallback to total row count if NDV is unknown/missing.
     double n = 0;
-    if (build_stats && build_stats->ndv > 0)
-        n = static_cast<double>(build_stats->ndv);
+    if (build_stats && build_stats->distinct_values > 0)
+        n = static_cast<double>(build_stats->distinct_values);
     else if (build_side_row_count > 0)
         n = static_cast<double>(build_side_row_count);
 
@@ -245,9 +245,9 @@ static bool shouldDisableRuntimeFilter(
 
     LOG_DEBUG(getLogger("joinRuntimeFilter"),
         "Saturation Check: n={}, m={}, k={}, p={:.4f}, threshold={:.2f}",
-        n, m, k, p, optimization_settings.join_runtime_filter_build_saturation_threshold);
+        n, m, k, p, optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits);
 
-    return p >= optimization_settings.join_runtime_filter_build_saturation_threshold;
+    return p >= optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -399,8 +399,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             // If stats exist, perform the check
             if (build_stats)
             {
-                const auto effective_n = (build_stats->ndv > 0)
-                    ? build_stats->ndv
+                const auto effective_n = (build_stats->distinct_values > 0)
+                    ? build_stats->distinct_values
                     : build_side_row_count;
 
                 if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
@@ -416,8 +416,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             // Priority 1: NDV from column stats (if > 0)
             // Priority 2: Total rows from the plan step (fallback)
             size_t effective_n = build_side_row_count;
-            if (build_stats && build_stats->ndv > 0)
-                effective_n = static_cast<size_t>(build_stats->ndv);
+            if (build_stats && build_stats->distinct_values > 0)
+                effective_n = static_cast<size_t>(build_stats->distinct_values);
 
             if (shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
             {

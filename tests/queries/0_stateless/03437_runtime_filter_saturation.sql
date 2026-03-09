@@ -30,14 +30,14 @@ SELECT uniqExact(id) FROM t_right FORMAT Null;
 
 -- Case 1: Saturation High (Expect DISABLED)
 -- n=1000, k=3, m=1024 bits => p ≈ 0.946. Since 0.946 >= 0.9, the filter should be skipped.
-SET join_runtime_filter_build_saturation_threshold = 0.9;
+SET join_runtime_bloom_filter_max_ratio_of_set_bits = 0.9;
 SELECT '--- Expect NO Runtime Filter (Saturation High) ---';
 SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
 FROM (EXPLAIN PLAN SELECT count() FROM t_left JOIN t_right ON t_left.id = t_right.id);
 
 -- Case 2: Threshold Bypass (Expect ENABLED)
 -- Threshold 1.0 means we ignore saturation logic, so the filter should be created.
-SET join_runtime_filter_build_saturation_threshold = 1.0;
+SET join_runtime_bloom_filter_max_ratio_of_set_bits = 1.0;
 SELECT '--- Expect Runtime Filter (Check Disabled) ---';
 SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
 FROM (EXPLAIN PLAN SELECT count() FROM t_left JOIN t_right ON t_left.id = t_right.id);
@@ -45,7 +45,7 @@ FROM (EXPLAIN PLAN SELECT count() FROM t_left JOIN t_right ON t_left.id = t_righ
 -- Case 3: Saturation Low (Expect ENABLED)
 -- Using a subquery with LIMIT 10 forces the optimizer to see n=10.
 -- p = 1 - exp(-30/1024) ≈ 0.029. Since 0.029 < 0.9, the filter should stay enabled.
-SET join_runtime_filter_build_saturation_threshold = 0.9;
+SET join_runtime_bloom_filter_max_ratio_of_set_bits = 0.9;
 SELECT '--- Expect Runtime Filter (Saturation Low) ---';
 SELECT max(explain LIKE '%RuntimeFilter%' OR explain LIKE '%DynamicFilter%')
 FROM (EXPLAIN PLAN SELECT count() FROM t_left JOIN (SELECT id FROM t_right LIMIT 10) as r ON t_left.id = r.id);

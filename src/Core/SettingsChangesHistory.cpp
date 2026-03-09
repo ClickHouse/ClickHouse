@@ -53,9 +53,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_input_block_size", 0, 0, "New setting to limit input block size for WebAssembly UDFs."},
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
-            {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
-            {"join_runtime_filter_build_saturation_threshold", 0.9, 0.9, "New setting to configure expected Bloom filter saturation probability to disable unproductive join filters"},
-            {"join_runtime_filter_build_saturation_threshold", 1.0, 0.9, "New setting to configure expected Bloom filter saturation probability to disable unproductive join filters"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
