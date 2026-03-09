@@ -153,6 +153,10 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
     quota_key = config.getString("quota_key", "");
 
+    session_id = config.getString("session_id", "");
+    session_timeout = config.getUInt64("session_timeout", 0);
+    session_check = config.getBool("session_check", false);
+
     /// By default compression is disabled if address looks like localhost.
 
     /// Avoid DNS request if the host is "localhost".

@@ -206,6 +206,11 @@ private:
     String proto_recv_chunked_cl = "notchunked";
     String quota_key;
 
+    /// Named session support (like HTTP's session_id parameter)
+    String session_id;
+    UInt64 session_timeout_seconds = 0;
+    bool session_check = false;
+
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
     Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);

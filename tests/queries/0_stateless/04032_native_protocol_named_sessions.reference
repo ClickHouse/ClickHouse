@@ -1,0 +1,22 @@
+Using non-existent session with the session_check flag will throw exception:
+1
+Using non-existent session without the session_check flag will create a new session:
+1
+1
+Valid session_timeout values are accepted:
+1
+1
+1
+Sessions are local per user:
+1
+Hello
+World
+The temporary tables created in a session are not accessible without entering this session:
+1
+A session successfully expires after a timeout:
+111
+A session successfully expires after a timeout and the session's temporary table shadows the permanent table:
+HelloWorld
+A session cannot be used by concurrent connections:
+1
+1

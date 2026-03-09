@@ -27,6 +27,9 @@ struct ConnectionParameters
     std::string proto_send_chunked = "notchunked";
     std::string proto_recv_chunked = "notchunked";
     std::string quota_key;
+    std::string session_id;
+    UInt64 session_timeout = 0;
+    bool session_check = false;
     SSHKey ssh_private_key;
     std::string jwt;
 #if USE_JWT_CPP && USE_SSL

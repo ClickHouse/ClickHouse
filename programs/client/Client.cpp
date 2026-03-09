@@ -752,6 +752,9 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+        ("session_id", po::value<std::string>(), "Session ID for native protocol. Enables session persistence across reconnections.")
+        ("session_timeout", po::value<unsigned>(), "Session timeout in seconds for native protocol named sessions (default: server decides)")
+        ("session_check", "Verify that the named session already exists; throw error if not")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
@@ -904,6 +907,12 @@ void Client::processOptions(
         config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
     if (options.contains("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
+    if (options.contains("session_id"))
+        config().setString("session_id", options["session_id"].as<std::string>());
+    if (options.contains("session_timeout"))
+        config().setUInt("session_timeout", options["session_timeout"].as<unsigned>());
+    if (options.contains("session_check"))
+        config().setBool("session_check", true);
     if (options.contains("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.contains("compression"))

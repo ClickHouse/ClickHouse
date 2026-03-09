@@ -84,6 +84,14 @@ public:
         throttler = throttler_;
     }
 
+    /// Set named session parameters for native protocol session persistence.
+    void setSessionId(const String & session_id_, UInt64 session_timeout_ = 0, bool session_check_ = false)
+    {
+        session_id = session_id_;
+        session_timeout = session_timeout_;
+        session_check = session_check_;
+    }
+
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database) override;
 
@@ -201,6 +209,12 @@ private:
     SSHKey ssh_private_key;
 #endif
     String quota_key;
+
+    /// Named session support
+    String session_id;
+    UInt64 session_timeout = 0;
+    bool session_check = false;
+
 #if USE_JWT_CPP && USE_SSL
     String jwt;
     std::shared_ptr<JWTProvider> jwt_provider;

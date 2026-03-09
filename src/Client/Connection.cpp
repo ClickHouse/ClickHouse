@@ -513,6 +513,13 @@ void Connection::sendAddendum()
     if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
         writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
 
+    if (server_revision >= DBMS_MIN_REVISION_WITH_NAMED_SESSIONS)
+    {
+        writeStringBinary(session_id, *out);
+        writeVarUInt(session_timeout, *out);
+        writeBinary(static_cast<UInt8>(session_check ? 1 : 0), *out);
+    }
+
     out->next();
 }
 
@@ -1639,7 +1646,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
 {
-    return std::make_unique<Connection>(
+    auto connection = std::make_unique<Connection>(
         parameters.host,
         parameters.port,
         parameters.default_database,
@@ -1661,6 +1668,11 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         , parameters.jwt_provider
 #endif
         );
+
+    if (!parameters.session_id.empty())
+        connection->setSessionId(parameters.session_id, parameters.session_timeout, parameters.session_check);
+
+    return connection;
 }
 
 }

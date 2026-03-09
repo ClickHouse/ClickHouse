@@ -186,6 +186,24 @@ namespace DB::ErrorCodes
 
 namespace
 {
+
+/// Parse and clamp session timeout for native protocol named sessions.
+/// Uses the same config keys as the HTTP interface: default_session_timeout, max_session_timeout.
+std::chrono::steady_clock::duration parseNativeSessionTimeout(
+    const Poco::Util::AbstractConfiguration & config,
+    UInt64 requested_timeout_seconds)
+{
+    unsigned default_timeout = config.getUInt("default_session_timeout", 60);
+    unsigned max_timeout = config.getUInt("max_session_timeout", 3600);
+
+    unsigned timeout = requested_timeout_seconds > 0
+        ? static_cast<unsigned>(std::min<UInt64>(requested_timeout_seconds, std::numeric_limits<unsigned>::max()))
+        : default_timeout;
+
+    timeout = std::min(timeout, max_timeout);
+    return std::chrono::seconds(timeout);
+}
+
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
@@ -338,7 +356,22 @@ TCPHandler::TCPHandler(
 }
 
 
-TCPHandler::~TCPHandler() = default;
+TCPHandler::~TCPHandler()
+{
+    /// Release the named session (if any) so it can be resumed by another connection.
+    /// For unnamed sessions this is a no-op.
+    if (session && !session_id.empty())
+    {
+        try
+        {
+            session->releaseSessionID();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
 
 
 void TCPHandler::runImpl()
@@ -373,14 +406,27 @@ void TCPHandler::runImpl()
         if (!default_database.empty())
             DatabaseCatalog::instance().assertDatabaseExists(default_database);
 
-        /// In interserver mode queries are executed without a session context.
-        if (!is_interserver_mode)
-            session->makeSessionContext();
-
+        /// sendHello uses sessionOrGlobalContext() for server settings, so it can be
+        /// called before makeSessionContext(). This allows us to receive the session_id
+        /// from the addendum first, then create the appropriate session context.
         sendHello();
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
+
+        /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
+        {
+            if (!session_id.empty())
+            {
+                auto timeout = parseNativeSessionTimeout(server.config(), session_timeout_seconds);
+                session->makeSessionContext(session_id, timeout, session_check);
+            }
+            else
+            {
+                session->makeSessionContext();
+            }
+        }
 
         {
             /// Server side of chunked protocol negotiation.
@@ -1987,6 +2033,15 @@ void TCPHandler::receiveAddendum()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
         readVarUInt(client_parallel_replicas_protocol_version, *in);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_NAMED_SESSIONS)
+    {
+        readStringBinary(session_id, *in);
+        readVarUInt(session_timeout_seconds, *in);
+        UInt8 session_check_flag = 0;
+        readBinary(session_check_flag, *in);
+        session_check = (session_check_flag != 0);
+    }
 }
 
 
@@ -2049,10 +2104,10 @@ void TCPHandler::sendHello()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
         if (is_interserver_mode ||
-            !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
+            !session->sessionOrGlobalContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
-            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            session->sessionOrGlobalContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
