@@ -1,3 +1,5 @@
+SET optimize_in_to_equal = 0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test

@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 DROP TABLE IF EXISTS test_in_to_equal;
 CREATE TABLE test_in_to_equal (x String, y Int32, z Nullable(Int32)) ENGINE = MergeTree() ORDER BY x;
 INSERT INTO test_in_to_equal VALUES ('a', 1, 1), ('b', 2, 2), ('c', 3, NULL);
