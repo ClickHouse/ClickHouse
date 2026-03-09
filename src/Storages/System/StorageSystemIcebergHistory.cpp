@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemIcebergHistory.h>
-#include <mutex>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -100,6 +99,8 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
             for (auto iterator = db.second->getTablesIterator(context_copy, {}, true); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
+                if (!storage)
+                    continue;
 
                 TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
