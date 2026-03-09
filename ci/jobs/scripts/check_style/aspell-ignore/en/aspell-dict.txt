@@ -912,6 +912,7 @@ PostgreSQLThreads
 PostgreSQLWire
 Postgres
 PostgresSQL
+Postprocessor
 Precompiled
 Preprocess
 PrettyCompact
@@ -2737,6 +2738,7 @@ postfix
 postfixes
 postgres
 postgresql
+postprocessor
 pre
 pread
 preallocate
