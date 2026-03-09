@@ -50,9 +50,9 @@ struct TopKThresholdTracker
             return true;
 
         std::shared_lock lock(mutex);
-        if (direction == 1 && value >= threshold) /// ASC
+        if (direction == 1 && value > threshold) /// ASC
             return false;
-        else if (direction == -1 && value <= threshold) /// DESC
+        else if (direction == -1 && value < threshold) /// DESC
             return false;
 
         return true;

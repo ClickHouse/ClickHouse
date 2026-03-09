@@ -25,6 +25,13 @@ try:
 except ImportError:
     HAS_VARIANT_TYPE = False
 
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    HAS_TIMESTAMP_NTZ = True
+except ImportError:
+    HAS_TIMESTAMP_NTZ = False
+
 
 class ClickHouseMapping(Enum):
     Unkown = 0
@@ -327,6 +334,13 @@ class ClickHouseTypeMapper:
         # Handle DateTime and Time
         for val in ["DateTime", "Time"]:
             if ch_type.startswith(val):
+                if (
+                    HAS_TIMESTAMP_NTZ
+                    and val == "DateTime"
+                    and mapping == ClickHouseMapping.Spark
+                    and random.randint(1, 2) == 1
+                ):
+                    return ("TIMESTAMP_NTZ", inside_nullable, TimestampNTZType())
                 return ("TIMESTAMP", inside_nullable, module.TimestampType())
 
         # Handle LowCardinality wrapper
@@ -573,6 +587,8 @@ class ClickHouseTypeMapper:
             "DATE",
             "TIMESTAMP",
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_types.append("TIMESTAMP_NTZ")
 
         # If we've reached max depth or complex types not allowed, return primitive
         if current_depth >= max_depth or not allow_complex:
@@ -635,6 +651,8 @@ class ClickHouseTypeMapper:
             lambda: sp.CharType(length=random.randint(1, 100)),
             lambda: sp.VarcharType(length=random.randint(1, 100)),
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_factories.append(TimestampNTZType)
         roll = random.randint(1, 100)
 
         # At max depth only emit primitives

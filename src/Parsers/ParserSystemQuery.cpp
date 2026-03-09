@@ -37,13 +37,27 @@ namespace DB
     }
 
     bool parsed_table = false;
+    bool children_already_added = false;
     if (allow_string_literal)
     {
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
+            String name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            /// The string literal may contain 'database.table', split it
+            /// to match what parseDatabaseAndTableAsAST would produce.
+            auto dot_pos = name.find('.');
+            if (dot_pos != String::npos)
+            {
+                res->setDatabase(name.substr(0, dot_pos));
+                res->setTable(name.substr(dot_pos + 1));
+            }
+            else
+            {
+                res->setTable(name);
+            }
             parsed_table = true;
+            children_already_added = true; /// setDatabase/setTable already push to children
         }
     }
 
@@ -59,10 +73,13 @@ namespace DB
 
     res->cluster = cluster;
 
-    if (res->database)
-        res->children.push_back(res->database);
-    if (res->table)
-        res->children.push_back(res->table);
+    if (!children_already_added)
+    {
+        if (res->database)
+            res->children.push_back(res->database);
+        if (res->table)
+            res->children.push_back(res->table);
+    }
 
     return true;
 }
