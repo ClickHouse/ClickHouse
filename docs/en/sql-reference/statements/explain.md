@@ -72,6 +72,8 @@ Dump query AST. Supports all types of queries, not only `SELECT`.
 Settings:
 
 - `graph` – Prints AST as a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
+- `json` — Prints the AST as a JSON object tree. Each node has an `id` field (node type and name), an optional `alias` field, and a `children` array. Default: 0.
+- `pretty` — When `json=1`, pretty-prints the output with indentation. By default the output is compact (no extra whitespace). Default: 0.
 
 Examples:
 
@@ -101,6 +103,48 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
        Identifier date
        Function today (children 1)
         ExpressionList
+```
+
+With `json=1`, the AST is output as a compact JSON object tree:
+
+```sql
+EXPLAIN AST json=1 SELECT a + b AS sum FROM t WHERE a > 1;
+```
+
+```json
+{"id":"SelectWithUnionQuery","children":[{"id":"ExpressionList","children":[{"id":"SelectQuery","children":[{"id":"ExpressionList","children":[{"id":"Function plus","alias":"sum","children":[{"id":"ExpressionList","children":[{"id":"Identifier a"},{"id":"Identifier b"}]}]}]},{"id":"TablesInSelectQuery","children":[{"id":"TablesInSelectQueryElement","children":[{"id":"TableExpression","children":[{"id":"TableIdentifier t"}]}]}]},{"id":"Function greater","children":[{"id":"ExpressionList","children":[{"id":"Identifier a"},{"id":"Literal UInt64_1"}]}]}]}]}]}
+```
+
+With `json=1, pretty=1`, the output is indented for readability:
+
+```sql
+EXPLAIN AST json=1, pretty=1 SELECT 1;
+```
+
+```json
+{
+  "id": "SelectWithUnionQuery",
+  "children": [
+    {
+      "id": "ExpressionList",
+      "children": [
+        {
+          "id": "SelectQuery",
+          "children": [
+            {
+              "id": "ExpressionList",
+              "children": [
+                {
+                  "id": "Literal UInt64_1"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 ```
 
 ### EXPLAIN SYNTAX {#explain-syntax}
@@ -189,7 +233,8 @@ Settings:
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
+- `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Output is compact (no extra whitespace) by default. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
+- `pretty` — When `json=1`, pretty-prints the JSON output with indentation. Default: 0.
 - `input_headers` - Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` - Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
@@ -216,12 +261,12 @@ Union
 Step and query cost estimation is not supported.
 :::
 
-When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
+When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings. The output is compact (no extra whitespace) by default; use `pretty = 1` for indented output.
 
-Example:
+Example (with `pretty = 1` for readability):
 
 ```sql
-EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+EXPLAIN json = 1, pretty = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ```
 
 ```json
