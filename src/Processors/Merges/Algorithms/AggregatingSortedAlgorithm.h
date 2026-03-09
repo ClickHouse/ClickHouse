@@ -25,7 +25,8 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_);
+        std::optional<size_t> max_dynamic_subcolumns_,
+        UInt64 limit_ = 0);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -114,7 +115,8 @@ private:
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
             std::optional<size_t> max_dynamic_subcolumns_,
-            ColumnsDefinition & def_);
+            ColumnsDefinition & def_,
+            UInt64 limit_ = 0);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
