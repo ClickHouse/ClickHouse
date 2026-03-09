@@ -3284,6 +3284,7 @@ void Context::setDatabaseNamespace(const String & ns)
 ///   - predefined databases (system, INFORMATION_SCHEMA, information_schema,
 ///     _temporary_and_external_tables)
 ///   - the "default" database (shared across all namespaces)
+///   - databases listed in shared_databases_across_namespaces
 ///   - names that already carry the user's prefix (prevents double-prefixing)
 ///
 /// Note on pre-existing databases: databases whose names contain the separator that

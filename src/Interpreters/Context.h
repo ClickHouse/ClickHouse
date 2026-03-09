@@ -1065,7 +1065,7 @@ public:
     /// database names are transparently prefixed with "{namespace}{separator}".
     String getDatabaseNamespace() const;
     void setDatabaseNamespace(const String & ns);
-    /// Prepend namespace prefix to a database name (skip system databases and already-prefixed names).
+    /// Prepend namespace prefix to a database name (skip system/default/shared databases and already-prefixed names).
     String applyDatabaseNamespace(const String & database_name) const;
     /// Strip namespace prefix from a physical database name for user-facing display.
     String stripDatabaseNamespace(const String & physical_database_name) const;

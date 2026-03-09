@@ -228,7 +228,7 @@ When the separator is configured, database names containing the separator string
 
 The namespace is a user-level property — users cannot change their own namespace at runtime.
 
-System databases (`system`, `INFORMATION_SCHEMA`, `information_schema`) and the `default` database are never prefixed.
+System databases (`system`, `INFORMATION_SCHEMA`, `information_schema`), the `default` database, and databases listed in `shared_databases_across_namespaces` are never prefixed.
 
 ### Shared Databases {#shared-databases}
 
@@ -258,7 +258,7 @@ INSERT INTO mydb.t1 VALUES (1), (2), (3);
 SELECT * FROM mydb.t1;
 
 -- SHOW DATABASES only shows databases in the user's namespace
--- (with the prefix stripped) plus system databases
+-- (with the prefix stripped) plus system databases and shared databases
 SHOW DATABASES;
 
 -- SHOW CREATE outputs use the logical name without the prefix

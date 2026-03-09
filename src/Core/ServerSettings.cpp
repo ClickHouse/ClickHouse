@@ -1006,7 +1006,7 @@ Once enabled, no user (including admins) can CREATE DATABASE with a name contain
 the separator — this reserves the separator for the namespace mechanism and eliminates
 ambiguity.  Pre-existing databases whose names contain the separator (created before the
 feature was enabled) remain fully accessible: they load at startup and can be read,
-written, and DROPped normally.
+written, and dropped normally.
 
 Common values: '__' (double underscore), '.' (dot).
 )", 0) \
