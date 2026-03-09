@@ -217,8 +217,11 @@ Verify page checksums when reading parquet files.
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
-Allow seeks while reading in ORC/Parquet/Arrow input formats.
-
+Allow seeks (or range reads) while reading ORC, Parquet, and Arrow input formats.
+When enabled and the source supports it (e.g. local file, S3, HTTP with range support and known size),
+ClickHouse can read only the needed byte ranges and use less memory.
+When disabled, or when the source does not support seeks (e.g. no file size, or stream not seekable),
+some readers may fall back to loading the full file into memory.
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(

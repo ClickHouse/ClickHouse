@@ -260,6 +260,9 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
+    // When the source is not seekable (or seekable_read is off), we cannot use
+    // RandomAccessFileFromSeekableReadBuffer / RandomAccessFileFromRandomAccessReadBuffer.
+    // We then load the entire file into memory and log a warning (see below).
     std::string fallback_reason;
 
     if (has_file_size && seekable_in && settings.seekable_read)
@@ -285,7 +288,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
         fallback_reason = "stream is not seekable";
     }
 
-    // fallback to loading the entire file in memory
+    // Fallback: load entire file into memory (used for Parquet, ORC, Arrow and Hive/DeltaLake).
     LOG_WARNING(
         getLogger("ArrowBufferedInputStream"),
         "Cannot read {} as seekable stream ({}), falling back to loading the entire file into memory",
