@@ -103,7 +103,7 @@ FilterResult filterResultForNotMatchedRows(
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );
     }
-    catch (...)
+    catch (const Exception &)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
         return FilterResult::UNKNOWN;

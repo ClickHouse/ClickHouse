@@ -155,8 +155,9 @@ jobs:
           now=$(date +%s)
           cutoff_seconds=3600  # 60 minutes
 
-          # Get open PRs with auto-merge enabled that have mergeStateStatus=CLEAN
-          # (checks passed but not queued into merge queue).
+          # Get open PRs with auto-merge enabled that have mergeStateStatus CLEAN
+          # or UNKNOWN (checks passed but not queued into merge queue).
+          # UNKNOWN can happen when GitHub's merge status evaluation gets stuck.
           # We use GraphQL pagination (20 PRs per page) to avoid 502 errors
           # that occur when fetching too many PRs in a single request.
           owner="${GH_REPO%%/*}"
@@ -191,7 +192,7 @@ jobs:
             filtered=$(echo "$response" | jq '[
               .data.repository.pullRequests.nodes[] | select(
                 .autoMergeRequest != null and
-                .mergeStateStatus == "CLEAN" and
+                (.mergeStateStatus == "CLEAN" or .mergeStateStatus == "UNKNOWN") and
                 .isDraft == false
               ) | {number, autoMergeRequest, mergeStateStatus, isDraft}
             ]')
