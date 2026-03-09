@@ -117,8 +117,11 @@ private:
     void initColumnIndices(const Block & input_header_);
     SerializedKeyHolder serializeGroupKey(const Columns & columns, size_t row) const;
 
-    /// Populates agg_arg_column_ptrs from the current chunk columns.
+    /// Populates agg_arg_column_ptrs from the current chunk columns,
+    /// unwrapping LowCardinality to full columns so aggregate functions
+    /// receive the expected concrete column types.
     std::vector<ColumnRawPtrs> agg_arg_column_ptrs;
+    Columns agg_arg_column_holders;
     void prepareArgColumnPtrs(const Columns & columns);
 
     /// --- Helpers: aggregate state lifecycle ---

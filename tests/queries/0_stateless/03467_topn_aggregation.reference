@@ -208,3 +208,21 @@ trace_95	2024-01-01 00:16:35
 1
 -- EXPLAIN threshold pruning: has __topKFilter prewhere
 1
+-- LowCardinality Mode 2: optimized
+g199	9999
+g198	9998
+g197	9997
+g196	9996
+g195	9995
+-- LowCardinality Mode 2: reference
+g199	9999
+g198	9998
+g197	9997
+g196	9996
+g195	9995
+-- LowCardinality Mode 2: has TopNAggregating
+1
+-- LIMIT 1 high cardinality: optimized
+99999	99999
+-- LIMIT 1 high cardinality: reference
+99999	99999

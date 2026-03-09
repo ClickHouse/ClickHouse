@@ -530,6 +530,69 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
 ) WHERE explain LIKE '%__topKFilter%';
 
+-- ====== LowCardinality aggregate argument (Mode 2) ======
+
+DROP TABLE IF EXISTS t_topn_lc;
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_topn_lc (grp String, val LowCardinality(UInt64))
+ENGINE = MergeTree ORDER BY grp;
+
+INSERT INTO t_topn_lc SELECT
+    'g' || toString(number % 200),
+    number
+FROM numbers(10000);
+
+SELECT '-- LowCardinality Mode 2: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_lc
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- LowCardinality Mode 2: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_lc
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 5
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- LowCardinality Mode 2: has TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT grp, max(val) AS m
+    FROM t_topn_lc
+    GROUP BY grp
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
+
+-- ====== LIMIT 1 with high cardinality (threshold activation stress) ======
+
+DROP TABLE IF EXISTS t_topn_limit1;
+CREATE TABLE t_topn_limit1 (grp UInt64, val UInt64)
+ENGINE = MergeTree ORDER BY grp;
+
+INSERT INTO t_topn_limit1 SELECT number, number FROM numbers(100000);
+
+SELECT '-- LIMIT 1 high cardinality: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_limit1
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 1
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- LIMIT 1 high cardinality: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_limit1
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 1
+SETTINGS optimize_topn_aggregation = 0;
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;
 DROP TABLE t_topn_unsorted;
@@ -537,3 +600,5 @@ DROP TABLE t_topn_nullable;
 DROP TABLE t_topn_collation;
 DROP TABLE t_topn_argminmax;
 DROP TABLE t_topn_ties;
+DROP TABLE t_topn_lc;
+DROP TABLE t_topn_limit1;

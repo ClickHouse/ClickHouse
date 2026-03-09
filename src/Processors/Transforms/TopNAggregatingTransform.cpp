@@ -188,13 +188,19 @@ void TopNAggregatingTransform::initColumnIndices(const Block & input_header_)
 
 void TopNAggregatingTransform::prepareArgColumnPtrs(const Columns & columns)
 {
+    agg_arg_column_holders.clear();
     agg_arg_column_ptrs.resize(aggregates.size());
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
         const auto & arg_indices = agg_arg_columns[i];
         agg_arg_column_ptrs[i].resize(arg_indices.size());
         for (size_t j = 0; j < arg_indices.size(); ++j)
-            agg_arg_column_ptrs[i][j] = columns[arg_indices[j]].get();
+        {
+            auto converted = columns[arg_indices[j]]->convertToFullColumnIfLowCardinality();
+            agg_arg_column_ptrs[i][j] = converted.get();
+            if (converted != columns[arg_indices[j]])
+                agg_arg_column_holders.push_back(std::move(converted));
+        }
     }
 }
 
@@ -294,16 +300,20 @@ void TopNAggregatingTransform::maybeRefreshThreshold()
         return;
 
     const size_t groups = group_states.size();
-    if (groups < limit || groups > limit * 10000)
+    if (groups < limit)
         return;
 
-    /// First usable threshold should be published immediately once we have >= K groups.
+    /// First usable threshold should be published immediately once we have >= K groups,
+    /// even if the group count already exceeds the refresh cap.
     if (!threshold_active)
     {
         refreshThresholdFromStates();
         chunks_since_last_threshold_refresh = 0;
         return;
     }
+
+    if (groups > limit * 10000)
+        return;
 
     /// Start frequent, then gradually reduce refresh frequency as more chunks arrive.
     size_t refresh_period_chunks = 1;
@@ -434,14 +444,19 @@ void TopNAggregatingTransform::consumeMode2(Chunk & chunk)
 
     prepareArgColumnPtrs(columns);
 
-    const IColumn * order_arg_col = enable_threshold_pruning
-        ? columns[order_agg_arg_col_idx].get() : nullptr;
+    ColumnPtr order_arg_col_holder;
+    const IColumn * order_arg_col = nullptr;
+    if (enable_threshold_pruning)
+    {
+        order_arg_col_holder = columns[order_agg_arg_col_idx]->convertToFullColumnIfLowCardinality();
+        order_arg_col = order_arg_col_holder.get();
+    }
     ColumnPtr threshold_keep_mask;
     const PaddedPODArray<UInt8> * threshold_keep_data = nullptr;
 
     if (order_arg_col)
     {
-        threshold_keep_mask = buildThresholdKeepMask(columns[order_agg_arg_col_idx], num_rows);
+        threshold_keep_mask = buildThresholdKeepMask(order_arg_col_holder, num_rows);
         if (threshold_keep_mask)
         {
             auto full_mask = threshold_keep_mask->convertToFullColumnIfConst();
