@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
@@ -26,6 +27,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/FunctionCallStats.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 
@@ -158,6 +160,17 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
+
+        {"function_calls",
+            std::make_shared<DataTypeMap>(
+                low_cardinality_string,
+                std::make_shared<DataTypeTuple>(
+                    DataTypes{
+                        std::make_shared<DataTypeUInt64>(),
+                        std::make_shared<DataTypeUInt64>(),
+                        std::make_shared<DataTypeUInt64>()},
+                    Strings{"blocks", "rows", "bytes"})),
+            "Per-function execution statistics: blocks executed, rows processed, and result bytes."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
@@ -340,6 +353,36 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+
+    {
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        if (function_call_stats && !function_call_stats->data.empty())
+        {
+            auto & nested_column = column_map.getNestedColumn();
+            auto & offsets = nested_column.getOffsets();
+            auto & tuple_of_kv = nested_column.getData();
+            auto & key_column = tuple_of_kv.getColumn(0);
+            auto & value_column = typeid_cast<ColumnTuple &>(tuple_of_kv.getColumn(1));
+            auto & blocks_column = typeid_cast<ColumnUInt64 &>(value_column.getColumn(0));
+            auto & rows_column = typeid_cast<ColumnUInt64 &>(value_column.getColumn(1));
+            auto & bytes_column = typeid_cast<ColumnUInt64 &>(value_column.getColumn(2));
+
+            size_t count = 0;
+            for (const auto & [name, stats] : function_call_stats->data)
+            {
+                key_column.insertData(name.data(), name.size());
+                blocks_column.getData().push_back(stats.blocks);
+                rows_column.getData().push_back(stats.rows);
+                bytes_column.getData().push_back(stats.bytes);
+                ++count;
+            }
+            offsets.push_back(offsets.back() + count);
+        }
+        else
+        {
+            column_map.insertDefault();
+        }
+    }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }

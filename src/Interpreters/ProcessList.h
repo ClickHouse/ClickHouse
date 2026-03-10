@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/FunctionCallStats.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
@@ -80,6 +81,7 @@ struct QueryStatusInfo
     std::vector<UInt64> thread_ids;
     size_t peak_threads_usage;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<FunctionCallStats> function_call_stats;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };

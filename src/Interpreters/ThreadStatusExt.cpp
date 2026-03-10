@@ -578,6 +578,9 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
+    if (thread_group && !function_call_stats.empty())
+        thread_group->mergeFunctionCallStats(function_call_stats);
+
     // We want to close perf file descriptors if the perf events were enabled for
     // one query.
     bool close_perf_descriptors = true;

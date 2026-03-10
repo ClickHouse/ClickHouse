@@ -1,6 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
-#include <Common/FunctionCallStats.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
@@ -690,9 +690,14 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-                FunctionCallStats::instance().increment(action.node->function->getName(), num_rows);
-
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+
+                if (auto * thread_status = DB::current_thread)
+                {
+                    UInt64 result_bytes = res_column.column ? res_column.column->byteSize() : 0;
+                    thread_status->function_call_stats.increment(
+                        action.node->function->getName(), num_rows, result_bytes);
+                }
                 if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
                     throw Exception(

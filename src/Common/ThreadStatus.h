@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/FunctionCallStats.h>
 #include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
@@ -80,6 +81,7 @@ public:
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+    FunctionCallStats function_call_stats; /// Guarded by mutex
 
     struct SharedData
     {
@@ -124,6 +126,18 @@ public:
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
     UInt64 getGroupElapsedMs() const;
+
+    void mergeFunctionCallStats(const FunctionCallStats & stats)
+    {
+        std::lock_guard lock(mutex);
+        function_call_stats.merge(stats);
+    }
+
+    FunctionCallStats getFunctionCallStats() const
+    {
+        std::lock_guard lock(mutex);
+        return function_call_stats;
+    }
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();
@@ -208,6 +222,7 @@ public:
     ProfileEvents::Counters * current_performance_counters{&performance_counters};
 
     MemoryTracker memory_tracker{VariableContext::Thread};
+    FunctionCallStats function_call_stats; /// Thread-local, no lock needed
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
