@@ -1126,6 +1126,7 @@ def test_backup_table_azure_named_collection():
 def test_on_cluster():
     password = new_password()
 
+    node.query("DROP TABLE IF EXISTS table_oncl ON CLUSTER 'test_shard_localhost'")
     node.query(
         f"CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')"
     )
@@ -1155,7 +1156,7 @@ def test_on_cluster():
         "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql80:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
 
-    node.query("DROP TABLE table_oncl")
+    node.query("DROP TABLE IF EXISTS table_oncl ON CLUSTER 'test_shard_localhost'")
 
 
 def test_iceberg_cluster_function():
@@ -1185,7 +1186,7 @@ def test_iceberg_cluster_function():
 
 def test_query_masking_rule_with_ddl():
     table_name = "test_ddl_masking"
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER 'test_shard_localhost'")
     node.query(
         f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
     )
@@ -1194,4 +1195,4 @@ def test_query_masking_rule_with_ddl():
     assert "sensetive_data" in node.query(
         f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
     )
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER 'test_shard_localhost'")
