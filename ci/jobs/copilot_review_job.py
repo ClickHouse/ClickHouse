@@ -64,10 +64,10 @@ def pre():
         f"Review PR {info.pr_url}. Repo is checked out at PR head. "
         f"Post findings as individual inline comments on specific lines using gh CLI (not a gh review). "
         f"Prefix every gh call with `env -u GH_CONFIG_DIR`. "
-        f"Read inline comments already posted by clickhouse-gh[bot] and skip duplicates. "
+        f"Read inline comments already posted by clickhouse-gh[bot]; do not post a new comment if a similar one already exists. "
         f"Write a self-contained summary of ALL findings (regardless of previous summaries) "
-        f"as plain Markdown to {REVIEW_FILE} — "
-        f"no top-level header; use #### headers for sections only if needed. "
+        f"as plain Markdown to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .github/copilot-instructions.md — "
+        f"start with `---\n### AI Review`, then use #### for section headers. "
         f"Post it with: env -u GH_CONFIG_DIR python ci/praktika/gh.py post-or-update --tag review --file {REVIEW_FILE}"
     )
     _run(prompt)
@@ -88,7 +88,7 @@ def post():
         f"If all checks passed — stop. "
         f"Otherwise review the PR {info.pr_url} diff and match each failure to the code changes. "
         f"Write a self-contained summary as plain Markdown to {REVIEW_FILE} — "
-        f"no top-level header; use #### headers for sections only if needed. "
+        f"start with `---\n### AI Review`, then use #### headers for sections only if needed. "
         f"Post it with: env -u GH_CONFIG_DIR python ci/praktika/gh.py post-or-update --tag review --file {REVIEW_FILE} "
         f"Do not post inline comments."
     )
