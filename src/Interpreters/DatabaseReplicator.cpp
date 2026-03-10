@@ -299,6 +299,9 @@ BlockIO DatabaseReplicator::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "DatabaseReplicator is in readonly mode, because it cannot connect to ZooKeeper");
 
+    if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for databases managed by DatabaseReplicator.");
+
     String host_fqdn_id;
     {
         std::lock_guard lock{ddl_worker_mutex};
@@ -308,6 +311,13 @@ BlockIO DatabaseReplicator::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     }
 
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
+
+    /// Strip ON CLUSTER clause before writing to the DDL log.
+    /// DatabaseReplicator intercepts DDL before ON CLUSTER, but the AST may
+    /// still contain a cluster field. If we leave it, the DDL worker on each
+    /// replica would hit the ON CLUSTER branch again.
+    if (auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get()))
+        query_on_cluster->cluster.clear();
 
     DDLLogEntry entry;
     entry.query = query->formatWithSecretsOneLine();

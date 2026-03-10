@@ -105,6 +105,21 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
 
     if (drop.table)
         return executeToTable(drop);
+
+    /// For DROP DATABASE, DatabaseReplicator takes priority over ON CLUSTER
+    /// (same approach as DatabaseReplicated intercepting DDL before ON CLUSTER).
+    if (drop.database && DatabaseReplicator::isEnabled())
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase());
+        if (db && DatabaseReplicator::instance().shouldReplicateQuery(
+                getContext(), drop.getDatabase(), db->getEngineName()))
+        {
+            if (drop.kind == ASTDropQuery::Kind::Detach)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH DATABASE is unsupported when database replicator is enabled");
+            return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(current_query_ptr, getContext(), {});
+        }
+    }
+
     if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -442,19 +457,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
         return {};
-
-    /// Forward database-level DDL through DatabaseReplicator if enabled.
-    if (DatabaseReplicator::isEnabled()
-        && DatabaseReplicator::instance().shouldReplicateQuery(
-            getContext(),
-            database_name,
-            database->getEngineName()))
-    {
-        if (query.kind == ASTDropQuery::Kind::Detach)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH DATABASE is unsupported when database replicator is enabled");
-        ddl_guard.reset();
-        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(current_query_ptr, getContext(), {});
-    }
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
