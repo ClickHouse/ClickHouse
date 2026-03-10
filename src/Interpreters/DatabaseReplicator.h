@@ -35,14 +35,16 @@ public:
     void startup();
     void shutdownImpl();
 
-    /// Returns true if the given database should be replicated.
-    /// Predefined databases (system, information_schema, etc.) and the default database are excluded.
-    bool canReplicateDatabase(const String & database_name) const;
+    /// Returns true if the given database should be replicated by DatabaseReplicator.
+    /// A database is replicable iff:
+    ///   1. It is not a predefined database (system, information_schema, etc.) or the default database.
+    ///   2. It uses the Replicated engine.
+    bool canReplicateDatabase(const String & database_name, const String & engine) const;
 
     /// Returns true if the given query should be replicated through the DatabaseReplicator DDL log.
     /// Only database-level DDL (CREATE DATABASE, DROP DATABASE) for replicable databases is accepted.
     /// Queries already marked as replicated-database-internal are not forwarded again.
-    bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const;
+    bool shouldReplicateQuery(const ContextPtr & query_context, const String & database_name, const String & engine) const;
 
     /// Enqueue a replicated DDL query into the ZooKeeper log and wait for replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags);

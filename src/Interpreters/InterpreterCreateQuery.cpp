@@ -194,14 +194,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
-
     /// Forward database-level DDL through DatabaseReplicator if enabled.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
-    {
-        guard.reset();
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().shouldReplicateQuery(
+            getContext(),
+            database_name,
+            create.storage->engine->name))
         return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
-    }
+
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
@@ -403,7 +404,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     /// Update DatabaseReplicator digest after successful CREATE DATABASE.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name))
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name, database->getEngineName()))
         DatabaseReplicator::instance().commitCreateDatabase(database_name, getContext());
 
     return {};

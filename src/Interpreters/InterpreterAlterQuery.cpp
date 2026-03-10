@@ -394,7 +394,11 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     }
 
     /// Forward database-level DDL through DatabaseReplicator if enabled.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), query_ptr))
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().shouldReplicateQuery(
+            getContext(),
+            database->getDatabaseName(),
+            database->getEngineName()))
         return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
 
 #if CLICKHOUSE_CLOUD
@@ -434,7 +438,8 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     }
 
     /// Update DatabaseReplicator digest after successful ALTER DATABASE.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(alter.getDatabase()))
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().canReplicateDatabase(alter.getDatabase(), database->getEngineName()))
         DatabaseReplicator::instance().commitAlterDatabase(alter.getDatabase(), getContext());
 
     return res;

@@ -62,7 +62,7 @@ public:
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
-    BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
 
     enum class RenameType : uint8_t
     {

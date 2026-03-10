@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -443,8 +444,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         return {};
 
     /// Forward database-level DDL through DatabaseReplicator if enabled.
-    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().shouldReplicateQuery(getContext(), current_query_ptr))
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().shouldReplicateQuery(
+            getContext(),
+            database_name,
+            database->getEngineName()))
     {
+        if (query.kind == ASTDropQuery::Kind::Detach)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH DATABASE is unsupported when database replicator is enabled");
         ddl_guard.reset();
         return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(current_query_ptr, getContext(), {});
     }
@@ -730,7 +737,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
 
     /// Update DatabaseReplicator digest after successful DROP DATABASE.
-    if (drop && DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name))
+    if (drop && DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name, database->getEngineName()))
         DatabaseReplicator::instance().commitDropDatabase(database_name, getContext());
 
     return {};

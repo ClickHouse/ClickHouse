@@ -260,7 +260,7 @@ void DatabaseReplicator::initializeLocalDigest()
 
     for (const auto & [database_name, database] : databases)
     {
-        if (!canReplicateDatabase(database_name))
+        if (!canReplicateDatabase(database_name, database->getEngineName()))
             continue;
         auto statement = getCreateDatabaseStatement(database);
         UInt64 digest = getMetadataHash(database_name, statement);
@@ -271,73 +271,19 @@ void DatabaseReplicator::initializeLocalDigest()
     LOG_INFO(log, "Initialized local digest: {} databases, digest={}", local_digests.size(), metadata_digest);
 }
 
-bool DatabaseReplicator::canReplicateDatabase(const String & database_name) const
+bool DatabaseReplicator::canReplicateDatabase(const String & database_name, const String & engine) const
 {
     return !DatabaseCatalog::isPredefinedDatabase(database_name)
-        && database_name != getContext()->getServerSettings()[ServerSetting::default_database].value;
+        && database_name != getContext()->getServerSettings()[ServerSetting::default_database].value
+        && engine == "Replicated";
 }
 
-bool DatabaseReplicator::shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const
+bool DatabaseReplicator::shouldReplicateQuery(const ContextPtr & query_context, const String & database_name, const String & engine) const
 {
     /// Queries that are already internal (replayed from the DDL log) must not be forwarded again.
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
-
-    /// CREATE DATABASE — replicate if the target database is eligible.
-    if (const auto * create = query_ptr->as<const ASTCreateQuery>())
-    {
-        /// Only CREATE DATABASE (has `database`, no `table`).
-        if (create->database && !create->table)
-            return canReplicateDatabase(create->getDatabase());
-        return false;
-    }
-
-    /// DROP / DETACH DATABASE — replicate DROP only; DETACH is prohibited for replicable databases.
-    if (const auto * drop = query_ptr->as<const ASTDropQuery>())
-    {
-        if (drop->database && !drop->table)
-        {
-            if (drop->kind == ASTDropQuery::Kind::Detach && canReplicateDatabase(drop->getDatabase()))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "DETACH DATABASE is not allowed when DatabaseReplicator is enabled");
-            if (drop->kind == ASTDropQuery::Kind::Drop)
-                return canReplicateDatabase(drop->getDatabase());
-        }
-        return false;
-    }
-
-    /// ALTER DATABASE — replicate if the target database is eligible.
-    if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-    {
-        if (alter->alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
-            return canReplicateDatabase(alter->getDatabase());
-        return false;
-    }
-
-    /// RENAME DATABASE — replicate if both source and target databases are eligible.
-    /// If one is replicable but the other is not, it is an error.
-    if (const auto * rename = query_ptr->as<const ASTRenameQuery>())
-    {
-        if (rename->database && !rename->getElements().empty())
-        {
-            const auto & elem = rename->getElements().front();
-            bool from_replicable = canReplicateDatabase(elem.from.getDatabase());
-            bool to_replicable = canReplicateDatabase(elem.to.getDatabase());
-            if (from_replicable != to_replicable)
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Cannot rename database '{}' to '{}': both databases must be replicable or both non-replicable "
-                    "when DatabaseReplicator is enabled",
-                    elem.from.getDatabase(),
-                    elem.to.getDatabase());
-            return from_replicable && to_replicable;
-        }
-        return false;
-    }
-
-    /// All other query types are not handled by DatabaseReplicator.
-    return false;
+    return canReplicateDatabase(database_name, engine);
 }
 
 BlockIO DatabaseReplicator::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
