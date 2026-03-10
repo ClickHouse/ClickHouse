@@ -3,9 +3,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
+#include <Interpreters/DDLReplicator.h>
+#include <Interpreters/DDLReplicatorQueryStatusSource.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLGuard.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ extern const int TIMEOUT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 }
 
-ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
+DDLReplicatorQueryStatusSource::DDLReplicatorQueryStatusSource(
     const String & zookeeper_name_,
     const String & zk_node_path,
     const String & zk_replicas_path,
@@ -34,12 +35,12 @@ ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
         std::make_shared<const Block>(getSampleBlock()),
         context_,
         hosts_to_wait,
-        "ReplicatedDatabaseQueryStatusSource")
+        "DDLReplicatorQueryStatusSource")
     , database_guard(std::move(database_guard_))
 {
 }
 
-ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]] const String & host_id)
+ExecutionStatus DDLReplicatorQueryStatusSource::checkStatus([[maybe_unused]] const String & host_id)
 {
     /// Replicated database retries in case of error, it should not write error status.
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -50,7 +51,7 @@ ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]
 #endif
 }
 
-Chunk ReplicatedDatabaseQueryStatusSource::generateChunkWithUnfinishedHosts() const
+Chunk DDLReplicatorQueryStatusSource::generateChunkWithUnfinishedHosts() const
 {
     NameSet unfinished_hosts = waiting_hosts;
     for (const auto & host_id : finished_hosts)
@@ -63,7 +64,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::generateChunkWithUnfinishedHosts() co
     for (const String & host_id : unfinished_hosts)
     {
         size_t num = 0;
-        auto [shard, replica] = DatabaseReplicated::parseFullReplicaName(host_id);
+        auto [shard, replica] = DDLReplicator::parseFullReplicaName(host_id);
         columns[num++]->insert(shard);
         columns[num++]->insert(replica);
         if (active_hosts_set.contains(host_id))
@@ -77,7 +78,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::generateChunkWithUnfinishedHosts() co
     return Chunk(std::move(columns), unfinished_hosts.size());
 }
 
-Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
+Strings DDLReplicatorQueryStatusSource::getNodesToWait()
 {
     String node_to_wait = "finished";
     if (context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings])
@@ -88,7 +89,7 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
     return {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
 }
 
-Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
+Chunk DDLReplicatorQueryStatusSource::handleTimeoutExceeded()
 {
     timeout_exceeded = true;
 
@@ -131,13 +132,13 @@ Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
     return generateChunkWithUnfinishedHosts();
 }
 
-Chunk ReplicatedDatabaseQueryStatusSource::stopWaitingOfflineHosts()
+Chunk DDLReplicatorQueryStatusSource::stopWaitingOfflineHosts()
 {
     // Same logic as timeout exceeded
     return handleTimeoutExceeded();
 }
 
-void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
+void DDLReplicatorQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
     assert(status.code != 0);
 
@@ -147,12 +148,12 @@ void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const Executio
     }
 }
 
-void ReplicatedDatabaseQueryStatusSource::fillHostStatus(const String & host_id, const ExecutionStatus & status, MutableColumns & columns)
+void DDLReplicatorQueryStatusSource::fillHostStatus(const String & host_id, const ExecutionStatus & status, MutableColumns & columns)
 {
     size_t num = 0;
     if (status.code != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
-    auto [shard, replica] = DatabaseReplicated::parseFullReplicaName(host_id);
+    auto [shard, replica] = DDLReplicator::parseFullReplicaName(host_id);
     columns[num++]->insert(shard);
     columns[num++]->insert(replica);
     columns[num++]->insert(QueryStatus::OK);
@@ -160,7 +161,7 @@ void ReplicatedDatabaseQueryStatusSource::fillHostStatus(const String & host_id,
     columns[num++]->insert(current_active_hosts.size());
 }
 
-Block ReplicatedDatabaseQueryStatusSource::getSampleBlock()
+Block DDLReplicatorQueryStatusSource::getSampleBlock()
 {
     return Block{
         {std::make_shared<DataTypeString>(), "shard"},

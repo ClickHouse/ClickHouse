@@ -1,0 +1,37 @@
+
+<clickhouse>
+    <allow_experimental_database_replicator>1</allow_experimental_database_replicator>
+
+    <database_replicator>
+        <zookeeper_path>/clickhouse/database_replicator</zookeeper_path>
+        <shard_name>{shard}</shard_name>
+        <replica_name>{replica}</replica_name>
+    </database_replicator>
+
+    <database_atomic_delay_before_drop_table_sec>0</database_atomic_delay_before_drop_table_sec>
+    <allow_moving_table_directory_to_trash>1</allow_moving_table_directory_to_trash>
+    <async_load_databases>false</async_load_databases>
+
+    <distributed_ddl>
+        <path>/clickhouse/queue/</path>
+    </distributed_ddl>
+
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

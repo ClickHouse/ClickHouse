@@ -26,6 +26,7 @@
 #include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 #include "config.h"
 
@@ -58,6 +59,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -103,6 +105,21 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
 
     if (drop.table)
         return executeToTable(drop);
+
+    /// For DROP DATABASE, DatabaseReplicator takes priority over ON CLUSTER
+    /// (same approach as DatabaseReplicated intercepting DDL before ON CLUSTER).
+    if (drop.database && DatabaseReplicator::isEnabled())
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase());
+        if (db && DatabaseReplicator::instance().shouldReplicateQuery(
+                getContext(), drop.getDatabase(), db->getEngineName()))
+        {
+            if (drop.kind == ASTDropQuery::Kind::Detach)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH DATABASE is unsupported when database replicator is enabled");
+            return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(current_query_ptr, getContext(), {});
+        }
+    }
+
     if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -720,6 +737,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
+    /// Update DatabaseReplicator digest after successful DROP DATABASE.
+    if (drop && DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name, database->getEngineName()))
+        DatabaseReplicator::instance().commitDropDatabase(database_name, getContext());
 
     return {};
 }

@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/DatabaseReplicator.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -385,6 +386,16 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER DATABASE query");
     }
 
+    /// Forward database-level DDL through DatabaseReplicator if enabled.
+    /// DatabaseReplicator takes priority over ON CLUSTER
+    /// (same approach as DatabaseReplicated intercepting DDL before ON CLUSTER).
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().shouldReplicateQuery(
+            getContext(),
+            database->getDatabaseName(),
+            database->getEngineName()))
+        return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+
     if (!alter.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -427,6 +438,11 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
             }
         }
     }
+
+    /// Update DatabaseReplicator digest after successful ALTER DATABASE.
+    if (DatabaseReplicator::isEnabled()
+        && DatabaseReplicator::instance().canReplicateDatabase(alter.getDatabase(), database->getEngineName()))
+        DatabaseReplicator::instance().commitAlterDatabase(alter.getDatabase(), getContext());
 
     return res;
 }

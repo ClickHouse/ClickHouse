@@ -87,6 +87,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -393,6 +394,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+
+    /// Update DatabaseReplicator digest after successful CREATE DATABASE.
+    if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(database_name, database->getEngineName()))
+        DatabaseReplicator::instance().commitCreateDatabase(database_name, getContext());
 
     return {};
 }
@@ -2459,6 +2464,18 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// For CREATE DATABASE, DatabaseReplicator takes priority over ON CLUSTER
+    /// (same approach as DatabaseReplicated intercepting CREATE TABLE before ON CLUSTER).
+    if (is_create_database && DatabaseReplicator::isEnabled())
+    {
+        String engine_name;
+        if (create.storage && create.storage->engine)
+            engine_name = create.storage->engine->name;
+        if (DatabaseReplicator::instance().shouldReplicateQuery(getContext(), create.getDatabase(), engine_name))
+            return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())

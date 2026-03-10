@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseReplicator.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -37,6 +39,24 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+
+    /// For RENAME DATABASE, DatabaseReplicator takes priority over ON CLUSTER
+    /// (same approach as DatabaseReplicated intercepting DDL before ON CLUSTER).
+    if (rename.database && DatabaseReplicator::isEnabled())
+    {
+        assert(!rename.exchange);
+        const auto & elem = rename.getElements().front();
+        String from_db_name = elem.from.getDatabase();
+        auto db = DatabaseCatalog::instance().tryGetDatabase(from_db_name);
+        if (db && DatabaseReplicator::instance().shouldReplicateQuery(
+                getContext(), from_db_name, db->getEngineName()))
+        {
+            String to_db_name = elem.to.getDatabase();
+            if (!DatabaseReplicator::instance().canReplicateDatabase(to_db_name, db->getEngineName()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename replicable database to non-replicable name");
+            return DatabaseReplicator::instance().tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        }
+    }
 
     if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -78,7 +98,7 @@ BlockIO InterpreterRenameQuery::execute()
         table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name, nullptr);
 
     if (rename.database)
-        return executeToDatabase(rename, descriptions);
+        return executeToDatabase(rename, descriptions, table_guards);
     return executeToTables(rename, descriptions, table_guards);
 }
 
@@ -185,7 +205,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     return {};
 }
 
-BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
+BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery & rename [[maybe_unused]], const RenameDescriptions & descriptions, TableGuards & ddl_guards [[maybe_unused]])
 {
     assert(descriptions.size() == 1);
     assert(descriptions.front().from_table_name.empty());
@@ -201,6 +221,9 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+
+        if (DatabaseReplicator::isEnabled() && DatabaseReplicator::instance().canReplicateDatabase(old_name, db->getEngineName()))
+            DatabaseReplicator::instance().commitRenameDatabase(old_name, new_name, getContext());
     }
 
     return {};
