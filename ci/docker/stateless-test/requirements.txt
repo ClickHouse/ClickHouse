@@ -5,7 +5,7 @@ pandas==2.2.3
 scipy==1.14.1
 pyarrow==22.0.0
 grpcio==1.66.2
-protobuf==4.25.8
+protobuf==5.29.6
 psutil
 PyYAML==6.0.2
 
