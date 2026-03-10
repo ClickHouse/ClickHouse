@@ -157,6 +157,9 @@ namespace DB
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
     M(ZOOKEEPER_RECV, "ZooKeeperRecv") \
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
+    M(PARQUET_READ, "ParquetRead") \
+    M(GLUTEN_MERGE_MERGETREE, "GlutenMerge") \
+    M(ASYNC_MERGE, "AsyncMerge") \
 
 
 enum class ThreadName : uint8_t

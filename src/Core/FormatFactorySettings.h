@@ -199,6 +199,7 @@ Verify page checksums when reading parquet files.
 )", 0) \
     DECLARE(Bool, input_format_parquet_local_time_as_utc, true, R"(
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader_with_filter_push_down, false, R"(
 A new parquet reader support full filter push down.
 )", 0) \

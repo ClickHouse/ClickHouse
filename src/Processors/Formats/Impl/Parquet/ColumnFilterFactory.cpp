@@ -273,8 +273,8 @@ Strings extractStringsForInClause(const ActionsDAG::Node & node)
     {
         auto value = elements->getDataAt(i);
         String str;
-        str.resize(value.size);
-        memcpy(str.data(), value.data, value.size);
+        str.resize(value.size());
+        memcpy(str.data(), value.data(), value.size());
         values.emplace_back(str);
     }
     return values;
@@ -291,8 +291,8 @@ NamedColumnFilter BytesValuesFilterFactory::create(const ActionsDAG::Node & node
     {
         auto value = constant_nodes.front()->column->getDataAt(0);
         String str;
-        str.resize(value.size);
-        memcpy(str.data(), value.data, value.size);
+        str.resize(value.size());
+        memcpy(str.data(), value.data(), value.size());
         std::vector<String> values = {str};
         filter = std::make_shared<BytesValuesFilter>(values, false);
     }
@@ -328,8 +328,8 @@ NamedColumnFilter NegatedBytesValuesFilterFactory::create(const ActionsDAG::Node
         const auto * input_node = getInputNode(node);
         auto value = constant_nodes.front()->column->getDataAt(0);
         String str;
-        str.resize(value.size);
-        memcpy(str.data(), value.data, value.size);
+        str.resize(value.size());
+        memcpy(str.data(), value.data(), value.size());
         std::vector<String> values = {str};
         filter = std::make_shared<NegatedBytesValuesFilter>(values, false);
         return std::make_pair(input_node->result_name, filter);

@@ -397,7 +397,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
                 sort_settings.min_free_disk_space, threshold_tracker,
-                sort_settings.worth_external_sort);
+                sort_settings.worth_external_sort_mem_ratio);
         });
 }
 

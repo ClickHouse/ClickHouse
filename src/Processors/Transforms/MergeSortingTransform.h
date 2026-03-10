@@ -33,7 +33,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
         TopKThresholdTrackerPtr threshold_tracker_ = nullptr,
-        std::function<bool()> worth_external_sort = nullptr);
+        double worth_external_sort_mem_ratio = 0.0);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -56,8 +56,9 @@ private:
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
+    double worth_external_sort_mem_ratio = -1.0;
 
-    std::function<bool()> worth_external_sort = nullptr;
+    bool worth_external_sort() const;
 
     LoggerPtr log = getLogger("MergeSortingTransform");
 

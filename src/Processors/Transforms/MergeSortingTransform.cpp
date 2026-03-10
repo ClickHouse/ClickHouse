@@ -2,6 +2,7 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
@@ -172,7 +173,7 @@ MergeSortingTransform::MergeSortingTransform(
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
     TopKThresholdTrackerPtr threshold_tracker_,
-    std::function<bool()> worth_external_sort_)
+    double worth_external_sort_mem_ratio_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -181,8 +182,8 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
+    , worth_external_sort_mem_ratio(worth_external_sort_mem_ratio_)
     , threshold_tracker(threshold_tracker_)
-    , worth_external_sort(std::move(worth_external_sort_))
 {
 }
 
@@ -255,7 +256,7 @@ void MergeSortingTransform::consume(Chunk chunk)
       * NOTE. It's possible to check free space in filesystem.
       */
     if ((max_bytes_in_block_before_external_sort && sum_bytes_in_blocks > max_bytes_in_block_before_external_sort)||
-        (worth_external_sort && worth_external_sort() && sum_bytes_in_blocks > max_bytes_in_query_before_external_sort * 0.3))
+        (worth_external_sort() && sum_bytes_in_blocks > max_bytes_in_query_before_external_sort * 0.3))
     {
         Int64 query_memory = getCurrentQueryMemoryUsage();
         if (!max_bytes_in_query_before_external_sort || query_memory > static_cast<Int64>(max_bytes_in_query_before_external_sort))
@@ -362,7 +363,7 @@ void MergeSortingTransform::generate()
 
     if (merge_sorter && !temporary_file_reader)
     {
-        if (worth_external_sort && worth_external_sort())
+        if (worth_external_sort())
         {
             SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
             TemporaryBlockStreamHolder temporary_file_stream(shared_header_without_constants, tmp_data);
@@ -446,5 +447,17 @@ size_t MergeSortingTransform::getAdaptiveMaxMergeSize() const
         max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
     }
     return max_merged_block_size;
+}
+
+bool MergeSortingTransform::worth_external_sort() const
+{
+    if (!CurrentThread::getGroup())
+    {
+        LOG_ERROR(getLogger("QueryContext"), "Thread group not found, please call initializeQuery first.");
+        return false;
+    }
+    if (worth_external_sort_mem_ratio <= 0.0)
+        return false;
+    return (static_cast<double>(CurrentThread::getGroup()->memory_tracker.get()) / CurrentThread::getGroup()->memory_tracker.getSoftLimit()) > worth_external_sort_mem_ratio;
 }
 }

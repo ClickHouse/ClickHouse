@@ -9,6 +9,7 @@
 #include <arrow/io/util_internal.h>
 #include <parquet/page_index.h>
 #include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 namespace ProfileEvents
@@ -256,7 +257,7 @@ RowGroupPrefetch::RowGroupPrefetch(
     SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties & arrow_properties_, ThreadPool & io_pool)
     : file(file_), file_mutex(mutex), arrow_properties(arrow_properties_)
 {
-    callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkData>(io_pool, "ParquetRead");
+    callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkData>(io_pool, ThreadName::PARQUET_READ);
 }
 void RowGroupPrefetch::prefetchRange(const arrow::io::ReadRange & range)
 {

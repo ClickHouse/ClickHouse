@@ -594,7 +594,8 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 void MergeMutateSelectedEntry::finalize()
 {
     finalized = true;
-    tagger->finalize();
+    if (tagger)
+        tagger->finalize();
 }
 
 MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
