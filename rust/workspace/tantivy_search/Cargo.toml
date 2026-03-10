@@ -1,0 +1,14 @@
+[package]
+name = "_ch_rust_tantivy_search"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tantivy = { version = "0.22", default-features = false, features = ["mmap", "lz4-compression"] }
+cxx = "1.0.83"
+
+[build-dependencies]
+cxx-build = "1.0.83"
+
+[lib]
+crate-type = ["staticlib"]

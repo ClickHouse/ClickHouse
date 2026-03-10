@@ -60,6 +60,7 @@
 #cmakedefine01 USE_SIMDCOMP
 #cmakedefine01 USE_SIMSIMD
 #cmakedefine01 USE_USEARCH
+#cmakedefine01 USE_TANTIVY
 #cmakedefine01 USE_FASTPFOR
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL

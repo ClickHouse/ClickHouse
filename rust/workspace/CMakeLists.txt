@@ -17,9 +17,10 @@ endif()
 
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
+option (ENABLE_TANTIVY "Enable tantivy full-text search" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM)
-    message(STATUS "prql and skim are disabled")
+if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_TANTIVY)
+    message(STATUS "prql, skim, and tantivy are disabled")
     return()
 endif()
 
@@ -62,6 +63,12 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+endif()
+
+if (ENABLE_TANTIVY)
+    clickhouse_config_crate_flags(_ch_rust_tantivy_search)
+    target_include_directories(_ch_rust_tantivy_search INTERFACE tantivy_search/include)
+    add_library(ch_rust::tantivy ALIAS _ch_rust_tantivy_search)
 endif()
 
 add_subdirectory (wasmtime)

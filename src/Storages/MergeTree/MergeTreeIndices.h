@@ -363,6 +363,11 @@ void ginIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
 void textIndexValidator(const IndexDescription & index, bool attach);
 
+#if USE_TANTIVY
+MergeTreeIndexPtr tantivyIndexCreator(const IndexDescription & index);
+void tantivyIndexValidator(const IndexDescription & index, bool attach);
+#endif
+
 String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if index file exists in checksums, checking both original and hashed filenames.

@@ -4,5 +4,6 @@ members = [
     "skim",
     "prql",
     "wasmtime",
+    "tantivy_search",
 ]
 resolver = "2"

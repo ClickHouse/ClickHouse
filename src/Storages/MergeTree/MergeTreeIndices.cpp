@@ -186,6 +186,11 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
 
+#if USE_TANTIVY
+    registerCreator("tantivy", tantivyIndexCreator);
+    registerValidator("tantivy", tantivyIndexValidator);
+#endif
+
     /// Index type 'hypothesis' is no longer supported.
     /// To allow loading tables with old indexes, register a dummy index which allows attach but
     /// throws an exception when the user attempts to create or use it.

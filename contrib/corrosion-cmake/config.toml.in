@@ -2,6 +2,13 @@
 debug = false
 strip = true
 
+# Use Apple clang for linking on macOS to avoid LLVM sysroot issues
+[target.aarch64-apple-darwin]
+linker = "/usr/bin/clang"
+
+[target.x86_64-apple-darwin]
+linker = "/usr/bin/clang"
+
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
 inherits = "release"
