@@ -388,6 +388,7 @@ protected:
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
+    bool is_mutation = false;  /// Whether the current context is inside a mutation
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -1067,6 +1068,9 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
+
+    bool isMutation() const { return is_mutation; }
+    void setMutation(bool is_mutation_) { is_mutation = is_mutation_; }
 
     bool isUnderRestore() const { return is_under_restore; }
     void setUnderRestore(bool under_restore) { is_under_restore = under_restore; }
