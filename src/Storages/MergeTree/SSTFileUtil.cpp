@@ -147,32 +147,27 @@ private:
     uint64_t file_size;
 };
 
+/// Suppress -Wformat-nonliteral for the entire helper because the format
+/// string is forwarded from rocksdb::Logger::Logv and is never a literal.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+
 std::string formatToString(const char * format, va_list ap)
 {
     va_list ap_copy;
     va_copy(ap_copy, ap);
-
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-
     int size = vsnprintf(nullptr, 0, format, ap_copy);
     va_end(ap_copy);
 
     if (size < 0)
-        return "";
+        return {};
 
-    std::string result(size + 1, '\0');
-    if (vsnprintf(result.data(), size + 1, format, ap) < 0)
-        return "";
-
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
+    std::string result(static_cast<size_t>(size), '\0');
+    vsnprintf(result.data(), static_cast<size_t>(size) + 1, format, ap);
     return result;
 }
+
+#pragma GCC diagnostic pop
 
 
 class CHLoggerWrapper : public rocksdb::Logger
