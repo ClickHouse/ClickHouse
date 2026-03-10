@@ -37,11 +37,11 @@ namespace DDLReplicatorSetting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
     extern const int NOT_A_LEADER;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int TABLE_IS_DROPPED;
 }
 
 namespace FailPoints

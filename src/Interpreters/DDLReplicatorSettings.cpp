@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int UNKNOWN_SETTING;
-}
-
 #define LIST_OF_DDL_REPLICATOR_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, collection_name, "", "A name of a collection defined in server's config where all info for cluster authentication is defined", 0) \
     DECLARE(UInt64, max_replication_lag_to_enqueue, 50, "Replica will throw exception on attempt to execute query if its replication lag greater", 0) \

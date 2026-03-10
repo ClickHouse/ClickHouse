@@ -11,7 +11,7 @@ namespace DB
 class IAST;
 class IDatabase;
 
-/// Replicate DDLs for database (CREATE DATBASE, DROP DATABASE, ...) across cluster.
+/// Replicate DDLs for database (CREATE DATABASE, DROP DATABASE, ...) across cluster.
 class DatabaseReplicator : boost::noncopyable, WithMutableContext, public DDLReplicator
 {
 public:

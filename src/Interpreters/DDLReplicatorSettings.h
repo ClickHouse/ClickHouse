@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/SettingsChangesHistory.h>
 #include <Core/SettingsFields.h>
 
 
