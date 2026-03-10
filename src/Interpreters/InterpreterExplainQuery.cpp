@@ -476,7 +476,7 @@ bool explainQueryTree(
     return true;
 }
 
-static JSONBuilder::ItemPtr dumpASTAsJSON(const IAST & ast)
+JSONBuilder::ItemPtr dumpASTAsJSON(const IAST & ast)
 {
     auto map = std::make_unique<JSONBuilder::JSONMap>();
     map->add("id", ast.getID(' '));
@@ -543,7 +543,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto json_item = dumpASTAsJSON(*ast.getExplainedQuery());
                 auto format_settings = getFormatSettings(query_context);
                 format_settings.json.quote_64bit_integers = false;
-                JSONBuilder::FormatSettings json_format_settings{
+                JSONBuilder::FormatSettings json_format_settings
+                {
                     .settings = format_settings,
                     .solid = !settings.pretty
                 };
@@ -646,7 +647,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto format_settings = getFormatSettings(query_context);
                 format_settings.json.quote_64bit_integers = false;
 
-                JSONBuilder::FormatSettings json_format_settings{
+                JSONBuilder::FormatSettings json_format_settings
+                {
                     .settings = format_settings,
                     .solid = !settings.pretty
                 };
