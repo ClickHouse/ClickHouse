@@ -17,6 +17,8 @@ A session successfully expires after a timeout:
 111
 A session successfully expires after a timeout and the session's temporary table shadows the permanent table:
 HelloWorld
+Settings persist across reconnects in a named session:
+42
 A session cannot be used by concurrent connections:
 1
 1

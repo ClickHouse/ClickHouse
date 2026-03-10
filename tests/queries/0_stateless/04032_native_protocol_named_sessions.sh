@@ -70,6 +70,10 @@ do
 done
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_04032"
 
+echo "Settings persist across reconnects in a named session:"
+${CLICKHOUSE_CLIENT} --session_id="${CLICKHOUSE_DATABASE}_04032_10" --session_timeout=60 -q "SET max_threads=42"
+${CLICKHOUSE_CLIENT} --session_id="${CLICKHOUSE_DATABASE}_04032_10" -q "SELECT getSetting('max_threads')"
+
 echo "A session cannot be used by concurrent connections:"
 ${CLICKHOUSE_CLIENT} --session_id="${CLICKHOUSE_DATABASE}_04032_9" --session_timeout=60 --max_rows_to_read=0 --query_id="${CLICKHOUSE_DATABASE}_04032_9" -q "SELECT count() FROM system.numbers" >/dev/null 2>&1 &
 

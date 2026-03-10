@@ -644,6 +644,67 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     return session_context;
 }
 
+ContextMutablePtr Session::replaceWithNamedSession(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_)
+{
+    if (!session_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceWithNamedSession requires an existing session context");
+    if (query_context_created)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be replaced before any query context");
+    if (!user_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceWithNamedSession requires authentication");
+
+    LOG_DEBUG(log, "Replacing unnamed session with named session: {}, user_id: {}",
+            session_name_, toString(*user_id));
+
+    /// Save client info from the current session context (prepared_client_info was already consumed).
+    ClientInfo current_client_info = session_context->getClientInfo();
+
+    /// Release the session tracker handle for the unnamed session.
+    session_tracker_handle = {};
+
+    /// Drop the unnamed session context.
+    session_context.reset();
+
+    /// Acquire or create the named session from storage.
+    std::shared_ptr<NamedSessionData> new_named_session;
+    bool new_named_session_created = false;
+    std::tie(new_named_session, new_named_session_created)
+        = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
+
+    auto new_session_context = new_named_session->context;
+    new_session_context->makeSessionContext();
+
+    /// Restore client info (connection address, etc.) into the named session context.
+    new_session_context->setClientInfo(current_client_info);
+
+    auto access = new_session_context->getAccess();
+    UInt64 max_sessions_for_user = 0;
+    if (!access->tryGetUser())
+    {
+        new_session_context->setUser(*user_id, external_roles);
+        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+    }
+    else
+    {
+        auto settings = access->getDefaultSettings();
+        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
+        if (max_session_for_user_field)
+            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+    }
+
+    session_context = std::move(new_session_context);
+    named_session = new_named_session;
+    named_session_created = new_named_session_created;
+    user = session_context->getUser();
+
+    session_tracker_handle = session_context->getSessionTracker().trackSession(
+        *user_id,
+        { session_name_ },
+        max_sessions_for_user);
+
+    return session_context;
+}
+
 ContextMutablePtr Session::makeQueryContext(const ClientInfo & query_client_info) const
 {
     return makeQueryContextImpl(&query_client_info, nullptr);

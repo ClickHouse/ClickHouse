@@ -406,26 +406,21 @@ void TCPHandler::runImpl()
         if (!default_database.empty())
             DatabaseCatalog::instance().assertDatabaseExists(default_database);
 
-        /// sendHello uses sessionOrGlobalContext() for server settings, so it can be
-        /// called before makeSessionContext(). This allows us to receive the session_id
-        /// from the addendum first, then create the appropriate session context.
+        /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
+            session->makeSessionContext();
+
         sendHello();
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        /// In interserver mode queries are executed without a session context.
-        if (!is_interserver_mode)
+        /// If the client sent a session_id in the addendum, upgrade the unnamed
+        /// session to a named session so it can persist across TCP reconnects.
+        if (!is_interserver_mode && !session_id.empty())
         {
-            if (!session_id.empty())
-            {
-                auto timeout = parseNativeSessionTimeout(server.config(), session_timeout_seconds);
-                session->makeSessionContext(session_id, timeout, session_check);
-            }
-            else
-            {
-                session->makeSessionContext();
-            }
+            auto timeout = parseNativeSessionTimeout(server.config(), session_timeout_seconds);
+            session->replaceWithNamedSession(session_id, timeout, session_check);
         }
 
         {
@@ -2104,10 +2099,10 @@ void TCPHandler::sendHello()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
         if (is_interserver_mode ||
-            !session->sessionOrGlobalContext()->getSettingsRef()[Setting::apply_settings_from_server])
-            Settings::writeEmpty(*out); // send empty list of setting changes
+            !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
+            Settings::writeEmpty(*out);
         else
-            session->sessionOrGlobalContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)

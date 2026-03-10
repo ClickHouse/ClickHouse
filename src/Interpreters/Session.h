@@ -86,6 +86,12 @@ public:
     /// The function also assigns an user to this context.
     ContextMutablePtr makeSessionContext();
     ContextMutablePtr makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
+
+    /// Replaces the current (unnamed) session context with a named session.
+    /// Used by the native protocol where the session_id arrives in the addendum,
+    /// after the unnamed session context has already been created.
+    ContextMutablePtr replaceWithNamedSession(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
+
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
 
