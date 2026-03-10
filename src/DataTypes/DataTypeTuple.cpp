@@ -215,7 +215,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
 
-    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
+    const auto * serialization_tuple = dynamic_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
 
@@ -377,6 +377,10 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
+
+    if (custom_serialization)
+        return IDataType::getSerialization(kinds, info.getSettings(), custom_serialization);
+
     return IDataType::getSerialization(
         kinds, info.getSettings(), std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
 }

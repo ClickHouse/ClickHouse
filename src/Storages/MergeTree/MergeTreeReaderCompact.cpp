@@ -6,6 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace DB
 {
@@ -207,6 +208,23 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        deserialize_settings.continuous_reading = false;
+        if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
+        {
+            deserialize_settings.sst_read_stream_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> MergeTreeReaderStreamSingleColumnWholePart *
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type,
+                    substream_path,
+                    SST_DATA_FILE_EXTENSION,
+                    data_part_info_for_read->getChecksums(),
+                    storage_settings);
+                chassert(stream_name);
+                return sst_read_streams.at(*stream_name).get();
+            };
+        }
+
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {

@@ -28,6 +28,8 @@ class ReadBuffer;
 class WriteBuffer;
 class ProtobufReader;
 class ProtobufWriter;
+class SSTFileWriteStream;
+class MergeTreeReaderStreamSingleColumnWholePart;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -348,6 +350,15 @@ public:
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
     using StreamMarkGetter = std::function<MarkInCompressedFile(const SubstreamPath &)>;
+    /// Getter for SST write stream.
+    /// Injected by MergeTreeDataPartWriter and used by SST-based serializations
+    /// to obtain the SSTFileWriteStream without polluting the main stream_getter.
+    using SSTWriteStreamGetter = std::function<SSTFileWriteStream *(const SubstreamPath &)>;
+
+    /// Getter for SST read stream.
+    /// Injected by MergeTreeDataReader and used by SST-based serializations
+    /// to obtain the MergeTreeReaderStreamSingleColumnWholePart for deserialization.
+    using SSTReadStreamGetter = std::function<MergeTreeReaderStreamSingleColumnWholePart *(const SubstreamPath &)>;
 
     struct SerializeBinaryBulkSettings
     {
@@ -398,6 +409,14 @@ public:
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Optional getter for SST file write stream.
+        /// When set, SST-based serializations use this to obtain the SSTFileWriteStream
+        SSTWriteStreamGetter sst_write_stream_getter;
+
+        /// Whether the current write starts a new granule/mark.
+        /// In Wide parts, continuation granules (where mark_on_start = false)
+        bool mark_on_start = true;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -450,6 +469,11 @@ public:
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Optional getter for SST read stream.
+        /// When set, SST-based serializations use this to obtain the
+        /// MergeTreeReaderStreamSingleColumnWholePart
+        SSTReadStreamGetter sst_read_stream_getter;
 
         /// Usually substreams cache contains the whole column with rows from
         /// multiple ranges. But sometimes we need to read a separate column

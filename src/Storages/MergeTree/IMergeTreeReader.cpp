@@ -586,4 +586,26 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }
 
+std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> IMergeTreeReader::createSSTReadStream(
+    const String & stream_name,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+    clockid_t clock_type_)
+{
+    static constexpr size_t marks_count = 1;
+    auto stream_settings = settings;
+    stream_settings.is_compressed = false;
+    return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+        data_part_info_for_read->getDataPartStorage(),
+        stream_name,
+            SST_DATA_FILE_EXTENSION,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        stream_settings,
+        /*uncompressed_cache=*/nullptr,
+        data_part_info_for_read->getFileSizeOrZero(stream_name + SST_DATA_FILE_EXTENSION),
+        /*marks_loader=*/nullptr,
+        profile_callback_,
+        clock_type_);
+}
+
 }

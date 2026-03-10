@@ -8,6 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace ProfileEvents
 {
@@ -82,6 +83,11 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
 
     for (auto & stream : skip_indices_streams_holders)
         stream->cancel();
+
+    /// Cancel all SST streams.
+    for (auto & [col_name, sst_stream] : sst_file_streams)
+        sst_stream->cancel();
+    sst_file_streams.clear();
 }
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
@@ -414,6 +420,20 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
         std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+}
+
+void MergeTreeDataPartWriterOnDisk::createSSTFileStreamIfNeeded(const NameAndTypePair & name_and_type, const String & stream_name)
+{
+    if (!dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
+        return;
+
+    sst_file_streams.emplace(
+        stream_name,
+        std::make_unique<SSTFileWriteStream>(
+            escapeForFileName(name_and_type.name),
+            data_part_storage,
+            settings.max_compress_block_size,
+            settings.query_write_settings));
 }
 
 void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block & block)

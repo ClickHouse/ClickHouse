@@ -363,6 +363,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
     registerDataTypeJSON(*this);
+    registerDataTypeSortedStringKV(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

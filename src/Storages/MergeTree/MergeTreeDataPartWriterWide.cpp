@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/NullWriteBuffer.h>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace DB
 {
@@ -206,6 +207,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings);
+
+        createSSTFileStreamIfNeeded(name_and_type, stream_name);
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -543,6 +546,16 @@ void MergeTreeDataPartWriterWide::writeColumn(
         return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
     };
 
+    if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
+    {
+        serialize_settings.sst_write_stream_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> SSTFileWriteStream *
+            {
+                auto stream_name = getStreamName(name_and_type, substream_path);
+                return sst_file_streams.at(stream_name).get();
+            };
+    }
+
     for (const auto & granule : granules)
     {
         data_written = true;
@@ -556,6 +569,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
                                 getCurrentMark(), index_granularity->getMarksCount(), rows_written_in_last_mark);
             last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, offset_substreams);
         }
+
+        serialize_settings.mark_on_start = granule.mark_on_start;
 
         writeSingleGranule(
             name_and_type,
@@ -812,6 +827,10 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
     if (!columns_list.empty())
         fillDataChecksums(checksums, checksums_to_remove);
 
+    /// SST columns are independent files — finalize and checksum them separately.
+    for (auto & [col_name, sst_stream] : sst_file_streams)
+        sst_stream->fillSSTChecksums(checksums);
+
     if (settings.rewrite_primary_key)
         fillPrimaryIndexChecksums(checksums);
 
@@ -823,6 +842,14 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
         finishDataSerialization(sync);
+
+    for (auto & [col_name, sst_stream] : sst_file_streams)
+    {
+        sst_stream->finalize();
+        if (sync)
+            sst_stream->sync();
+    }
+    sst_file_streams.clear();
 
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(sync);

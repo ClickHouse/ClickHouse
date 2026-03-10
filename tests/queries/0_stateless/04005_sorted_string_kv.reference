@@ -1,0 +1,49 @@
+Test 1: Compact part - multiple granules and boundary reading
+10000
+8190	key8190	value81900
+8191	key8191	value81910
+8192	key8192	value81920
+8193	key8193	value81930
+8194	key8194	value81940
+8195	key8195	value81950
+1	1	1	1
+1111
+Test 2: Wide part - multiple granules with continuous_reading
+10000
+8190	key8190	value81900
+8191	key8191	value81910
+8192	key8192	value81920
+8193	key8193	value81930
+8194	key8194	value81940
+8195	key8195	value81950
+1	1	1	1	1
+1
+0
+Test 3: Wide part - continuous_reading across multiple parts
+1	part1_key1	part1_val1
+2	part1_key2	part1_val2
+100	part2_key1	part2_val1
+200	part3_key1	part3_val1
+1	part1_key1	part1_val1
+2	part1_key2	part1_val2
+100	part2_key1	part2_val1
+200	part3_key1	part3_val1
+1	1
+Test 4: SortedStringKV with composite primary key
+1	sensor1	25.5	2024-01-01
+2	sensor2	30.0	2024-01-01
+3	sensor3	28.3	2024-01-02
+1	sensor1	25.5
+2	sensor2	30.0
+Test 5: Empty SortedStringKV column after DELETE
+0
+Test 6: Large dataset - multiple granules and filtering
+25000
+11
+1	1	1	1	1
+1
+11111
+Test 7: Multiple SortedStringKV columns in same table
+1	key1	val1	a	b
+2	key2	val2	c	d
+Test 8: NEGATIVE TEST - Wrong sort order (id instead of kv.1)

@@ -4,6 +4,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace DB
 {
@@ -96,6 +97,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
         compressed_streams.emplace(stream_name, stream);
+        createSSTFileStreamIfNeeded(name_and_type, stream_name);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -156,6 +158,7 @@ void writeColumnSingleGranule(
     const SerializationPtr & serialization,
     ISerialization::OutputStreamGetter stream_getter,
     ISerialization::StreamMarkGetter stream_mark_getter,
+    ISerialization::SSTWriteStreamGetter sst_write_stream_getter,
     size_t from_row,
     size_t number_of_rows,
     bool is_first_granule,
@@ -181,6 +184,7 @@ void writeColumnSingleGranule(
         serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX_EMPTY;
     serialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     serialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+    serialize_settings.sst_write_stream_getter = std::move(sst_write_stream_getter);
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -307,9 +311,22 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
+            ISerialization::SSTWriteStreamGetter sst_write_stream_getter;
+            if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type->type->getCustomName()))
+            {
+                sst_write_stream_getter
+                    = [&](const ISerialization::SubstreamPath & substream_path) -> SSTFileWriteStream *
+                    {
+                        String sst_stream_name = ISerialization::getFileNameForStream(
+                            *name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                        return sst_file_streams.at(sst_stream_name).get();
+                    };
+            }
+
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, settings);
+                stream_getter, stream_mark_getter, sst_write_stream_getter, granule.start_row, granule.rows_to_write,
+                !data_written, settings);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next();
@@ -410,7 +427,7 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
 
         auto mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
         const auto & column = sample.getByName(name_and_type.name);
-        writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, mark_getter, column.column->size(), 0, false, settings);
+        writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, mark_getter, {}, column.column->size(), 0, false, settings);
     }
 }
 
@@ -538,6 +555,9 @@ void MergeTreeDataPartWriterCompact::fillChecksums(MergeTreeDataPartChecksums & 
     if (!columns_list.empty())
         fillDataChecksums(checksums);
 
+    for (auto & [col_name, sst_stream] : sst_file_streams)
+        sst_stream->fillSSTChecksums(checksums);
+
     if (settings.rewrite_primary_key)
         fillPrimaryIndexChecksums(checksums);
 
@@ -549,6 +569,14 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
     // If we don't have anything to write, skip finalization.
     if (!columns_list.empty())
         finishDataSerialization(sync);
+
+    for (auto & [col_name, sst_stream] : sst_file_streams)
+    {
+        sst_stream->finalize();
+        if (sync)
+            sst_stream->sync();
+    }
+    sst_file_streams.clear();
 
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(sync);

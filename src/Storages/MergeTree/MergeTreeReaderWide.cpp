@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace DB
 {
@@ -274,6 +275,14 @@ void MergeTreeReaderWide::addStreams(
         {
             has_all_streams = false;
             return;
+        }
+
+        if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
+        {
+            auto sst_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, SST_DATA_FILE_EXTENSION,
+                data_part_info_for_read->getChecksums(), storage_settings);
+            sst_read_streams.emplace(*sst_stream_name, createSSTReadStream(*sst_stream_name, profile_callback, clock_type));
         }
 
         if (streams.contains(*stream_name))
@@ -609,6 +618,21 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
+    if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
+    {
+        deserialize_settings.sst_read_stream_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> MergeTreeReaderStreamSingleColumnWholePart *
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type,
+                    substream_path,
+                    SST_DATA_FILE_EXTENSION,
+                    data_part_info_for_read->getChecksums(),
+                    storage_settings);
+                chassert(stream_name);
+                return sst_read_streams.at(*stream_name).get();
+            };
+    }
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(

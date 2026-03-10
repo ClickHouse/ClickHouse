@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <DataTypes/DataTypeSortedStringKV.h>
 
 namespace DB
 {
@@ -133,6 +134,17 @@ try
         all_mark_ranges, stream_settings,uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
+
+    for (auto & column : columns_to_read)
+    {
+        if (dynamic_cast<const DataTypeSortedStringKV *>(column.type->getCustomName()))
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, {}, SST_DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
+            chassert(stream_name);
+            sst_read_streams.emplace(*stream_name, createSSTReadStream(*stream_name, profile_callback, clock_type));
+        }
+    }
 
     initialized = true;
 }

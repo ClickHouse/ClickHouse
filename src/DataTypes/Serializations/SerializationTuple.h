@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class SerializationTuple final : public SimpleTextSerialization
+class SerializationTuple : public SimpleTextSerialization
 {
 public:
     using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
