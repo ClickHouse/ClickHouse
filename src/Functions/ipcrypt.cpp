@@ -131,12 +131,12 @@ public:
         {
             IPCryptPFX ctx;
             int rc = ipcrypt_pfx_init(&ctx, key_bytes);
-            SCOPE_EXIT({ ipcrypt_pfx_deinit(&ctx); });
             if (rc != 0)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid PFX key for function {}: the two 16-byte key halves must not be identical",
                     getName());
+            SCOPE_EXIT({ ipcrypt_pfx_deinit(&ctx); });
             return processRows(arguments, ctx, input_rows_count);
         }
         else
