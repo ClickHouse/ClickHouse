@@ -14,6 +14,7 @@ RUN apt-get update \
 
 RUN apt-get update \
     && apt-get install \
+        libc6-dbg \
         sudo \
         apt-transport-https \
         apt-utils \
@@ -27,8 +28,9 @@ RUN apt-get update \
         wget \
         iptables \
         iproute2 \
+        gh \
         --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
+    && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
@@ -44,6 +46,32 @@ RUN apt-get update \
 RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
+# Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
+# Must match LLVM_VERSION used for building (21)
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        llvm-${LLVM_VERSION} \
+        make \
+        libdatetime-perl \
+        libcapture-tiny-perl \
+        libjson-xs-perl \
+        libperlio-gzip-perl \
+    && ln -s /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
+    && ln -s /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install newer lcov from source
+# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
+RUN cd /tmp \
+    && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
+    && tar xzf lcov-2.4.tar.gz \
+    && cd lcov-2.4 \
+    && make install \
+    && cd /tmp \
+    && rm -rf lcov-2.4 lcov-2.4.tar.gz
+
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
@@ -55,6 +83,7 @@ RUN apt-get update \
         bsdmainutils \
         build-essential \
         git \
+        openssh-client \
         gperf \
         moreutils \
         less \
@@ -63,10 +92,10 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        lcov \
         netbase \
         perl \
         pv \
+        python3-requests \
         ripgrep \
         zstd \
         locales \

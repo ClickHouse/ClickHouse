@@ -5,11 +5,13 @@ FROM clickhouse/test-base:$FROM_TAG
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 
-RUN sed -i "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
-RUN apt-get update \
-    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
+RUN rm -rf /etc/apt/sources.list.d/*.list \
+    && apt-get update -o Acquire::Check-Valid-Until=false || apt-get update --allow-insecure-repositories \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions || \
+       (apt-get install ca-certificates --yes --no-install-recommends --verbose-versions --allow-unauthenticated)
+
+RUN sed -i "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \

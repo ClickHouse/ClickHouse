@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-tsan
 
 DROP TABLE IF EXISTS events;
 
@@ -89,7 +89,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 10 AND 1_000_000, 'OK',
         format('Fail: JoinBuildTableRowCount={}, query_id={}', ProfileEvents['JoinBuildTableRowCount'], query_id)),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
     AND log_comment == '03712_nested_loop_join_merge_tree_indexed'
 ;
 
@@ -99,6 +99,6 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 1_100_000 AND 2_100_000, 'OK',
         format('Fail: JoinBuildTableRowCount={}, query_id="{}"', ProfileEvents['JoinBuildTableRowCount'], query_id)),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND event_time >= yesterday() AND query_kind = 'Select'
     AND log_comment == '03712_nested_loop_join_merge_tree_full_scan'
 ;

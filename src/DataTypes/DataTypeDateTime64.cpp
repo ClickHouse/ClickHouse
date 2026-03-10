@@ -50,8 +50,8 @@ std::string DataTypeDateTime64::doGetName() const
 void DataTypeDateTime64::updateHashImpl(SipHash & hash) const
 {
     Base::updateHashImpl(hash);
-    if (has_explicit_time_zone)
-        hash.update(getDateLUTTimeZone(time_zone));
+    /// Do not include timezone in hash: equals() considers types with different
+    /// timezones as equal (only scale matters), and hash must be consistent with equality.
 }
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const

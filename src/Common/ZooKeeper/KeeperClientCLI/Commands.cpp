@@ -390,7 +390,11 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
         bool onListChildren(const fs::path & path, const Strings & children, const KeeperClientBase * client_) const
         {
             if (children.size() >= threshold)
+            {
                 client_->cout << static_cast<String>(path) << "\t" << children.size() << "\n";
+                /// Do not traverse children of super nodes
+                return false;
+            }
             return true;
         }
 

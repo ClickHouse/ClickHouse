@@ -63,7 +63,7 @@ fragment DURATION_FORMAT options {
 
 NUMBER: INTEGER_NUMBER | FLOATING_POINT | SCIENTIFIC_NUMBER | INF | NAN | HEXADECIMAL_NUMBER | DURATION_FORMAT;
 
-STRING: '\'' (~('\'' | '\\') | '\\' .)* '\'' | '"' (~('"' | '\\') | '\\' .)* '"';
+STRING: '\'' (~('\'' | '\\') | '\\' .)* '\'' | '"' (~('"' | '\\') | '\\' .)* '"' | '`' (~'`')* '`';
 
 // Binary operators
 

@@ -183,7 +183,8 @@ public:
         std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
-        bool commit_once_processed_);
+        bool commit_once_processed_,
+        bool add_deduplication_info_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -250,6 +251,8 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    const bool add_deduplication_info;
+    const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
     LoggerPtr log;

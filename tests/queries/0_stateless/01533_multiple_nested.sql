@@ -40,7 +40,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen'] - ProfileEvents['CreatedReadBufferDirectIOFailed']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
-    AND event_date >= yesterday() AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase();
 
 SYSTEM CLEAR MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
@@ -50,7 +50,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen'] - ProfileEvents['CreatedReadBufferDirectIOFailed']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col3.n2.s FROM %nested%'))
-    AND event_date >= yesterday() AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase();
 
 DROP TABLE nested;
 

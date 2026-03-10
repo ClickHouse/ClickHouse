@@ -8,6 +8,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -74,7 +75,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
-        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
+        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name, nullptr);
 
     if (rename.database)
         return executeToDatabase(rename, descriptions);
@@ -126,7 +127,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
@@ -166,6 +167,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
+
+            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
+            if (exchange_tables)
+                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
         }
         catch (...)
         {

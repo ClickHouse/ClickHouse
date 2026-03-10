@@ -102,6 +102,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
@@ -323,11 +324,12 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 #if USE_JEMALLOC
-    Jemalloc::setup(
+    Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
         server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
+        server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
     Poco::Logger * log = &logger();
 
@@ -635,18 +637,19 @@ try
         getKeeperPath(config()),
         /* zk_node_cache_= */ nullptr,
         unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
+        [&](ConfigurationPtr loaded_config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
-            update_memory_soft_limit_in_config(*config);
+            updateLevels(config(), logger());
+            update_memory_soft_limit_in_config(config());
 
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
+            if (config().has("keeper_server"))
+                global_context->updateKeeperConfiguration(config());
 
 #if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
-            CertificateReloader::instance().tryLoadClient(*config);
+            CertificateReloader::instance().tryLoad(config());
+            CertificateReloader::instance().tryLoadClient(config());
 #endif
         });
 
@@ -655,6 +658,10 @@ try
         main_config_reloader.reset();
 
         async_metrics.stop();
+
+        /// Signal Keeper TCP handlers to close before waiting for connections,
+        /// otherwise they keep running indefinitely and block shutdown.
+        global_context->signalKeeperDispatcherShutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;

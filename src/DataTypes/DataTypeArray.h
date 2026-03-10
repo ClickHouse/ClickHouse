@@ -59,7 +59,7 @@ public:
     /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
     /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.
     bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {

@@ -20,7 +20,7 @@ class ITTLMergeSelector : public IMergeSelector
     friend class MergeRangesConstructor;
 
 public:
-    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_);
+    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -45,18 +45,31 @@ private:
     bool needToPostponePartition(const std::string & partition_id) const;
 
     std::vector<CenterPosition> findCenters(const PartsRanges & parts_ranges) const;
-    PartsIterator findLeftRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const;
-    PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const;
+
+    PartsIterator findLeftRangeBorder(
+        const CenterPosition & center_position,
+        size_t & usable_memory,
+        size_t & usable_rows,
+        size_t & usable_parts,
+        DisjointPartsRangesSet & disjoint_set) const;
+
+    PartsIterator findRightRangeBorder(
+        const CenterPosition & center_position,
+        size_t & usable_memory,
+        size_t & usable_rows,
+        size_t & usable_parts,
+        DisjointPartsRangesSet & disjoint_set) const;
 
     const time_t current_time;
     const PartitionIdToTTLs * merge_due_times;
+    const size_t max_parts_to_merge_at_once;
 };
 
 /// Select parts that must be fully deleted because of ttl for part.
 class TTLPartDropMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLPartDropMergeSelector(time_t current_time_);
+    explicit TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;

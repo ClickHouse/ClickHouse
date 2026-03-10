@@ -1,7 +1,9 @@
 #include <string_view>
-#include <unordered_map>
+
+#include <base/scope_guard.h>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -214,9 +216,6 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_exp_list->children.push_back(aggregate_function);
 
     auto select_query = make_intrusive<ASTSelectQuery>();
-    select_query->children.push_back(select_exp_list);
-    select_query->children.push_back(tables_in_select);
-
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
@@ -525,8 +524,8 @@ static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&.
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+        ast_function->setIsLambdaFunction(true);
+        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
     }
     return ast_function;
 }
@@ -879,10 +878,18 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Look up token position from the map stored in Expected
+    if (!expected.literal_token_map)
+        return;
+
+    auto it = expected.literal_token_map->find(literal);
+    if (it == expected.literal_token_map->end())
+        return;
+
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = literal->begin.value()->begin,
-       .end = literal->begin.value()->end,
+       .begin = it->second.begin,
+       .end = it->second.end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1188,8 +1195,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
-            function_node->is_operator = is_operator;
+            function_node->setIsCompoundName(is_compound_name);
+            function_node->setIsOperator(is_operator);
 
             if (parameters)
             {
@@ -1217,14 +1224,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::IGNORE_NULLS;
+                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
 
             if (over.ignore(pos, expected))
             {
-                function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+                function_node->setIsWindowFunction(true);
+                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1256,6 +1263,27 @@ private:
     bool is_operator;
 };
 
+/// Check if all elements are ASTLiteral nodes without aliases, and their field types
+/// are either scalar or match `allowed_compound_type`. This mirrors the cases that
+/// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
+/// tuples inside tuples) with scalar leaf literals and no aliases.
+static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types::Which allowed_compound_type)
+{
+    for (const auto & elem : elements)
+    {
+        const auto * literal = elem->as<ASTLiteral>();
+        if (!literal)
+            return false;
+        if (!elem->tryGetAlias().empty())
+            return false;
+        auto field_type = literal->value.getType();
+        if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
+            if (field_type != allowed_compound_type)
+                return false;
+    }
+    return true;
+}
+
 /// Layer for priority brackets and the tuple function
 class RoundBracketsLayer : public Layer
 {
@@ -1280,10 +1308,27 @@ public:
 
             if (!is_tuple && elements.size() == 1)
             {
-                // Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// When a single element is an ASTLiteral(Tuple), unwrap it into
+                /// individual elements so that getResultImpl re-converts them to
+                /// a single ASTLiteral(Tuple) — preserving the same AST shape as
+                /// the original inner parse, without an extra tuple() wrapper.
+                /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
-                    if (literal->value.getType() == Field::Types::Tuple)
+                {
+                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    {
+                        /// Save the tuple value before clearing elements,
+                        /// because elements.clear() destroys the ASTLiteral
+                        /// that owns it.
+                        Tuple tup = literal->value.safeGet<Tuple>();
+                        elements.clear();
+                        elements.reserve(tup.size());
+                        for (auto & elem : tup)
+                            elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
+                    }
+                }
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
@@ -1301,9 +1346,24 @@ protected:
     {
         // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
+        {
             node = std::move(elements[0]);
+        }
+        else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
+        {
+            /// Produce ASTLiteral(Tuple) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which requires >= 2 elements
+            /// for tuples and accepts same-bracket nesting only).
+            Tuple tup;
+            tup.reserve(elements.size());
+            for (auto & elem : elements)
+                tup.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(tup));
+        }
         else
+        {
             node = makeASTOperator("tuple", std::move(elements));
+        }
 
         return true;
     }
@@ -1324,7 +1384,20 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTOperator("array", std::move(elements));
+        if (allElementsAreCompatibleLiterals(elements, Field::Types::Array))
+        {
+            /// Produce ASTLiteral(Array) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which accepts same-bracket nesting only).
+            Array arr;
+            arr.reserve(elements.size());
+            for (auto & elem : elements)
+                arr.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(arr));
+        }
+        else
+        {
+            node = makeASTOperator("array", std::move(elements));
+        }
         return true;
     }
 };
@@ -2411,6 +2484,13 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Set up map to capture literal token positions for regex highlighting.
+    /// Only needed when highlighting is enabled and no map is already set.
+    LiteralTokenMap local_token_map;
+    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
+    if (expected.enable_highlighting && !expected.literal_token_map)
+        expected.literal_token_map = &local_token_map;
+
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
@@ -2460,7 +2540,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().setNoEmptyArgs(true);
         return true;
     }
 
@@ -2679,16 +2759,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 
@@ -2750,6 +2821,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 return Action::OPERATOR;
             }
 
+            /// If subquery starts with a valid "SELECT" or "EXPLAIN", but failed later. It means there is a syntax error.
+            if (subquery_parser.startsWithValidSelectOrExplain())
+                return Action::NONE;
+
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
             return Action::OPERAND;
@@ -2784,6 +2859,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         return Action::NONE;
 
     /// Try to find operators from 'operators_table'
+    auto saved_pos = pos;
     auto cur_op = operators_table.begin();
     for (; cur_op != operators_table.end(); ++cur_op)
     {
@@ -2811,7 +2887,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (op.type == OperatorType::Lambda)
     {
         if (!layers.back()->parseLambda())
+        {
+            /// Restore the position: parseOperator already advanced past '->',
+            /// but parseLambda failed, so we must not consume the token.
+            pos = saved_pos;
             return Action::NONE;
+        }
 
         layers.back()->pushOperator(op);
         return Action::OPERAND;

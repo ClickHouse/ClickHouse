@@ -233,7 +233,7 @@ WHERE Sex IN (0, 1);
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, properties, documentation });
+    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, documentation, properties });
 }
 
 }

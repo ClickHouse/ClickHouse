@@ -20,6 +20,8 @@ class ObjectStorageQueueIFileMetadata
 public:
     struct FileStatus
     {
+        explicit FileStatus(const std::string & path_) : path(path_) {}
+
         enum class State : uint8_t
         {
             Processing,
@@ -41,6 +43,7 @@ public:
 
         std::mutex processing_lock;
 
+        const std::string path;
         std::atomic<State> state = State::None;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<time_t> processing_start_time = 0;
@@ -92,6 +95,7 @@ public:
 
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
+        const std::string & zookeeper_name_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
         const std::string & failed_node_path_,
@@ -159,6 +163,11 @@ public:
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests reset processing without marking as failed.
+    void finalizeResetProcessing();
+    /// Whether prepareFailedRequests just reset processing
+    /// without actually marking the file as failed.
+    bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
@@ -189,12 +198,12 @@ protected:
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
+    const std::string zookeeper_name;
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
-
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
@@ -204,6 +213,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// Whether prepareFailedRequests just reset processing without actually
+    /// marking the file as failed (when reduce_retry_count was false).
+    bool processing_reset_without_failure = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;

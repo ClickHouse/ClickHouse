@@ -76,7 +76,7 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (storage_columns.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(options.kind, column))
             table_columns.insert(column);
     }
 
@@ -354,11 +354,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (where_optimizer_context.use_statistics)
         {
             cond.good = cond.viable;
-
             cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
-
-            if (node.getASTNode() != nullptr)
-                LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
+            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)

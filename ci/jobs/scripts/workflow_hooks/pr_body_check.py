@@ -60,6 +60,11 @@ if __name__ == "__main__":
     if not title or not body:
         print("WARNING: Failed to get PR title or body, read from environment")
         body = Info().pr_body
+        labels = Info().pr_labels
+
+    if "release" in labels or "release-lts" in labels:
+        print("NOTE: Release PR detected, skipping changelog entry check")
+        sys.exit(0)
 
     error, category = get_category(body)
     if error or not category:

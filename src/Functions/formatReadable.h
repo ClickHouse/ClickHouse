@@ -23,16 +23,22 @@ namespace ErrorCodes
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */
 
-template <typename Impl>
 class FunctionFormatReadable : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    using FormatFunc = void (*)(double, WriteBuffer &, int);
+
+    FunctionFormatReadable(const char * name_, FormatFunc format_func_)
+        : function_name(name_), format_func(format_func_) {}
+
+    static FunctionPtr create(const char * name, FormatFunc format_func)
+    {
+        return std::make_shared<FunctionFormatReadable>(name, format_func);
+    }
 
     String getName() const override
     {
-        return name;
+        return function_name;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -73,13 +79,17 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// The cost of the virtual call for getFloat64 is negligible compared with the format calls
-            Impl::format(arguments[0].column->getFloat64(i), buf_to);
+            format_func(arguments[0].column->getFloat64(i), buf_to, 2);
             offsets_to[i] = buf_to.count();
         }
 
         buf_to.finalize();
         return col_to;
     }
+
+private:
+    const char * function_name;
+    FormatFunc format_func;
 };
 
 }

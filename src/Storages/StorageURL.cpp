@@ -1673,11 +1673,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
 }
 
-StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context)
+StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
 {
     StorageURL::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
@@ -1716,7 +1716,7 @@ void registerStorageURL(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
+            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
 

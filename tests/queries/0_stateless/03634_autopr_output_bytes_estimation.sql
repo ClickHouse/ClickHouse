@@ -1,10 +1,13 @@
--- Tags: stateful, long
+-- Tags: stateful, long, no-msan
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
 -- External aggregation is not supported as of now
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+
+-- Override randomized max_threads to avoid timeout on slow builds (ASan)
+SET max_threads=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 

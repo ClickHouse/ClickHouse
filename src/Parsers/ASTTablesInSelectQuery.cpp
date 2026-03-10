@@ -37,6 +37,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(subquery);
     CLONE(sample_size);
     CLONE(sample_offset);
+    CLONE(column_aliases);
 
     return res;
 }
@@ -118,7 +119,7 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << " ";
         database_and_table_name->format(ostr, settings, state, frame);
     }
-    else if (table_function && !(table_function->as<ASTFunction>()->prefer_subquery_to_function_formatting && subquery))
+    else if (table_function && !(table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting() && subquery))
     {
         ostr << " ";
         table_function->format(ostr, settings, state, frame);
@@ -127,6 +128,16 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     {
         ostr << settings.nl_or_ws << indent_str;
         subquery->format(ostr, settings, state, frame);
+    }
+
+    /// format column aliases (`AS t(a, b)` -> the (a, b) part)
+    if (column_aliases)
+    {
+        ostr << "(";
+        auto column_aliases_frame = frame;
+        column_aliases_frame.expression_list_prepend_whitespace = false;
+        column_aliases->format(ostr, settings, state, column_aliases_frame);
+        ostr << ")";
     }
 
     if (final)
@@ -239,7 +250,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
        /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
          *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
          *     defined earlier in the query
-         *  2. collapse_identical_nodes_to_aliases is false (new analyzer) - because we will not make any substitutions
+         *  2. collapse_identical_nodes_to_aliases is false (the analyzer) - because we will not make any substitutions
          */
         bool on_need_parens = false;
         auto on_alias = on_expression->tryGetAlias();
