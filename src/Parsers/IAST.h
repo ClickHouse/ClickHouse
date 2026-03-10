@@ -402,6 +402,10 @@ public:
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
+    /// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, DELETE, CREATE, etc.
+    /// Useful for deciding whether a query needs to be detached or run asynchronously.
+    static bool isNonReadOnlyQuery(const IAST * ast);
+
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {

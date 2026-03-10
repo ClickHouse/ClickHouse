@@ -103,33 +103,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, INSERT...SELECT, DELETE, etc.
-bool isNonReadOnlyQuery(const IAST * ast)
-{
-    if (!ast)
-        return false;
-    switch (ast->getQueryKind())
-    {
-        case IAST::QueryKind::Insert:
-        case IAST::QueryKind::Delete:
-        case IAST::QueryKind::Update:
-        case IAST::QueryKind::Create:
-        case IAST::QueryKind::Drop:
-        case IAST::QueryKind::Undrop:
-        case IAST::QueryKind::Rename:
-        case IAST::QueryKind::Alter:
-        case IAST::QueryKind::Grant:
-        case IAST::QueryKind::Revoke:
-        case IAST::QueryKind::Move:
-        case IAST::QueryKind::Optimize:
-        case IAST::QueryKind::Backup:
-        case IAST::QueryKind::Restore:
-        case IAST::QueryKind::Copy:
-            return true;
-        default:
-            return false;
-    }
-}
 
 bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
@@ -616,7 +589,7 @@ void HTTPHandler::processQuery(
             else
                 ast = parseQuery(parser, query_to_parse.data(), query_to_parse.data() + query_to_parse.size(), "", max_query_size_val, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-            if (ast && isNonReadOnlyQuery(ast.get()))
+            if (ast && IAST::isNonReadOnlyQuery(ast.get()))
             {
                 const String query_id = context->getClientInfo().current_query_id;
                 ContextMutablePtr async_context = Context::createCopy(context);

@@ -38,6 +38,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Server/TCPServer.h>
@@ -216,33 +217,6 @@ void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo &
     }
 }
 
-/// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, INSERT...SELECT, DELETE, etc.
-bool isNonReadOnlyQuery(const IAST * ast)
-{
-    if (!ast)
-        return false;
-    switch (ast->getQueryKind())
-    {
-        case IAST::QueryKind::Insert:
-        case IAST::QueryKind::Delete:
-        case IAST::QueryKind::Update:
-        case IAST::QueryKind::Create:
-        case IAST::QueryKind::Drop:
-        case IAST::QueryKind::Undrop:
-        case IAST::QueryKind::Rename:
-        case IAST::QueryKind::Alter:
-        case IAST::QueryKind::Grant:
-        case IAST::QueryKind::Revoke:
-        case IAST::QueryKind::Move:
-        case IAST::QueryKind::Optimize:
-        case IAST::QueryKind::Backup:
-        case IAST::QueryKind::Restore:
-        case IAST::QueryKind::Copy:
-            return true;
-        default:
-            return false;
-    }
-}
 
 void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
 {
@@ -638,7 +612,7 @@ void TCPHandler::runImpl()
                     ParserQuery parser(query_state->query.data() + query_state->query.size(), settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
                     ASTPtr ast = parseQuery(parser, query_state->query.data(), query_state->query.data() + query_state->query.size(), "", max_query_size, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
 
-                    if (ast && isNonReadOnlyQuery(ast.get()))
+                    if (ast && IAST::isNonReadOnlyQuery(ast.get()))
                     {
                         const auto * insert_ast = ast->as<ASTInsertQuery>();
                         bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();

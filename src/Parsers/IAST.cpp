@@ -360,4 +360,52 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
+// TODO(kavi): may be rename it to "isWriteOnlyQuery"?
+// unwanted negation (Non) here I think.
+bool IAST::isNonReadOnlyQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+    switch (ast->getQueryKind())
+    {
+        case QueryKind::Insert:
+        case QueryKind::Delete:
+        case QueryKind::Update:
+        case QueryKind::Create:
+        case QueryKind::Drop:
+        case QueryKind::Undrop:
+        case QueryKind::Rename:
+        case QueryKind::Alter:
+        case QueryKind::Grant:
+        case QueryKind::Revoke:
+        case QueryKind::Move:
+        case QueryKind::Optimize:
+        case QueryKind::Backup:
+        case QueryKind::Restore:
+        case QueryKind::Copy:
+            return true;
+
+        case QueryKind::None:
+        case QueryKind::Select:
+        case QueryKind::Check:
+        case QueryKind::System:
+        case QueryKind::Set:
+        case QueryKind::Use:
+        case QueryKind::Show:
+        case QueryKind::Exists:
+        case QueryKind::Describe:
+        case QueryKind::Explain:
+        case QueryKind::KillQuery:
+        case QueryKind::ExternalDDL:
+        case QueryKind::Begin:
+        case QueryKind::Commit:
+        case QueryKind::Rollback:
+        case QueryKind::SetTransactionSnapshot:
+        case QueryKind::AsyncInsertFlush:
+        case QueryKind::ParallelWithQuery:
+            return false;
+    }
+    UNREACHABLE();
+}
+
 }
