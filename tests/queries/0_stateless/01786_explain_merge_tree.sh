@@ -24,7 +24,7 @@ do
     echo "-----------------"
 
     $CH_CLIENT -q "
-        explain indexes = 1, json = 1 select *, _part from test_index where t % 19 = 16 and y > 0 and bitAnd(z, 3) != 1 and x > 10 and t % 20 > 14 format TSVRaw;
+        explain indexes = 1, json = 1, pretty = 1 select *, _part from test_index where t % 19 = 16 and y > 0 and bitAnd(z, 3) != 1 and x > 10 and t % 20 > 14 format TSVRaw;
         " | grep -A 100 "ReadFromMergeTree" | grep -v "Condition"
 
     echo "-----------------"
