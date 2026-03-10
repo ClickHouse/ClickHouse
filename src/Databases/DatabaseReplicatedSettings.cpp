@@ -106,6 +106,11 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
 
 String DatabaseReplicatedSettings::toString() const
 {
-    return impl->toString();
+    String result = impl->toString();
+    String ddl_result = ddl_replicator_settings.toString();
+    if (!result.empty() && !ddl_result.empty())
+        result += ", ";
+    result += ddl_result;
+    return result;
 }
 }
