@@ -506,7 +506,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            /*lazy_materializing_rows=*/nullptr,
+            runtime_filter_pruner);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -615,7 +617,9 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            /*lazy_materializing_rows=*/nullptr,
+            runtime_filter_pruner);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -732,7 +736,9 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            /*lazy_materializing_rows=*/nullptr,
+            runtime_filter_pruner);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -4221,4 +4227,77 @@ bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
 
     return canRemoveUnusedColumns() && output_header->columns() > 0;
 }
+
+void ReadFromMergeTree::detectRuntimeFilterForGranulePruning(const ActionsDAG & filter_dag)
+{
+    const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+
+    /// Collect `__applyFilter` conditions on PK columns by iterating the flat node list.
+    /// This method may be called multiple times (once for PREWHERE DAG, once for Filter step DAG)
+    /// to accumulate filters from different sources.
+    std::vector<RuntimeFilterPKInfo> filter_pk_infos;
+
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION
+            || !node.function_base
+            || node.function_base->getName() != "__applyFilter"
+            || node.children.size() != 2)
+            continue;
+
+        /// First child: constant string with the filter name
+        const auto * filter_name_node = node.children[0];
+        if (filter_name_node->type != ActionsDAG::ActionType::COLUMN
+            || !filter_name_node->column)
+            continue;
+
+        auto filter_name = String(filter_name_node->column->getDataAt(0));
+
+        /// Second child: key column (possibly wrapped in a cast function)
+        const auto * key_node = node.children[1];
+
+        /// Unwrap `_CAST` (the only function that `joinRuntimeFilter.cpp` inserts
+        /// around the key column via `ActionsDAG::addCast`) to find the original input column.
+        while (key_node->type == ActionsDAG::ActionType::FUNCTION
+               && key_node->function_base
+               && key_node->function_base->getName() == "_CAST"
+               && !key_node->children.empty())
+            key_node = key_node->children[0];
+
+        if (key_node->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        const auto & key_column_name = key_node->result_name;
+
+        /// Find position in primary key
+        for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+        {
+            if (primary_key.column_names[i] == key_column_name)
+            {
+                filter_pk_infos.push_back({filter_name, i});
+                break;
+            }
+        }
+    }
+
+    if (filter_pk_infos.empty())
+        return;
+
+    auto runtime_filter_lookup = context->getRuntimeFilterLookup();
+    if (!runtime_filter_lookup)
+        return;
+
+    /// Accumulate filter infos (this method may be called multiple times:
+    /// once for PREWHERE DAG, once for Filter step DAG).
+    runtime_filter_pk_infos.insert(runtime_filter_pk_infos.end(), filter_pk_infos.begin(), filter_pk_infos.end());
+
+    LOG_DEBUG(log, "Registered {} runtime filter(s) for granule pruning ({} total)",
+        filter_pk_infos.size(), runtime_filter_pk_infos.size());
+
+    runtime_filter_pruner = std::make_shared<RuntimeFilterGranulePruner>(
+        runtime_filter_pk_infos,
+        std::move(runtime_filter_lookup),
+        primary_key.data_types);
+}
+
 }

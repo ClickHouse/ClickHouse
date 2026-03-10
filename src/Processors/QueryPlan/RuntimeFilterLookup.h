@@ -51,6 +51,14 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
+    /// Returns the column of exact set values if this is an exact filter, inserts are finished,
+    /// and the set did not overflow. Used for granule-level pruning via primary key index.
+    /// Returns nullptr if exact set is not available.
+    virtual ColumnPtr getExactSetColumn() const { return nullptr; }
+
+    /// Whether all inserts have been completed (right side of join fully read).
+    bool insertsAreFinished() const { return inserts_are_finished.load(std::memory_order_acquire); }
+
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
@@ -153,6 +161,15 @@ public:
     }
 
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+
+    ColumnPtr getExactSetColumn() const override
+    {
+        if constexpr (negate)
+            return nullptr; /// NOT IN semantics: can't use for granule pruning
+        if (!inserts_are_finished || is_full || !exact_values)
+            return nullptr;
+        return getValuesColumn();
+    }
 
 protected:
 

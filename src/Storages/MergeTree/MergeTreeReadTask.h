@@ -190,6 +190,7 @@ public:
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
+    const MarkRanges & getMarkRanges() const { return mark_ranges; }
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 

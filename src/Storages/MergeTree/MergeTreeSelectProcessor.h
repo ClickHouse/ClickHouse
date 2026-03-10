@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/MergeTree/RuntimeFilterGranulePruner.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -108,7 +109,8 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
+        RuntimeFilterGranulePrunerPtr runtime_filter_pruner_ = {});
 
     String getName() const;
 
@@ -173,6 +175,10 @@ private:
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+
+    /// Runtime filter granule pruner for skipping tasks whose mark ranges
+    /// cannot contain rows matching the join condition.
+    RuntimeFilterGranulePrunerPtr runtime_filter_pruner;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

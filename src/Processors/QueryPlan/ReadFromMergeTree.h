@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/MergeTree/RuntimeFilterGranulePruner.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
@@ -392,6 +393,11 @@ public:
 
     void deferFiltersAfterFinalIfNeeded();
 
+    /// Called from optimization pass after runtime filters are added.
+    /// Scans the given DAG for `__applyFilter` conditions on PK columns
+    /// and registers them for granule-level pruning at execution time.
+    void detectRuntimeFilterForGranulePruning(const ActionsDAG & filter_dag);
+
 private:
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
@@ -532,6 +538,10 @@ private:
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
+
+    /// Runtime filter info collected during optimization, pruner built lazily.
+    std::vector<RuntimeFilterPKInfo> runtime_filter_pk_infos;
+    RuntimeFilterGranulePrunerPtr runtime_filter_pruner;
 };
 
 }

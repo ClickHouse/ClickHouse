@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -267,6 +268,38 @@ void optimizeTreeSecondPass(
             [&](auto & frame_node)
             {
                 optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
+            });
+    }
+
+    /// After runtime filters are pushed down (and possibly to PREWHERE), detect `__applyFilter`
+    /// conditions on primary key columns so `ReadFromMergeTree` can do granule-level pruning at
+    /// execution time using the runtime filter's exact set.
+    if (join_runtime_filters_were_added)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame_node.step.get());
+                if (read_from_merge_tree)
+                {
+                    /// Check prewhere_info (if `__applyFilter` was pushed to `PREWHERE`)
+                    auto prewhere_info = read_from_merge_tree->getPrewhereInfo();
+                    if (prewhere_info)
+                        read_from_merge_tree->detectRuntimeFilterForGranulePruning(prewhere_info->prewhere_actions);
+                    /// Don't return here: a Filter step above this ReadFromMergeTree
+                    /// may also contain `__applyFilter` conditions (e.g., for a second PK column
+                    /// that wasn't pushed to `PREWHERE`).
+                }
+
+                /// Check Filter -> ReadFromMergeTree pattern (e.g., when `PREWHERE` is disabled
+                /// or some filters remained in the Filter step).
+                auto * filter_step = typeid_cast<FilterStep *>(frame_node.step.get());
+                if (!filter_step || frame_node.children.size() != 1)
+                    return;
+
+                auto * child_rmt = typeid_cast<ReadFromMergeTree *>(frame_node.children.front()->step.get());
+                if (child_rmt)
+                    child_rmt->detectRuntimeFilterForGranulePruning(filter_step->getExpression());
             });
     }
 

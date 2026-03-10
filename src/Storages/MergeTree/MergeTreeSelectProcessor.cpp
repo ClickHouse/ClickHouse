@@ -132,7 +132,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    RuntimeFilterGranulePrunerPtr runtime_filter_pruner_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -149,6 +150,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , runtime_filter_pruner(std::move(runtime_filter_pruner_))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -308,6 +310,14 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
+
+                /// Skip tasks whose mark ranges are entirely outside the runtime filter's exact set.
+                /// This provides granule-level pruning for join runtime filters at execution time,
+                /// when the right side of the hash join has been fully read and the filter is ready.
+                while (task && runtime_filter_pruner && runtime_filter_pruner->shouldSkipTask(*task))
+                {
+                    task = algorithm->getNewTask(*pool, task.get());
+                }
             }
 
             if (!task)
