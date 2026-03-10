@@ -326,6 +326,7 @@ void considerEnablingParallelReplicas(
             const auto local_plan_cost_estimation = stats->input_bytes / max_threads;
             const auto replicas_plan_cost_estimation
                 = (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas;
+            // This log message is used in tests to check the number of replicas to be used in heuristics, so be careful when changing it.
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "The applied formula: {} / {} ? ({} / ({} * {}) + {} / {}) ≡ {} ? {}",

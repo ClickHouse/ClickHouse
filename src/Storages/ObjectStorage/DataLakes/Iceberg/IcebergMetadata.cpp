@@ -8,6 +8,7 @@
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -15,6 +16,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -39,6 +41,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -543,6 +546,88 @@ void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
     }
 
     Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
+}
+
+static Pipe expireSnapshotsResultToPipe(const Iceberg::ExpireSnapshotsResult & result)
+{
+    Block header{
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "metric_name"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeInt64>(), "metric_value"),
+    };
+
+    MutableColumns columns = header.cloneEmptyColumns();
+
+    auto add = [&](const char * name, Int64 value)
+    {
+        columns[0]->insert(String(name));
+        columns[1]->insert(value);
+    };
+
+    add("deleted_data_files_count", result.deleted_data_files_count);
+    add("deleted_position_delete_files_count", result.deleted_position_delete_files_count);
+    add("deleted_equality_delete_files_count", result.deleted_equality_delete_files_count);
+    add("deleted_manifest_files_count", result.deleted_manifest_files_count);
+    add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
+    add("deleted_statistics_files_count", result.deleted_statistics_files_count);
+
+    Chunk chunk(std::move(columns), 6);
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
+}
+
+Pipe IcebergMetadata::executeCommand(
+    const String & command_name,
+    const ASTPtr & args,
+    ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    ContextPtr context,
+    const StorageID & storage_id)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg EXECUTE commands are experimental. "
+            "To allow their usage, enable setting allow_insert_into_iceberg");
+    }
+
+    if (command_name == "expire_snapshots")
+    {
+        if (args && args->children.size() > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects zero or one argument (timestamp), got {}", args->children.size());
+
+        std::optional<Int64> expire_before_ms;
+        if (args && args->children.size() == 1)
+        {
+            const auto * literal = args->children[0]->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots expects a string timestamp argument like '2024-06-01 00:00:00'");
+
+            const String & timestamp_str = literal->value.safeGet<String>();
+            ReadBufferFromString buf(timestamp_str);
+            time_t expire_time;
+            readDateTimeText(expire_time, buf);
+            expire_before_ms = static_cast<Int64>(expire_time) * 1000;
+        }
+
+        auto result = Iceberg::expireSnapshots(
+            expire_before_ms,
+            context,
+            object_storage_,
+            data_lake_settings,
+            persistent_components,
+            write_format,
+            catalog_,
+            configuration_->getTypeName(),
+            configuration_->getNamespace(),
+            storage_id.getTableName());
+
+        return expireSnapshotsResultToPipe(result);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown EXECUTE command '{}' for Iceberg table", command_name);
+    }
 }
 
 void IcebergMetadata::createInitial(

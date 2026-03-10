@@ -848,6 +848,11 @@ def main():
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
 
+                # Attach profdata file to the result report so it is uploaded
+                # unconditionally (even when tests fail) and visible in the CI report.
+                if os.path.exists(merged_file):
+                    R.files.append(merged_file)
+
         else:
             print("No .profraw files found for coverage")
 

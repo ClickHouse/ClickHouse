@@ -576,6 +576,12 @@ Block ProjectionDescription::calculateByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
     ASTPtr query_ast_copy = nullptr;
+
+    /// Only keep required columns
+    Block source_block;
+    for (const auto & column : required_columns)
+        source_block.insert(block.getByName(column));
+
     /// Respect the _row_exists column.
     if (block.has(RowExistsColumn::name))
     {
@@ -587,12 +593,9 @@ Block ProjectionDescription::calculateByQuery(
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
             makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
-    }
 
-    /// Only keep required columns
-    Block source_block = block;
-    for (const auto & column : required_columns)
-        source_block.insert(block.getByName(column));
+        source_block.insert(block.getByName(RowExistsColumn::name));
+    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)

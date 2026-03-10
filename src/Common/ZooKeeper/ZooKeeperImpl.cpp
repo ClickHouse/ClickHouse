@@ -852,7 +852,7 @@ void ZooKeeper::sendThread()
                         operations[info.request->xid] = info;
                     }
 
-                    if (requests_queue.isFinished())
+                    if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
                         break;
                     }
@@ -1242,17 +1242,27 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
-                expire_session_if_not_expired();
                 tryLogCurrentException(log);
             }
-
-            /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
         }
 
-        /// Set expired flag after we sent close event
+        /// Mark session expired before joining send thread.
+        /// This is critical: isExpired() (which checks requests_queue.isFinished()) must return true
+        /// as soon as possible so that other threads calling getZooKeeper() can establish a new session
+        /// immediately, rather than waiting for the send thread to exit. The send thread may be blocked
+        /// in a socket write for minutes (e.g. if the Keeper server closed the connection but
+        /// SO_SNDTIMEO is ineffective due to signal interruptions resetting the timer — see #96601).
+        /// Without this, all Keeper-dependent operations hang until the send thread happens to unblock.
         expire_session_if_not_expired();
+
+        if (!error_send)
+        {
+            /// Send thread will exit because:
+            /// 1. requests_queue is now finished (checked in sendThread's while loop), or
+            /// 2. The close request was sent and close_xid breaks the loop, or
+            /// 3. The socket write fails with an error
+            send_thread.join();
+        }
 
         cancelWriteBuffer();
 

@@ -561,7 +561,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0:
+        if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:

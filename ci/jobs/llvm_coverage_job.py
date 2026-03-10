@@ -113,16 +113,13 @@ def get_git_info() -> tuple[str, str, str, str, str, int]:
             "basename -s .git `git config --get remote.origin.url`", verbose=True
         ).strip()
     )
-    pr_number = (
-        info.pr_number
-        if info.pr_number > 0
-        else int(
-            Shell.get_output(
-                "gh pr view --json number -q .number", verbose=True
-            ).strip()
-            or 0
-        )
-    )
+    if info.pr_number > 0:
+        pr_number = info.pr_number
+    else:
+        _gh_out = Shell.get_output(
+            "gh pr view --json number -q .number", verbose=True
+        ).strip()
+        pr_number = int(_gh_out) if _gh_out else 0
     return (
         current_commit_sha,
         merge_base_commit_sha,
@@ -167,6 +164,7 @@ if __name__ == "__main__":
     os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits)
 
     is_master_branch = branch == "master"
+    _diff_ran = False
 
     results = []
 
@@ -193,57 +191,82 @@ if __name__ == "__main__":
             command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
         )
 
-        # Baseline coverage percentages for the current branch (from the merged report)
-        b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(
-            f"{TEMP_DIR}/base_llvm_coverage.info"
-        )
+        # The diff script exits 0 without running genhtml when no C/C++ files changed.
+        # Use the presence of its output directory as the authoritative indicator.
+        _diff_report_dir = Path(TEMP_DIR) / "llvm_coverage_diff_html_report"
+        _diff_ran = _diff_report_dir.exists()
 
-        # Current coverage percentages for the current branch
-        c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(
-            f"{TEMP_DIR}/llvm_coverage.info"
-        )
+        b_line_cov = c_line_cov = b_function_cov = c_function_cov = b_branch_cov = c_branch_cov = delta = 0.0
 
-        delta = c_line_cov - b_line_cov
-        print(f"Baseline coverage : {b_line_cov:.2f}%")
-        print(f"Current coverage  : {c_line_cov:.2f}%")
-        print(f"Delta             : {delta:+.2f}%")
-
-        if c_line_cov < b_line_cov:
-            diff_res.set_failed()
-            diff_res.set_comment(
-                f"Coverage in main branch: {b_line_cov:.2f}%, coverage in PR: {c_line_cov:.2f}%. Coverage degraded by {delta:.2f} percentage points."
+        if _diff_ran:
+            # Baseline coverage percentages for the current branch (from the merged report)
+            b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(
+                f"{TEMP_DIR}/base_llvm_coverage.info"
             )
-            print("Coverage degraded.")
-        else:
-            print("Coverage did not degrade.")
 
-        # Compress and attach the diff HTML report archive + files to the diff result.
-        Utils.compress_gz(
-            f"{TEMP_DIR}/llvm_coverage_diff_html_report",
-            f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
-        )
-        diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
-        # Copy index.html → index_diff.html so the diff entry-point has a unique
-        # name in S3 links. The original index.html is kept as an asset so that
-        # relative links inside the report continue to work.
-        _diff_index = Path(TEMP_DIR) / "llvm_coverage_diff_html_report" / "index.html"
-        _diff_index_copy = _diff_index.parent / "index_diff.html"
-        if _diff_index.exists():
-            shutil.copy2(_diff_index, _diff_index_copy)
-        _diff_files, _diff_assets = collect_html_report_files(
-            "llvm_coverage_diff_html_report", entry_point="index_diff.html"
-        )
-        diff_res.files.extend(_diff_files)
-        diff_res.assets.extend(_diff_assets)
+            # Current coverage percentages for the current branch
+            c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(
+                f"{TEMP_DIR}/llvm_coverage.info"
+            )
+
+            delta = c_line_cov - b_line_cov
+            print(f"Baseline coverage : {b_line_cov:.2f}%")
+            print(f"Current coverage  : {c_line_cov:.2f}%")
+            print(f"Delta             : {delta:+.2f}%")
+
+            if c_line_cov < b_line_cov:
+                diff_res.set_failed()
+                diff_res.set_comment(
+                    f"Coverage in main branch: {b_line_cov:.2f}%, coverage in PR: {c_line_cov:.2f}%. Coverage degraded by {delta:.2f} percentage points."
+                )
+                print("Coverage degraded.")
+            else:
+                print("Coverage did not degrade.")
+
+            # Compress and attach the diff HTML report archive + files to the diff result.
+            Utils.compress_gz(
+                f"{TEMP_DIR}/llvm_coverage_diff_html_report",
+                f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
+            )
+            diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+            # Copy index.html → index_diff.html so the diff entry-point has a unique
+            # name in S3 links. The original index.html is kept as an asset so that
+            # relative links inside the report continue to work.
+            _diff_index = Path(TEMP_DIR) / "llvm_coverage_diff_html_report" / "index.html"
+            _diff_index_copy = _diff_index.parent / "index_diff.html"
+            if _diff_index.exists():
+                shutil.copy2(_diff_index, _diff_index_copy)
+            _diff_files, _diff_assets = collect_html_report_files(
+                "llvm_coverage_diff_html_report", entry_point="index_diff.html"
+            )
+            diff_res.files.extend(_diff_files)
+            diff_res.assets.extend(_diff_assets)
+        else:
+            print("No C/C++ source files changed — differential coverage report was not generated.")
+
         results.append(diff_res)
 
         # Generate report for changed blocks only
         _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
-        Shell.run(
-            f"python3 ci/jobs/scripts/print_uncovered_code.py 2>&1 | tee {_print_log}",
-            verbose=True,
+        _diff_inputs_exist = (
+            Path(TEMP_DIR + "changes.diff").exists()
+            and Path(TEMP_DIR + "current.changed.info").exists()
         )
-        print_res = Result.from_fs("Print Uncovered Code")
+        if _diff_inputs_exist:
+            Shell.run(
+                f"python3 ci/jobs/scripts/print_uncovered_code.py 2>&1 | tee {_print_log}",
+                verbose=True,
+            )
+            print_res = Result.from_fs("Print Uncovered Code")
+        else:
+            msg = "No C/C++ source files changed — skipping uncovered code analysis."
+            print(msg)
+            print_res = Result.create_from(
+                name="Print Uncovered Code",
+                status=Result.Status.SUCCESS,
+                info=msg,
+            )
+            print_res.set_comment(msg)
         print_res.files.append(_print_log)
         results.append(print_res)
 
@@ -263,36 +286,39 @@ if __name__ == "__main__":
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             _pr_changed_lines_info = print_res.ext.get("comment", "")
 
-            # Write coverage data for the post-hook to pick up and post as a GitHub comment
-            # and insert into CIDB. The hook runs on the host (outside Docker) where the
-            # GH token and CIDB credentials are available.
-            _comment_data = {
-                # GitHub comment fields
-                "b_line_cov": b_line_cov,
-                "c_line_cov": c_line_cov,
-                "b_function_cov": b_function_cov,
-                "c_function_cov": c_function_cov,
-                "b_branch_cov": b_branch_cov,
-                "c_branch_cov": c_branch_cov,
-                "pr_changed_lines_info": _pr_changed_lines_info,
-                "diff_url": _diff_url,
-                "uncovered_code_url": uncovered_code_url,
-                # CIDB fields
-                "check_start_time": datetime.now(timezone.utc).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "pull_request_number": pr_number,
-                "commit_sha": current_commit_sha,
-                "base_commit_sha": merge_base_commit_sha,
-                "branch": branch,
-                "base_branch": base_branch,
-                "status": diff_res.status,
-                "delta_line_cov": delta,
-                "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
-                "diff_coverage_report_url": _diff_url,
-            }
-            with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
-                json.dump(_comment_data, f)
+            if _diff_ran:
+                # Write coverage data for the post-hook to pick up and post as a GitHub comment
+                # and insert into CIDB. The hook runs on the host (outside Docker) where the
+                # GH token and CIDB credentials are available.
+                _comment_data = {
+                    # GitHub comment fields
+                    "b_line_cov": b_line_cov,
+                    "c_line_cov": c_line_cov,
+                    "b_function_cov": b_function_cov,
+                    "c_function_cov": c_function_cov,
+                    "b_branch_cov": b_branch_cov,
+                    "c_branch_cov": c_branch_cov,
+                    "pr_changed_lines_info": _pr_changed_lines_info,
+                    "diff_url": _diff_url,
+                    "uncovered_code_url": uncovered_code_url,
+                    # CIDB fields
+                    "check_start_time": datetime.now(timezone.utc).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "pull_request_number": pr_number,
+                    "commit_sha": current_commit_sha,
+                    "base_commit_sha": merge_base_commit_sha,
+                    "branch": branch,
+                    "base_branch": base_branch,
+                    "status": diff_res.status,
+                    "delta_line_cov": delta,
+                    "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                    "diff_coverage_report_url": _diff_url,
+                }
+                with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                    json.dump(_comment_data, f)
+            else:
+                print("No diff report generated — skipping coverage comment and CIDB insert.")
         else:
             print("Local run, skipping CI DB update with coverage results")
     else:
@@ -312,13 +338,13 @@ if __name__ == "__main__":
         report_links.append(
             f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
         )
-        if not is_master_branch:
+        if _diff_ran:
             report_links.append(
                 f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             )
 
     archives = [f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz"]
-    if not is_master_branch:
+    if _diff_ran:
         archives.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
 
     Result.create_from(

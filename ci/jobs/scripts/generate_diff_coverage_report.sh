@@ -1,8 +1,20 @@
 #!/bin/bash
+# CI: only C/C++ source files are extracted for differential coverage analysis.
+# Non-C++ changes (cmake, scripts, tests, configs) are intentionally skipped.
+set -euo pipefail
+
+# Validate required env vars
+for var in PREV_30_COMMITS CURRENT_COMMIT BASE_COMMIT BRANCH BASE_BRANCH WORKSPACE_PATH; do
+  if [ -z "${!var:-}" ]; then
+    echo "ERROR: Required environment variable $var is not set"
+    exit 1
+  fi
+done
+
 cd ci/tmp
 
 if [[ ! -f "llvm_coverage.info" ]]; then
-  echo "llvm_coverage.info not found"
+  echo "ERROR: llvm_coverage.info not found"
   exit 1
 fi
 
@@ -21,11 +33,9 @@ break
 fi
 done
 
-
 if [ $FOUND -eq 0 ]; then
-echo "Warning: Could not find coverage file after checking ${#COMMITS[@]} commits"
-echo "Skipping differential coverage analysis"
-exit 0
+  echo "ERROR: Could not find baseline coverage file after checking ${#COMMITS[@]} commits"
+  exit 1
 fi
 
 export CURRENT_COMMIT
@@ -45,27 +55,34 @@ echo "Changed files:"
 echo "$changed_files"
 
 if [ -z "$changed_files" ]; then
-  echo "Warning: no changed files reported by GitHub compare API"
-  echo "Skipping differential coverage analysis"
-  exit 0
+  echo "ERROR: No changed files reported by GitHub compare API"
+  exit 1
 fi
 
 patterns=()
 while IFS= read -r f; do
-  [ -n "$f" ] && patterns+=("*$f")
+  # Only include C/C++ source files that can appear in lcov coverage data
+  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]]; then
+    patterns+=("*$f")
+  fi
 done < <(echo "$changed_files")
 
-lcov --extract llvm_coverage.info  "${patterns[@]}" \
+if [ ${#patterns[@]} -eq 0 ]; then
+  echo "No C/C++ source files changed, skipping differential coverage report"
+  exit 0
+fi
+
+lcov --extract llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
   --quiet \
-  -o current.changed.info 2>/dev/null
+  -o current.changed.info
 
 lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt \
   --quiet \
-  -o baseline.changed.info 2>/dev/null
+  -o baseline.changed.info
 
-echo Workspace path: $WORKSPACE_PATH
+echo "Workspace path: $WORKSPACE_PATH"
 
 HEADER_TITLE="differential coverage report"
 if [ -n "${PR_NUMBER}" ]; then
@@ -94,5 +111,5 @@ genhtml \
   --simplified-colors \
   --filter missing \
   --flat \
-  current.changed.info \
-  2>/dev/null
+  current.changed.info
+

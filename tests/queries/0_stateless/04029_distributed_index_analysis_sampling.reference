@@ -24,14 +24,14 @@ Expression ((Project names + (Projection + Change column names to column identif
       Parts: 20/20
       Granules: 86/780
       Distributed:
-        Address: 127.0.0.1:9000
-        Parts send: 15
-        Parts received: 15
-        Granules send: 585
-        Granules received: 65
         Address: 127.0.0.2:9000
         Parts send: 5
         Parts received: 5
         Granules send: 195
         Granules received: 21
+        Address: 127.0.0.1:9000
+        Parts send: 15
+        Parts received: 15
+        Granules send: 585
+        Granules received: 65
     Ranges: 20

@@ -4700,14 +4700,14 @@ def test_struct_dotted_field_names(started_cluster):
 
     table_function2 = f"deltaLakeLocal('{path2}')"
 
-    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function}").strip()
-    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result_d2!r}"
+    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function2}").strip()
+    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result2_d2!r}"
 
-    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function}").strip()
-    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result_d3!r}"
+    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function2}").strip()
+    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result2_d3!r}"
 
-    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function}").strip()
-    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result_d4!r}"
+    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function2}").strip()
+    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result2_d4!r}"
 
 
 def test_snapshot_consistency(started_cluster):

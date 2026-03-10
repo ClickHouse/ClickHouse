@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -493,7 +494,8 @@ void StorageObjectStorage::read(
                                   || (read_from_format_info.requested_columns.empty()
                                       && !read_from_format_info.prewhere_info
                                       && !read_from_format_info.row_level_filter))
-        && settings[Setting::optimize_count_from_files];
+        && settings[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())
@@ -755,6 +757,14 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
     configuration->checkMutationIsPossible(commands);
+}
+
+Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
+{
+    auto * metadata = getExternalMetadata(context);
+    if (!metadata)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)

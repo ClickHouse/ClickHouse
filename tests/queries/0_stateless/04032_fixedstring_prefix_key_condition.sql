@@ -1,0 +1,236 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test;
+
+CREATE TABLE test
+(
+    fixed_string_col FixedString(40),
+    text String
+)
+ENGINE = MergeTree
+ORDER BY fixed_string_col
+SETTINGS index_granularity = 1;
+
+INSERT INTO test VALUES
+    ('11',  'plain-11'),
+    ('110', 'plain-110'),
+    ('11z', 'plain-11z'),
+    ('12',  'plain-12'),
+    ('21',  'plain-21'),
+    ('999',  'plain-999');
+
+SELECT text
+FROM test
+WHERE startsWith(fixed_string_col, '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE startsWith(CAST(fixed_string_col, 'String'), '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE fixed_string_col LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE CAST(fixed_string_col, 'String') LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE fixed_string_col NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test
+WHERE CAST(fixed_string_col, 'String') NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test
+WHERE match(fixed_string_col, '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE match(CAST(fixed_string_col, 'String'), '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+
+-- Fixed String Liteal tests
+
+SELECT text
+FROM test
+WHERE startsWith(fixed_string_col, toFixedString('11', 2))
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE startsWith(CAST(fixed_string_col, 'String'), toFixedString('11', 2))
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE fixed_string_col LIKE toFixedString('11%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE CAST(fixed_string_col, 'String') LIKE toFixedString('11%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE fixed_string_col NOT LIKE toFixedString('99%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test
+WHERE CAST(fixed_string_col, 'String') NOT LIKE toFixedString('99%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test
+WHERE match(fixed_string_col, toFixedString('^11.', 4)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test
+WHERE match(CAST(fixed_string_col, 'String'), toFixedString('^11.', 4)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+DROP TABLE IF EXISTS test_string;
+
+CREATE TABLE test_string
+(
+    string_col String,
+    text String
+)
+ENGINE = MergeTree
+ORDER BY string_col
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_string
+SELECT
+    CAST(fixed_string_col, 'String'),
+    text
+FROM test;
+
+-- String key tests
+
+SELECT text
+FROM test_string
+WHERE startsWith(string_col, '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE startsWith(CAST(string_col, 'FixedString(40)'), '11')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;  -- { serverError INDEX_NOT_USED }
+
+SELECT text
+FROM test_string
+WHERE string_col LIKE '11%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE CAST(string_col, 'FixedString(40)') LIKE '11%' -- { serverError INDEX_NOT_USED }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE string_col NOT LIKE '99%'
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_string
+WHERE CAST(string_col, 'FixedString(40)') NOT LIKE '99%' -- { serverError INDEX_NOT_USED }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_string
+WHERE match(string_col, '^11.')
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE match(CAST(string_col, 'FixedString(40)'), '^11.') -- { serverError INDEX_NOT_USED }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+-- String key with FixedString literal tests
+
+SELECT text
+FROM test_string
+WHERE startsWith(string_col, toFixedString('11', 2))
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE startsWith(CAST(string_col, 'FixedString(40)'), toFixedString('11', 2)) -- { serverError INDEX_NOT_USED }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE string_col LIKE toFixedString('11%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE CAST(string_col, 'FixedString(40)') LIKE toFixedString('11%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE string_col NOT LIKE toFixedString('99%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_string
+WHERE CAST(string_col, 'FixedString(40)') NOT LIKE toFixedString('99%', 3) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 5;
+
+SELECT text
+FROM test_string
+WHERE match(string_col, toFixedString('^11.', 4)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+
+SELECT text
+FROM test_string
+WHERE match(CAST(string_col, 'FixedString(40)'), toFixedString('^11.', 4)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ORDER BY text
+SETTINGS force_primary_key = 1, max_rows_to_read = 3;
