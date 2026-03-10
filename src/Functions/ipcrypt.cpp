@@ -18,6 +18,8 @@
 
 #include <ipcrypt2.h>
 
+#include <base/scope_guard.h>
+
 #include <cstring>
 
 namespace DB
@@ -129,25 +131,20 @@ public:
         {
             IPCryptPFX ctx;
             int rc = ipcrypt_pfx_init(&ctx, key_bytes);
+            SCOPE_EXIT({ ipcrypt_pfx_deinit(&ctx); });
             if (rc != 0)
-            {
-                ipcrypt_pfx_deinit(&ctx);
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid PFX key for function {}: the two 16-byte key halves must not be identical",
                     getName());
-            }
-            auto result = processRows(arguments, ctx, input_rows_count);
-            ipcrypt_pfx_deinit(&ctx);
-            return result;
+            return processRows(arguments, ctx, input_rows_count);
         }
         else
         {
             IPCrypt ctx;
             ipcrypt_init(&ctx, key_bytes);
-            auto result = processRows(arguments, ctx, input_rows_count);
-            ipcrypt_deinit(&ctx);
-            return result;
+            SCOPE_EXIT({ ipcrypt_deinit(&ctx); });
+            return processRows(arguments, ctx, input_rows_count);
         }
     }
 
