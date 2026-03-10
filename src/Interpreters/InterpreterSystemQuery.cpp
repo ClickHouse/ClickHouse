@@ -416,6 +416,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+#if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+#endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -661,7 +669,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError({
-                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
@@ -2141,6 +2149,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:

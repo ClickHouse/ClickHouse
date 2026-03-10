@@ -161,6 +161,7 @@ public:
     uint32_t dname = 0;
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
+    uint32_t backup_number = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -182,7 +183,7 @@ public:
 
     bool isSharedDatabase() const;
 
-    bool isLazyDatabase() const;
+    bool isBackupDatabase() const;
 
     bool isOrdinaryDatabase() const;
 

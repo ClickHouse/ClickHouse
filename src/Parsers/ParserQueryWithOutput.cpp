@@ -202,6 +202,18 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             break;
     }
 
+    /// The formatter always outputs FORMAT before SETTINGS. Ensure children
+    /// are in the same canonical order so that tree hash is stable after
+    /// a formatting roundtrip (regardless of the original clause order).
+    if (query_with_output.format_ast && query_with_output.settings_ast)
+    {
+        auto & ch = query_with_output.children;
+        auto fmt_it = std::find(ch.begin(), ch.end(), query_with_output.format_ast);
+        auto set_it = std::find(ch.begin(), ch.end(), query_with_output.settings_ast);
+        if (fmt_it != ch.end() && set_it != ch.end() && set_it < fmt_it)
+            std::iter_swap(fmt_it, set_it);
+    }
+
     node = std::move(query);
     return true;
 }

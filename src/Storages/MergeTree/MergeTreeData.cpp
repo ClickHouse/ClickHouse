@@ -1359,6 +1359,16 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             column_meta_name,
             backQuoteIfNeed(command.column_name));
     }
+    else if (command.type == AlterCommand::MODIFY_COLUMN
+        && (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias))
+    {
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Cannot modify {} column ({}) to {}",
+            column_meta_name,
+            backQuoteIfNeed(command.column_name),
+            toString(command.default_kind));
+    }
 };
 
 template <typename TMustHaveDataType>
@@ -3072,8 +3082,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
             /// enough_space is created before runner and outlives it
             /// caches is passed as const-ref to the method and outlives the runner
             /// part belongs to data_parts, which is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 /// Check again, because another task may have filled the cache while this task was waiting in the queue.
                 /// The cache still may be filled slightly more than `index_ratio_to_prewarm`, but it's ok.
                 if (enough_space(caches.primary_index_cache, index_ratio_to_prewarm))
@@ -3085,8 +3096,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.mark_cache && enough_space(caches.mark_cache, marks_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, marks_ratio_to_prewarm, &part, &columns_to_prewarm_marks, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.mark_cache, marks_ratio_to_prewarm))
                     part->loadMarksToCache(columns_to_prewarm_marks, caches.mark_cache.get());
             });
@@ -3096,8 +3108,9 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
         if (caches.index_mark_cache && enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
         {
-            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part]
+            runner.enqueueAndKeepTrack([&enough_space, &caches, index_mark_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
             {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
                 if (enough_space(caches.index_mark_cache, index_mark_ratio_to_prewarm))
                     part->loadIndexMarksToCache(caches.index_mark_cache.get());
             });
@@ -4345,11 +4358,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// Some type changes for version column is allowed despite it's a part of sorting key
             if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                const IDataType * new_type = command.data_type.get();
-                const IDataType * old_type = old_types[command.column_name];
+                checkSpecialColumn("version", command);
 
-                if (new_type)
-                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                const IDataType * new_type = command.data_type.get();
+                auto it = old_types.find(command.column_name);
+
+                if (new_type && it != old_types.end())
+                    checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
@@ -4522,7 +4537,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(getInMemoryMetadata()))
+        else if (command.isRequireMutationStage(getInMemoryMetadata(), local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -6091,12 +6106,15 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
     return nullptr;
 }
 
-void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const
+void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr /* local_context */) const
 {
-    /// Remove metadata version file and take it from table.
-    /// Currently we cannot attach parts with different schema, so
-    /// we can assume that it's equal to table's current schema.
-    part->writeMetadataVersion(local_context, getInMemoryMetadataPtr()->getMetadataVersion(), (*getSettings())[MergeTreeSetting::fsync_after_insert]);
+    /// Do not overwrite metadata version from the table:
+    /// the part may have been detached before schema changes (e.g. RENAME COLUMN),
+    /// and its metadata_version should reflect which schema changes have actually been applied
+    /// to the part's data. Overwriting it would make the mutation/rename system think
+    /// the part is already up-to-date when it's not.
+    /// If the part has no metadata_version.txt (very old parts), the fallback in
+    /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();

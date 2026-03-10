@@ -3761,8 +3761,17 @@ struct ToStringMonotonicity
             type_ptr = low_cardinality_type->getDictionaryType().get();
 
         /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
-        if (WhichDataType(type).isEnum())
+        if (WhichDataType(*type_ptr).isEnum())
             return not_monotonic;
+
+        if (checkDataTypes<DataTypeFixedString>(type_ptr))
+        {
+            /// `toString(FixedString(N))` removes trailing zero bytes. For example, with `N = 4`,
+            /// `['a', 'b', '\0', '\0']` becomes `'ab'`, and `['a', 'b', '\1', '\0']` becomes `'ab\1'`.
+            /// This preserves lexicographic order on `FixedString(N)`, so the transformation is
+            /// strictly monotonic on the whole type range.
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        }
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
         if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))

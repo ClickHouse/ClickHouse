@@ -676,7 +676,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
+        expr->execute(block);
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
@@ -991,7 +991,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
+    {
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        expr->execute(block);
+    }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();

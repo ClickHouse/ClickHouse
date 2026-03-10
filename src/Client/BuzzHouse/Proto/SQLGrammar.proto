@@ -1719,37 +1719,38 @@ enum SQLTableFunc {
     TFmergeTreeAnalyzeIndexesUUID = 41;
     TFmergeTreeIndex = 42;
     TFmergeTreeProjection = 43;
-    TFmongodb = 44;
-    TFmysql = 45;
-    TFnull = 46;
-    TFnumbers = 47;
-    TFodbc = 48;
-    TFpaimon = 49;
-    TFpaimonAzure = 50;
-    TFpaimonAzureCluster = 51;
-    TFpaimonCluster = 52;
-    TFpaimonLocal = 53;
-    TFpaimonS3 = 54;
-    TFpaimonS3Cluster = 55;
-    TFpostgresql = 56;
-    TFprimes = 57;
-    TFprometheusQuery = 58;
-    TFprometheusQueryRange = 59;
-    TFredis = 60;
-    TFremote = 61;
-    TFremoteSecure = 62;
-    TFs3 = 63;
-    TFs3Cluster = 64;
-    TFsqlite = 65;
-    TFtimeSeriesData = 66;
-    TFtimeSeriesMetrics = 67;
-    TFtimeSeriesSelector = 68;
-    TFtimeSeriesTags = 69;
-    TFurl = 70;
-    TFurlCluster = 71;
-    TFvalues = 72;
-    TFview = 73;
-    TFytsaurus = 74;
+    TFmergeTreeTextIndex = 44;
+    TFmongodb = 45;
+    TFmysql = 46;
+    TFnull = 47;
+    TFnumbers = 48;
+    TFodbc = 49;
+    TFpaimon = 50;
+    TFpaimonAzure = 51;
+    TFpaimonAzureCluster = 52;
+    TFpaimonCluster = 53;
+    TFpaimonLocal = 54;
+    TFpaimonS3 = 55;
+    TFpaimonS3Cluster = 56;
+    TFpostgresql = 57;
+    TFprimes = 58;
+    TFprometheusQuery = 59;
+    TFprometheusQueryRange = 60;
+    TFredis = 61;
+    TFremote = 62;
+    TFremoteSecure = 63;
+    TFs3 = 64;
+    TFs3Cluster = 65;
+    TFsqlite = 66;
+    TFtimeSeriesData = 67;
+    TFtimeSeriesMetrics = 68;
+    TFtimeSeriesSelector = 69;
+    TFtimeSeriesTags = 70;
+    TFurl = 71;
+    TFurlCluster = 72;
+    TFvalues = 73;
+    TFview = 74;
+    TFytsaurus = 75;
 }
 
 message Database {
@@ -2787,10 +2788,19 @@ message MergeTreeProjectionFunc {
     required Projection proj = 2;
 }
 
+message MergeTreeTextIndexFunc {
+    required ExprSchemaTable est = 1;
+    required Index idx = 2;
+}
+
+message PartsList {
+    repeated string parts = 1;
+}
+
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
-    optional string part = 3;
+    optional PartsList plist = 3;
 }
 
 message GenerateRandomFunc {
@@ -2822,19 +2832,20 @@ message TableFunction {
         ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
-        MergeTreeIndexFunc mtindex = 11;
-        TableOrFunction loop = 12;
-        GenerateRandomFunc grandom = 13;
-        ValuesStatement values = 14;
-        ExprSchemaTable dictionary = 15;
-        URLFunc url = 16;
-        RedisFunc redis = 17;
-        MongoDBFunc mongodb = 18;
-        MergeTreeProjectionFunc mtproj = 19;
-        Expr nullf = 20;
-        ArrowFlightFunc flight = 21;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
-        SQLTableFuncCall func = 23;
+        TableOrFunction loop = 11;
+        GenerateRandomFunc grandom = 12;
+        ValuesStatement values = 13;
+        ExprSchemaTable dictionary = 14;
+        URLFunc url = 15;
+        RedisFunc redis = 16;
+        MongoDBFunc mongodb = 17;
+        Expr nullf = 18;
+        ArrowFlightFunc flight = 19;
+        MergeTreeIndexFunc mtindex = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        MergeTreeTextIndexFunc mttxtidx = 22;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
+        SQLTableFuncCall func = 24;
     }
 }
 
@@ -3017,27 +3028,42 @@ enum DatabaseEngineValues {
     DMemory = 2;
     DReplicated = 3;
     DShared = 4;
-    DLazy = 5;
-    DOrdinary = 6;
-    DDataLakeCatalog = 7;
-    DPostgreSQL = 8;
-    DMySQL = 9;
-    DSQLite = 10;
-    DBackup = 11;
-    DMaterializedPostgreSQL = 12;
+    DOrdinary = 5;
+    DDataLakeCatalog = 6;
+    DPostgreSQL = 7;
+    DMySQL = 8;
+    DSQLite = 9;
+    DBackup = 10;
+    DMaterializedPostgreSQL = 11;
 }
 
-message BackupDisk {
-    required string disk = 1;
-    required Database database = 2;
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupOut {
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
+        AzureBlobStorage = 6;
+    }
+    required BackupOutput out = 1;
+    repeated BackupParam out_params = 2;
+    /// Need to know backup number
+    required uint32 backup_number = 3;
 }
 
 message DatabaseEngineParam {
     oneof database_engine_param_oneof {
         string svalue = 1;
-        Database database = 2;
-        BackupDisk disk = 3;
-        Expr expr = 4;
+        Expr expr = 2;
+        BackupOut backup_out = 3;
     }
 }
 
@@ -3259,6 +3285,7 @@ enum CompressionCodec {
     /// COMP_ZSTD_QAT = 14;
     /// COMP_DEFLATE_QPL = 15;
     /// COMP_SZ3 = 16;
+    COMP_ALP = 17;
 }
 
 message IndexKeyVal {
@@ -3812,7 +3839,7 @@ message RefreshableView {
     required RefreshPolicy policy = 1;
     required RefreshInterval interval = 2;
     optional RefreshInterval offset = 3;
-    required RefreshInterval randomize = 4;
+    optional RefreshInterval randomize = 4;
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;
@@ -4187,17 +4214,6 @@ message BackupRestoreElement {
     repeated ExprSchemaTable except_tables = 3;
 }
 
-message BackupParam {
-    oneof backup_param_oneof {
-        string svalue = 1;
-        string rvalue = 2;
-    }
-}
-
-message BackupParams {
-    repeated BackupParam out_params = 1;
-}
-
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
@@ -4207,28 +4223,17 @@ message BackupRestore {
     required BackupRestoreElement backup_element = 2;
     repeated BackupRestoreElement other_elements = 3;
     optional Cluster cluster = 4;
-    enum BackupOutput {
-        Disk = 1;
-        File = 2;
-        Memory = 3;
-        Null = 4;
-        S3 = 5;
-        AzureBlobStorage = 6;
-    }
-    required BackupOutput out = 5;
-    required BackupParams params = 6;
-    optional SettingValues setting_values = 7;
+    required BackupOut out = 5;
+    optional SettingValues setting_values = 6;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 8;
+    optional SyncOrAsync sync = 7;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        InFormat informat = 8;
+        OutFormat outformat = 9;
     }
-    /// Need to know backup number
-    required uint32 backup_number = 11;
 }
 
 message Rename {

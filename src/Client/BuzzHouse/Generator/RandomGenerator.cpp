@@ -347,8 +347,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
             static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '%', '_', '\\', '"', '/', '-'};
+            char c = this->pickRandomly(repeat_chars);
 
-            ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), this->pickRandomly(repeat_chars));
+            if (delimiter.size() == 1 && c == delimiter[0])
+                c = delimiter[0] == 'a' ? 'b' : 'a';
+            ret += String(this->randomInt<uint32_t>(0, std::min(limit, UINT32_C(65536))), c);
         }
         else
         {

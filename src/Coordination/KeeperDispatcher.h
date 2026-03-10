@@ -78,6 +78,10 @@ private:
 
     KeeperContextPtr keeper_context;
 
+    /// Flag to signal TCP handlers that they should close connections.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
+    std::atomic<bool> shutting_down{false};
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -144,6 +148,12 @@ public:
 
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
+
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+
+    /// Returns true if signalShutdown() was called.
+    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();

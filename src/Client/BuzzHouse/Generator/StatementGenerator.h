@@ -95,12 +95,12 @@ public:
     bool allow_aggregates = true;
     bool allow_window_funcs = true;
     bool group_by_all = false;
-    uint32_t level;
+    uint32_t level = 0;
     uint32_t cte_counter = 0;
     uint32_t window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
-    std::vector<String> projections;
+    DB::Strings projections;
 
     QueryLevel() = default;
 
@@ -122,11 +122,9 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
 class CatalogBackup
 {
 public:
-    uint32_t backup_num = 0;
+    BackupOut bout;
     bool everything = false;
-    BackupRestore_BackupOutput outf;
     std::optional<OutFormat> out_format;
-    BackupParams out_params;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
@@ -153,6 +151,7 @@ enum class TableRequirement
     RequireMergeTree = 1,
     RequireReplaceable = 2,
     RequireProjection = 3,
+    RequireIndex = 4
 };
 
 class StatementGenerator
@@ -317,7 +316,10 @@ private:
         ProjectionExpr,
         DictExpr,
         JoinExpr,
-        StarExpr
+        StarExpr,
+        LitAggrState,
+        LitReinterpret,
+        LitAccurateCast
     };
 
     enum class PredOp
@@ -345,15 +347,16 @@ private:
         SystemTable,
         MergeUDF,
         ClusterUDF,
-        MergeIndexUDF,
         LoopUDF,
         ValuesUDF,
         RandomDataUDF,
         Dictionary,
         URLEncodedTable,
         TableEngineUDF,
-        MergeProjectionUDF,
         RandomTableUDF,
+        MergeIndexUDF,
+        MergeProjectionUDF,
+        MergeTextIndexUDF,
         MergeIndexAnalyzeUDF
     };
 
@@ -525,7 +528,7 @@ private:
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg, const SQLDatabase & d);
-    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d);
+    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
@@ -589,7 +592,7 @@ private:
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
     void generateLimitBy(RandomGenerator & rg, LimitByStatement * ls);
     void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * lim);
-    void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
+    void generateOffset(RandomGenerator & rg, bool has_order_by, bool has_limit, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
         bool enforce_having,
@@ -606,6 +609,7 @@ private:
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
+    String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(
@@ -853,7 +857,8 @@ public:
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
-        return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
+        const bool b_is_deterministic = b.is_deterministic;
+        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.is_deterministic || !b_is_deterministic); };
     }
 
     template <TableRequirement req>

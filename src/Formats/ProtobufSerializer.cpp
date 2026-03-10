@@ -288,7 +288,7 @@ namespace
                 readText(result, buf);
                 return result;
             }
-            catch (...)
+            catch (const Exception &)
             {
                 cannotConvertValue(str, "String", TypeName<DestType>);
             }

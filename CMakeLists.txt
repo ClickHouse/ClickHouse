@@ -371,6 +371,11 @@ else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
 set(MAX_LINKER_MEMORY 5000)
+if (ENABLE_FUZZING)
+    # Fuzzer builds produce many large ASan-instrumented binaries.
+    # Each linker instance needs significantly more memory than the default.
+    set(MAX_LINKER_MEMORY 16000)
+endif()
 include(cmake/limit_jobs.cmake)
 
 
