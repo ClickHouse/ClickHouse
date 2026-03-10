@@ -3,6 +3,7 @@ import os
 import random
 import re
 import string
+import time
 
 import pytest
 
@@ -1137,18 +1138,19 @@ def test_on_cluster():
     )
 
     # Check logs of DDLWorker during executing of this query.
-    assert node.contains_in_log(
-        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
-    )
-    assert node.contains_in_log(
-        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
-    )
-    assert node.contains_in_log(
-        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
-    )
-    assert node.contains_in_log(
-        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
-    )
+    # Log lines may not be flushed immediately, so retry.
+    ddl_log_patterns = [
+        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
+        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
+        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
+        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
+    ]
+    for pattern in ddl_log_patterns:
+        for _ in range(10):
+            if node.contains_in_log(pattern):
+                break
+            time.sleep(0.5)
+        assert node.contains_in_log(pattern)
     assert system_query_log_contains_search_pattern(
         "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql80:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
@@ -1188,8 +1190,8 @@ def test_query_masking_rule_with_ddl():
         f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
     )
 
-    assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
+    assert_eq_with_retry(node, f"SELECT count() FROM system.tables WHERE table='{table_name}'", "1\n")
     assert "sensetive_data" in node.query(
         f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
     )
-    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
