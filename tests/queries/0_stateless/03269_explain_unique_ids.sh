@@ -39,7 +39,7 @@ query="
 	ORDER BY a
 "
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json=1 $query"
+$CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json=1, pretty=1 $query"
 
 printf "\n\n"
 
