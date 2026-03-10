@@ -81,7 +81,7 @@ INSERT INTO 03710_database.03711_table VALUES (1), (2);
 SYSTEM FLUSH LOGS part_log;
 
 SELECT table, name, argMax(part_type, event_time_microseconds), argMax(deduplication_block_ids, event_time_microseconds) FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     table IN ['03711_join_with', '03711_table', '03711_mv_table_1', '03711_mv_table_2']
     AND database = '03710_database'
 group BY database, table, name

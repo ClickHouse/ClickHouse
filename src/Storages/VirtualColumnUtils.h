@@ -141,6 +141,11 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
+/// Returns true if the requested virtual columns contain columns that depend on
+/// per-row information (e.g. _row_number). Such columns are incompatible with
+/// the "need only count" optimization that skips actual row parsing.
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
+
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);

@@ -1,0 +1,5 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/93862
+SET enable_analyzer = 1;
+CREATE DICTIONARY d0 (c0 String DEFAULT 'a') PRIMARY KEY (c0) SOURCE(NULL()) LAYOUT(HASHED()) LIFETIME(1);
+CREATE DICTIONARY d1 (c1 Int DEFAULT 1) PRIMARY KEY (c1) SOURCE(NULL()) LAYOUT(HASHED()) LIFETIME(1);
+SELECT -c0.size FROM d1 LEFT JOIN d0 ON TRUE SETTINGS join_use_nulls = 1;

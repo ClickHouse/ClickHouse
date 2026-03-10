@@ -1492,6 +1492,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
@@ -2140,6 +2141,7 @@ groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
+gsutil
 gtest
 gtid
 gunzip
@@ -2452,6 +2454,7 @@ memtables
 mergeTreeIndex
 mergeTreePartInfo
 mergeTreeProjection
+mergeTreeTextIndex
 mergeable
 mergetree
 messageID

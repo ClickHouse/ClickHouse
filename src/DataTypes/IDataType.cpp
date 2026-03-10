@@ -168,7 +168,10 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, false, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
-                if (name == subcolumn_name)
+                /// Use the first match to be consistent with ColumnsDescription::addSubcolumns
+                /// which also keeps the first subcolumn when there are name collisions
+                /// (e.g. "null" can match both Nullable's null-map and a Tuple element named "null").
+                if (name == subcolumn_name && !res)
                 {
                     res = std::make_unique<SubstreamData>(ISerialization::createFromPath(subpath, prefix_len));
                 }
@@ -329,23 +332,18 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
         ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
 }
 
-SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
+SerializationPtr IDataType::getDefaultSerialization() const
 {
     checkStackSize();
-
-    if (override_default)
-        return override_default;
 
     if (custom_serialization)
         return custom_serialization;
 
-    return doGetDefaultSerialization();
+    return doGetSerialization(SerializationInfoSettings{});
 }
 
-SerializationPtr IDataType::getSerialization(
-    ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default) const
+SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const
 {
-    auto serialization = getDefaultSerialization(override_default);
     for (auto kind : kind_stack)
     {
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
@@ -361,12 +359,17 @@ SerializationPtr IDataType::getSerialization(
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKindStack(), info.getSettings());
+    return wrapSerializationBasedOnKindStack(getSerialization(info.getSettings()), info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
 {
-    return getSerialization(*createSerializationInfo(settings));
+    checkStackSize();
+
+    if (custom_serialization)
+        return custom_serialization;
+
+    return doGetSerialization(settings);
 }
 
 // static
@@ -440,6 +443,7 @@ bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } 
 bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
+bool isNativeFloat(TYPE data_type) { return WhichDataType(data_type).isNativeFloat(); } \
 \
 bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
 bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \

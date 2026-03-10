@@ -517,6 +517,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!join_header->has(name))
                 continue;
 
+            /// For the legacy JoinStep (not JoinStepLogical), there is no mechanism to adjust
+            /// the pushed-down filter expression types. When join_use_nulls changes column types
+            /// (e.g. UInt8 in the input becomes Nullable(UInt8) in the join output), pushing a
+            /// filter built for the join output directly to the input side causes a type mismatch.
+            /// JoinStepLogical handles this via fix_predicate_for_join_logical_step below.
+            if (!logical_join && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
+                continue;
 
             available_input_columns_for_filter.push_back(name);
         }

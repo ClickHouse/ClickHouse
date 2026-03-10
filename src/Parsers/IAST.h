@@ -395,6 +395,7 @@ public:
         AsyncInsertFlush,
         ParallelWithQuery,
         Copy,
+        Snapshot,
     };
 
     /// Return QueryKind of this AST query.

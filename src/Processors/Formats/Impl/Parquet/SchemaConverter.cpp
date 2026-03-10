@@ -846,7 +846,6 @@ void SchemaConverter::processPrimitiveColumn(
         bool found = true;
         switch (type)
         {
-            case parq::Type::BOOLEAN: size = 1; break;
             case parq::Type::INT32: size = 4; break;
             case parq::Type::INT64: size = 8; break;
             case parq::Type::INT96: size = 12; break;

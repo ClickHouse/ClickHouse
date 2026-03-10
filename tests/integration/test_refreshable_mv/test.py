@@ -511,9 +511,18 @@ def do_test_backup(to_table):
         # A refresh may EXCHANGE the target table via the DDL log. The EXCHANGE propagates
         # asynchronously; SYNC REPLICA may run against the pre-EXCHANGE table, then the
         # EXCHANGE swaps in the new table whose data hasn't replicated yet → empty SELECT.
-        # Fix: stop the view, sync DDL, sync data.
+        # Fix: stop the view, wait for any in-flight refresh to fully complete (including
+        # the EXCHANGE DDL), sync DDL, sync data.
         for node in nodes:
             node.query("SYSTEM STOP VIEW re.rmv")
+        # WAIT VIEW ensures any in-flight refresh finishes, including the EXCHANGE DDL.
+        # For coordinated views it also waits for the EXCHANGE to be visible locally.
+        # If the refresh was cancelled by STOP VIEW, WAIT VIEW throws — that's expected.
+        for node in nodes:
+            try:
+                node.query("SYSTEM WAIT VIEW re.rmv")
+            except Exception:
+                pass
         for node in nodes:
             node.query("SYSTEM SYNC DATABASE REPLICA re")
         node1.query_with_retry(f"SYSTEM SYNC REPLICA re.{target}")

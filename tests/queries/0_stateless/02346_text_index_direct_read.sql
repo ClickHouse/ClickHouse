@@ -42,7 +42,7 @@ SYSTEM FLUSH LOGS text_log;
 SELECT message
 FROM (
      SELECT event_time_microseconds, message FROM system.text_log
-     WHERE logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Added:')
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Added:')
      ORDER BY event_time_microseconds DESC LIMIT 8
 )
 ORDER BY event_time_microseconds ASC;

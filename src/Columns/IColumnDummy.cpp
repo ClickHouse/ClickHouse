@@ -26,9 +26,9 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+void IColumnDummy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name from {}", getName());
 }
 
 void IColumnDummy::insert(const Field &)
