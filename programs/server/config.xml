@@ -2007,4 +2007,44 @@
     <!--
     <pending_signals></pending_signals>
     -->
+
+    <!-- AI configuration for the ai_generate_text function.
+         Requires the allow_experimental_ai_functions setting to be enabled.
+         Supported providers: 'openai', 'anthropic'.
+
+         If api_key is not specified, it falls back to the OPENAI_API_KEY or
+         ANTHROPIC_API_KEY environment variables depending on the provider.
+
+         If base_url is not specified, it defaults to the provider's official endpoint:
+           - OpenAI:    https://api.openai.com
+           - Anthropic: https://api.anthropic.com
+
+         base_url is useful when routing requests through an LLM proxy or gateway.
+
+         All generation parameters (temperature, max_tokens, etc.) and control parameters
+         (requests_per_minute, max_retries, retry_delay_ms) can be set here as defaults.
+         Values in the function's options_json argument take priority over these settings.
+    -->
+    <ai>
+        <!-- Supported providers: 'openai', 'anthropic'. -->
+        <!-- <provider>openai</provider> -->
+        <!-- <model>your_model_name</model> -->
+        <!-- API key for authenticating requests to the LLM provider. -->
+        <!-- <api_key>your_api_key_here</api_key> -->
+        <!-- Base URL of the LLM API endpoint (e.g. a proxy or self-hosted gateway). -->
+        <!-- <base_url>http://your-endpoint-here</base_url> -->
+
+        <!-- Optional generation parameters (uncomment to use): -->
+        <!-- <temperature>0.7</temperature> -->
+        <!-- <max_tokens>1000</max_tokens> -->
+        <!-- <top_p>0.9</top_p> -->
+        <!-- <seed>42</seed> -->
+        <!-- <frequency_penalty>0.0</frequency_penalty> -->
+        <!-- <presence_penalty>0.0</presence_penalty> -->
+
+        <!-- Optional control parameters (uncomment to use): -->
+        <!-- <requests_per_minute>60</requests_per_minute> -->
+        <!-- <max_retries>3</max_retries> -->
+        <!-- <retry_delay_ms>1000</retry_delay_ms> -->
+    </ai>
 </clickhouse>
