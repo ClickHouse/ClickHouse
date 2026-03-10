@@ -534,6 +534,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
+            if (settings.json && settings.graph)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'json' and 'graph' cannot be set for EXPLAIN AST query");
+            }
             if (settings.json)
             {
                 auto json_item = dumpASTAsJSON(*ast.getExplainedQuery());

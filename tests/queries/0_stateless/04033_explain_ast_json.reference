@@ -23,3 +23,8 @@
   ]
 }
 {"id":"CreateQuery t","children":[{"id":"Identifier t"},{"id":"Columns definition","children":[{"id":"ExpressionList","children":[{"id":"ColumnDeclaration a","children":[{"id":"DataType UInt32"}]},{"id":"ColumnDeclaration b","children":[{"id":"DataType String"}]}]}]},{"id":"Storage definition","children":[{"id":"Function MergeTree"},{"id":"Identifier a"}]}]}
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
