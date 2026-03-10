@@ -1145,22 +1145,6 @@ def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
-def randomize_join_algorithm():
-    """Returns a join_algorithm setting value.
-    - 10%: 'auto' (ClickHouse picks dynamically)
-    - 20%: a single algorithm in isolation (stresses that algorithm without fallback)
-    - 70%: a random subset of optional algorithms + 'hash' as safety-net fallback
-      (subset may be empty, giving just 'hash' ~14% of total calls)"""
-    r = random.random()
-    all_algorithms = ["direct", "parallel_hash", "grace_hash", "full_sorting_merge"]
-    if r < 0.10:
-        return "auto"
-    if r < 0.30:
-        return random.choice(["hash"] + all_algorithms)
-    subset = random.sample(all_algorithms, random.randint(0, len(all_algorithms)))
-    return ",".join(subset + ["hash"])
-
-
 # Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
@@ -1319,184 +1303,6 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
-        # join_algorithm: see randomize_join_algorithm() above
-        "join_algorithm": randomize_join_algorithm,
-        # query_plan_* optimizer pass toggles — disabling any single pass preserves correctness
-        "query_plan_lift_up_array_join": lambda: random.randint(0, 1),
-        "query_plan_push_down_limit": lambda: random.randint(0, 1),
-        "query_plan_split_filter": lambda: random.randint(0, 1),
-        "query_plan_merge_expressions": lambda: random.randint(0, 1),
-        "query_plan_merge_filters": lambda: random.randint(0, 1),
-        "query_plan_filter_push_down": lambda: random.randint(0, 1),
-        "query_plan_convert_outer_join_to_inner_join": lambda: random.randint(0, 1),
-        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.randint(0, 1),
-        "query_plan_merge_filter_into_join_condition": lambda: random.randint(0, 1),
-        "query_plan_convert_join_to_in": lambda: random.randint(0, 1),
-        "query_plan_optimize_prewhere": lambda: random.randint(0, 1),
-        "query_plan_execute_functions_after_sorting": lambda: random.randint(0, 1),
-        "query_plan_lift_up_union": lambda: random.randint(0, 1),
-        "query_plan_read_in_order": lambda: random.randint(0, 1),
-        "query_plan_aggregation_in_order": lambda: random.randint(0, 1),
-        "query_plan_remove_redundant_sorting": lambda: random.randint(0, 1),
-        "query_plan_remove_redundant_distinct": lambda: random.randint(0, 1),
-        "query_plan_enable_multithreading_after_window_functions": lambda: random.randint(0, 1),
-        "query_plan_optimize_lazy_materialization": lambda: random.randint(0, 1),
-        "query_plan_remove_unused_columns": lambda: random.randint(0, 1),
-        "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.randint(0, 1),
-        "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
-        # PREWHERE optimization toggles
-        "optimize_move_to_prewhere": lambda: random.randint(0, 1),
-        "optimize_move_to_prewhere_if_final": lambda: random.randint(0, 1),
-        "move_all_conditions_to_prewhere": lambda: random.randint(0, 1),
-        "allow_reorder_prewhere_conditions": lambda: random.randint(0, 1),
-        "apply_prewhere_after_final": lambda: random.randint(0, 1),
-        "move_primary_key_columns_to_end_of_prewhere": lambda: random.randint(0, 1),
-        "merge_tree_determine_task_size_by_prewhere_columns": lambda: random.randint(0, 1),
-        # Skip index settings (beyond the existing use_skip_indexes_if_final / use_skip_indexes_on_data_read)
-        "use_skip_indexes": lambda: random.randint(0, 1),
-        "use_skip_indexes_for_disjunctions": lambda: random.randint(0, 1),
-        "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
-        "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
-        "materialize_skip_indexes_on_insert": lambda: random.randint(0, 1),
-        "use_index_for_in_with_subqueries": lambda: random.randint(0, 1),
-        "analyze_index_with_space_filling_curves": lambda: random.randint(0, 1),
-        # Text (full-text) index settings
-        "enable_full_text_index": lambda: random.randint(0, 1),
-        "query_plan_direct_read_from_text_index": lambda: random.randint(0, 1),
-        "query_plan_text_index_add_hint": lambda: random.randint(0, 1),
-        "use_text_index_tokens_cache": lambda: random.randint(0, 1),
-        "use_text_index_header_cache": lambda: random.randint(0, 1),
-        "use_text_index_postings_cache": lambda: random.randint(0, 1),
-        # Statistics
-        "use_statistics": lambda: random.randint(0, 1),
-        "use_statistics_cache": lambda: random.randint(0, 1),
-        # Rewrite / optimization toggles
-        "rewrite_in_to_join": lambda: random.randint(0, 1),
-        "cross_to_inner_join_rewrite": lambda: random.randint(0, 2),
-        "rewrite_count_distinct_if_with_count_distinct_implementation": lambda: random.randint(0, 1),
-        "count_distinct_optimization": lambda: random.randint(0, 1),
-        "optimize_group_by_function_keys": lambda: random.randint(0, 1),
-        "optimize_group_by_constant_keys": lambda: random.randint(0, 1),
-        "short_circuit_function_evaluation_for_nulls": lambda: random.randint(0, 1),
-        # JOIN runtime filters
-        "enable_join_runtime_filters": lambda: random.randint(0, 1),
-        # Parallel replicas additional toggles
-        "parallel_replicas_prefer_local_join": lambda: random.randint(0, 1),
-        "parallel_replicas_support_projection": lambda: random.randint(0, 1),
-        "parallel_replicas_filter_pushdown": lambda: random.randint(0, 1),
-        "parallel_replicas_allow_in_with_subquery": lambda: random.randint(0, 1),
-        "parallel_replicas_allow_materialized_views": lambda: random.randint(0, 1),
-        # Predicate pushdown into subqueries
-        "enable_optimize_predicate_expression": lambda: random.randint(0, 1),
-        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.randint(0, 1),
-        "allow_push_predicate_when_subquery_contains_with": lambda: random.randint(0, 1),
-        "allow_push_predicate_ast_for_distributed_subqueries": lambda: random.randint(0, 1),
-        # Scalar / count / aggregate optimizations
-        "enable_scalar_subquery_optimization": lambda: random.randint(0, 1),
-        "optimize_trivial_count_query": lambda: random.randint(0, 1),
-        "optimize_normalize_count_variants": lambda: random.randint(0, 1),
-        "optimize_injective_functions_inside_uniq": lambda: random.randint(0, 1),
-        "optimize_injective_functions_in_group_by": lambda: random.randint(0, 1),
-        "optimize_arithmetic_operations_in_aggregate_functions": lambda: random.randint(0, 1),
-        "optimize_redundant_functions_in_order_by": lambda: random.randint(0, 1),
-        "optimize_multiif_to_if": lambda: random.randint(0, 1),
-        "optimize_time_filter_with_preimage": lambda: random.randint(0, 1),
-        "enable_early_constant_folding": lambda: random.randint(0, 1),
-        "normalize_function_names": lambda: random.randint(0, 1),
-        "convert_query_to_cnf": lambda: random.randint(0, 1),
-        "optimize_using_constraints": lambda: random.randint(0, 1),
-        # FINAL read path options (do_not_merge_across_partitions_select_final omitted — changes deduplication scope)
-        "enable_automatic_decision_for_merging_across_partitions_for_final": lambda: random.randint(0, 1),
-        "split_parts_ranges_into_intersecting_and_non_intersecting_final": lambda: random.randint(0, 1),
-        "split_intersecting_parts_ranges_into_layers_final": lambda: random.randint(0, 1),
-        # Read / execution misc
-        "parallel_non_joined_rows_processing": lambda: random.randint(0, 1),
-        "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
-        "read_in_order_use_buffering": lambda: random.randint(0, 1),
-        "parallel_view_processing": lambda: random.randint(0, 1),
-        "use_concurrency_control": lambda: random.randint(0, 1),
-        "use_variant_default_implementation_for_comparisons": lambda: random.randint(0, 1),
-        "enable_parsing_to_custom_serialization": lambda: random.randint(0, 1),
-        "merge_tree_use_deserialization_prefixes_cache": lambda: random.randint(0, 1),
-        "merge_tree_use_prefixes_deserialization_thread_pool": lambda: random.randint(0, 1),
-        "exact_rows_before_limit": lambda: random.randint(0, 1),
-        "rows_before_aggregation": lambda: random.randint(0, 1),
-        # Aggregation / hash table stats
-        "collect_hash_table_stats_during_aggregation": lambda: random.randint(0, 1),
-        "collect_hash_table_stats_during_joins": lambda: random.randint(0, 1),
-        "use_hash_table_stats_for_join_reordering": lambda: random.randint(0, 1),
-        "allow_aggregate_partitions_independently": lambda: random.randint(0, 1),
-        "enable_software_prefetch_in_aggregation": lambda: random.randint(0, 1),
-        "optimize_aggregators_of_group_by_keys": lambda: random.randint(0, 1),
-        # Mutation execution options (apply_mutations_on_fly omitted — disabling shows pre-mutation data)
-        "enable_sharing_sets_for_mutations": lambda: random.randint(0, 1),
-        "mutations_execute_nondeterministic_on_initiator": lambda: random.randint(0, 1),
-        "mutations_execute_subqueries_on_initiator": lambda: random.randint(0, 1),
-        # Misc optimizer / execution flags
-        "use_partition_pruning": lambda: random.randint(0, 1),
-        "enable_unaligned_array_join": lambda: random.randint(0, 1),
-        "optimize_empty_string_comparisons": lambda: random.randint(0, 1),
-        "execute_exists_as_scalar_subquery": lambda: random.randint(0, 1),
-        "async_socket_for_remote": lambda: random.randint(0, 1),
-        "async_query_sending_for_remote": lambda: random.randint(0, 1),
-        "allow_experimental_json_lazy_type_hints": lambda: random.randint(0, 1),
-        # Projection optimizer flags
-        "optimize_use_projections": lambda: random.randint(0, 1),
-        "optimize_use_implicit_projections": lambda: random.randint(0, 1),
-        "optimize_use_projection_filtering": lambda: random.randint(0, 1),
-        # Metadata / cache for external formats
-        "use_parquet_metadata_cache": lambda: random.randint(0, 1),
-        "use_iceberg_metadata_files_cache": lambda: random.randint(0, 1),
-        # Grace hash join bucket counts
-        "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32]),
-        "grace_hash_join_max_buckets": lambda: random.choice([64, 128, 256, 1024]),
-        # Distributed query pushdown (mode 1 for distributed_group_by_no_merge skips merge → changes results, so omit)
-        "distributed_push_down_limit": lambda: random.randint(0, 2),
-        # Aggregation threading
-        "aggregation_memory_efficient_merge_threads": lambda: random.choice([0, 1, 2, 4]),
-        "max_threads_for_indexes": lambda: random.choice([0, 1, 2, 4]),
-        # MergeTree seek/cache thresholds
-        "merge_tree_min_rows_for_seek": lambda: random.choice([0, 1, 8, 1000]),
-        "merge_tree_min_bytes_for_seek": lambda: random.choice([0, 1, 4096, 1 << 20]),
-        "merge_tree_max_rows_to_use_cache": lambda: random.choice([0, 128, 1024, 1 << 20]),
-        "merge_tree_max_bytes_to_use_cache": lambda: random.choice([0, 1 << 14, 1 << 20, 1 << 28]),
-        # Optimizer chain-length thresholds
-        "optimize_min_equality_disjunction_chain_length": lambda: random.choice([0, 1, 3, 8]),
-        "optimize_min_inequality_conjunction_chain_length": lambda: random.choice([0, 1, 3, 8]),
-        # Join-to-sort conversion thresholds
-        "join_to_sort_minimum_perkey_rows": lambda: random.choice([0, 1, 10, 1000]),
-        "join_to_sort_maximum_table_rows": lambda: random.choice([0, 100, 10000, 1000000]),
-        # Correlated subquery optimizations
-        "correlated_subqueries_substitute_equivalent_expressions": lambda: random.randint(0, 1),
-        "correlated_subqueries_use_in_memory_buffer": lambda: random.randint(0, 1),
-        # Optimizer / rewrite
-        "enable_add_distinct_to_in_subqueries": lambda: random.randint(0, 1),
-        # Query result cache
-        "enable_reads_from_query_cache": lambda: random.randint(0, 1),
-        "enable_writes_to_query_cache": lambda: random.randint(0, 1),
-        # Parallel serialization
-        "enable_parallel_blocks_marshalling": lambda: random.randint(0, 1),
-        # JSON / regex engines
-        "allow_simdjson": lambda: random.randint(0, 1),
-        "allow_hyperscan": lambda: random.randint(0, 1),
-        # Data integrity
-        "checksum_on_read": lambda: random.randint(0, 1),
-        # Global IN / JOIN preference
-        "prefer_global_in_and_join": lambda: random.randint(0, 1),
-        # Optimizer rewrites
-        "optimize_rewrite_aggregate_function_with_if": lambda: random.randint(0, 1),
-        "optimize_rewrite_regexp_functions": lambda: random.randint(0, 1),
-        "optimize_trivial_insert_select": lambda: random.randint(0, 1),
-        # Type inference
-        "cast_string_to_dynamic_use_inference": lambda: random.randint(0, 1),
-        # Statistics materialization
-        "materialize_statistics_on_insert": lambda: random.randint(0, 1),
-        # Marks loading
-        "load_marks_asynchronously": lambda: random.randint(0, 1),
-        # Vector search
-        "vector_search_with_rescoring": lambda: random.randint(0, 1),
-        # Parallel hash join threshold
-        "parallel_hash_join_threshold": lambda: random.choice([0, 1000, 100000, 1 << 20]),
     }
 
     dependent_settings = {
@@ -1668,6 +1474,14 @@ class MergeTreeSettingsRandomizer:
                 continue
 
             random_settings[setting] = value
+
+        # Enforce semantic ordering constraints
+        if (
+            "min_index_granularity_bytes" in random_settings
+            and "index_granularity_bytes" in random_settings
+            and random_settings["min_index_granularity_bytes"] > random_settings["index_granularity_bytes"]
+        ):
+            random_settings["min_index_granularity_bytes"] = random_settings["index_granularity_bytes"]
 
         return random_settings
 
