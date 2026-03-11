@@ -19,3 +19,6 @@ SELECT arrayPartialPermutations([1, 2, 3], 0);
 SELECT arrayCombinations([1, 2], 3); -- {serverError BAD_ARGUMENTS}
 SELECT arrayCombinations([1, 2], -1); -- {serverError BAD_ARGUMENTS}
 SELECT arrayPartialPermutations([1, 2], 3); -- {serverError BAD_ARGUMENTS}
+
+-- size limit
+SELECT arrayPermutations(range(toUInt8(15))); -- {serverError TOO_LARGE_ARRAY_SIZE}

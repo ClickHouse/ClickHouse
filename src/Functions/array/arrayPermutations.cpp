@@ -13,6 +13,35 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+static constexpr size_t MAX_PERMUTATION_RESULT_ELEMENTS = 1000000;
+
+/// Compute n! but return 0 on overflow or if result > limit
+static size_t factorialCapped(size_t n, size_t limit)
+{
+    size_t result = 1;
+    for (size_t i = 2; i <= n; ++i)
+    {
+        if (result > limit / i)
+            return 0;
+        result *= i;
+    }
+    return result <= limit ? result : 0;
+}
+
+/// Compute P(n, k) = n! / (n-k)! but return 0 on overflow or if result > limit
+static size_t partialPermCountCapped(size_t n, size_t k, size_t limit)
+{
+    size_t result = 1;
+    for (size_t i = 0; i < k; ++i)
+    {
+        if (result > limit / (n - i))
+            return 0;
+        result *= (n - i);
+    }
+    return result <= limit ? result : 0;
 }
 
 /// arrayPermutations(arr) — all permutations of the full array
@@ -87,19 +116,30 @@ public:
 
             if (k == 0)
             {
+                /// C(n,0) = P(n,0) = 1: one result — the empty selection
+                inner_offsets.push_back(inner_pos);
+                ++outer_pos;
                 outer_offsets.push_back(outer_pos);
                 continue;
             }
 
+            /// Check output size to prevent OOM
+            size_t num_results = IsPartial || k < n
+                ? partialPermCountCapped(n, k, MAX_PERMUTATION_RESULT_ELEMENTS)
+                : factorialCapped(n, MAX_PERMUTATION_RESULT_ELEMENTS);
+
+            if (num_results == 0)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Result of function {} would exceed {} elements for array of length {} with k={}",
+                    getName(), MAX_PERMUTATION_RESULT_ELEMENTS, n, k);
+
             /// Generate k-permutations of n elements using index arrays.
-            /// For full permutations (k==n), use std::next_permutation.
-            /// For partial permutations, use recursive generation.
             std::vector<size_t> indices(n);
             std::iota(indices.begin(), indices.end(), 0);
 
             if (k == n)
             {
-                /// Full permutations via std::next_permutation (indices already sorted)
+                /// Full permutations via std::next_permutation (lexicographic order)
                 do
                 {
                     for (size_t i = 0; i < k; ++i)
@@ -111,8 +151,10 @@ public:
             }
             else
             {
-                /// Partial permutations: generate all k-length ordered selections
-                generatePartialPermutations(arr_values, arr_begin, indices, k, 0,
+                /// Partial permutations in lexicographic order using used-flags approach
+                std::vector<bool> used(n, false);
+                std::vector<size_t> current(k);
+                generatePartialPermutationsLex(arr_values, arr_begin, n, k, 0, used, current,
                     *col_res_data, inner_offsets, inner_pos, outer_pos);
             }
 
@@ -125,27 +167,31 @@ public:
     }
 
 private:
-    static void generatePartialPermutations(
-        const IColumn & arr_values, size_t arr_begin,
-        std::vector<size_t> & indices, size_t k, size_t depth,
+    static void generatePartialPermutationsLex(
+        const IColumn & arr_values, size_t arr_begin, size_t n, size_t k, size_t depth,
+        std::vector<bool> & used, std::vector<size_t> & current,
         IColumn & res_data, IColumn::Offsets & inner_offsets, size_t & inner_pos, size_t & outer_pos)
     {
         if (depth == k)
         {
             for (size_t i = 0; i < k; ++i)
-                res_data.insertFrom(arr_values, arr_begin + indices[i]);
+                res_data.insertFrom(arr_values, arr_begin + current[i]);
             inner_pos += k;
             inner_offsets.push_back(inner_pos);
             ++outer_pos;
             return;
         }
 
-        for (size_t i = depth; i < indices.size(); ++i)
+        for (size_t i = 0; i < n; ++i)
         {
-            std::swap(indices[depth], indices[i]);
-            generatePartialPermutations(arr_values, arr_begin, indices, k, depth + 1,
-                res_data, inner_offsets, inner_pos, outer_pos);
-            std::swap(indices[depth], indices[i]);
+            if (!used[i])
+            {
+                used[i] = true;
+                current[depth] = i;
+                generatePartialPermutationsLex(arr_values, arr_begin, n, k, depth + 1, used, current,
+                    res_data, inner_offsets, inner_pos, outer_pos);
+                used[i] = false;
+            }
         }
     }
 };

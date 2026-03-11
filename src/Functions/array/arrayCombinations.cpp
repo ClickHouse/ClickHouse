@@ -10,6 +10,25 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+static constexpr size_t MAX_COMBINATION_RESULT_ELEMENTS = 1000000;
+
+/// Compute C(n, k) but return 0 on overflow or if result > limit
+static size_t combinationCountCapped(size_t n, size_t k, size_t limit)
+{
+    if (k > n) return 0;
+    if (k == 0 || k == n) return 1;
+    if (k > n - k) k = n - k;
+    size_t result = 1;
+    for (size_t i = 0; i < k; ++i)
+    {
+        if (result > limit / (n - i))
+            return 0;
+        result = result * (n - i) / (i + 1);
+    }
+    return result <= limit ? result : 0;
 }
 
 class FunctionArrayCombinations : public IFunction
@@ -67,9 +86,19 @@ public:
 
             if (k == 0)
             {
+                /// C(n,0) = 1: one result — the empty selection
+                inner_offsets.push_back(inner_pos);
+                ++outer_pos;
                 outer_offsets.push_back(outer_pos);
                 continue;
             }
+
+            /// Check output size to prevent OOM
+            size_t num_results = combinationCountCapped(n, static_cast<size_t>(k), MAX_COMBINATION_RESULT_ELEMENTS);
+            if (num_results == 0)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Result of function {} would exceed {} elements for array of length {} with k={}",
+                    getName(), MAX_COMBINATION_RESULT_ELEMENTS, n, k);
 
             /// Generate combinations using iterative approach with index array
             std::vector<size_t> indices(k);
