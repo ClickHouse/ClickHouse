@@ -525,22 +525,35 @@ def main():
         )
         my_prs_number_and_title = json.loads(my_prs_number_and_title)
         pr_menu = []
-        pr_menu.append((f"Process commit sha on master", 0))
-        pr_menu.append((f"Enter PR number manually", 1))
         for pr_dict in my_prs_number_and_title:
             pr_number = pr_dict["number"]
             pr_title = pr_dict["title"]
             pr_menu.append((f"#{pr_number}: {pr_title}", pr_number))
 
-        selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
-        if selected_pr[1] == 1:
-            pr_number = UserPrompt.get_number("Enter PR number", lambda x: x > 70000)
-        elif selected_pr[1] == 0:
-            is_master_commit = True
-            commit_sha = UserPrompt.get_string(
-                "Enter commit sha", validator=lambda x: len(x) == 40
-            )
-            pr_number = None
+        def is_pr_number(s):
+            try:
+                num = int(s.lstrip("#"))
+                return 10000 < num < 150_000
+            except ValueError:
+                return False
+
+        def is_commit_sha(s):
+            return len(s) == 40 and all(c in "0123456789abcdef" for c in s.lower())
+
+        selected_pr = UserPrompt.select_from_menu(
+            pr_menu,
+            "Select a PR from the list, or manually enter a commit sha or PR number",
+            validator=lambda x: is_pr_number(x) or is_commit_sha(x),
+        )
+        if isinstance(selected_pr, str):
+            if is_commit_sha(selected_pr):
+                is_master_commit = True
+                commit_sha = selected_pr
+                pr_number = None
+            elif is_pr_number(selected_pr):
+                pr_number = int(selected_pr.lstrip("#"))
+            else:
+                raise Exception(f"Unrecognized input: {selected_pr}")
         else:
             pr_number = selected_pr[1]
 
@@ -793,19 +806,40 @@ def main():
     )
 
     if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
-        # Check if PR was successfully added to the merge queue
-        # uncomment/fix if GH misses became regular
-        # merge_status = Shell.check(
-        #     f"gh pr view {pr_number} --json mergeStateStatus -q '.mergeStateStatus'",
-        #     capture_output=True,
-        # )
-        # if merge_status != "QUEUED":
-        #     print(
-        #         f"⚠ PR #{pr_number} auto-merge enabled but merge queue status unclear [{merge_status}]. "
-        #         f"If PR is not in queue, try redoing 'Merge when ready' button on GitHub."
-        #     )
-        # else:
-        print(f"✓ PR #{pr_number} added to the merge queue")
+        # Give GitHub a moment to process auto-merge and update merge state
+        time.sleep(5)
+        merge_status = Shell.get_output(
+            f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
+        )
+        if merge_status == "CLEAN":
+            # PR checks already passed but GitHub didn't enqueue it — the
+            # state transition was missed. Disable and re-enable auto-merge
+            # to force GitHub to re-evaluate.
+            print(
+                f"WARNING: PR #{pr_number} has mergeStateStatus=CLEAN (checks passed but not queued). "
+                f"Retoggling auto-merge to fix..."
+            )
+            Shell.check(
+                f"gh pr merge {pr_number} --disable-auto --repo ClickHouse/ClickHouse",
+                verbose=True,
+            )
+            time.sleep(2)
+            if Shell.check(
+                f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse",
+                verbose=True,
+            ):
+                print(f"OK: Auto-merge retoggled for PR #{pr_number}")
+            else:
+                print(
+                    f"ERROR: Failed to re-enable auto-merge for PR #{pr_number}. "
+                    f"Please manually click 'Merge when ready' on GitHub."
+                )
+        elif merge_status == "QUEUED":
+            print(f"OK: PR #{pr_number} added to the merge queue")
+        else:
+            print(
+                f"OK: PR #{pr_number} auto-merge enabled (mergeStateStatus={merge_status})"
+            )
 
 
 if __name__ == "__main__":

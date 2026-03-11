@@ -3,7 +3,6 @@
 
 -- This test validates the storage size of the text index without and with posting list compression.
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 SET max_insert_threads = 1;

@@ -72,6 +72,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, JemallocProfileFormat) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LightweightDeleteMode) \
     M(CLASS_NAME, AlterUpdateMode) \
@@ -147,6 +148,7 @@ struct Settings
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
 

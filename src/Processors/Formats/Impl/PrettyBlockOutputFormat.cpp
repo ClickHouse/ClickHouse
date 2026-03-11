@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
@@ -7,11 +8,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/CurrentThread.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
+#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -799,6 +802,11 @@ void PrettyBlockOutputFormat::writeSuffixImpl()
 
         out << "Showed " << displayed_rows << " out of " << total_rows << " rows.\n";
     }
+}
+
+void PrettyBlockOutputFormat::onRowsReadBeforeUpdate()
+{
+    total_rows = getRowsReadBefore();
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

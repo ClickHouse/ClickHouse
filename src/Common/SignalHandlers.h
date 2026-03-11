@@ -2,6 +2,7 @@
 #include <csignal>
 
 #include <base/defines.h>
+#include <Common/Logger_fwd.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
 #include <Common/ThreadStatus.h>
@@ -23,7 +24,12 @@ const size_t signal_pipe_buf_size =
     + sizeof(StackTrace)
     + sizeof(UInt64)
     + sizeof(UInt32)
-    + sizeof(void*);
+    + sizeof(void*)
+#if defined(OS_LINUX)
+    + sizeof(UInt8)
+    + sizeof(FramePointers)
+#endif
+    ;
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -55,7 +61,8 @@ __attribute__((__weak__)) void collectCrashLog(
     std::optional<UInt64> fault_address,
     const String & fault_access_type,
     const String & signal_description,
-    const String & current_exception);
+    const FramePointers & current_exception_trace,
+    size_t current_exception_trace_size);
 
 
 /// Check if we are currently handing the fatal signal and going to terminate
@@ -95,7 +102,8 @@ private:
         const std::vector<FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         DB::ThreadStatus * thread_ptr,
-        const std::string & exception_message) const;
+        const FramePointers & exception_trace,
+        size_t exception_trace_size) const;
 };
 
 struct HandledSignals

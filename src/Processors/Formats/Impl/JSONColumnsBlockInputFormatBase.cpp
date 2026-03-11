@@ -1,6 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Port.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>

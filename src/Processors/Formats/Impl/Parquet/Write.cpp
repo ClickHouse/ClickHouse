@@ -3,7 +3,7 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
-#include <arrow/util/rle_encoding.h>
+#include <arrow/util/rle_encoding_internal.h>
 #include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
@@ -21,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -36,6 +37,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -373,9 +375,14 @@ struct ConverterDateTime64WithMultiplier
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            /// Not checking overflow because DateTime64 values should already be in the range where
-            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
-            buf[i] = column.getData()[offset + i].value * multiplier;
+        {
+            Int64 value = column.getData()[offset + i].value;
+            if (common::mulOverflow(value, multiplier, buf[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
+                    value, multiplier);
+        }
         return buf.data();
     }
 };
@@ -651,19 +658,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleEncoder;
+    using arrow::util::RleBitPackedEncoder;
 
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
     int bit_width = bitScanReverse(max_level) + 1;
-    int max_rle_size = RleEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                       RleEncoder::MinBufferSize(bit_width);
+    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
+                        RleBitPackedEncoder::MinBufferSize(bit_width);
 
     out.resize(offset + prefix_size + max_rle_size);
 
-    RleEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), max_rle_size, bit_width);
+    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
     for (size_t i = 0; i < size; ++i)
         encoder.Put(data[i]);
     encoder.Flush();

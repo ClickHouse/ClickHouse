@@ -235,7 +235,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         patch.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return ptr;
     }
@@ -462,7 +462,7 @@ private:
         {
             return {true, wrapped.origin_exception};
         }
-        catch (...)
+        catch (...) // Ok: exception is not wrapped, return as-is
         {
             return {false, e};
         }
@@ -605,7 +605,8 @@ private:
 
         if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(select_query, local_context,local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
         else
@@ -692,8 +693,6 @@ private:
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
 
-        pipeline.addTransform(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(pipeline.getSharedHeader()));
-
         pipeline.addTransform(std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(view_id, pipeline.getSharedHeader()));
 
         return QueryPipelineBuilder::getPipeline(std::move(pipeline));
@@ -723,6 +722,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
+    LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
     deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
     /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
@@ -732,9 +732,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
-
-    LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
-        init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
 
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
@@ -757,11 +754,6 @@ struct SquashingTransformContext
 
 std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    LOG_DEBUG(
-        logger,
-        "createChainWithDependenciesForAllStreams called, sink_stream_size={}, squash_parallel_inserts={} deduplicate_blocks={} deduplicate_blocks_in_dependent_materialized_views={}",
-        sink_stream_size, squash_parallel_inserts, deduplicate_blocks, deduplicate_blocks_in_dependent_materialized_views);
-
     std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
@@ -891,6 +883,20 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
 }
 
 
+Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
+{
+    const auto & dependent_views_ids = dependent_views.at(root_view);
+    if (dependent_views_ids.empty())
+        return {};
+
+    auto output_header = output_headers.at(root_view);
+
+    Chain chain;
+    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
+    return chain;
+}
+
+
 Chain InsertDependenciesBuilder::createChainWithDependencies() const
 {
     Chain result;
@@ -905,7 +911,10 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When data is inserted to the *Log storages, then it is not supposed to be inserted to the dependent views
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
+    {
+        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
+    }
 
     if (skip_destination_table && result.empty())
         throw Exception(ErrorCodes::DEPENDENCIES_NOT_FOUND,
@@ -1026,7 +1035,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
     const auto & parent = path.parent(1);
     const auto & current = path.current();
-    LOG_TEST(logger, "observePath {}", path.debugInfo());
 
     auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
@@ -1633,8 +1641,11 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
         chassert(isView(view_id));
 
         result = Chain::concat(std::move(result), createPreSink(view_id));
+
         ++it;
     }
+    else if (it == path.begin())
+        ++it;
 
     for (; it != path.end(); ++it)
     {

@@ -31,21 +31,20 @@ using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 namespace
 {
 
-template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunction
 {
 public:
-    ExecutableFunctionJoinGet(ContextPtr context_,
+    ExecutableFunctionJoinGet(const char * name_,
+                              ContextPtr context_,
                               TableLockHolder table_lock_,
                               StorageJoinPtr storage_join_,
                               const DB::Block & result_columns_)
-        : context(context_)
+        : function_name(name_)
+        , context(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(std::move(storage_join_))
         , result_columns(result_columns_)
     {}
-
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -53,26 +52,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
 private:
+    const char * function_name;
     ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     DB::Block result_columns;
 };
 
-template <bool or_null>
 class FunctionJoinGet final : public IFunctionBase
 {
 public:
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-
-    FunctionJoinGet(ContextPtr context_,
+    FunctionJoinGet(const char * name_,
+                    ContextPtr context_,
                     TableLockHolder table_lock_,
                     StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
-        : context(context_)
+        : function_name(name_)
+        , context(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
@@ -81,7 +80,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -91,6 +90,7 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
+    const char * function_name;
     ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
@@ -99,17 +99,19 @@ private:
     DataTypePtr return_type;
 };
 
-template <bool or_null>
 class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithContext
 {
 public:
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
+    JoinGetOverloadResolver(const char * name_, bool or_null_, ContextPtr context_)
+        : WithContext(context_), function_name(name_), or_null(or_null_) {}
 
-    explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    static FunctionOverloadResolverPtr create(const char * name, bool or_null, ContextPtr context_)
+    {
+        return std::make_unique<JoinGetOverloadResolver>(name, or_null, std::move(context_));
+    }
 
     bool isDeterministic() const override { return false; }
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
@@ -120,11 +122,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+
+private:
+    const char * function_name;
+    bool or_null;
 };
 
 
-template <bool or_null>
-ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+ColumnPtr ExecutableFunctionJoinGet::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     ColumnsWithTypeAndName keys;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -135,8 +140,7 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeA
     return storage_join->joinGet(keys, result_columns, context).column;
 }
 
-template <bool or_null>
-ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
+ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
 
@@ -144,7 +148,7 @@ ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAnd
     column_names.push_back(attr_name);
     context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
 
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(context, table_lock, storage_join, result_columns);
+    return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }
 
 std::pair<std::shared_ptr<StorageJoin>, String>
@@ -180,8 +184,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     return std::make_pair(storage_join, attr_name);
 }
 
-template <bool or_null>
-FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+FunctionBasePtr JoinGetOverloadResolver::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
     if (arguments.size() < 3)
         throw Exception(
@@ -198,13 +201,12 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
         argument_types[i] = arguments[i].type;
     }
 
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null || storage_join->useNulls());
+    bool effective_or_null = or_null || storage_join->useNulls();
+    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, effective_or_null);
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    if (storage_join->useNulls())
-        return std::make_unique<FunctionJoinGet<true>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
-
-    return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
+    const char * effective_name = effective_or_null ? "joinGetOrNull" : "joinGet";
+    return std::make_unique<FunctionJoinGet>(effective_name, getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 }
 
 }
@@ -309,9 +311,13 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
     FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, {}, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
 
     // joinGet
-    factory.registerFunction<JoinGetOverloadResolver<false>>(documentation_joinGet);
+    factory.registerFunction("joinGet",
+        [](ContextPtr ctx){ return JoinGetOverloadResolver::create("joinGet", false, std::move(ctx)); },
+        documentation_joinGet);
     // joinGetOrNull
-    factory.registerFunction<JoinGetOverloadResolver<true>>(documentation_joinGetOrNull);
+    factory.registerFunction("joinGetOrNull",
+        [](ContextPtr ctx){ return JoinGetOverloadResolver::create("joinGetOrNull", true, std::move(ctx)); },
+        documentation_joinGetOrNull);
 }
 
 }

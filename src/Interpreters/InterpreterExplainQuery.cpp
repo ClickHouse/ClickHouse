@@ -546,7 +546,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with the analyzer. SET enable_analyzer = 1.");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)

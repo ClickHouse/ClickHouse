@@ -342,12 +342,10 @@ public:
             TargetSpecific::Default::FunctionGeoDistance<method>>(context);
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX,
-            TargetSpecific::AVX::FunctionGeoDistance<method>>(context);
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionGeoDistance<method>>(context);
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionGeoDistance<method>>(context);
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionGeoDistance<method>>(context);
+        selector.registerImplementation<TargetArch::x86_64_v4,
+            TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
     #endif
     }
 

@@ -43,14 +43,11 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
-    void updateConfigurationIfNeeded(ContextPtr context) override;
-
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    bool update_configuration_on_read_write;
 };
 
 }

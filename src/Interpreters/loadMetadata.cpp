@@ -1,4 +1,5 @@
 #include <Common/PoolId.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Common/CurrentThread.h>
 
@@ -203,6 +204,7 @@ void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
+    auto component_guard = Coordination::setCurrentComponent("loadMetadata");
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     LoggerPtr log = getLogger("loadMetadata");
@@ -612,6 +614,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
+    auto component_guard = Coordination::setCurrentComponent("loadMetadataSystem");
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
         context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");

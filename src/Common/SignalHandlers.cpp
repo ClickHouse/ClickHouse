@@ -4,6 +4,8 @@
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
+#include <Common/FramePointers.h>
+#include <Common/ErrnoException.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -17,6 +19,7 @@
 #include <Poco/Environment.h>
 
 #include <thread>
+#include <unistd.h>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -35,8 +38,9 @@ extern const char * GIT_HASH;
 
 static const std::vector<FramePointers> empty_stack;
 
-/// Current exception message captured in terminate_handler.
-thread_local std::string terminate_current_exception_message;
+/// Current exception stack trace captured in terminate_handler.
+thread_local FramePointers terminate_current_exception_trace;
+thread_local size_t terminate_current_exception_trace_size = 0;
 
 using namespace DB;
 
@@ -121,7 +125,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-    writeBinary(terminate_current_exception_message, out);
+#if defined(OS_LINUX)
+    writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
+    for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+        writePODBinary(terminate_current_exception_trace[i], out);
+#endif
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -159,8 +167,23 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     if (std::current_exception())
     {
-        terminate_current_exception_message = getCurrentExceptionMessage(true);
-        log_message = "Terminate called for uncaught exception:\n" + terminate_current_exception_message;
+        std::string exception_message = getCurrentExceptionMessage(true);
+        log_message = "Terminate called for uncaught exception:\n" + exception_message;
+
+        try
+        {
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            const auto * stack_trace_frames = e.get_stack_trace_frames();
+            const size_t stack_trace_size = e.get_stack_trace_size();
+            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
+            for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+                terminate_current_exception_trace[i] = stack_trace_frames[i];
+        }
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
     else
     {
@@ -338,7 +361,8 @@ void SignalListener::run()
             std::vector<FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
-            std::string exception_message;
+            FramePointers exception_trace{};
+            UInt8 exception_trace_size{};
 
             readPODBinary(info, in);
             readPODBinary(context, in);
@@ -347,9 +371,13 @@ void SignalListener::run()
             readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
-            readBinary(exception_message, in);
+#if defined(OS_LINUX)
+            readBinary(exception_trace_size, in);
+            for (size_t i = 0; i < exception_trace_size; ++i)
+                readPODBinary(exception_trace[i], in);
+#endif
 
-            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_message);
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_trace, exception_trace_size);
         }
     }
 }
@@ -383,7 +411,8 @@ void SignalListener::onFault(
     const std::vector<FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
     DB::ThreadStatus * thread_ptr,
-    const std::string & exception_message) const
+    const FramePointers & exception_trace,
+    size_t exception_trace_size) const
 try
 {
     ThreadStatus thread_status;
@@ -393,9 +422,10 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
               VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
-              thread_num, sig);
+              thread_num, sig,
+              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 
@@ -407,8 +437,7 @@ try
 
     LOG_FATAL(log, "Signal description: {}", signal_description);
 
-    String error_message;
-    error_message = signalToErrorMessage(sig, info, *context);
+    String error_message = signalToErrorMessage(sig, info, *context);
     LOG_FATAL(log, fmt::runtime(error_message));
 
     String bare_stacktrace_str;
@@ -540,9 +569,11 @@ try
         collectCrashLog(
             sig, info.si_code, thread_num, query_id, query,
             stack_trace, fault_address, fault_access_type, si_code_description,
-            exception_message);
+            exception_trace, exception_trace_size);
     }
 
+    if (daemon)
+         daemon->flushTextLogs();
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)

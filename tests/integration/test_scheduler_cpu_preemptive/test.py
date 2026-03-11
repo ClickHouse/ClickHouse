@@ -278,6 +278,31 @@ class QueryPool:
         for thread in self.threads:
             thread.start()
 
+    def start_short_ignore_expected(self, count: int, max_threads: int, expected_errors: list[str]) -> None:
+        """Start running short queries, ignoring specified expected errors."""
+        assert self.stopped, "Pool is already running"
+        self.stopped = False
+
+        def query_thread() -> None:
+            while not self.stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}")
+                try:
+                    node.query(
+                        f"SELECT sum(number) FROM numbers({count}) SETTINGS "
+                        f"workload='{self.workload}', max_threads={max_threads}"
+                    )
+                except QueryRuntimeException as e:
+                    error_str = str(e)
+                    if not any(expected in error_str for expected in expected_errors):
+                        mylog(f"Query in workload {self.workload} failed with unexpected exception: {e}")
+                        with self._errors_lock:
+                            self.errors += 1
+
+        for _ in range(self.num_queries):
+            self.threads.append(threading.Thread(target=query_thread, args=()))
+        for thread in self.threads:
+            thread.start()
+
     def get_errors(self) -> int:
         with self._errors_lock:
             return self.errors
@@ -473,6 +498,52 @@ def test_downscaling(with_custom_config):
     finally:
         for tid in active_ids:
             development.stop(tid)
+
+
+def test_drop_workload_during_query():
+    """Test for race condition when a workload is dropped while queries are still running.
+    Uses short queries to maximize the chance of hitting the race condition with query finish.
+    """
+    node.query(
+        f"""
+        create resource cpu (master thread, worker thread);
+        create workload all;
+        create workload production in all;
+    """
+    )
+
+    # Start query pool with short queries, ignoring expected errors when workload is dropped
+    production = QueryPool(4, "production")
+    production.start_short_ignore_expected(
+        100000,
+        1,
+        ["RESOURCE_ACCESS_DENIED", "INVALID_SCHEDULER_NODE"]
+    )
+
+    stop_event = threading.Event()
+
+    def drop_create_thread():
+        while not stop_event.is_set():
+            try:
+                node.query("DROP WORKLOAD IF EXISTS production")
+                node.query("CREATE WORKLOAD IF NOT EXISTS production IN all")
+            except QueryRuntimeException:
+                pass  # Ignore errors during drop/create
+
+    # Start drop/create thread
+    drop_create_t = threading.Thread(target=drop_create_thread)
+    drop_create_t.start()
+
+    # Run for 5 seconds
+    time.sleep(5)
+
+    # Stop all threads
+    stop_event.set()
+    drop_create_t.join()
+    production.stop()
+
+    # Check for unexpected errors
+    assert production.get_errors() == 0, "Unexpected errors occurred"
 
 
 def test_create_workload_under_load():

@@ -45,9 +45,9 @@ See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
 
-### Running all tests {#running-all-tests}
+### Running fast tests {#running-fast-tests}
 
-You may need a decently powerful machine to run all tests. The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
+You may need a decently powerful machine to run a subset of tests (called "Fast test"). The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
 
 1. Install prerequisites and re-login.
 ```sh
@@ -69,12 +69,53 @@ cd ClickHouse
 python3 -m ci.praktika run "Fast test"
 ```
 
-4. You should get
+You should get
 ```sh
 Failed: 0, Passed: 7394, Skipped: 1795
 ```
 
 If you leave the run unattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
+
+### Running stateless tests {#running-stateless-tests}
+
+You may need a decently powerful machine to run stateless tests. The following works on `m7i.8xlarge` AWS amd64 Ubuntu instance with 200 GB storage.
+
+1. Install prerequisites and re-login.
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker ubuntu
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+2. Get the source code.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Build the code.
+```sh
+python3 -m ci.praktika run "Build (amd_debug)"
+cp ci/tmp/build/programs/clickhouse ci/tmp
+```
+
+4. Run stateless tests which can be run in parallel.
+```sh
+python3 -m ci.praktika run "Stateless tests (amd_debug, parallel)"
+```
+
+You should get
+```sh
+Failed: 0, Passed: 8497, Skipped: 103
+```
 
 ### Adding a new test {#adding-a-new-test}
 

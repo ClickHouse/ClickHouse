@@ -193,7 +193,10 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
-    if (joined_rows > static_cast<double>(std::numeric_limits<UInt64>::max()))
+    /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
+    /// Due to floating point precision, a value slightly less than max when compared
+    /// as double could still overflow when cast to UInt64
+    if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
         return std::numeric_limits<UInt64>::max();
     if (joined_rows < 1)
         return 1;
@@ -547,6 +550,9 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return right_join_type;
     if (right_join_type == JoinKind::Inner)
         return left_join_type;
+    /// Allow FULL join as it's restricted to table swapping and no reordering
+    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
+        return JoinKind::Full;
 
     /// Conflict, join is not possible:
     /// FROM t1 LEFT JOIN t2 LEFT JOIN t3

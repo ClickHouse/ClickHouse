@@ -5,6 +5,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Core/Field.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/FramePointers.h>
 
 
 class StackTrace;
@@ -20,7 +21,8 @@ void collectCrashLog(
     std::optional<UInt64> fault_address,
     const String & fault_access_type,
     const String & signal_description,
-    const String & current_exception);
+    const FramePointers & current_exception_trace,
+    size_t current_exception_trace_size);
 
 
 namespace DB
@@ -43,7 +45,7 @@ struct CrashLogElement
     std::optional<UInt64> fault_address;
     String fault_access_type;
     String signal_description;
-    String current_exception;
+    Array current_exception_trace_full;
     String git_hash;
     String architecture;
 
@@ -56,7 +58,7 @@ struct CrashLogElement
 class CrashLog : public SystemLog<CrashLogElement>
 {
     using SystemLog<CrashLogElement>::SystemLog;
-    friend void ::collectCrashLog(Int32, Int32, UInt64, const String &, const String &, const StackTrace &, std::optional<UInt64>, const String &, const String &, const String &);
+    friend void ::collectCrashLog(Int32, Int32, UInt64, const String &, const String &, const StackTrace &, std::optional<UInt64>, const String &, const String &, const FramePointers &, size_t);
 
     static std::weak_ptr<CrashLog> crash_log;
 

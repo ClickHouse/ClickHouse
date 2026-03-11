@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -272,6 +271,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
 
+        {Category::Internal, "Internal"},
+
         {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
@@ -281,4 +282,7 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
+
 }

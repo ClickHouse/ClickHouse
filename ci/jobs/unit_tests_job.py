@@ -1,8 +1,6 @@
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
-from pathlib import Path
-import os
 
 if __name__ == "__main__":
     # Note, LSan does not compatible with debugger
@@ -17,14 +15,16 @@ if __name__ == "__main__":
         command_launcher=command_launcher,
     )
 
-    profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+    profraw_files = (
+        Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split("\n")
+    )
     profraw_files = [f.strip() for f in profraw_files if f.strip()]
-    
+
     if profraw_files:
         # Merge profraw files into profdata
         print("Collecting and merging LLVM coverage files...")
         print(f"Found {len(profraw_files)} .profraw files")
-        
+
         # Auto-detect available LLVM profdata tool
         llvm_profdata = None
         for ver in ["21", "20", "19", "18", "17", "16", ""]:
@@ -32,22 +32,27 @@ if __name__ == "__main__":
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata = cmd
                 break
-        
+
         if not llvm_profdata:
             print("ERROR: llvm-profdata not found in PATH")
         else:
             print(f"Using {llvm_profdata} to merge coverage files")
-            
+
             # Merge all profraw files to current directory
             merged_file = "./unit-tests.profdata"
             merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
             merge_output = Shell.get_output(merge_cmd, verbose=True)
-            
+
             # Check for corrupted files in the output
-            corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+            corrupted_files = [
+                line
+                for line in merge_output.split("\n")
+                if "invalid instrumentation profile" in line
+                or "file header is corrupt" in line
+            ]
             if corrupted_files:
                 print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
                 for corrupted in corrupted_files:
                     print(f"  {corrupted}")
-    
+
     R.complete_job()

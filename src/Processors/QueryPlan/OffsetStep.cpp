@@ -54,7 +54,7 @@ void OffsetStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
 {
     UInt64 offset;
     readVarUInt(offset, ctx.in);

@@ -207,7 +207,7 @@ ExpressionTransform × 16
                 (Expression)
                 ExpressionTransform × 16
                   (ReadFromSystemNumbers)
-                  NumbersRange × 16 0 → 1
+                  Numbers × 16 0 → 1
             (ReadFromRemote)
 explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 0;
 (Expression)
@@ -223,7 +223,7 @@ ExpressionTransform × 16
               (Expression)
               ExpressionTransform × 16
                 (ReadFromSystemNumbers)
-                NumbersRange × 16 0 → 1
+                Numbers × 16 0 → 1
           (ReadFromRemote)
 -- { echoOn }
 

@@ -646,7 +646,8 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
     }
     catch (...)
     {
-        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
+        /// GlobalProfiler is optional.
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize GlobalProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.");
     }
 #endif
 }
@@ -687,7 +688,7 @@ void ThreadStatus::initQueryProfiler()
     catch (...)
     {
         /// QueryProfiler is optional.
-        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.");
     }
 }
 

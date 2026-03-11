@@ -99,7 +99,7 @@ public:
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
             key, 0, std::max<size_t>(1, reserve_size),
-            CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
+            CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
         segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
@@ -520,8 +520,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
+    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }

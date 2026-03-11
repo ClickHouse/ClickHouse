@@ -274,6 +274,7 @@ REGISTER_FUNCTION(H3PolygonToCells)
 {
     factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
         .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.",
+        .syntax = "h3PolygonToCells(geometry, resolution)",
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::Geo});
 }
