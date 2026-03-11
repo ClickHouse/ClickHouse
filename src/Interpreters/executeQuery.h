@@ -39,6 +39,10 @@ using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
 using QueryFinishCallback = std::function<void()>;
 using HTTPContinueCallback = std::function<void()>;
+/// Called right before logQueryStart, after interpreter->execute() succeeds and all pre-execution
+/// checks pass. This is the point after which ExceptionBeforeStart can no longer occur.
+/// Protocol-agnostic: works for both HTTP and native (TCP) handlers.
+using QueryStartedCallback = std::function<void()>;
 
 
 /// Parse and execute a query.
@@ -52,7 +56,9 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
     QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
-    HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
+    HTTPContinueCallback http_continue_callback = {}, /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
+    QueryStartedCallback on_query_started = {} /// If a non-empty callback is passed, it will be called after interpreter->execute() succeeds and all
+                                               /// pre-execution checks pass — right before logQueryStart. At this point ExceptionBeforeStart can no longer occur.
 );
 
 void executeQuery(
@@ -65,7 +71,9 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
     QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
                                                     /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
-    HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
+    HTTPContinueCallback http_continue_callback = {}, /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
+    QueryStartedCallback on_query_started = {} /// If a non-empty callback is passed, it will be called after interpreter->execute() succeeds and all
+                                               /// pre-execution checks pass — right before logQueryStart. At this point ExceptionBeforeStart can no longer occur.
 );
 
 

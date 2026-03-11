@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <exception>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
@@ -606,6 +608,12 @@ void TCPHandler::runImpl()
             const auto & settings_ref = query_state->query_context->getSettingsRef();
             if (settings_ref[Setting::detach_non_readonly_queries] && !settings_ref[Setting::async_insert])
             {
+                /// Set by the thread once the query is registered in ProcessList and quotas are checked.
+                /// Kept outside the try/catch below so that query-start failures (quota, duplicate query_id,
+                /// permissions) propagate to the client rather than silently falling back to sync execution.
+                std::optional<std::future<void>> detach_started;
+                String detach_query_id;
+
                 try
                 {
                     const size_t max_query_size = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
@@ -618,16 +626,32 @@ void TCPHandler::runImpl()
                         bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
                         if (!insert_needs_client_data)
                         {
-                            const String query_id = query_state->query_context->getClientInfo().current_query_id;
                             ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
                             async_context->setProgressCallback(nullptr);
                             String query_copy = query_state->query;
 
-                            std::thread([async_context, query_copy, query_id]()
+                            auto started_promise = std::make_shared<std::promise<void>>();
+                            auto started_future = started_promise->get_future();
+
+                            std::thread([async_context, query_copy, started_promise]() mutable
                             {
                                 setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
                                 ThreadStatus thread_status;
-                                QueryScope async_query_scope = QueryScope::create(async_context);
+                                CurrentThread::QueryScope async_query_scope = CurrentThread::QueryScope::create(async_context);
+                                bool query_started = false;
+
+                                /// Called by executeQuery after ProcessList::insert and quota checks pass —
+                                /// the earliest point where ExceptionBeforeStart can no longer occur.
+                                auto on_started = [&]()
+                                {
+                                    if (!query_started)
+                                    {
+                                        query_started = true;
+                                        started_promise->set_value();
+                                    }
+                                };
+
+
                                 try
                                 {
                                     PODArray<char> discard_buf;
@@ -636,30 +660,60 @@ void TCPHandler::runImpl()
                                         std::make_unique<ReadBufferFromString>(query_copy),
                                         discard_ostr,
                                         async_context, SetResultDetailsFunc{}, QueryFlags{}, std::nullopt,
-                                        HandleExceptionInOutputFormatFunc{}, QueryFinishCallback{}, HTTPContinueCallback{});
+                                        HandleExceptionInOutputFormatFunc{}, QueryFinishCallback{},
+                                        HTTPContinueCallback{}, std::move(on_started));
                                 }
-                                catch (...) { tryLogCurrentException(getLogger("TCPHandler"), "Detached native non-readonly query failed"); }
+                                catch (...)
+                                {
+                                    if (!query_started)
+                                        started_promise->set_exception(std::current_exception());
+                                    else
+                                        tryLogCurrentException(getLogger("TCPHandler"), "Detached native non-readonly query failed after start");
+                                }
                             }).detach();
 
-                            /// Send result block with query_id (single column, single row)
-                            auto col = ColumnString::create();
-                            col->insertData(query_id.data(), query_id.size());
-                            Block block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
-
-                            {
-                                std::lock_guard lock(*callback_mutex);
-                                sendData(*query_state, block);
-                                sendLogs(*query_state);
-                                sendEndOfStream(*query_state);
-                                query_state->finalizeOut(out);
-                            }
-                            continue;
+                            detach_started = std::move(started_future);
+                            detach_query_id = query_state->query_context->getClientInfo().current_query_id;
                         }
                     }
                 }
                 catch (...)
                 {
+
+                    /// Mechanism failure (e.g. parse error): fall back to sync execution.
                     tryLogCurrentException(log, "Cannot run native query in detach mode, falling back to sync");
+                }
+
+                if (detach_started.has_value())
+                {
+                    /// Block until the background thread signals that the query has passed
+                    /// ProcessList::insert and quota checks. Throws if those checks fail,
+                    /// which propagates the exception to the client through the normal TCP
+                    /// exception path (sendException in runImpl) — not the sync fallback above.
+                    try
+                    {
+                        detach_started->get();
+                    }
+                    catch (const Exception &e){
+                        // this is the result of any exception happened before actually starting the query
+                        // and should be reported to the user.
+                        std::cout<<"Debug!!! "<<"Got the exception at the main thread. Is it still not sent to the user? exception: "<<e.what()<<"\n";
+                        sendException(e, false);
+                    }
+
+                    /// Send result block with query_id (single column, single row)
+                    auto col = ColumnString::create();
+                    col->insertData(detach_query_id.data(), detach_query_id.size());
+                    Block block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+
+                    {
+                        std::lock_guard lock(*callback_mutex);
+                        sendData(*query_state, block);
+                        sendLogs(*query_state);
+                        sendEndOfStream(*query_state);
+                        query_state->finalizeOut(out);
+                    }
+                    return;
                 }
             }
 

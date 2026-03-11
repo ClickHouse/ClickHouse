@@ -362,6 +362,10 @@ std::string IAST::dumpTree(size_t indent) const
 
 // TODO(kavi): may be rename it to "isWriteOnlyQuery"?
 // unwanted negation (Non) here I think.
+//
+// NOTE: covered all possible query types explicitly without `default`
+// because adding new query kind in the future would return false
+// silently otherwise.
 bool IAST::isNonReadOnlyQuery(const IAST * ast)
 {
     if (!ast)
