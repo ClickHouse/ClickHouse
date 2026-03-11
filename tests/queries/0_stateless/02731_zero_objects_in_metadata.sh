@@ -5,6 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: backup/restore metadata must match original table definition
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 for DISK in s3_disk s3_cache
 do
     BACKUP_NAME="test_s3_backup_${CLICKHOUSE_TEST_UNIQUE_NAME}_${DISK}"

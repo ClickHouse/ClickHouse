@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-parallel, no-parallel-replicas: Dictionary is not created in parallel replicas.
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order in dictionary source table
+SET force_primary_key_reverse_order = 0;
 
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;

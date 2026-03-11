@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking max_rows_to_read limits
+SET force_primary_key_reverse_order = 0;
+
 -- { echo }
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;

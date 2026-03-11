@@ -1,4 +1,6 @@
 -- Tags: long
+-- Disable force_primary_key_reverse_order: reversed key changes read-in-order optimization for JSON subcolumn queries
+SET force_primary_key_reverse_order = 0;
 
 set optimize_read_in_order=1;
 set enable_json_type=1;

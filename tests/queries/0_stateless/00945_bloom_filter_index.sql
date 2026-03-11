@@ -1,4 +1,6 @@
 -- Tags: long
+-- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking max_rows_to_read limits
+SET force_primary_key_reverse_order = 0;
 
 SET allow_suspicious_low_cardinality_types = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;

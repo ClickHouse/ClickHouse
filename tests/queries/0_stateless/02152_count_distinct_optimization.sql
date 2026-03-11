@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order potentially affecting result order
+SET force_primary_key_reverse_order = 0;
 drop table if exists table_02152;
 
 create table table_02152 (a String, b LowCardinality(String)) engine = MergeTree order by a;

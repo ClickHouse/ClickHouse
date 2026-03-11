@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order affecting queries without explicit ORDER BY
+SET force_primary_key_reverse_order = 0;
 SET allow_experimental_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS tuple_test;

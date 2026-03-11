@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
+-- Disable force_primary_key_reverse_order: reversed key changes read-in-order direction breaking EXPLAIN output checks
+SET force_primary_key_reverse_order = 0;
 
 -- { echo }
 
