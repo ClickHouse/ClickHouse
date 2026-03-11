@@ -416,6 +416,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , qrc(other.qrc)
 {
 }
 
@@ -755,7 +756,7 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCache::ReaderOrToken QueryResultCache::createReaderOrAcquireToken(const Key & key)
+std::pair<QueryResultCacheReader, QueryResultCache::InFlightTokenPtr> QueryResultCache::createReaderOrAcquireToken(const Key & key)
 {
     while (true)
     {
@@ -767,7 +768,7 @@ QueryResultCache::ReaderOrToken QueryResultCache::createReaderOrAcquireToken(con
             if (reader.hasCacheEntryForKey(false))
             {
                 ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-                return ReaderOrToken{std::move(reader), nullptr};
+                return {std::move(reader), nullptr};
             }
 
             auto it = in_flight_tokens.find(key);
@@ -776,7 +777,7 @@ QueryResultCache::ReaderOrToken QueryResultCache::createReaderOrAcquireToken(con
                 auto token = std::make_shared<InFlightToken>();
                 in_flight_tokens.emplace(key, token);
                 ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-                return ReaderOrToken{std::move(reader), std::move(token)};
+                return {std::move(reader), std::move(token)};
             }
 
             token_to_wait = it->second;
@@ -821,7 +822,7 @@ std::shared_ptr<QueryResultCacheWriter> QueryResultCache::createWriter(
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
     size_t max_query_result_cache_entries_quota,
-    InFlightTokenPtr in_flight_token)
+    bool has_in_flight_token)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
@@ -830,7 +831,7 @@ std::shared_ptr<QueryResultCacheWriter> QueryResultCache::createWriter(
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-    QueryResultCache * qrc_for_writer = in_flight_token ? this : nullptr;
+    QueryResultCache * qrc_for_writer = has_in_flight_token ? this : nullptr;
 
     std::lock_guard lock(mutex);
     return std::shared_ptr<QueryResultCacheWriter>(

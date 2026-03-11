@@ -153,14 +153,11 @@ public:
     };
     using InFlightTokenPtr = std::shared_ptr<InFlightToken>;
 
-    struct ReaderOrToken; /// defined after QueryResultCacheReader
-
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    /// Returns a reader on cache hit; on miss, registers this thread as the computer and returns a token (thundering herd prevention).
-    ReaderOrToken createReaderOrAcquireToken(const Key & key);
+    std::pair<QueryResultCacheReader, InFlightTokenPtr> createReaderOrAcquireToken(const Key & key);
 
     void signalInFlight(const Key & key);
 
@@ -172,7 +169,7 @@ public:
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
         size_t max_query_result_cache_entries_quota,
-        InFlightTokenPtr in_flight_token = nullptr);
+        bool has_in_flight_token = false);
 
     void clear(const std::optional<String> & tag);
 
@@ -249,7 +246,7 @@ private:
     bool was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
-    QueryResultCache * qrc = nullptr; /// non-null if this writer should signal the in-flight token when done
+    QueryResultCache * qrc = nullptr;
     std::atomic<bool> in_flight_token_signaled = false;
 
     void signalInFlightToken();
@@ -303,11 +300,5 @@ private:
 
 
 using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
-
-struct QueryResultCache::ReaderOrToken
-{
-    QueryResultCacheReader reader;
-    InFlightTokenPtr token;
-};
 
 }

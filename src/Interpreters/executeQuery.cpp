@@ -1637,8 +1637,6 @@ static BlockIO executeQueryImpl(
 
         if (!async_insert)
         {
-            /// Non-null if this thread registered as the computer for a query result cache entry.
-            /// Transferred to the writer; if no writer is created, signaled via SCOPE_EXIT below.
             QueryResultCache::InFlightTokenPtr qrc_in_flight_token;
             std::unique_ptr<QueryResultCache::Key> qrc_read_key;
 
@@ -1650,6 +1648,7 @@ static BlockIO executeQueryImpl(
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
 
+                    bool profile_events_already_updated = false;
                     QueryResultCacheReader reader = [&]() -> QueryResultCacheReader
                     {
                         if (settings[Setting::enable_writes_to_query_cache])
@@ -1657,12 +1656,13 @@ static BlockIO executeQueryImpl(
                             qrc_read_key = std::make_unique<QueryResultCache::Key>(key);
                             auto [r, token] = query_result_cache->createReaderOrAcquireToken(key);
                             qrc_in_flight_token = std::move(token);
+                            profile_events_already_updated = true;
                             return std::move(r);
                         }
                         return query_result_cache->createReader(key);
                     }();
 
-                    if (reader.hasCacheEntryForKey())
+                    if (reader.hasCacheEntryForKey(!profile_events_already_updated))
                     {
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
@@ -1825,7 +1825,8 @@ static BlockIO executeQueryImpl(
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
                                      settings[Setting::query_cache_max_entries],
-                                     std::move(qrc_in_flight_token));
+                                     qrc_in_flight_token != nullptr);
+                                qrc_in_flight_token.reset();
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
