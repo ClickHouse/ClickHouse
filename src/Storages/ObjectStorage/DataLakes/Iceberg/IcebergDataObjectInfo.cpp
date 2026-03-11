@@ -37,7 +37,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
     : ObjectInfo(RelativePathWithMetadata(
           data_manifest_file_entry_->file_path,
-          ObjectMetadata{.size_bytes = static_cast<uint64_t>(data_manifest_file_entry_->parsed_entry->file_size_in_bytes)}))
+          ObjectMetadata{static_cast<uint64_t>(data_manifest_file_entry_->parsed_entry->file_size_in_bytes), {}, {}, {}, {}}))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
           data_manifest_file_entry_->resolved_schema_id,
