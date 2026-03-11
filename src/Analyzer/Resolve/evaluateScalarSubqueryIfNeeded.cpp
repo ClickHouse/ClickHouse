@@ -94,7 +94,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
     auto & context = scope.context;
-    auto raw_cancel_callback = context->hasQueryContext()? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
+    auto raw_cancel_callback = context->hasQueryContext() ? context->getQueryContext()->getSubqueryCancelCallback() : nullptr;
 
     /// Wrap the cancel callback to check return value and throw exception if cancelled
     std::function<bool()> cancel_callback;
