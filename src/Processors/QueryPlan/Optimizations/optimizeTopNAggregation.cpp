@@ -6,9 +6,12 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TopNAggregatingStep.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -153,15 +156,36 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         agg_node = after_sort_child;
     }
 
+    /// Match either AggregatingStep (single-node) or MergingAggregatedStep
+    /// (parallel replicas: Limit → Sorting → [Expr] → MergingAggregated → Union → ...).
     auto * aggregating_step = typeid_cast<AggregatingStep *>(agg_node->step.get());
-    if (!aggregating_step || aggregating_step->isGroupingSets() || aggregating_step->getParams().overflow_row)
+    auto * merging_agg_step = typeid_cast<MergingAggregatedStep *>(agg_node->step.get());
+    bool merge_only = false;
+
+    const Names * keys_ptr = nullptr;
+    const AggregateDescriptions * agg_descs_ptr = nullptr;
+
+    if (aggregating_step && !aggregating_step->isGroupingSets() && !aggregating_step->getParams().overflow_row)
+    {
+        keys_ptr = &aggregating_step->getParams().keys;
+        agg_descs_ptr = &aggregating_step->getParams().aggregates;
+    }
+    else if (merging_agg_step && !merging_agg_step->isGroupingSets())
+    {
+        keys_ptr = &merging_agg_step->getParams().keys;
+        agg_descs_ptr = &merging_agg_step->getParams().aggregates;
+        merge_only = true;
+    }
+    else
+    {
+        return;
+    }
+
+    const auto & params = merge_only ? merging_agg_step->getParams() : aggregating_step->getParams();
+    if (keys_ptr->empty())
         return;
 
-    const auto & params = aggregating_step->getParams();
-    if (params.keys.empty())
-        return;
-
-    const auto & agg_descs = params.aggregates;
+    const auto & agg_descs = *agg_descs_ptr;
     if (agg_descs.empty())
         return;
 
@@ -226,6 +250,133 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     sort_col_desc.column_name = original_sort_col_name;
     topn_sort_desc.push_back(std::move(sort_col_desc));
 
+    /// Merge-only mode (parallel replicas): the input to MergingAggregatedStep is
+    /// already intermediate aggregate states. Replace Limit → Sorting → [Expr] →
+    /// MergingAggregated with [Expr] → TopNAggregating(merge_only), which merges
+    /// the states and produces sorted, limited final output.
+    if (merge_only)
+    {
+        auto topn_step = std::make_unique<TopNAggregatingStep>(
+            agg_node->step->getInputHeaders().front(),
+            Names(params.keys.begin(), params.keys.end()),
+            AggregateDescriptions(agg_descs.begin(), agg_descs.end()),
+            topn_sort_desc,
+            limit_value,
+            /*sorted_input=*/false,
+            /*enable_threshold_pruning=*/false,
+            /*threshold_tracker=*/nullptr,
+            /*order_arg_col_name=*/String{},
+            /*merge_only=*/true);
+
+        if (expr_node)
+        {
+            auto & topn_node = nodes.emplace_back();
+            topn_node.step = std::move(topn_step);
+            topn_node.children = agg_node->children;
+
+            node.step = std::move(expr_node->step);
+            node.children = {&topn_node};
+        }
+        else
+        {
+            node.step = std::move(topn_step);
+            node.children = agg_node->children;
+        }
+
+        /// Per-replica independent threshold: optimize local AggregatingStep(s) under
+        /// Union with TopNAggregating(partial_only). Each local replica gets its own
+        /// TopKThresholdTracker that feeds back the local K-th aggregate value to
+        /// prune groups early within that replica's data subset.
+        ///
+        /// Limitation: in AST mode only the local replica's plan is optimized. Remote
+        /// replicas receive the original query AST, run standard AggregatingStep, and
+        /// return all intermediate groups without TopN awareness.
+        ///
+        /// Correctness argument: for ORDER BY aggregates whose global value equals the
+        /// max (or min) of per-replica partials (e.g. max, min, argMax, argMin), the
+        /// replica holding the "best" partial can never prune that group because no K
+        /// other groups can beat it locally — any K groups with better local aggregates
+        /// would also be globally better, contradicting the group's presence in the
+        /// global top-K. Therefore per-replica pruning cannot lose a correct top-K
+        /// result, though the local threshold is weaker than a global one, reducing
+        /// pruning effectiveness.
+        UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
+        bool mode2_limit_ok = limit_value <= optimization_settings.topn_aggregation_max_limit;
+
+        if (pruning_level >= 1 && mode2_limit_ok && order_info.output_ordered_by_sort_key)
+        {
+            for (auto * union_candidate : agg_node->children)
+            {
+                if (!typeid_cast<UnionStep *>(union_candidate->step.get()))
+                    continue;
+
+                for (auto * replica_node : union_candidate->children)
+                {
+                    /// The local replica's plan is wrapped inside
+                    /// ReadFromLocalParallelReplicaStep. Access its inner plan
+                    /// to find the AggregatingStep and ReadFromMergeTree.
+                    auto * local_replica = typeid_cast<ReadFromLocalParallelReplicaStep *>(replica_node->step.get());
+                    if (!local_replica)
+                        continue;
+
+                    auto * inner_plan = local_replica->getQueryPlan();
+                    if (!inner_plan)
+                        continue;
+
+                    auto * inner_root = inner_plan->getRootNode();
+                    if (!inner_root)
+                        continue;
+
+                    auto * local_agg = typeid_cast<AggregatingStep *>(inner_root->step.get());
+                    if (!local_agg || local_agg->isGroupingSets() || local_agg->getParams().overflow_row)
+                        continue;
+
+                    ReadFromMergeTree * local_read_mt = nullptr;
+                    if (inner_root->children.size() == 1)
+                        local_read_mt = findReadFromMergeTree(*inner_root->children[0]);
+
+                    if (!local_read_mt)
+                        continue;
+
+                    String order_arg_name = resolveOriginalArgName(
+                        order_agg.argument_names.back(),
+                        inner_root->children.size() == 1 ? inner_root->children[0] : nullptr);
+
+                    const auto & mt_header = *local_read_mt->getOutputHeader();
+                    if (!mt_header.has(order_arg_name))
+                        continue;
+
+                    const auto & arg_col = mt_header.getByName(order_arg_name);
+                    if (!arg_col.type->isValueRepresentedByNumber() || arg_col.type->isNullable())
+                        continue;
+
+                    /// In-transform threshold pruning only (no __topKFilter prewhere
+                    /// in parallel replica mode for now — the inner plan's node list
+                    /// is not accessible from the outer optimizer, and the prewhere
+                    /// setup requires inserting new nodes). The prewhere pushdown can
+                    /// be added later when the inner plan is extracted and inlined.
+                    auto partial_topn = std::make_unique<TopNAggregatingStep>(
+                        inner_root->step->getInputHeaders().front(),
+                        Names(local_agg->getParams().keys.begin(), local_agg->getParams().keys.end()),
+                        AggregateDescriptions(local_agg->getParams().aggregates.begin(), local_agg->getParams().aggregates.end()),
+                        topn_sort_desc,
+                        limit_value,
+                        /*sorted_input=*/false,
+                        /*enable_threshold_pruning=*/true,
+                        /*threshold_tracker=*/nullptr,
+                        /*order_arg_col_name=*/String{},
+                        /*merge_only=*/false,
+                        /*partial_only=*/true);
+
+                    inner_root->step = std::move(partial_topn);
+                }
+            }
+        }
+
+        return;
+    }
+
+    /// Single-node path: Mode 1 (sorted input) or Mode 2 (threshold pruning).
     bool sorted_input = false;
     bool enable_threshold_pruning = false;
     TopKThresholdTrackerPtr threshold_tracker;

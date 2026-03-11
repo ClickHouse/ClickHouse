@@ -50,10 +50,14 @@ TopNAggregatingStep::TopNAggregatingStep(
     bool sorted_input_,
     bool enable_threshold_pruning_,
     TopKThresholdTrackerPtr threshold_tracker_,
-    String order_arg_col_name_)
+    String order_arg_col_name_,
+    bool merge_only_,
+    bool partial_only_)
     : ITransformingStep(
         input_header_,
-        std::make_shared<const Block>(buildOutputHeader(*input_header_, key_names_, aggregates_)),
+        partial_only_
+            ? std::make_shared<const Block>(buildIntermediateHeader(*input_header_, key_names_, aggregates_))
+            : std::make_shared<const Block>(buildOutputHeader(*input_header_, key_names_, aggregates_)),
         getTraits())
     , key_names(std::move(key_names_))
     , aggregates(std::move(aggregates_))
@@ -63,18 +67,67 @@ TopNAggregatingStep::TopNAggregatingStep(
     , enable_threshold_pruning(enable_threshold_pruning_)
     , threshold_tracker(std::move(threshold_tracker_))
     , order_arg_col_name(std::move(order_arg_col_name_))
+    , merge_only(merge_only_)
+    , partial_only(partial_only_)
 {
 }
 
 void TopNAggregatingStep::updateOutputHeader()
 {
-    output_header = std::make_shared<const Block>(buildOutputHeader(*input_headers.front(), key_names, aggregates));
+    if (partial_only)
+        output_header = std::make_shared<const Block>(buildIntermediateHeader(*input_headers.front(), key_names, aggregates));
+    else
+        output_header = std::make_shared<const Block>(buildOutputHeader(*input_headers.front(), key_names, aggregates));
 }
 
 void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & in_header = *input_headers.front();
     const auto out_header = buildOutputHeader(in_header, key_names, aggregates);
+
+    if (merge_only)
+    {
+        /// Merge-only mode: input is already intermediate aggregate states
+        /// (e.g. from AggregatingStep under parallel replicas). Just merge
+        /// the states and produce the final top-N result.
+        pipeline.resize(1);
+        pipeline.addTransform(std::make_shared<TopNAggregatingMergeTransform>(
+            in_header, out_header, key_names, aggregates, sort_description, limit));
+        return;
+    }
+
+    if (partial_only)
+    {
+        /// Partial-only mode: N parallel partial workers producing intermediate
+        /// aggregate states. No local merge — the coordinator's merge_only step
+        /// handles that.
+        ///
+        /// Each worker independently maintains a local top-K heap and feeds back
+        /// the K-th value to the per-replica threshold tracker. This provides
+        /// in-transform pruning: groups whose ORDER BY aggregate falls below the
+        /// local K-th value are discarded early.
+        ///
+        /// Limitation: under parallel replicas each replica only sees a subset of
+        /// the data, so the per-replica threshold is weaker than the global
+        /// threshold. A group that is globally in the top-K is still guaranteed to
+        /// survive on the replica that holds the "best" partial aggregate (for max
+        /// the replica with the maximum value, for min the replica with the
+        /// minimum), because no other K groups can beat it locally. Hence
+        /// correctness is preserved, but pruning power is reduced compared to
+        /// single-node Mode 2.
+        const auto intermediate_header = buildIntermediateHeader(in_header, key_names, aggregates);
+
+        pipeline.addSimpleTransform([&](const SharedHeader &)
+        {
+            return std::make_shared<TopNAggregatingTransform>(
+                in_header, intermediate_header, key_names, aggregates,
+                sort_description, limit, /*sorted_input=*/false, /*partial=*/true,
+                enable_threshold_pruning, threshold_tracker);
+        });
+
+        pipeline.resize(1);
+        return;
+    }
 
     if (sorted_input)
     {
@@ -154,6 +207,18 @@ void TopNAggregatingStep::describeActions(FormatSettings & settings) const
     settings.out << String(settings.offset, settings.indent_char);
     settings.out << "Sorted input: " << (sorted_input ? "true" : "false") << '\n';
 
+    if (merge_only)
+    {
+        settings.out << String(settings.offset, settings.indent_char);
+        settings.out << "Merge only: true\n";
+    }
+
+    if (partial_only)
+    {
+        settings.out << String(settings.offset, settings.indent_char);
+        settings.out << "Partial only: true\n";
+    }
+
     if (enable_threshold_pruning)
     {
         settings.out << String(settings.offset, settings.indent_char);
@@ -180,6 +245,8 @@ void TopNAggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Keys", std::move(keys_array));
     map.add("Limit", limit);
     map.add("Sorted Input", sorted_input);
+    map.add("Merge Only", merge_only);
+    map.add("Partial Only", partial_only);
     map.add("Threshold Pruning", enable_threshold_pruning);
 }
 

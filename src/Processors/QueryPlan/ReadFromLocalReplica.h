@@ -18,6 +18,10 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
+    /// Non-destructive access to the inner plan (for optimization passes that
+    /// need to inspect or modify the local plan before it is extracted).
+    QueryPlan * getQueryPlan() { return query_plan.get(); }
+
     void addFilter(FilterDAGInfo filter);
 
 private:
