@@ -164,9 +164,6 @@
 [submodule "contrib/cld2"]
 	path = contrib/cld2
 	url = https://github.com/ClickHouse/cld2
-[submodule "contrib/libstemmer_c"]
-	path = contrib/libstemmer_c
-	url = https://github.com/ClickHouse/libstemmer_c
 [submodule "contrib/wordnet-blast"]
 	path = contrib/wordnet-blast
 	url = https://github.com/ClickHouse/wordnet-blast
@@ -390,3 +387,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/snowball"]
+	path = contrib/snowball
+	url = https://github.com/snowballstem/snowball.git

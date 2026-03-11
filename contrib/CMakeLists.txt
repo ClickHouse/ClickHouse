@@ -176,7 +176,7 @@ endif()
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
-    add_contrib (libstemmer-c-cmake libstemmer_c)
+    add_contrib (libstemmer-c-cmake snowball)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)
