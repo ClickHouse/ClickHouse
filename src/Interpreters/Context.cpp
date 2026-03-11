@@ -1919,7 +1919,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(applyDatabaseNamespace(database), lock);
+        setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(database, db_namespace), lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3249,8 +3249,11 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
 void Context::setCurrentDatabase(const String & name)
 {
+    /// Read namespace before acquiring the exclusive lock to avoid deadlock:
+    /// applyDatabaseNamespaceImpl does not acquire the context mutex.
+    String ns = getDatabaseNamespace();
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(applyDatabaseNamespace(name), lock);
+    setCurrentDatabaseWithLock(applyDatabaseNamespaceImpl(name, ns), lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3299,6 +3302,13 @@ void Context::setDatabaseNamespace(const String & ns)
 String Context::applyDatabaseNamespace(const String & database_name) const
 {
     String ns = getDatabaseNamespace();
+    return applyDatabaseNamespaceImpl(database_name, ns);
+}
+
+/// Lock-free implementation: caller passes the namespace value directly.
+/// Use this when the caller already holds the context mutex (to avoid deadlock).
+String Context::applyDatabaseNamespaceImpl(const String & database_name, const String & ns) const
+{
     if (ns.empty())
         return database_name;
     String separator = getDatabaseNamespaceSeparator();
@@ -3323,6 +3333,12 @@ String Context::applyDatabaseNamespace(const String & database_name) const
 String Context::stripDatabaseNamespace(const String & physical_database_name) const
 {
     String ns = getDatabaseNamespace();
+    return stripDatabaseNamespaceImpl(physical_database_name, ns);
+}
+
+/// Lock-free implementation: caller passes the namespace value directly.
+String Context::stripDatabaseNamespaceImpl(const String & physical_database_name, const String & ns) const
+{
     if (ns.empty())
         return physical_database_name;
     String separator = getDatabaseNamespaceSeparator();

@@ -1069,6 +1069,14 @@ public:
     String applyDatabaseNamespace(const String & database_name) const;
     /// Strip namespace prefix from a physical database name for user-facing display.
     String stripDatabaseNamespace(const String & physical_database_name) const;
+
+private:
+    /// Lock-free implementations that accept the namespace as a parameter.
+    /// Use these when the caller already holds the context mutex.
+    String applyDatabaseNamespaceImpl(const String & database_name, const String & ns) const;
+    String stripDatabaseNamespaceImpl(const String & physical_database_name, const String & ns) const;
+
+public:
     /// Returns the database_namespace_separator server setting value.
     String getDatabaseNamespaceSeparator() const;
     /// Returns the set of shared databases from the shared_databases_across_namespaces setting.
