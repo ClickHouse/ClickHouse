@@ -209,7 +209,7 @@ private:
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
 
-    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
+    size_t getRandomShardIndex(const ClusterPtr & cluster);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
     const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }

@@ -198,7 +198,7 @@ void DistributedSink::writeAsync(const Block & block)
 {
     if (random_shard_insert)
     {
-        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
+        writeAsyncImpl(block, storage.getRandomShardIndex(cluster));
         ++inserted_blocks;
     }
     else
@@ -478,11 +478,10 @@ void DistributedSink::writeSync(const Block & block)
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
-    const auto & shards_info = cluster->getShardsInfo();
     Block block_to_send = removeSuperfluousColumns(block);
 
     size_t start = 0;
-    size_t end = shards_info.size();
+    size_t end = cluster->getActiveInsertShardCount();
 
     if (settings[Setting::insert_shard_id])
     {
@@ -516,7 +515,7 @@ void DistributedSink::writeSync(const Block & block)
 
     if (random_shard_insert)
     {
-        start = storage.getRandomShardIndex(shards_info);
+        start = storage.getRandomShardIndex(cluster);
         end = start + 1;
     }
 
@@ -674,17 +673,17 @@ Blocks DistributedSink::splitBlock(const Block & block)
 
     /// Split block to num_shard smaller block, using 'selector'.
 
-    const size_t num_shards = cluster->getShardsInfo().size();
-    Blocks split_blocks(num_shards);
+    const size_t active_num_shards = cluster->getActiveInsertShardCount();
+    Blocks split_blocks(active_num_shards);
 
-    for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+    for (size_t shard_idx = 0; shard_idx < active_num_shards; ++shard_idx)
         split_blocks[shard_idx] = block.cloneEmpty();
 
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
-        for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(active_num_shards, selector);
+        for (size_t shard_idx = 0; shard_idx < active_num_shards; ++shard_idx)
             split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
 

@@ -1724,15 +1724,16 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
     const IColumn * column = result.column.get();
+    const auto active_num_shards = cluster->getActiveInsertShardCount();
 
 /// NOLINTBEGIN(readability-else-after-return)
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
-        return createBlockSelector<TYPE>(*column, slot_to_shard);                                            \
+        return createBlockSelector<TYPE>(*column, slot_to_shard, active_num_shards);                                \
     else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
-            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard, active_num_shards);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -1946,12 +1947,14 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 }
 
 
-size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shards)
+size_t StorageDistributed::getRandomShardIndex(const ClusterPtr & cluster)
 {
 
+    size_t active_num_shards = cluster->getActiveInsertShardCount();
+    auto & shards = cluster->getShardsInfo();
     UInt32 total_weight = 0;
-    for (const auto & shard : shards)
-        total_weight += shard.weight;
+    for (auto i = 0ul, s = active_num_shards; i < s; ++i)
+        total_weight += shards[i].weight;
 
     assert(total_weight > 0);
 
@@ -1961,7 +1964,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
     }
 
-    for (auto i = 0ul, s = shards.size(); i < s; ++i)
+    for (auto i = 0ul, s = active_num_shards; i < s; ++i)
     {
         if (shards[i].weight > res)
             return i;

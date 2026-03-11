@@ -262,6 +262,14 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
+    /// The number of active insert shards.
+    size_t getActiveInsertShardCount() const
+    {
+        if (active_insert_shard_nums == 0 || active_insert_shard_nums >= shards_info.size())
+            return shards_info.size();
+        return active_insert_shard_nums;
+    }
+
     /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
     std::vector<Strings> getHostIDs() const;
 
@@ -313,6 +321,9 @@ private:
 
     /// Inter-server secret
     String secret;
+
+    /// The number of active insert shards
+    size_t active_insert_shard_nums = 0;
 
     /// Description of the cluster shards.
     ShardsInfo shards_info;
