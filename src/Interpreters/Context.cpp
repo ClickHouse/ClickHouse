@@ -3298,7 +3298,8 @@ void Context::setDatabaseNamespace(const String & ns)
 /// considered during migration.
 String Context::applyDatabaseNamespace(const String & database_name) const
 {
-    if (database_namespace.empty())
+    String ns = getDatabaseNamespace();
+    if (ns.empty())
         return database_name;
     String separator = getDatabaseNamespaceSeparator();
     if (separator.empty())
@@ -3313,7 +3314,7 @@ String Context::applyDatabaseNamespace(const String & database_name) const
     if (shared.contains(database_name))
         return database_name;
     /// Already prefixed — don't double-prefix.
-    String prefix = database_namespace + separator;
+    String prefix = ns + separator;
     if (database_name.starts_with(prefix))
         return database_name;
     return prefix + database_name;
@@ -3321,12 +3322,13 @@ String Context::applyDatabaseNamespace(const String & database_name) const
 
 String Context::stripDatabaseNamespace(const String & physical_database_name) const
 {
-    if (database_namespace.empty())
+    String ns = getDatabaseNamespace();
+    if (ns.empty())
         return physical_database_name;
     String separator = getDatabaseNamespaceSeparator();
     if (separator.empty())
         return physical_database_name;
-    String prefix = database_namespace + separator;
+    String prefix = ns + separator;
     if (physical_database_name.starts_with(prefix))
         return physical_database_name.substr(prefix.size());
     return physical_database_name;
