@@ -59,6 +59,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
             chunk.getChunkInfos().get<DeduplicationInfo>() ? chunk.getChunkInfos().get<DeduplicationInfo>()->debug() : "null");
         result_info.mergeWith(std::move(chunk.getChunkInfos()));
+        chunk.setChunkInfos({});
     }
     LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
     infos.get<DeduplicationInfo>() ? infos.get<DeduplicationInfo>()->debug() : "null");

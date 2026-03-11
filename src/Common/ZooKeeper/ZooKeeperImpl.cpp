@@ -82,9 +82,19 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB::ServerSetting
+namespace DB
+{
+
+namespace ServerSetting
 {
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 }
 
 namespace HistogramMetrics
@@ -442,6 +452,7 @@ ZooKeeper::ZooKeeper(
             close_xid = CLOSE_XID_64;
         }
         pass_opentelemetry_tracing_context = args.pass_opentelemetry_tracing_context;
+        enforce_component_tracking = args.enforce_component_tracking;
         connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
@@ -825,6 +836,15 @@ void ZooKeeper::sendThread()
                             };
                         });
 
+                    if (info.watch)
+                        info.request->has_watch = true;
+
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
+
+                    /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
+                    /// to avoid a data race: receiveThread reads from operations concurrently,
+                    /// and the request object is shared via shared_ptr.
                     if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
@@ -832,16 +852,10 @@ void ZooKeeper::sendThread()
                         operations[info.request->xid] = info;
                     }
 
-                    if (info.watch)
-                        info.request->has_watch = true;
-
-                    if (requests_queue.isFinished())
+                    if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
                         break;
                     }
-
-                    if (info.request->add_root_path)
-                        info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
@@ -991,6 +1005,7 @@ void ZooKeeper::receiveEvent()
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
+        request_info.component = "Watch";
 
         request_info.callback = [this](const Response & response_)
         {
@@ -1200,8 +1215,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         return;
     }
 
-    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
-             session_id, already_started, requests_queue.isFinished(), reason);
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}' {}",
+             session_id, already_started, requests_queue.isFinished(), reason, StackTrace().toString());
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1227,17 +1242,27 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
-                expire_session_if_not_expired();
                 tryLogCurrentException(log);
             }
-
-            /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
         }
 
-        /// Set expired flag after we sent close event
+        /// Mark session expired before joining send thread.
+        /// This is critical: isExpired() (which checks requests_queue.isFinished()) must return true
+        /// as soon as possible so that other threads calling getZooKeeper() can establish a new session
+        /// immediately, rather than waiting for the send thread to exit. The send thread may be blocked
+        /// in a socket write for minutes (e.g. if the Keeper server closed the connection but
+        /// SO_SNDTIMEO is ineffective due to signal interruptions resetting the timer — see #96601).
+        /// Without this, all Keeper-dependent operations hang until the send thread happens to unblock.
         expire_session_if_not_expired();
+
+        if (!error_send)
+        {
+            /// Send thread will exit because:
+            /// 1. requests_queue is now finished (checked in sendThread's while loop), or
+            /// 2. The close request was sent and close_xid breaks the loop, or
+            /// 3. The socket write fails with an error
+            send_thread.join();
+        }
 
         cancelWriteBuffer();
 
@@ -1381,7 +1406,18 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         /// Capture component name from thread-local storage if not already set
         if (info.component.empty())
-            info.component = Coordination::getCurrentComponent();
+        {
+            auto current_component = Coordination::getCurrentComponent();
+            if (current_component.empty())
+            {
+                if (enforce_component_tracking)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Current component is empty, please set it for your scope using Coordination::setCurrentComponent");
+            }
+            else
+            {
+                info.component = current_component;
+            }
+        }
 
         auto maybe_zk_log = getZooKeeperLog();
         if (maybe_zk_log)

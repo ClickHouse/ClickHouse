@@ -106,8 +106,9 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
-class TextIndexDictionaryBlockCache;
+class TextIndexTokensCache;
 class TextIndexHeaderCache;
 class TextIndexPostingsCache;
 class ProcessList;
@@ -192,6 +193,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class WasmModuleManager;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -667,7 +669,7 @@ protected:
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
-    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+    std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -724,7 +726,7 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -1122,6 +1124,9 @@ public:
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
+    bool hasWasmModuleManager() const;
+    WasmModuleManager & getWasmModuleManager() const;
+
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -1130,8 +1135,8 @@ public:
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
     void cancelAllBackupsAndRestores() const;
-    BackupsInMemoryHolder & getBackupsInMemory();
-    const BackupsInMemoryHolder & getBackupsInMemory() const;
+    std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
+    std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1311,6 +1316,7 @@ public:
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
+    void signalKeeperDispatcherShutdown() const;
     void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
@@ -1375,10 +1381,10 @@ public:
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
 
-    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
-    void clearTextIndexDictionaryBlockCache() const;
+    void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexTokensCache> getTextIndexTokensCache() const;
+    void clearTextIndexTokensCache() const;
 
     void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1405,6 +1411,13 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+#endif
+
+#if USE_PARQUET
+    void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
+    void clearParquetMetadataCache() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
@@ -1796,6 +1809,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    WasmModuleManager * initWasmModuleManager();
 
     std::unordered_set<String> allowed_disks;
     /// Throttling

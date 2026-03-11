@@ -86,7 +86,7 @@ public:
         auto equals_result = function_base->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
-        if (isColumnNullable(*equals_result))
+        if (equals_return_type->isNullable())
         {
             auto if_null_func = FunctionFactory::instance().get("ifNull", context);
             auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);

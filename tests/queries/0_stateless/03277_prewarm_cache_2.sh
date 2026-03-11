@@ -68,7 +68,7 @@ $CLICKHOUSE_CLIENT --query "
         ProfileEvents['LoadedMarksFiles'],
         ProfileEvents['LoadedPrimaryIndexFiles']
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
     ORDER BY event_time_microseconds;
 
     DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;

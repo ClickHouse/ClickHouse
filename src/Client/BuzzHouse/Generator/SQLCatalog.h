@@ -103,10 +103,11 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
+        this->tp = c.tp;
+        c.tp = nullptr;
         this->special = c.special;
-        this->nullable = std::optional<bool>(c.nullable);
-        this->dmod = std::optional<DModifier>(c.dmod);
+        this->nullable = c.nullable;
+        this->dmod = c.dmod;
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
@@ -144,12 +145,6 @@ public:
     String getColumnName() const;
 };
 
-struct SQLIndex
-{
-public:
-    uint32_t iname = 0;
-};
-
 struct SQLDatabase
 {
 public:
@@ -160,6 +155,7 @@ public:
     uint32_t dname = 0;
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
+    uint32_t backup_number = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -181,7 +177,7 @@ public:
 
     bool isSharedDatabase() const;
 
-    bool isLazyDatabase() const;
+    bool isBackupDatabase() const;
 
     bool isOrdinaryDatabase() const;
 
@@ -412,13 +408,8 @@ public:
     uint32_t idx_counter = 0;
     uint32_t proj_counter = 0;
     uint32_t constr_counter = 0;
-    uint32_t freeze_counter = 0;
     std::unordered_map<uint32_t, SQLColumn> cols;
     std::unordered_map<uint32_t, SQLColumn> staged_cols;
-    std::unordered_map<uint32_t, SQLIndex> idxs;
-    std::unordered_map<uint32_t, SQLIndex> staged_idxs;
-    std::unordered_set<uint32_t> projs;
-    std::unordered_set<uint32_t> staged_projs;
     std::unordered_set<uint32_t> constrs;
     std::unordered_set<uint32_t> staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;

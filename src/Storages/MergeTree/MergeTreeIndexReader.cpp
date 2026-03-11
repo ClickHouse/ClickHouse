@@ -85,7 +85,13 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
-        auto stream_name = index_name + substream.suffix;
+        auto full_stream_name = index_name + substream.suffix;
+        auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, part->checksums);
+
+        /// If the stream doesn't exist (neither original nor hashed name), use the full name
+        /// and let it fail later when trying to open the file. This preserves the original error
+        /// behavior and compatibility - the error message will indicate the missing file path.
+        auto stream_name = stream_name_opt.value_or(full_stream_name);
 
         auto stream = makeIndexReaderStream(
             stream_name,

@@ -131,6 +131,17 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
         return;
 
+    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
+    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64),
+    /// causing a type mismatch exception at runtime in ExpressionActions::execute.
+    if (auto * table_node = ctx.column_source->as<TableNode>())
+    {
+        auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+        if (actual && actual->type->isNullable())
+            return;
+    }
+
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -436,7 +447,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
+    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set" || first_argument_column_node->hasExpression())
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();

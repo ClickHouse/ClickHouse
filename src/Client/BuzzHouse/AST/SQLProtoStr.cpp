@@ -1399,7 +1399,7 @@ CONV_FN(ExprCase, ecase)
 
 CONV_FN(LambdaExpr, lambda)
 {
-    ret += "(";
+    ret += lambda.paren() ? "(" : "";
     for (int i = 0; i < lambda.args_size(); i++)
     {
         if (i != 0)
@@ -1410,7 +1410,8 @@ CONV_FN(LambdaExpr, lambda)
         ColumnToString(ret, 1, lambda.args(i));
         ret += "`";
     }
-    ret += ") -> ";
+    ret += lambda.paren() ? ")" : "";
+    ret += " -> ";
     ExprToString(ret, lambda.expr());
 }
 
@@ -1821,9 +1822,9 @@ CONV_FN(Expr, expr)
     {
         ret += "1";
     }
-    if (expr.has_field())
+    for (int i = 0; i < expr.fields_size(); i++)
     {
-        FieldAccessToString(ret, expr.field());
+        FieldAccessToString(ret, expr.fields(i));
     }
 }
 
@@ -2364,6 +2365,15 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += "')";
 }
 
+CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
+{
+    ret += "mergeTreeTextIndex(";
+    FlatExprSchemaTableToString(ret, mttxtidx.est(), "', '");
+    ret += ", '";
+    IndexToString(ret, mttxtidx.idx());
+    ret += "')";
+}
+
 CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
 {
     ret += "mergeTreeAnalyzeIndexes(";
@@ -2373,11 +2383,20 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
-    if (mfunc.has_part())
+    if (mfunc.has_plist())
     {
-        ret += ", '";
-        ret += mfunc.part();
-        ret += "'";
+        ret += ", [";
+        for (int i = 0; i < mfunc.plist().parts_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += mfunc.plist().parts(i);
+            ret += "'";
+        }
+        ret += "]";
     }
     ret += ")";
 }
@@ -2464,9 +2483,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kCluster:
             ClusterFuncToString(ret, tf.cluster());
             break;
-        case TableFunctionType::kMtindex:
-            MergeTreeIndexFuncToString(ret, tf.mtindex());
-            break;
         case TableFunctionType::kLoop:
             ret += "loop(";
             TableOrFunctionToString(ret, true, tf.loop());
@@ -2492,9 +2508,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMongodb:
             MongoDBFuncToString(ret, tf.mongodb());
             break;
-        case TableFunctionType::kMtproj:
-            MergeTreeProjectionFuncToString(ret, tf.mtproj());
-            break;
         case TableFunctionType::kNullf:
             ret += "`null`(";
             ExprToString(ret, tf.nullf());
@@ -2502,6 +2515,15 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kMtindex:
+            MergeTreeIndexFuncToString(ret, tf.mtindex());
+            break;
+        case TableFunctionType::kMtproj:
+            MergeTreeProjectionFuncToString(ret, tf.mtproj());
+            break;
+        case TableFunctionType::kMttxtidx:
+            MergeTreeTextIndexFuncToString(ret, tf.mttxtidx());
             break;
         case TableFunctionType::kMtanindex:
             MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
@@ -2973,6 +2995,44 @@ CONV_FN(IndexParam, ip)
     }
 }
 
+CONV_FN(BackupParam, bp)
+{
+    using BackupParamType = BackupParam::BackupParamOneofCase;
+    switch (bp.backup_param_oneof_case())
+    {
+        case BackupParamType::kSvalue:
+            ret += "'";
+            ret += bp.svalue();
+            ret += "'";
+            break;
+        case BackupParamType::kRvalue:
+            ret += bp.rvalue();
+            break;
+        default:
+            ret += "backup.data";
+    }
+}
+
+CONV_FN(BackupOut, bout)
+{
+    const BackupOut_BackupOutput & output = bout.out();
+
+    ret += BackupOut_BackupOutput_Name(output);
+    if (output != BackupOut_BackupOutput_Null)
+    {
+        ret += "(";
+        for (int i = 0; i < bout.out_params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            BackupParamToString(ret, bout.out_params(i));
+        }
+        ret += ")";
+    }
+}
+
 CONV_FN(DatabaseEngineParam, dep)
 {
     using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
@@ -2983,20 +3043,11 @@ CONV_FN(DatabaseEngineParam, dep)
             ret += dep.svalue();
             ret += "'";
             break;
-        case DatabaseEngineParamType::kDatabase:
-            ret += "'";
-            DatabaseToString(ret, dep.database());
-            ret += "'";
-            break;
-        case DatabaseEngineParamType::kDisk:
-            ret += "Disk('";
-            ret += dep.disk().disk();
-            ret += "', '";
-            DatabaseToString(ret, dep.disk().database());
-            ret += "')";
-            break;
         case DatabaseEngineParamType::kExpr:
             ExprToString(ret, dep.expr());
+            break;
+        case DatabaseEngineParamType::kBackupOut:
+            BackupOutToString(ret, dep.backup_out());
             break;
         default:
             ret += "d0";
@@ -3923,20 +3974,16 @@ CONV_FN(OptimizeTable, ot)
         ret += " ";
         SinglePartitionExprToString(ret, ot.single_partition());
     }
-    if (ot.has_dry_run())
+    if (ot.dry_run_parts_size() > 0)
     {
-        ret += " DRY RUN";
-        if (ot.dry_run().parts_size() > 0)
+        ret += " DRY RUN PARTS ";
+        for (int i = 0; i < ot.dry_run_parts_size(); i++)
         {
-            ret += " PARTS ";
-            for (int i = 0; i < ot.dry_run().parts_size(); i++)
+            if (i != 0)
             {
-                if (i != 0)
-                {
-                    ret += ", ";
-                }
-                PartitionExprToString(ret, ot.dry_run().parts(i));
+                ret += ", ";
             }
+            PartitionExprToString(ret, ot.dry_run_parts(i));
         }
     }
     if (ot.final())
@@ -4023,8 +4070,11 @@ CONV_FN(RefreshableView, rv)
         ret += " OFFSET ";
         RefreshIntervalToString(ret, rv.offset());
     }
-    ret += " RANDOMIZE FOR ";
-    RefreshIntervalToString(ret, rv.randomize());
+    if (rv.has_randomize())
+    {
+        ret += " RANDOMIZE FOR ";
+        RefreshIntervalToString(ret, rv.randomize());
+    }
     if (rv.has_depends())
     {
         ret += " DEPENDS ON ";
@@ -4275,7 +4325,7 @@ CONV_FN(DictionaryRange, dr)
 {
     ret += " RANGE(MIN ";
     ExprToString(ret, dr.min());
-    ret += "MAX ";
+    ret += " MAX ";
     ExprToString(ret, dr.max());
     ret += ")";
 }
@@ -4691,6 +4741,14 @@ CONV_FN(AlterItem, alter)
                 SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
             }
             break;
+        case AlterType::kApplyPatches:
+            ret += "APPLY PATCHES";
+            if (alter.apply_patches().has_single_partition())
+            {
+                ret += " IN ";
+                SinglePartitionExprToString(ret, alter.apply_patches().single_partition());
+            }
+            break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());
@@ -4955,11 +5013,39 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartPullingReplicationLog:
             SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
-        case CmdType::kSyncReplica:
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
+        case CmdType::kSyncReplica: {
+            const auto & sr = cmd.sync_replica();
+
+            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, sr.est());
             ret += " ";
-            ret += SyncReplica_SyncPolicy_Name(cmd.sync_replica().policy());
-            break;
+            using SyncType = SyncReplica::SyncOneofCase;
+            switch (sr.sync_oneof_case())
+            {
+                case SyncType::kStrict:
+                    ret += "STRICT";
+                    break;
+                case SyncType::kLightweight:
+                    ret += "LIGHTWEIGHT";
+                    if (sr.lightweight().replicas_size() > 0)
+                    {
+                        ret += " FROM ";
+                        for (int i = 0; i < sr.lightweight().replicas_size(); i++)
+                        {
+                            if (i != 0)
+                            {
+                                ret += ", ";
+                            }
+                            ret += "'";
+                            ret += sr.lightweight().replicas(i);
+                            ret += "'";
+                        }
+                    }
+                    break;
+                default:
+                    ret += "PULL";
+            }
+        }
+        break;
         case CmdType::kSyncReplicatedDatabase:
             ret += "SYNC DATABASE REPLICA";
             if (cmd.has_cluster())
@@ -5108,8 +5194,8 @@ CONV_FN(SystemCommand, cmd)
             ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
-        case CmdType::kDropTextIndexDictionaryCache:
-            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+        case CmdType::kDropTextIndexTokensCache:
+            ret += "DROP TEXT INDEX TOKENS CACHE";
             can_set_cluster = true;
             break;
         case CmdType::kDropTextIndexHeaderCache:
@@ -5139,6 +5225,141 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kReloadDeltaKernelTracing:
             ret += "RELOAD DELTA KERNEL TRACING ";
             ret += DeltaKernelTraceLevel_Name(cmd.reload_delta_kernel_tracing());
+            break;
+        case CmdType::kRestoreDatabaseReplica:
+            ret += "RESTORE DATABASE REPLICA";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
+            DatabaseToString(ret, cmd.restore_database_replica());
+            break;
+        case CmdType::kStopReplicatedView:
+            ret += "STOP REPLICATED VIEW ";
+            ExprSchemaTableToString(ret, cmd.stop_replicated_view());
+            break;
+        case CmdType::kStartReplicatedView:
+            ret += "START REPLICATED VIEW ";
+            ExprSchemaTableToString(ret, cmd.start_replicated_view());
+            break;
+        case CmdType::kUnfreeze:
+            ret += "UNFREEZE WITH NAME 'f";
+            ret += std::to_string(cmd.unfreeze());
+            ret += "'";
+            break;
+        case CmdType::kDropReplica:
+            ret += "DROP REPLICA '";
+            ret += cmd.drop_replica().replica();
+            ret += "'";
+            if (cmd.drop_replica().has_est())
+            {
+                ret += " FROM TABLE ";
+                ExprSchemaTableToString(ret, cmd.drop_replica().est());
+            }
+            else if (cmd.drop_replica().has_database())
+            {
+                ret += " FROM DATABASE ";
+                DatabaseToString(ret, cmd.drop_replica().database());
+            }
+            break;
+        case CmdType::kDropDatabaseReplica:
+            ret += "DROP DATABASE REPLICA '";
+            ret += cmd.drop_database_replica().replica();
+            ret += "'";
+            if (cmd.drop_database_replica().has_shard())
+            {
+                ret += " FROM SHARD '";
+                ret += cmd.drop_database_replica().shard();
+                ret += "'";
+            }
+            if (cmd.drop_database_replica().has_database())
+            {
+                ret += " FROM DATABASE ";
+                DatabaseToString(ret, cmd.drop_database_replica().database());
+            }
+            break;
+        case CmdType::kStopCleanup:
+            SystemCommandOnCluster(ret, "STOP CLEANUP", cmd, cmd.stop_cleanup());
+            break;
+        case CmdType::kStartCleanup:
+            SystemCommandOnCluster(ret, "START CLEANUP", cmd, cmd.start_cleanup());
+            break;
+        case CmdType::kStopVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
+            break;
+        case CmdType::kStartVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
+            break;
+        case CmdType::kStopReduceBlockingParts:
+            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
+            break;
+        case CmdType::kStartReduceBlockingParts:
+            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
+            break;
+        case CmdType::kStopReplicatedDdlQueries:
+            ret += "STOP REPLICATED DDL QUERIES";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStartReplicatedDdlQueries:
+            ret += "START REPLICATED DDL QUERIES";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocPurge:
+            ret += "JEMALLOC PURGE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocEnableProfile:
+            ret += "JEMALLOC ENABLE PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocDisableProfile:
+            ret += "JEMALLOC DISABLE PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kJemallocFlushProfile:
+            ret += "JEMALLOC FLUSH PROFILE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kSyncTransactionLog:
+            ret += "SYNC TRANSACTION LOG";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStartThreadFuzzer:
+            ret += "START THREAD FUZZER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kStopThreadFuzzer:
+            ret += "STOP THREAD FUZZER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropParquetMetadataCache:
+            ret += "DROP PARQUET METADATA CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropDistributedCache:
+            ret += "DROP DISTRIBUTED CACHE";
+            break;
+        case CmdType::kRestartDisk:
+            ret += "RESTART DISK '";
+            ret += cmd.restart_disk();
+            ret += "'";
+            can_set_cluster = true;
+            break;
+        case CmdType::kClearDiskMetadataCache:
+            ret += "DROP DISK METADATA CACHE";
+            if (!cmd.clear_disk_metadata_cache().empty())
+            {
+                ret += " '";
+                ret += cmd.clear_disk_metadata_cache();
+                ret += "'";
+            }
+            can_set_cluster = true;
+            break;
+        case CmdType::kUnlockSnapshot:
+            ret += "UNLOCK SNAPSHOT '";
+            ret += cmd.unlock_snapshot();
+            ret += "'";
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5207,42 +5428,9 @@ CONV_FN(BackupRestoreElement, backup)
     }
 }
 
-CONV_FN(BackupParam, bp)
-{
-    using BackupParamType = BackupParam::BackupParamOneofCase;
-    switch (bp.backup_param_oneof_case())
-    {
-        case BackupParamType::kSvalue:
-            ret += "'";
-            ret += bp.svalue();
-            ret += "'";
-            break;
-        case BackupParamType::kRvalue:
-            ret += bp.rvalue();
-            break;
-        default:
-            ret += "backup.data";
-    }
-}
-
-CONV_FN(BackupParams, bparams)
-{
-    ret += "(";
-    for (int i = 0; i < bparams.out_params_size(); i++)
-    {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        BackupParamToString(ret, bparams.out_params(i));
-    }
-    ret += ")";
-}
-
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
-    const BackupRestore_BackupOutput & output = backup.out();
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
@@ -5259,11 +5447,7 @@ CONV_FN(BackupRestore, backup)
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
     ret += " ";
-    ret += BackupRestore_BackupOutput_Name(output);
-    if (output != BackupRestore_BackupOutput_Null)
-    {
-        BackupParamsToString(ret, backup.params());
-    }
+    BackupOutToString(ret, backup.out());
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -5458,7 +5642,7 @@ CONV_FN(ShowStatement, sh)
             ret += "PROFILES";
             break;
         case ShowType::kPolicies:
-            ret += "POLICIES ON ";
+            ret += "ROW POLICIES ON ";
             ExprSchemaTableToString(ret, sh.policies());
             break;
         case ShowType::kQuotas:

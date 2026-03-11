@@ -288,6 +288,7 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -729,6 +730,16 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (TARGET ch_contrib::wasmedge)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
+endif()
+
+if (TARGET ch_rust::wasmtime)
+    # FIXME: same as for ch_rust::delta_kernel_rs above
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

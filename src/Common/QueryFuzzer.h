@@ -26,6 +26,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTIndexDeclaration;
+class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
@@ -218,6 +220,8 @@ private:
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    void fuzzIndexDeclaration(ASTIndexDeclaration & index);
+    void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
@@ -228,6 +232,7 @@ private:
     ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
+    void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

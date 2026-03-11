@@ -10,6 +10,8 @@ namespace DB
 class SerializationDynamicElement final : public SerializationWrapper
 {
 private:
+    /// Serialization of SharedVariant. It's used if the requested type is not serialized as separate variant.
+    SerializationPtr shared_variant_serialization;
     /// To be able to deserialize Dynamic element as a subcolumn
     /// we need its type name and global discriminator.
     String dynamic_element_name;
@@ -20,8 +22,8 @@ private:
     bool is_null_map_subcolumn;
 
 public:
-    SerializationDynamicElement(const SerializationPtr & nested_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
-        : SerializationWrapper(nested_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_)
+    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
+        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_)
     {
     }
 

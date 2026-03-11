@@ -11,7 +11,7 @@ function involved_parallel_replicas () {
             initial_query_id,
             countIf(initial_query_id != query_id) != 0  as parallel_replicas_were_used
         FROM system.query_log
-    WHERE event_date >= yesterday()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id LIKE '$1%'
     GROUP BY initial_query_id
     ORDER BY min(event_time_microseconds) ASC

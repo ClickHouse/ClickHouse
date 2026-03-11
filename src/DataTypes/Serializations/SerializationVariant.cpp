@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnVariant.h>
 
 #include <IO/ReadBuffer.h>
@@ -57,16 +58,17 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     }
 };
 
-SerializationVariant::SerializationVariant(const DataTypes & variant_types_, const String & variant_name_) : variant_types(variant_types_), deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_)), variant_name(variant_name_)
+SerializationVariant::SerializationVariant(
+    const DataTypes & variant_types_,
+    const VariantSerializations & variant_serializations_,
+    const Names & variant_names_,
+    const String & variant_name_)
+    : variant_types(variant_types_)
+    , variant_serializations(variant_serializations_)
+    , variant_names(variant_names_)
+    , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
+    , variant_name(variant_name_)
 {
-    variant_serializations.reserve(variant_serializations.size());
-    variant_names.reserve(variant_serializations.size());
-
-    for (const auto & variant : variant_types)
-    {
-        variant_serializations.push_back(variant->getDefaultSerialization());
-        variant_names.push_back(variant->getName());
-    }
 }
 
 
@@ -106,12 +108,13 @@ void SerializationVariant::enumerateStreams(
     for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
+        const bool make_subcolumn_nullable = !type || canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type);
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
             local_discriminators,
             variant_names[i],
             i,
             column_variant ? column_variant->localDiscriminatorByGlobal(i) : i,
-            !type || type->canBeInsideNullable() || type->lowCardinality());
+            make_subcolumn_nullable);
 
         auto variant_data = SubstreamData(variant_serializations[i])
                              .withType(type)
@@ -136,7 +139,7 @@ void SerializationVariant::enumerateStreams(
     chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
     for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
-        if (!variant_types[i]->canBeInsideNullable())
+        if (!canExtractedSubcolumnsBeInsideNullable(variant_types[i]))
             continue;
 
         settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);

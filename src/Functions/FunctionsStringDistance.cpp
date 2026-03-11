@@ -153,8 +153,8 @@ struct ByteJaccardIndexImpl
     {
         using CalcType = UInt8;
         constexpr static size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
-        alignas(64) UInt8 haystack_set[max_size]{};
-        alignas(64) UInt8 needle_set[max_size]{};
+        UInt8 haystack_set[max_size]{};
+        UInt8 needle_set[max_size]{};
     };
 
     /// For UTF8 use a hash set for wider codepoints

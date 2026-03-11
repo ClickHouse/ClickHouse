@@ -188,6 +188,7 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSink::finalize");
         const auto & settings = context->getSettingsRef();
 
         ZooKeeperRetriesControl zk_retry{
@@ -313,6 +314,7 @@ public:
 
     Chunk generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSource::generate");
         if (it >= end)
         {
             it = {};
@@ -358,6 +360,7 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::StorageKeeperMap");
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
@@ -702,6 +705,7 @@ void StorageKeeperMap::read(
         size_t max_block_size,
         size_t num_streams)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::read");
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -728,6 +732,7 @@ void StorageKeeperMap::read(
 
 void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("ReadFromKeeperMap::initializePipeline");
     if (all_scan)
         initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
     else
@@ -824,12 +829,14 @@ void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::write");
     checkTable<true>(local_context);
     return std::make_shared<StorageKeeperMapSink>(*this, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::truncate");
     checkTable<true>(local_context);
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -976,6 +983,7 @@ bool StorageKeeperMap::dropTableData(
 
 void StorageKeeperMap::drop()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::drop");
     auto current_table_status = getTableStatus(getContext());
     if (current_table_status == TableStatus::UNKNOWN)
     {
@@ -1076,6 +1084,7 @@ private:
 
     BackupEntries generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("KeeperMapBackup::generate");
         auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
@@ -1140,6 +1149,7 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::backupData");
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
@@ -1147,6 +1157,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
     /// assign each path to a single table only.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
+        auto local_component_guard = Coordination::setCurrentComponent("StorageKeeperMap::post_collecting_task");
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
@@ -1182,6 +1193,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
 void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataFromBackup");
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -1233,6 +1245,7 @@ void StorageKeeperMap::restoreDataImpl(
     std::shared_ptr<WithRetries> with_retries,
     bool allow_non_empty_tables)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataImpl");
     const auto & table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1301,6 +1314,7 @@ void StorageKeeperMap::restoreDataImpl(
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getClient");
     std::lock_guard lock{zookeeper_mutex};
     if (!zookeeper_client || zookeeper_client->expired())
     {
@@ -1537,6 +1551,7 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::mutate");
     checkTable<true>(local_context);
 
     if (commands.empty())
