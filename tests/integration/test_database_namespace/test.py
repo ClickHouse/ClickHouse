@@ -669,3 +669,22 @@ def test_shared_database_no_shadow():
 
     # Cleanup
     q("DROP DATABASE shared_db")
+
+
+def test_preexisting_separator_db_writable():
+    """Admin can CREATE TABLE / DROP TABLE in a pre-existing database whose name
+    contains the separator.  Such databases were created before the namespace
+    feature was enabled and must remain fully writable — only CREATE DATABASE
+    is blocked for names containing the separator."""
+    # Create a database via tenant1 (physically creates 'tenant1__mydb')
+    q("CREATE DATABASE writable_test", user="tenant1_user")
+
+    # Admin should be able to CREATE TABLE inside this physical database
+    # even though 'tenant1__writable_test' contains the separator.
+    q("CREATE TABLE `tenant1__writable_test`.admin_table (x UInt32) ENGINE = Memory")
+    q("INSERT INTO `tenant1__writable_test`.admin_table VALUES (42)")
+    assert q("SELECT x FROM `tenant1__writable_test`.admin_table") == "42\n"
+
+    # Cleanup
+    q("DROP TABLE `tenant1__writable_test`.admin_table")
+    q("DROP DATABASE writable_test", user="tenant1_user")

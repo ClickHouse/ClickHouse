@@ -2452,9 +2452,12 @@ BlockIO InterpreterCreateQuery::execute()
         if (!database.empty())
         {
             /// When namespace feature is active, reject database names containing the separator.
+            /// Only for CREATE DATABASE — CREATE TABLE/VIEW in a pre-existing database whose
+            /// name contains the separator (created before the feature was enabled) must still work.
             /// Skip for ATTACH queries — they come from internal paths (UNDROP, server restart)
             /// where names are already physical.
-            if (!create.attach)
+            bool is_create_database = create.database && !create.table;
+            if (is_create_database && !create.attach)
                 getContext()->validateDatabaseNameNoSeparator(database);
             create.setDatabase(getContext()->applyDatabaseNamespace(database));
         }
