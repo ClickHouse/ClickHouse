@@ -9,6 +9,7 @@
 namespace DB
 {
 class ASTStorage;
+class SettingsChanges;
 struct TimeSeriesSettingsImpl;
 
 /// List of available types supported in TimeSeriesSettings object
@@ -28,11 +29,22 @@ struct TimeSeriesSettings
     TimeSeriesSettings();
     TimeSeriesSettings(const TimeSeriesSettings & settings);
     TimeSeriesSettings(TimeSeriesSettings && settings) noexcept;
+    TimeSeriesSettings & operator=(TimeSeriesSettings && settings) noexcept;
     ~TimeSeriesSettings();
 
     TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def);
+    /// Loads the settings from a CREATE TABLE query (SETTINGS clause).
+    void loadFromQuery(const ASTStorage & storage_def);
+
+    /// Saves the settings to a CREATE TABLE query (SETTINGS clause), keeping any pre-existing entries.
+    void copyToQuery(ASTStorage & storage_def) const;
+
+    /// Returns only the settings that were explicitly changed from their defaults.
+    SettingsChanges changes() const;
+
+    /// Applies a list of settings changes, overwriting any existing values.
+    void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
 

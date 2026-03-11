@@ -14,11 +14,17 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
 {
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsDataType timestamp_type;
+    extern const TimeSeriesSettingsDataType scalar_type;
+}
 
 namespace ErrorCodes
 {
@@ -90,9 +96,9 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    auto time_series_settings = time_series_storage->getStorageSettings();
+    DataTypePtr timestamp_data_type = (*time_series_settings)[TimeSeriesSetting::timestamp_type];
+    DataTypePtr scalar_data_type = (*time_series_settings)[TimeSeriesSetting::scalar_type];
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 

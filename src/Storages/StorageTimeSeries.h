@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <array>
 
 
 namespace DB
@@ -31,21 +32,30 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
 {
 public:
-    /// Adds missing columns and reorder columns, and also adds inner table engines if they aren't specified.
-    static void normalizeTableDefinition(ASTCreateQuery & create_query, const ContextPtr & local_context);
-
-    StorageTimeSeries(const StorageID & table_id, const ContextPtr & local_context, LoadingStrictnessLevel mode,
+    StorageTimeSeries(const StorageID & table_id, const ContextPtr & local_context,
+                      LoadingStrictnessLevel mode,
                       const ASTCreateQuery & query, const ColumnsDescription & columns, const String & comment);
 
     ~StorageTimeSeries() override;
 
     std::string getName() const override { return "TimeSeries"; }
 
-    const TimeSeriesSettings & getStorageSettings() const;
+    std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
 
-    StorageID getTargetTableId(ViewTarget::Kind target_kind) const;
+    /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+
+    bool isInnerTable(ViewTarget::Kind target_kind) const;
+    bool hasInnerTables() const { return has_inner_tables; }
+
+    /// Returns the three target kinds: Data, Tags, Metrics.
+    static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
+    {
+        return {ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics};
+    }
 
     void readImpl(
         QueryPlan & query_plan,
@@ -93,17 +103,32 @@ public:
 #endif
 
 private:
-    TimeSeriesSettingsPtr storage_settings;
-
+    /// Represents one of the three target tables (Data, Tags, Metrics).
+    /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
         ViewTarget::Kind kind;
         StorageID table_id = StorageID::createEmpty();
-        bool is_inner_table;
+        bool is_inner_table = false;
     };
 
-    std::vector<Target> targets;
-    bool has_inner_tables;
+    /// Initializes information about three target tables (Data, Tags, Metrics).
+    /// The function also creates inner tables (unless this is an ATTACH query).
+    static std::vector<Target> buildTargets(
+        const ASTCreateQuery & create_query,
+        const StorageID & table_id,
+        const ContextPtr & local_context, LoadingStrictnessLevel mode);
+
+    /// Implementation for getTargetTable() and tryGetTargetTable().
+    StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
+
+    /// Stored for use in ALTER TABLE MODIFY/RESET SETTINGS to re-derive dependent defaults.
+    const boost::intrusive_ptr<const ASTCreateQuery> initial_create_query;
+
+    MultiVersion<TimeSeriesSettings> storage_settings;
+
+    const std::vector<Target> targets;
+    const bool has_inner_tables;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

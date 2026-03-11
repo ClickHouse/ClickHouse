@@ -39,6 +39,9 @@ namespace ErrorCodes
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsDataType id_type;
+    extern const TimeSeriesSettingsDataType timestamp_type;
+    extern const TimeSeriesSettingsDataType scalar_type;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
 }
@@ -107,10 +110,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
-    auto id_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    auto time_series_settings = time_series_storage->getStorageSettings();
+    DataTypePtr id_data_type = (*time_series_settings)[TimeSeriesSetting::id_type];
+    DataTypePtr timestamp_data_type = (*time_series_settings)[TimeSeriesSetting::timestamp_type];
+    DataTypePtr scalar_data_type = (*time_series_settings)[TimeSeriesSetting::scalar_type];
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -433,18 +436,18 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
-    const auto & time_series_settings = time_series_storage->getStorageSettings();
+    auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
-    auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
+    auto data_table_id = time_series_storage->getTargetTableID(ViewTarget::Data, context);
+    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
+    auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
     std::optional<DateTime64> min_time_to_filter_ids;
     std::optional<DateTime64> max_time_to_filter_ids;
-    if (time_series_settings[TimeSeriesSetting::filter_by_min_time_and_max_time])
+    if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time])
     {
         min_time_to_filter_ids = config.min_time;
         max_time_to_filter_ids = config.max_time;

@@ -4,6 +4,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -42,17 +43,23 @@ TimeSeriesSettings::TimeSeriesSettings(TimeSeriesSettings && settings) noexcept
 {
 }
 
+TimeSeriesSettings & TimeSeriesSettings::operator=(TimeSeriesSettings && settings) noexcept
+{
+    *impl = std::move(*settings.impl);
+    return *this;
+}
+
 TimeSeriesSettings::~TimeSeriesSettings() = default;
 
 TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-void TimeSeriesSettings::loadFromQuery(ASTStorage & storage_def)
+void TimeSeriesSettings::loadFromQuery(const ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {
@@ -61,6 +68,34 @@ void TimeSeriesSettings::loadFromQuery(ASTStorage & storage_def)
             throw;
         }
     }
+}
+
+void TimeSeriesSettings::copyToQuery(ASTStorage & storage_def) const
+{
+    if (!storage_def.settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        storage_def.set(storage_def.settings, settings_ast);
+    }
+
+    auto & dest_changes = storage_def.settings->changes;
+    for (const auto & src_change : changes())
+    {
+        bool exists = dest_changes.tryGet(src_change.name) != nullptr;
+        if (!exists)
+            dest_changes.push_back(src_change);
+    }
+}
+
+SettingsChanges TimeSeriesSettings::changes() const
+{
+    return impl->changes();
+}
+
+void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
+{
+    impl->applyChanges(changes);
 }
 
 bool TimeSeriesSettings::hasBuiltin(std::string_view name)
