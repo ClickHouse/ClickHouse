@@ -29,6 +29,8 @@ MutableColumnPtr DataTypeMacAddress::createColumn() const
 void registerDataTypeMacAddress(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("MacAddress", [] { return DataTypePtr(std::make_shared<DataTypeMacAddress>()); });
+    /// PostgreSQL compatibility alias
+    factory.registerAlias("MACADDR", "MacAddress", DataTypeFactory::Case::Insensitive);
 }
 
 }

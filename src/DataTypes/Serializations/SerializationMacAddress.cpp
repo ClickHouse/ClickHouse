@@ -134,9 +134,9 @@ void SerializationMacAddress::serializeBinary(const IColumn & column, size_t row
 
 void SerializationMacAddress::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    MacAddress x;
-    readBinary(x.toUnderType(), istr);
-    assert_cast<ColumnVector<MacAddress> &>(column).getData().push_back(x);
+    UInt64 u;
+    readBinary(u, istr);
+    assert_cast<ColumnVector<MacAddress> &>(column).getData().push_back(MacAddress(u));
 }
 
 void SerializationMacAddress::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const

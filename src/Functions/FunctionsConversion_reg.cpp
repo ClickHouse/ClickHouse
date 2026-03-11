@@ -2823,21 +2823,20 @@ SELECT
 
     /// toMacAddressOrZero documentation
     FunctionDocumentation::Description description_toMacAddressOrZero = R"(
-Converts an input value to a value of type [MacAddress](../data-types/macaddress.md) but returns zero MAC address in case of an error.
+Converts a string to a value of type [MacAddress](../data-types/macaddress.md) but returns zero MAC address in case of an error.
 Like [`toMacAddress`](#toMacAddress) but returns zero MAC address (`00:00:00:00:00:00`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of MAC addresses in various formats (colon-separated, hyphen-separated, Cisco dot-separated, raw hexadecimal).
-- Integer representations of MAC addresses.
 
 Unsupported arguments (return zero MAC):
 - Invalid MAC address formats.
-- Out-of-range values.
+- Malformed addresses.
     )";
     FunctionDocumentation::Syntax syntax_toMacAddressOrZero = "toMacAddressOrZero(x)";
     FunctionDocumentation::Arguments arguments_toMacAddressOrZero =
     {
-        {"x", "A string or integer representation of a MAC address.", {"String", "Integer"}}
+        {"x", "A string representation of a MAC address.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toMacAddressOrZero = {"Returns a MAC address if successful, otherwise zero MAC address (`00:00:00:00:00:00`).", {"MacAddress"}};
     FunctionDocumentation::Examples examples_toMacAddressOrZero = {
@@ -4106,22 +4105,20 @@ SELECT
 
     /// toMacAddressOrNull documentation
     FunctionDocumentation::Description description_toMacAddressOrNull = R"(
-Converts an input value to a value of type `MacAddress` but returns `NULL` in case of an error.
+Converts a string to a value of type `MacAddress` but returns `NULL` in case of an error.
 Like [`toMacAddress`](#toMacAddress) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of MAC addresses in various formats (colon-separated, hyphen-separated, Cisco dot-separated, raw hexadecimal).
-- Integer representations of MAC addresses.
 
 Unsupported arguments (return `NULL`):
 - Invalid MAC address formats.
-- Out-of-range values.
 - Malformed addresses.
     )";
     FunctionDocumentation::Syntax syntax_toMacAddressOrNull = "toMacAddressOrNull(x)";
     FunctionDocumentation::Arguments arguments_toMacAddressOrNull =
     {
-        {"x", "A string or integer representation of a MAC address.", {"String", "Integer"}}
+        {"x", "A string representation of a MAC address.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toMacAddressOrNull = {"Returns a MAC address if successful, otherwise `NULL`.", {"MacAddress", "NULL"}};
     FunctionDocumentation::Examples examples_toMacAddressOrNull = {

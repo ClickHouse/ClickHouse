@@ -12,7 +12,13 @@ namespace DB
 struct MacAddress : StrongTypedef<UInt64, struct MacAddressTag>
 {
     using StrongTypedef::StrongTypedef;
-    using StrongTypedef::operator=;
+
+    /// Override assignment to enforce 48-bit mask invariant
+    constexpr MacAddress & operator=(UInt64 value)
+    {
+        StrongTypedef::operator=(value & 0xFFFFFFFFFFFFULL);
+        return *this;
+    }
 
     /// Default constructor creates zero MAC address
     constexpr MacAddress() : StrongTypedef(0) {}
@@ -59,7 +65,7 @@ namespace std
     {
         size_t operator()(const DB::MacAddress & x) const
         {
-            return std::hash<DB::MacAddress::UnderlyingType>()(x.toUnderType());
+            return std::hash<DB::MacAddress::UnderlyingType>()(x.toUInt64());
         }
     };
 }
