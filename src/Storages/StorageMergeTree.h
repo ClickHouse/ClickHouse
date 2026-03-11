@@ -348,11 +348,21 @@ private:
 
     struct MutationsSnapshot final : public MutationsSnapshotBase
     {
-        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        struct MutationSnapshotEntry
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            PartitionIds partition_ids;
+        };
+
+        using MutationsByVersion = std::map<UInt64, MutationSnapshotEntry>;
         MutationsByVersion mutations_by_version;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
+        MutationsSnapshot(
+            Params params_,
+            MutationCounters counters_,
+            MutationsByVersion mutations_snapshot,
+            DataPartsVector patches_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }

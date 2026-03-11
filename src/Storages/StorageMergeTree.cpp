@@ -3053,7 +3053,11 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
     }
 }
 
-StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_)
+StorageMergeTree::MutationsSnapshot::MutationsSnapshot(
+    Params params_,
+    MutationCounters counters_,
+    MutationsByVersion mutations_snapshot,
+    DataPartsVector patches_)
     : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_version(std::move(mutations_snapshot))
 {
@@ -3064,16 +3068,15 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     MutationCommands result;
     UInt64 part_data_version = part->info.getDataVersion();
 
-    for (const auto & [mutation_version, commands] : mutations_by_version | std::views::reverse)
+    for (const auto & [mutation_version, entry] : mutations_by_version | std::views::reverse)
     {
         if (mutation_version <= part_data_version)
             break;
 
-        auto partition_ids = part->storage.getPartitionIdsAffectedByCommands(*commands, part->storage.getContext());
-        if (!containsInPartitionIdsOrEmpty(partition_ids, part->info.getPartitionId()))
+        if (!containsInPartitionIdsOrEmpty(entry.partition_ids, part->info.getPartitionId()))
             continue;
 
-        addSupportedCommands(*commands, mutation_version, result);
+        addSupportedCommands(*entry.commands, mutation_version, result);
     }
 
     std::reverse(result.begin(), result.end());
@@ -3086,9 +3089,9 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
     if (!hasDataMutations())
         return res;
 
-    for (const auto & [version, commands] : mutations_by_version)
+    for (const auto & [version, entry] : mutations_by_version)
     {
-        auto names = commands->getAllUpdatedColumns();
+        auto names = entry.commands->getAllUpdatedColumns();
         std::move(names.begin(), names.end(), std::inserter(res, res.end()));
     }
     return res;
@@ -3105,7 +3108,11 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 
     std::lock_guard lock(currently_processing_in_background_mutex);
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+        return std::make_shared<MutationsSnapshot>(
+            params,
+            std::move(mutations_snapshot_counters),
+            std::move(mutations_snapshot),
+            std::move(patch_parts));
 
     UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();
     if (params.max_mutation_versions && !params.max_mutation_versions->empty())
@@ -3117,12 +3124,16 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         /// Required commands will be copied later only for specific parts.
         if (version <= max_mutation_version && MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
         {
-            mutations_snapshot.emplace(version, entry.commands);
+            mutations_snapshot.emplace(version, MutationsSnapshot::MutationSnapshotEntry{entry.commands, entry.partition_ids});
             incrementMutationsCounters(mutations_snapshot_counters, *entry.commands);
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    return std::make_shared<MutationsSnapshot>(
+        params,
+        std::move(mutations_snapshot_counters),
+        std::move(mutations_snapshot),
+        std::move(patch_parts));
 }
 
 MutationCounters StorageMergeTree::getMutationCounters() const
