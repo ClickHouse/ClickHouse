@@ -46,6 +46,7 @@ def setup_cluster():
             "tenant1__sneakydb",
             "tenant1__renamedb",
             "tenant1__renamedb2",
+            "tenant1__writable_test",
             "rebindns__mydb",
             "shared_db",
             "shared_db2",
@@ -90,6 +91,8 @@ def test_server_setting_active():
 # Test 2: CREATE DATABASE with namespace
 # ============================================================
 def test_create_database():
+    # Clean up from previous flaky re-runs (CI runs tests 3 times on the same instance)
+    q("DROP DATABASE IF EXISTS tenant1__testns")
     q1("CREATE DATABASE testns")
     # Verify physical name exists in system.databases
     result = q1("SELECT name FROM system.databases WHERE name = 'tenant1__testns'")
@@ -100,6 +103,8 @@ def test_create_database():
 # Test 3: CREATE TABLE and query with namespace
 # ============================================================
 def test_create_table_and_query():
+    # Clean up from previous flaky re-runs
+    q1("DROP TABLE IF EXISTS testns.t1")
     q1("CREATE TABLE testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO testns.t1 VALUES (1), (2), (3)")
     result = q1("SELECT * FROM testns.t1 ORDER BY x")
@@ -127,6 +132,8 @@ def test_show_databases():
 # Test 6: Tenant isolation — different namespace sees different databases
 # ============================================================
 def test_tenant_isolation():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS tenant2__testns")
     q2("CREATE DATABASE testns")
     q2("CREATE TABLE testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q2("INSERT INTO testns.t1 VALUES (10), (20), (30)")
@@ -157,6 +164,7 @@ def test_system_databases_not_prefixed():
 # Test 9: DROP database works with namespace
 # ============================================================
 def test_drop_database():
+    q("DROP DATABASE IF EXISTS tenant1__otherdb")
     q1("CREATE DATABASE otherdb")
     result = q1("SELECT name FROM system.databases WHERE name = 'tenant1__otherdb'")
     assert result.strip() == "tenant1__otherdb"
@@ -215,6 +223,7 @@ def test_show_tables():
 # Test 15: RENAME TABLE across databases within same namespace
 # ============================================================
 def test_rename_table():
+    q("DROP DATABASE IF EXISTS tenant1__otherdb")
     q1("CREATE DATABASE otherdb")
     q1("RENAME TABLE testns.t1 TO otherdb.t1_moved")
     result = q1("SELECT * FROM otherdb.t1_moved ORDER BY x")
@@ -348,6 +357,7 @@ def test_describe_table():
 # Test 25: Cross-database JOIN within same namespace
 # ============================================================
 def test_cross_database_join():
+    q("DROP DATABASE IF EXISTS tenant1__joindb")
     q1("CREATE DATABASE joindb")
     q1(
         "CREATE TABLE joindb.t2 (x UInt32, y String) ENGINE = MergeTree() ORDER BY x"
@@ -364,6 +374,7 @@ def test_cross_database_join():
 # Test 26: INSERT ... SELECT across namespaced databases
 # ============================================================
 def test_insert_select():
+    q("DROP DATABASE IF EXISTS tenant1__srcdb")
     q1("CREATE DATABASE srcdb")
     q1("CREATE TABLE srcdb.src (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO srcdb.src VALUES (100), (200), (300)")
@@ -442,6 +453,8 @@ def test_information_schema():
 # Test 31: ALTER USER to change/remove namespace
 # ============================================================
 def test_alter_user_namespace():
+    q("DROP USER IF EXISTS tenant3_user")
+    q("DROP DATABASE IF EXISTS tenant3__altdb")
     q("CREATE USER tenant3_user DATABASE NAMESPACE tenant3")
     q("GRANT CURRENT GRANTS ON *.* TO tenant3_user")
 
@@ -476,6 +489,8 @@ def test_alter_user_namespace():
 # Test 32: Database name containing separator is rejected
 # ============================================================
 def test_separator_in_db_name():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS tenant1__sneakydb")
     # Any database name with the separator "__" should be rejected
     error = node.query_and_get_error("CREATE DATABASE tenant1__sneaky")
     assert "BAD_ARGUMENTS" in error
@@ -512,6 +527,9 @@ def test_namespace_with_separator():
 # Test 34: RENAME DATABASE target name cannot contain separator
 # ============================================================
 def test_rename_database_separator_rejected():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS tenant1__renamedb")
+    q("DROP DATABASE IF EXISTS tenant1__renamedb2")
     # Create a database as tenant1 (physical: tenant1__renamedb)
     q1("CREATE DATABASE renamedb")
     # Admin tries to rename it to a name containing separator — must fail
@@ -537,6 +555,8 @@ def test_rename_database_separator_rejected():
 # Test 35: Shared databases are visible to all tenants
 # ============================================================
 def test_shared_database_visible():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS shared_db")
     # Admin creates a shared database (listed in shared_databases_across_namespaces)
     q("CREATE DATABASE shared_db")
     q("CREATE TABLE shared_db.shared_table (id UInt32) ENGINE = Memory")
@@ -569,6 +589,9 @@ def test_shared_database_visible():
 # Test 36: Shared databases support dynamic reload
 # ============================================================
 def test_shared_database_reload():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS shared_db")
+    q("DROP DATABASE IF EXISTS shared_db2")
     # Create two databases: shared_db (in initial config) and shared_db2 (not yet shared)
     q("CREATE DATABASE shared_db")
     q("CREATE DATABASE shared_db2")
@@ -620,6 +643,9 @@ def test_namespace_removal_clears_prefixing():
     namespace prefixing stops immediately. This tests the Context::setUser
     path where database_namespace must be cleared unconditionally.
     """
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS rebindns__mydb")
+    q("DROP USER IF EXISTS rebind_user")
     q("CREATE USER rebind_user DATABASE NAMESPACE rebindns")
     q("GRANT CURRENT GRANTS ON *.* TO rebind_user")
 
@@ -656,6 +682,8 @@ def test_namespace_removal_clears_prefixing():
 # Test 37: Tenant cannot shadow a shared database
 # ============================================================
 def test_shared_database_no_shadow():
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS shared_db")
     # Admin creates the shared database
     q("CREATE DATABASE shared_db")
 
@@ -676,7 +704,9 @@ def test_preexisting_separator_db_writable():
     contains the separator.  Such databases were created before the namespace
     feature was enabled and must remain fully writable — only CREATE DATABASE
     is blocked for names containing the separator."""
-    # Create a database via tenant1 (physically creates 'tenant1__mydb')
+    # Clean up from previous flaky re-runs
+    q("DROP DATABASE IF EXISTS tenant1__writable_test")
+    # Create a database via tenant1 (physically creates 'tenant1__writable_test')
     q("CREATE DATABASE writable_test", user="tenant1_user")
 
     # Admin should be able to CREATE TABLE inside this physical database
