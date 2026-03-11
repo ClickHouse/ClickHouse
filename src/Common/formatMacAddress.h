@@ -118,7 +118,7 @@ inline bool parseMacAddress(T & src, IsEOF eof, unsigned char * dst)
 
         if (high_nibble)
         {
-            current_byte = nibble << 4;
+            current_byte = static_cast<unsigned char>(nibble << 4);
             high_nibble = false;
         }
         else

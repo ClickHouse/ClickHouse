@@ -11,7 +11,7 @@ bool DataTypeMacAddress::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeMacAddress::doGetDefaultSerialization() const
+SerializationPtr DataTypeMacAddress::doGetSerialization(const SerializationInfoSettings &) const
 {
     return std::make_shared<SerializationMacAddress>();
 }

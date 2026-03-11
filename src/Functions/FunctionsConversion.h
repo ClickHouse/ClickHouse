@@ -1842,6 +1842,11 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             i += remaining - 1;
         }
 #endif
+        /// Wide integer to MacAddress: disambiguate by converting through UInt64 first
+        else if constexpr (std::is_same_v<ToFieldType, MacAddress> && wide::IsWideInteger<FromFieldType>::value)
+        {
+            vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
+        }
         /// Default: simple static_cast conversion
         else
         {
