@@ -1909,8 +1909,9 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setExternalRolesWithLock(external_roles_, lock);
 
     /// Set the database namespace (must be before setCurrentDatabaseWithLock).
-    /// Assign directly since we already hold the lock.
-    if (!db_namespace.empty())
+    /// Assign unconditionally so that switching to a user without a namespace
+    /// clears any previously set value from the context.
+    if (database_namespace != db_namespace)
     {
         database_namespace = db_namespace;
         need_recalculate_access = true;

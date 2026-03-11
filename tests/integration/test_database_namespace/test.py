@@ -46,6 +46,7 @@ def setup_cluster():
             "tenant1__sneakydb",
             "tenant1__renamedb",
             "tenant1__renamedb2",
+            "rebindns__mydb",
             "shared_db",
             "shared_db2",
         ]:
@@ -54,6 +55,7 @@ def setup_cluster():
             "tenant1_user",
             "tenant2_user",
             "tenant3_user",
+            "rebind_user",
         ]:
             node.query(f"DROP USER IF EXISTS {user}")
         cluster.shutdown()
@@ -608,6 +610,47 @@ def test_shared_database_reload():
     q("DROP TABLE shared_db2.t")
     q("DROP DATABASE shared_db2")
 
+
+# ============================================================
+# Test 38: Removing namespace clears prefixing (context rebind)
+# ============================================================
+def test_namespace_removal_clears_prefixing():
+    """
+    Verify that after ALTER USER ... DATABASE NAMESPACE NONE, all
+    namespace prefixing stops immediately. This tests the Context::setUser
+    path where database_namespace must be cleared unconditionally.
+    """
+    q("CREATE USER rebind_user DATABASE NAMESPACE rebindns")
+    q("GRANT CURRENT GRANTS ON *.* TO rebind_user")
+
+    def qr(query, **kwargs):
+        return node.query(query, user="rebind_user", **kwargs)
+
+    # Create a database under the namespace — physical name is rebindns__mydb
+    qr("CREATE DATABASE mydb")
+    qr("CREATE TABLE mydb.t (x UInt32) ENGINE = MergeTree() ORDER BY x")
+    qr("INSERT INTO mydb.t VALUES (42)")
+    assert qr("SELECT * FROM mydb.t").strip() == "42"
+    assert q("SELECT count() FROM system.databases WHERE name = 'rebindns__mydb'").strip() == "1"
+
+    # Remove namespace
+    q("ALTER USER rebind_user DATABASE NAMESPACE NONE")
+
+    # Now the user should see databases by physical name — no prefixing.
+    # "mydb" without namespace should not exist as a physical database.
+    assert qr("EXISTS DATABASE mydb").strip() == "0"
+    # But rebindns__mydb should be accessible by its physical name.
+    assert qr("EXISTS DATABASE rebindns__mydb").strip() == "1"
+    assert qr("SELECT * FROM rebindns__mydb.t").strip() == "42"
+
+    # Re-add namespace to ensure it activates again
+    q("ALTER USER rebind_user DATABASE NAMESPACE rebindns")
+    assert qr("EXISTS DATABASE mydb").strip() == "1"
+    assert qr("SELECT * FROM mydb.t").strip() == "42"
+
+    # Cleanup
+    q("DROP DATABASE rebindns__mydb")
+    q("DROP USER rebind_user")
 
 # ============================================================
 # Test 37: Tenant cannot shadow a shared database
