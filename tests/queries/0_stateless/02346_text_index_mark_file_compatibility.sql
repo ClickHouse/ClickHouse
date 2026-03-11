@@ -1,6 +1,5 @@
 -- For tables with a text index, the merge may produce a corrupt .mrk file format
 
-SET allow_experimental_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;

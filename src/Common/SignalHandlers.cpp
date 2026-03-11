@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
+#include <Common/ErrnoException.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -182,7 +183,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
                 terminate_current_exception_trace[i] = stack_trace_frames[i];
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
     else
     {
@@ -571,6 +572,8 @@ try
             exception_trace, exception_trace_size);
     }
 
+    if (daemon)
+         daemon->flushTextLogs();
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)

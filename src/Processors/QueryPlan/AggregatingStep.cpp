@@ -815,7 +815,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");

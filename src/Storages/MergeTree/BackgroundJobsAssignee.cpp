@@ -118,6 +118,11 @@ void BackgroundJobsAssignee::start()
     holder->activateAndSchedule();
 }
 
+void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
+{
+    storage_id = new_id;
+}
+
 void BackgroundJobsAssignee::finish()
 {
     /// No lock here, because scheduled tasks could call trigger method

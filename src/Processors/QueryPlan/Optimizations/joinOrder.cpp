@@ -550,6 +550,9 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
         return right_join_type;
     if (right_join_type == JoinKind::Inner)
         return left_join_type;
+    /// Allow FULL join as it's restricted to table swapping and no reordering
+    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
+        return JoinKind::Full;
 
     /// Conflict, join is not possible:
     /// FROM t1 LEFT JOIN t2 LEFT JOIN t3

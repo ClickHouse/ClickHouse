@@ -49,6 +49,7 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     NO_FAST_TESTS = "no-fast-tests"
+    CI_MACOS = "ci-macos"
     MUST_BACKPORT = "pr-must-backport"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
@@ -75,6 +76,7 @@ class Labels:
 
     CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
     CI_FUNCTIONAL = "ci-functional-test"
+    CI_TOOLCHAIN = "ci-toolchain"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
@@ -140,11 +142,17 @@ def check_labels(category, info):
     if category in CATEGORY_TO_LABEL and CATEGORY_TO_LABEL[category] not in labels:
         pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
 
+    # Labels that should not be auto-removed even if they don't match the current
+    # category, because they serve additional purposes (e.g., enabling performance
+    # tests in CI when set manually).
+    protected_labels = {Labels.PR_PERFORMANCE}
+
     for label in labels:
         if (
             label in CATEGORY_TO_LABEL.values()
             and category in CATEGORY_TO_LABEL
             and label != CATEGORY_TO_LABEL[category]
+            and label not in protected_labels
         ):
             pr_labels_to_remove.append(label)
 
@@ -181,6 +189,9 @@ def check_labels(category, info):
 
 if __name__ == "__main__":
     info = Info()
+    if Labels.RELEASE in info.pr_labels or Labels.RELEASE_LTS in info.pr_labels:
+        print("NOTE: Release PR detected, skipping changelog category check")
+        sys.exit(0)
     error, category = get_category(info.pr_body)
     if not category or error:
         print(f"ERROR: {error}")

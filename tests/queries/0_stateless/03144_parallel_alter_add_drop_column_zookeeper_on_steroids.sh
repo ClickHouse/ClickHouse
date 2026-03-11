@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-fasttest
 
+# Regression test for https://github.com/ClickHouse/ClickHouse/pull/63353
+# A LOGICAL_ERROR "Unexpected return type from materialize" could occur during SELECT
+# after concurrent ALTERs, because `IMergeTreeReader::evaluateMissingDefaults` used the
+# column type from storage metadata instead of from the data part. During concurrent
+# MODIFY COLUMN (e.g. UInt8 -> String), a SELECT could read a part whose column type
+# didn't match the current metadata, causing a type mismatch when materializing columns.
+# The test reproduces this by running an intense concurrent workload of ADD/DROP/MODIFY
+# COLUMN, SELECT, OPTIMIZE, and INSERT across 3 replicas, then verifies replication consistency.
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -109,6 +118,11 @@ wait
 
 echo "Finishing alters"
 
+# Sync replicas to help them process pending ALTER_METADATA entries from the alter storm
+for i in $(seq $REPLICAS); do
+    timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_steroids_$i" 2>/dev/null ||:
+done
+
 columns1=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_1' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 columns2=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_2' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
 columns3=$($CLICKHOUSE_CLIENT --query "select count() from system.columns where table='concurrent_alter_add_drop_steroids_3' and database='$CLICKHOUSE_DATABASE'" 2> /dev/null)
@@ -129,7 +143,11 @@ done
 echo "Equal number of columns"
 
 # This alter will finish all previous, but replica 1 maybe still not up-to-date
+SYNC_TIMELIMIT=$((SECONDS + 300))
 while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_add_drop_steroids_1 MODIFY COLUMN value0 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
+    if [ $SECONDS -ge "$SYNC_TIMELIMIT" ]; then
+        break
+    fi
     sleep 1
 done
 

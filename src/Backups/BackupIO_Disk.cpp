@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_Disk.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -95,11 +96,20 @@ void BackupWriterDisk::removeFile(const String & file_name)
 
 void BackupWriterDisk::removeEmptyDirectories()
 {
+    /// When using archive-based backups, root_path is the parent of the archive filename.
+    /// For single-component paths like "backup1.tzst", this becomes empty (the disk root).
+    /// We must not traverse and remove directories starting from the disk root,
+    /// as that would affect the entire disk, not just the backup's directories.
+    if (root_path.empty())
+        return;
+
     removeEmptyDirectoriesImpl(root_path);
 }
 
 void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
+    checkStackSize();
+
     if (!disk->existsDirectory(current_dir))
         return;
 
@@ -109,7 +119,6 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         return;
     }
 
-    /// Backups are not too deep, so recursion is good enough here.
     for (auto it = disk->iterateDirectory(current_dir); it->isValid(); it->next())
         removeEmptyDirectoriesImpl(current_dir / it->name());
 

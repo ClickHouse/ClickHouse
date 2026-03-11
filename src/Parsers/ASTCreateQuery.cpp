@@ -122,6 +122,25 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     }
 }
 
+void ASTStorage::normalizeChildrenOrder()
+{
+    /// Keep old children alive while we rebuild the vector, because the raw
+    /// member pointers (engine, primary_key, …) do not hold ownership —
+    /// the intrusive_ptrs in `children` do.  Clearing first would destroy
+    /// the objects and leave dangling raw pointers.
+    ASTs old_children;
+    old_children.swap(children);
+
+    if (engine) children.emplace_back(engine);
+    if (partition_by) children.emplace_back(partition_by);
+    if (primary_key) children.emplace_back(primary_key);
+    if (order_by) children.emplace_back(order_by);
+    if (sample_by) children.emplace_back(sample_by);
+    if (ttl_table) children.emplace_back(ttl_table);
+    if (settings) children.emplace_back(settings);
+}
+
+
 bool ASTStorage::isExtendedStorageDefinition() const
 {
     return partition_by || primary_key || order_by || sample_by || settings;
@@ -572,19 +591,17 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         sql_security->format(ostr, settings, state, frame);
     }
 
-    if (select)
-    {
-        ostr << settings.nl_or_ws;
-        ostr << "AS "
-                      << (comment ? "(" : "");
-        select->format(ostr, settings, state, frame);
-        ostr << (comment ? ")" : "");
-    }
-
     if (comment)
     {
         ostr << settings.nl_or_ws << "COMMENT ";
         comment->format(ostr, settings, state, frame);
+    }
+
+    if (select)
+    {
+        ostr << settings.nl_or_ws;
+        ostr << "AS ";
+        select->format(ostr, settings, state, frame);
     }
 }
 

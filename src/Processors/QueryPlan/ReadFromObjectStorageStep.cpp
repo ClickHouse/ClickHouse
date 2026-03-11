@@ -152,38 +152,18 @@ void ReadFromObjectStorageStep::createIterator()
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
-static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderInfoPtr big_input_order)
-{
-    if (big_input_order->sort_description_for_merging.size() < small_input_order->sort_description_for_merging.size())
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < small_input_order->sort_description_for_merging.size(); ++i)
-    {
-        if (!small_input_order->sort_description_for_merging.at(i).column_name.ends_with(
-                big_input_order->sort_description_for_merging.at(i).column_name))
-            return false;
-
-        int direction = big_input_order->sort_description_for_merging.at(i).direction;
-        if (small_input_order->sort_description_for_merging.at(i).direction != direction)
-            return false;
-    }
-    return true;
-}
-
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
 {
     SortDescription sort_description_for_merging;
     for (size_t i = 0; i < key_description.column_names.size(); ++i)
         sort_description_for_merging.push_back(
-            SortColumnDescription(key_description.column_names[i], key_description.reverse_flags[i] ? -1 : 1));
+            SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
+bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder()) && configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

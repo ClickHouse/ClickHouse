@@ -96,7 +96,7 @@ void LimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
     UInt64 group_length;
     UInt64 group_offset;

@@ -179,7 +179,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #endif
         trace = CurrentMemoryTracker::free(actual_size);
     }
-    catch (...) /// NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: operator delete must not throw
     {
     }
 

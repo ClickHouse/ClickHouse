@@ -1026,6 +1026,22 @@ private:
         return column;
     }
 
+    /// Return the null map column from a Nullable column, looking through ColumnConst, examples:
+    /// Nullable(size = N, Int32(size = N), UInt8(size = N)) -> UInt8(size = N)
+    /// Const(size = N, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
+    /// Const(size = N, UInt8(size = 1))
+    static ColumnPtr recursiveGetNullMapFromNullable(const ColumnPtr & column)
+    {
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column))
+            return nullable->getNullMapColumnPtr();
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*column))
+        {
+            if (const auto * nullable_inner = checkAndGetColumn<ColumnNullable>(&column_const->getDataColumn()))
+                return ColumnConst::create(nullable_inner->getNullMapColumnPtr(), column_const->size());
+        }
+        return nullptr;
+    }
+
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         /// If result type is Variant/Dynamic, we don't need to remove Nullable.
@@ -1036,8 +1052,8 @@ private:
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
 
-        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_then.column);
-        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_else.column);
+        const bool then_is_nullable = arg_then.type->isNullable();
+        const bool else_is_nullable = arg_else.type->isNullable();
 
         if (!then_is_nullable && !else_is_nullable)
             return nullptr;
@@ -1052,14 +1068,14 @@ private:
                 arg_cond,
                 {
                     then_is_nullable
-                        ? then_is_nullable->getNullMapColumnPtr()
+                        ? recursiveGetNullMapFromNullable(arg_then.column)
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
-                        ? else_is_nullable->getNullMapColumnPtr()
+                        ? recursiveGetNullMapFromNullable(arg_else.column)
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""

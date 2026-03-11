@@ -113,7 +113,11 @@ enum class Error : int32_t
     ZNOTHING = -117,                    /// (not error) no server responses to process
     ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
     ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
-    ZNOWATCHER = -121                   /// No wathces were found
+    ZNOWATCHER = -121,                  /// No wathces were found
+
+    /// IMPORTANT: Update these when adding new error codes.
+    MIN = ZNOWATCHER,
+    MAX = ZOK,
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors

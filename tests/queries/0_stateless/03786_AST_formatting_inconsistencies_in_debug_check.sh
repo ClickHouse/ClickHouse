@@ -51,3 +51,19 @@ format_query "INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;"
 
 # Test weird SELECT/EXCEPT/SELECT statement
 format_query "SELECT 1,2,3 EXCEPT SELECT 1,2,3;"
+
+# Allow alias in MODIFY ORDER BY
+format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"
+
+# Complex tuple expression with index
+format_query "select (tab.*).2 from tab;"
+format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
+
+# Array with tuple element access (should not add extra parens around array)
+format_query "SELECT [['hello']].1;"
+
+# SETTINGS on SelectWithUnionQuery: parenthesized subqueries preserve SETTINGS attachment
+format_query "(SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1"
+
+# SETTINGS on SelectWithUnionQuery inside EXPLAIN AST
+format_query "EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT Null"

@@ -19,7 +19,7 @@
 namespace Poco {
 
 
-HexBinaryDecoderBuf::HexBinaryDecoderBuf(std::istream& istr): 
+HexBinaryDecoderBuf::HexBinaryDecoderBuf(std::istream& istr):
 	_buf(*istr.rdbuf())
 {
 }
@@ -83,6 +83,7 @@ HexBinaryDecoderBuf* HexBinaryDecoderIOS::rdbuf()
 
 HexBinaryDecoder::HexBinaryDecoder(std::istream& istr): HexBinaryDecoderIOS(istr), std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

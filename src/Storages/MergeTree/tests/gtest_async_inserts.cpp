@@ -28,8 +28,8 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
 
     auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
     deduplication_info->setRootViewID({});
-    deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
     deduplication_info->disabled = false; // there is no insert dependencies instance in this test
+    deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
 
     chassert(offsets.size() == hashes.size());
     chassert(!offsets.empty());

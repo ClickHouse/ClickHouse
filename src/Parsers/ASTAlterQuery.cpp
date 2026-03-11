@@ -65,6 +65,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+    if (execute_args)
+        res->execute_args = res->children.emplace_back(execute_args->clone()).get();
     if (add_enum_values)
         res->add_enum_values = res->children.emplace_back(add_enum_values->clone());
 
@@ -557,6 +559,13 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::EXECUTE_COMMAND)
+    {
+        ostr << "EXECUTE " << execute_command_name << "(";
+        if (execute_args)
+            execute_args->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
@@ -584,6 +593,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&select, nullptr);
     f(&sql_security, nullptr);
     f(&rename_to, nullptr);
+    f(&execute_args, nullptr);
 }
 
 

@@ -45,6 +45,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -161,6 +162,7 @@ StorageKafka2::StorageKafka2(
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
     kafka_settings->sanityCheck(getContext());
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
@@ -194,7 +196,11 @@ StorageKafka2::StorageKafka2(
     activating_task->deactivate();
 }
 
-StorageKafka2::~StorageKafka2() = default;
+StorageKafka2::~StorageKafka2()
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::~StorageKafka2");
+    replica_is_active_node.reset();
+}
 
 void StorageKafka2::partialShutdown()
 {
@@ -211,6 +217,11 @@ void StorageKafka2::partialShutdown()
         task->holder->deactivate();
     }
     is_active = false;
+    /// Reset the active node holder while the old ZooKeeper session is still alive (even if expired).
+    /// EphemeralNodeHolder stores a raw ZooKeeper reference, so resetting it here prevents a
+    /// use-after-free: setZooKeeper() called afterwards may free the old session, and the holder's
+    /// destructor would then access a dangling reference when checking zookeeper.expired().
+    replica_is_active_node = nullptr;
 }
 
 bool StorageKafka2::activate()
@@ -323,6 +334,7 @@ void StorageKafka2::activateAndReschedule()
     if (shutdown_called)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::activateAndReschedule");
     /// It would be ideal to introduce a setting for this
     constexpr static size_t check_period_ms = 60000;
     /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep
@@ -438,6 +450,7 @@ void StorageKafka2::startup()
 
 void StorageKafka2::shutdown(bool)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::shutdown");
     shutdown_called = true;
     activating_task->deactivate();
     partialShutdown();
@@ -678,6 +691,7 @@ void StorageKafka2::createReplica()
 
 void StorageKafka2::dropReplica()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::dropReplica");
     LOG_INFO(log, "Trying to drop replica {}", replica_path);
     auto my_keeper = getZooKeeperIfTableShutDown();
 
@@ -1062,6 +1076,7 @@ void StorageKafka2::threadFunc(size_t idx)
 
 std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.

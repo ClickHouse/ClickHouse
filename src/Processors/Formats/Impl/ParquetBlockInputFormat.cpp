@@ -684,7 +684,6 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         io_pool->wait();
 }
 
-
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
@@ -1405,7 +1404,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
-    auto log = getLogger("ParquetMetadataCache");
     factory.registerFileBucketInfo(
         "Parquet",
         []
@@ -1422,7 +1420,7 @@ void registerInputFormatParquet(FormatFactory & factory)
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
            FormatFilterInfoPtr format_filter_info,
-           const std::optional<RelativePathWithMetadata> & metadata) -> InputFormatPtr
+           const std::optional<RelativePathWithMetadata> & object_with_metadata) -> InputFormatPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             size_t min_bytes_for_seek
@@ -1439,12 +1437,15 @@ void registerInputFormatParquet(FormatFactory & factory)
                     std::move(format_filter_info),
                     min_bytes_for_seek,
                     metadata_cache,
-                    metadata
+                    object_with_metadata
                 );
             }
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Previous implementation of ParquetBlockInputFormat didn't require blob metadata for initialization");
+            else
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Implementation of ParquetBlockInputFormat using arrow reader didn't require blob metadata for initialization");
+            }
         });
     factory.registerRandomAccessInputFormat(
         "Parquet",
