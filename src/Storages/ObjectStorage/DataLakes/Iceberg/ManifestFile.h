@@ -88,6 +88,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
+    /// Total size of the data file in bytes (from `data_file.file_size_in_bytes` in the manifest)
+    Int64 file_size_in_bytes;
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         String file_path_key_,
@@ -102,7 +105,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<String> lower_reference_data_file_path_,
         std::optional<String> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
-        std::optional<Int32> sort_order_id_)
+        std::optional<Int32> sort_order_id_,
+        Int64 file_size_in_bytes_)
         : content_type(content_type_)
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
@@ -117,6 +121,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
+        , file_size_in_bytes(file_size_in_bytes_)
     {
     }
 };
