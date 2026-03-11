@@ -1637,6 +1637,11 @@ static BlockIO executeQueryImpl(
 
         if (!async_insert)
         {
+            /// Non-null if this thread registered as the computer for a query result cache entry.
+            /// Transferred to the writer; if no writer is created, signaled via SCOPE_EXIT below.
+            QueryResultCache::InFlightTokenPtr qrc_in_flight_token;
+            std::unique_ptr<QueryResultCache::Key> qrc_read_key;
+
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
@@ -1644,7 +1649,19 @@ static BlockIO executeQueryImpl(
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+
+                    QueryResultCacheReader reader = [&]() -> QueryResultCacheReader
+                    {
+                        if (settings[Setting::enable_writes_to_query_cache])
+                        {
+                            qrc_read_key = std::make_unique<QueryResultCache::Key>(key);
+                            auto [r, token] = query_result_cache->createReaderOrAcquireToken(key);
+                            qrc_in_flight_token = std::move(token);
+                            return std::move(r);
+                        }
+                        return query_result_cache->createReader(key);
+                    }();
+
                     if (reader.hasCacheEntryForKey())
                     {
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
@@ -1660,6 +1677,11 @@ static BlockIO executeQueryImpl(
                 }
                 return false;
             };
+
+            SCOPE_EXIT({
+                if (qrc_in_flight_token && qrc_read_key && query_result_cache)
+                    query_result_cache->signalInFlight(*qrc_read_key);
+            });
 
             if (!get_result_from_query_result_cache())
             {
@@ -1796,13 +1818,14 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                auto query_result_cache_writer = query_result_cache->createWriter(
                                      key,
                                      std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                      settings[Setting::query_cache_squash_partial_results],
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
+                                     settings[Setting::query_cache_max_entries],
+                                     std::move(qrc_in_flight_token));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

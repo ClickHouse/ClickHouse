@@ -11,6 +11,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
+#include <condition_variable>
 #include <optional>
 
 namespace DB
@@ -144,18 +145,34 @@ public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
+    struct InFlightToken
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool done = false;
+    };
+    using InFlightTokenPtr = std::shared_ptr<InFlightToken>;
+
+    struct ReaderOrToken; /// defined after QueryResultCacheReader
+
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
+    /// Returns a reader on cache hit; on miss, registers this thread as the computer and returns a token (thundering herd prevention).
+    ReaderOrToken createReaderOrAcquireToken(const Key & key);
+
+    void signalInFlight(const Key & key);
+
     QueryResultCacheReader createReader(const Key & key);
-    QueryResultCacheWriter createWriter(
+    std::shared_ptr<QueryResultCacheWriter> createWriter(
         const Key & key,
         std::chrono::milliseconds min_query_runtime,
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota);
+        size_t max_query_result_cache_entries_quota,
+        InFlightTokenPtr in_flight_token = nullptr);
 
     void clear(const std::optional<String> & tag);
 
@@ -176,6 +193,9 @@ private:
     /// query --> query execution count
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
+
+    using InFlightMap = std::unordered_map<Key, InFlightTokenPtr, KeyHasher>;
+    InFlightMap in_flight_tokens TSA_GUARDED_BY(mutex);
 
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
@@ -201,6 +221,7 @@ class QueryResultCacheWriter
 {
 public:
     QueryResultCacheWriter(const QueryResultCacheWriter & other);
+    ~QueryResultCacheWriter();
 
     enum class ChunkType : uint8_t
     {
@@ -228,6 +249,11 @@ private:
     bool was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
+    QueryResultCache * qrc = nullptr; /// non-null if this writer should signal the in-flight token when done
+    std::atomic<bool> in_flight_token_signaled = false;
+
+    void signalInFlightToken();
+
     QueryResultCacheWriter(
         Cache & cache_,
         const Cache::Key & key_,
@@ -235,7 +261,8 @@ private:
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        QueryResultCache * qrc_);
 
     friend class QueryResultCache; /// for createWriter()
 };
@@ -276,5 +303,11 @@ private:
 
 
 using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
+
+struct QueryResultCache::ReaderOrToken
+{
+    QueryResultCacheReader reader;
+    InFlightTokenPtr token;
+};
 
 }
