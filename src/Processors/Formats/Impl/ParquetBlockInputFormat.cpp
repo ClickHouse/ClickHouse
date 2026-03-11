@@ -73,16 +73,6 @@ namespace ErrorCodes
 
 namespace
 {
-String removeListElement(const String & value)
-{
-    const String pattern = ".list.element";
-    String result = value;
-    size_t pos;
-    while ((pos = result.find(pattern)) != std::string::npos)
-        result.erase(pos, pattern.size());
-    return result;
-}
-
 
 void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
 {
@@ -93,7 +83,7 @@ void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map
             traverseAllFields(group->field(i), fields_mapping, Nested::concatenateName(current_path, group->name()));
     }
     int field_id = node->field_id();
-    fields_mapping[field_id] = removeListElement(Nested::concatenateName(current_path, node->name()));
+    fields_mapping[field_id] = Nested::concatenateName(current_path, node->name());
 }
 
 }
