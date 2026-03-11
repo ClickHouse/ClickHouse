@@ -95,12 +95,14 @@
                 {
                   "Column": "__table1.number",
                   "Ascending": false,
-                  "With Fill": false
+                  "With Fill": false,
+                  "Natural": false
                 },
                 {
                   "Column": "plus(__table1.number, 1_UInt8)",
                   "Ascending": true,
-                  "With Fill": false
+                  "With Fill": false,
+                  "Natural": false
                 }
               ],
               "Limit": 3,

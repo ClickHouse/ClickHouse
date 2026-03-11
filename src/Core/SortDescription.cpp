@@ -41,6 +41,9 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
         else
             out << " DESC";
 
+        if (desc.is_natural)
+            out << " NATURAL";
+
         if (desc.with_fill)
             out << " WITH FILL";
     }
@@ -51,6 +54,7 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
+    map.add("Natural", is_natural);
 }
 
 bool SortDescription::hasPrefix(const SortDescription & prefix) const
@@ -134,8 +138,12 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
 
         buffer << "(type: " << header_types[i]->getName()
             << ", direction: " << description[i].direction
-            << ", nulls_direction: " << description[i].nulls_direction
-            << ")";
+            << ", nulls_direction: " << description[i].nulls_direction;
+
+        if (description[i].is_natural)
+            buffer << ", natural: true";
+
+        buffer << ")";
     }
 
     return buffer.str();
@@ -153,6 +161,13 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
     if (!description.compile_sort_description || sort_description_types.empty())
         return;
+
+    // Natural sort is not supported in compiled sort description
+    for (const auto & desc : description)
+    {
+        if (desc.is_natural)
+            return;
+    }
 
     for (const auto & type : sort_description_types)
     {

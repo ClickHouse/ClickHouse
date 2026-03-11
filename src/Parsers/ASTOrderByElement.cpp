@@ -10,6 +10,7 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 {
     hash_state.update(direction);
     hash_state.update(nulls_direction);
+    hash_state.update(is_natural);
     hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
@@ -21,6 +22,11 @@ void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     ostr
         << (direction == -1 ? " DESC" : " ASC")
        ;
+
+    if (is_natural)
+    {
+        ostr << " NATURAL";
+    }
 
     if (nulls_direction_was_explicitly_specified)
     {

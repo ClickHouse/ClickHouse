@@ -462,6 +462,12 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(
     auto sort_direction = sort_node_typed.getSortDirection();
     sort_column_projection_name_buffer << (sort_direction == SortDirection::ASCENDING ? " ASC" : " DESC");
 
+    bool is_natural = sort_node_typed.isNatural();
+    if (is_natural)
+    {
+        sort_column_projection_name_buffer << " NATURAL";
+    }
+
     auto nulls_sort_direction = sort_node_typed.getNullsSortDirection();
 
     if (nulls_sort_direction)

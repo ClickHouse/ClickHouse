@@ -1660,6 +1660,7 @@ const char * ParserAlias::restricted_keywords[] =
     "INTERSECT",
     "EXCEPT",
     "ELSE",
+    "NATURAL",
     nullptr
 };
 
@@ -2281,6 +2282,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword descending(Keyword::DESCENDING);
     ParserKeyword asc(Keyword::ASC);
     ParserKeyword desc(Keyword::DESC);
+    ParserKeyword natural(Keyword::NATURAL);
     ParserKeyword nulls(Keyword::NULLS);
     ParserKeyword first(Keyword::FIRST);
     ParserKeyword last(Keyword::LAST);
@@ -2298,11 +2300,17 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     int direction = 1;
+    bool is_natural = false;
 
     if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
         direction = -1;
     else
         ascending.ignore(pos, expected) || asc.ignore(pos, expected);
+
+    if (natural.ignore(pos, expected))
+    {
+        is_natural = true;
+    }
 
     int nulls_direction = direction;
     bool nulls_direction_was_explicitly_specified = false;
@@ -2357,6 +2365,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
     elem->setCollation(locale_node);
     elem->with_fill = has_with_fill;
+    elem->is_natural = is_natural;
     elem->setFillFrom(fill_from);
     elem->setFillTo(fill_to);
     elem->setFillStep(fill_step);
