@@ -4741,14 +4741,6 @@ CONV_FN(AlterItem, alter)
                 SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
             }
             break;
-        case AlterType::kApplyPatches:
-            ret += "APPLY PATCHES";
-            if (alter.apply_patches().has_single_partition())
-            {
-                ret += " IN ";
-                SinglePartitionExprToString(ret, alter.apply_patches().single_partition());
-            }
-            break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());
@@ -5278,88 +5270,6 @@ CONV_FN(SystemCommand, cmd)
                 ret += " FROM DATABASE ";
                 DatabaseToString(ret, cmd.drop_database_replica().database());
             }
-            break;
-        case CmdType::kStopCleanup:
-            SystemCommandOnCluster(ret, "STOP CLEANUP", cmd, cmd.stop_cleanup());
-            break;
-        case CmdType::kStartCleanup:
-            SystemCommandOnCluster(ret, "START CLEANUP", cmd, cmd.start_cleanup());
-            break;
-        case CmdType::kStopVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
-            break;
-        case CmdType::kStartVirtualPartsUpdate:
-            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
-            break;
-        case CmdType::kStopReduceBlockingParts:
-            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
-            break;
-        case CmdType::kStartReduceBlockingParts:
-            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
-            break;
-        case CmdType::kStopReplicatedDdlQueries:
-            ret += "STOP REPLICATED DDL QUERIES";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStartReplicatedDdlQueries:
-            ret += "START REPLICATED DDL QUERIES";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocPurge:
-            ret += "JEMALLOC PURGE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocEnableProfile:
-            ret += "JEMALLOC ENABLE PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocDisableProfile:
-            ret += "JEMALLOC DISABLE PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kJemallocFlushProfile:
-            ret += "JEMALLOC FLUSH PROFILE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kSyncTransactionLog:
-            ret += "SYNC TRANSACTION LOG";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStartThreadFuzzer:
-            ret += "START THREAD FUZZER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kStopThreadFuzzer:
-            ret += "STOP THREAD FUZZER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropParquetMetadataCache:
-            ret += "DROP PARQUET METADATA CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropDistributedCache:
-            ret += "DROP DISTRIBUTED CACHE";
-            break;
-        case CmdType::kRestartDisk:
-            ret += "RESTART DISK '";
-            ret += cmd.restart_disk();
-            ret += "'";
-            can_set_cluster = true;
-            break;
-        case CmdType::kClearDiskMetadataCache:
-            ret += "DROP DISK METADATA CACHE";
-            if (!cmd.clear_disk_metadata_cache().empty())
-            {
-                ret += " '";
-                ret += cmd.clear_disk_metadata_cache();
-                ret += "'";
-            }
-            can_set_cluster = true;
-            break;
-        case CmdType::kUnlockSnapshot:
-            ret += "UNLOCK SNAPSHOT '";
-            ret += cmd.unlock_snapshot();
-            ret += "'";
             break;
         default:
             ret += "FLUSH LOGS";

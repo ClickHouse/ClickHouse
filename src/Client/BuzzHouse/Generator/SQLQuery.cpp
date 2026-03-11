@@ -533,7 +533,11 @@ auto StatementGenerator::getQueryTableLambda()
             /* May require MergeTree table */
             && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
-            && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable());
+            && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable())
+            /* May require a projection */
+            && (req != TableRequirement::RequireProjection || !tt.projs.empty())
+            /* May require an index */
+            && (req != TableRequirement::RequireIndex || !tt.idxs.empty());
     };
 }
 
@@ -675,6 +679,8 @@ bool StatementGenerator::joinedTableOrFunction(
     const auto has_table_lambda = getQueryTableLambda<TableRequirement::NoRequirement>();
     const auto has_mergetree_table_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
     const auto has_replaceable_table_lambda = getQueryTableLambda<TableRequirement::RequireReplaceable>();
+    const auto has_projection_table_lambda = getQueryTableLambda<TableRequirement::RequireProjection>();
+    const auto has_idx_table_lambda = getQueryTableLambda<TableRequirement::RequireIndex>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
@@ -683,6 +689,8 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_replaceable_table = collectionHas<SQLTable>(has_replaceable_table_lambda);
+    const bool has_projection_table = collectionHas<SQLTable>(has_projection_table_lambda);
+    const bool has_idx_table = collectionHas<SQLTable>(has_idx_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
@@ -704,8 +712,8 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::TableEngineUDF)] = has_replaceable_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::RandomTableUDF)] = this->allow_not_deterministic && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_mergetree_table && this->allow_engine_udf;
-    queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_projection_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_idx_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
 
     queryGen.setEnabled(queryMask);
@@ -956,7 +964,7 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::LoopUDF: {
             /// Here don't care about the returned result
             this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, false, tof->mutable_tfunc()->mutable_loop());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
             UNUSED(u);
             this->depth--;
         }
@@ -1144,13 +1152,10 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::MergeProjectionUDF: {
             std::vector<SQLRelationCol> parents;
             MergeTreeProjectionFunc * mtudf = tof->mutable_tfunc()->mutable_mtproj();
-            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
-            const String dname = tt.getDatabaseName();
-            const String tname = tt.getTableName();
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_projection_table_lambda));
 
             tt.setName(mtudf->mutable_est(), true);
-            mtudf->mutable_proj()->set_projection(
-                fc.tableCountProjections(dname, tname) > 0 ? fc.tableGetRandomProjection(rg.nextInFullRange(), dname, tname) : "p0");
+            mtudf->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(tt.projs)));
             addTableRelation(rg, true, rel_name, tt);
             SQLRelation & rel = this->levels.at(this->current_level).rels.back();
 
@@ -1167,13 +1172,11 @@ bool StatementGenerator::joinedTableOrFunction(
         case QueryOp::MergeTextIndexUDF: {
             SQLRelation rel(rel_name);
             MergeTreeTextIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mttxtidx();
-            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
-            const String dname = tt.getDatabaseName();
-            const String tname = tt.getTableName();
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_idx_table_lambda));
 
             tt.setName(mtudf->mutable_est(), true);
-            mtudf->mutable_idx()->set_index(
-                fc.tableCountIndexes(dname, tname) > 0 ? fc.tableGetRandomIndex(rg.nextInFullRange(), dname, tname) : "i0");
+            mtudf->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(tt.idxs)));
+
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"token"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"dictionary_compression"}, string_tp.get()));
@@ -2474,52 +2477,11 @@ void StatementGenerator::generateSelect(
 void StatementGenerator::generateTopSelect(
     RandomGenerator & rg, const bool force_global_agg, const uint32_t allowed_clauses, TopSelect * ts)
 {
-    /// ~10% of the time emit a plain `SELECT * FROM <entity>` (table, view, or dictionary) to
-    /// exercise full-scan paths without the overhead of the full query generator.
-    const bool has_t = collectionHas<SQLTable>(attached_tables);
-    const bool has_v = collectionHas<SQLView>(attached_views);
-    const bool has_d = collectionHas<SQLDictionary>(attached_dictionaries);
+    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
 
-    if (!force_global_agg && (has_t || has_v || has_d) && rg.nextSmallNumber() < 2)
-    {
-        static const std::vector<uint32_t> limit_choices = {1, 10, 100, 1000, 10000};
-        SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
-        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
-        /// Collect which entity types are available and pick one uniformly
-        bool supports_final = false;
-        const uint32_t n_choices = static_cast<uint32_t>(has_t) + static_cast<uint32_t>(has_v) + static_cast<uint32_t>(has_d);
-        uint32_t choice = rg.randomInt<uint32_t>(0, n_choices - 1);
-
-        if (has_t && choice-- == 0)
-        {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get();
-            t.setName(est, false);
-            supports_final = t.supportsFinal();
-        }
-        else if (has_v && choice-- == 0)
-        {
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views)).get();
-            v.setName(est, false);
-            supports_final = v.supportsFinal();
-        }
-        else
-        {
-            rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries)).get().setName(est, false);
-        }
-        jtf->set_final(supports_final && rg.nextSmallNumber() < 5);
-
-        /// Add a random LIMIT so we don't drag huge result sets
-        ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.pickRandomly(limit_choices));
-    }
-    else
-    {
-        const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
-
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
-        this->levels.clear();
-    }
+    this->levels[this->current_level] = QueryLevel(this->current_level);
+    generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
+    this->levels.clear();
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();

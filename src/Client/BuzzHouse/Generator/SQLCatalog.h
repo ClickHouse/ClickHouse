@@ -145,6 +145,12 @@ public:
     String getColumnName() const;
 };
 
+struct SQLIndex
+{
+public:
+    uint32_t iname = 0;
+};
+
 struct SQLDatabase
 {
 public:
@@ -410,6 +416,10 @@ public:
     uint32_t constr_counter = 0;
     std::unordered_map<uint32_t, SQLColumn> cols;
     std::unordered_map<uint32_t, SQLColumn> staged_cols;
+    std::unordered_map<uint32_t, SQLIndex> idxs;
+    std::unordered_map<uint32_t, SQLIndex> staged_idxs;
+    std::unordered_set<uint32_t> projs;
+    std::unordered_set<uint32_t> staged_projs;
     std::unordered_set<uint32_t> constrs;
     std::unordered_set<uint32_t> staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;

@@ -1613,47 +1613,48 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
+        const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
 
-        rg.pickWeighted(
-            {{add_type,
-              [&]
-              {
-                  sv->set_property("catalog_type");
-                  sv->set_value("'" + catalog_str + "'");
-                  added_type++;
-              }},
-             {add_warehouse,
-              [&]
-              {
-                  sv->set_property("warehouse");
-                  sv->set_value("'" + d.getName() + "'");
-                  added_warehouse++;
-              }},
-             {add_endpoint,
-              [&]
-              {
-                  const ServerCredentials & minio = fc.minio_server.value();
+        if (add_type && nopt < (add_type + 1))
+        {
+            sv->set_property("catalog_type");
+            sv->set_value("'" + catalog_str + "'");
+            added_type++;
+        }
+        else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
+        {
+            sv->set_property("warehouse");
+            sv->set_value("'" + d.getName() + "'");
+            added_warehouse++;
+        }
+        else if (add_endpoint && nopt < (add_type + add_warehouse + add_endpoint + 1))
+        {
+            const ServerCredentials & minio = fc.minio_server.value();
 
-                  de->add_params()->set_svalue(minio.user);
-                  de->add_params()->set_svalue(minio.secret);
-                  sv->set_property("storage_endpoint");
-                  sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                  added_endpoint++;
-              }},
-             {add_region,
-              [&]
-              {
-                  sv->set_property("region");
-                  sv->set_value("'" + cat->region + "'");
-                  added_region++;
-              }},
-             {add_credentials,
-              [&]
-              {
-                  sv->set_property("vended_credentials");
-                  sv->set_value(rg.nextBool() ? "1" : "0");
-                  added_credentials++;
-              }}});
+            de->add_params()->set_svalue(minio.user);
+            de->add_params()->set_svalue(minio.secret);
+            sv->set_property("storage_endpoint");
+            sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+            added_endpoint++;
+        }
+        else if (add_region && nopt < (add_type + add_warehouse + add_endpoint + add_region + 1))
+        {
+            sv->set_property("region");
+            sv->set_value("'" + cat->region + "'");
+            added_region++;
+        }
+        else if (add_credentials && nopt < (add_type + add_warehouse + add_endpoint + add_region + add_credentials + 1))
+        {
+            sv->set_property("vended_credentials");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+            added_credentials++;
+        }
+        else
+        {
+            UNREACHABLE();
+        }
     }
 }
 
@@ -1785,57 +1786,58 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                 const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
                 const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
                 const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
+                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
+                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+                const uint32_t nopt = next_dist(rg.generator);
 
-                rg.pickWeighted(
-                    {{add_sct,
-                      [&]
-                      {
-                          sv->set_property("storage_catalog_type");
-                          sv->set_value("'" + catalog_str + "'");
-                          added_sct++;
-                      }},
-                     {add_warehouse,
-                      [&]
-                      {
-                          sv->set_property("storage_warehouse");
-                          sv->set_value("'" + t.getDatabaseName() + "'");
-                          added_warehouse++;
-                      }},
-                     {add_endpoint,
-                      [&]
-                      {
-                          /// The key-value format is not well supported for catalogs at the moment
-                          const ServerCredentials & minio = fc.minio_server.value();
+                if (add_sct && nopt < (add_sct + 1))
+                {
+                    sv->set_property("storage_catalog_type");
+                    sv->set_value("'" + catalog_str + "'");
+                    added_sct++;
+                }
+                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
+                {
+                    sv->set_property("storage_warehouse");
+                    sv->set_value("'" + t.getDatabaseName() + "'");
+                    added_warehouse++;
+                }
+                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
+                {
+                    /// The key-value format is not well supported for catalogs at the moment
+                    const ServerCredentials & minio = fc.minio_server.value();
 
-                          te->add_params()->set_svalue(t.getTablePath(fc));
-                          te->add_params()->set_svalue(minio.password);
-                          te->add_params()->set_svalue(minio.secret);
-                          if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
-                          {
-                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                              if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                              {
-                                  te->add_params()->set_svalue(t.file_comp.value());
-                              }
-                          }
-                          sv->set_property("object_storage_endpoint");
-                          sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                          added_endpoint++;
-                      }},
-                     {add_region,
-                      [&]
-                      {
-                          sv->set_property("storage_region");
-                          sv->set_value("'" + cat->region + "'");
-                          added_region++;
-                      }},
-                     {add_url,
-                      [&]
-                      {
-                          sv->set_property("storage_catalog_url");
-                          sv->set_value("'" + catalog_url + "'");
-                          added_url++;
-                      }}});
+                    te->add_params()->set_svalue(t.getTablePath(fc));
+                    te->add_params()->set_svalue(minio.password);
+                    te->add_params()->set_svalue(minio.secret);
+                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                    {
+                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                        {
+                            te->add_params()->set_svalue(t.file_comp.value());
+                        }
+                    }
+                    sv->set_property("object_storage_endpoint");
+                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                    added_endpoint++;
+                }
+                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
+                {
+                    sv->set_property("storage_region");
+                    sv->set_value("'" + cat->region + "'");
+                    added_region++;
+                }
+                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
+                {
+                    sv->set_property("storage_catalog_url");
+                    sv->set_value("'" + catalog_url + "'");
+                    added_url++;
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
             }
         }
     }
