@@ -3,6 +3,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <base/types.h>
 #include <memory>
 #include <unordered_map>
@@ -20,7 +21,7 @@ using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 class SSTFileWriter;
 
 /// SST data file extension for SST-based column types.
-static constexpr auto SST_DATA_FILE_EXTENSION = ".sst";
+inline constexpr auto SST_DATA_FILE_EXTENSION = ".sst";
 
 /// SST file write stream: manages FileBuffer + SSTFileWriter for a single column.
 class SSTFileWriteStream
@@ -51,6 +52,7 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
     std::unique_ptr<HashingWriteBuffer> hashing;
     std::unique_ptr<SSTFileWriter> sst_writer;
+    bool pre_finalized = false;
 };
 
 using SSTFileWriteStreams = std::unordered_map<String, std::unique_ptr<SSTFileWriteStream>>;
@@ -100,6 +102,16 @@ private:
     std::unique_ptr<rocksdb::SstFileWriter> writer;
     bool finished = false;
     bool has_entries = false;
+};
+
+class SSTFileReadStream : public MergeTreeReaderStreamSingleColumnWholePart
+{
+public:
+    template <typename... Args>
+    explicit SSTFileReadStream(Args &&... args)
+        : MergeTreeReaderStreamSingleColumnWholePart{std::forward<Args>(args)...}
+    {
+    }
 };
 
 }

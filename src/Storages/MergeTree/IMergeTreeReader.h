@@ -142,14 +142,14 @@ protected:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
-    std::unordered_map<String, std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart>> sst_read_streams;
+    std::unordered_map<String, std::unique_ptr<SSTFileReadStream>> sst_read_streams;
 
     /// Returns true if the column at position @pos in columns_to_read was dropped
     /// by a pending mutation that hasn't been applied to this part yet.
     /// Such columns should not be read from the part; defaults should be used instead.
     bool isColumnDroppedByPendingMutation(size_t pos) const;
 
-    std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> createSSTReadStream(
+    std::unique_ptr<SSTFileReadStream> createSSTReadStream(
         const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_);
 private:
     friend class MergeTreeReaderIndex;

@@ -1,0 +1,13 @@
+Test 1: Empty SST after DELETE, then insert	test_name
+2
+0
+1
+3	key3	value3
+
+Test 2: Multiple parts with empty part merge	test_name
+2
+10	key10	value10
+30	key30	value30
+2
+10	key10	value10
+30	key30	value30

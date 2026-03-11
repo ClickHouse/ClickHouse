@@ -173,7 +173,7 @@ std::string formatToString(const char * format, va_list ap)
 class CHLoggerWrapper : public rocksdb::Logger
 {
 public:
-    CHLoggerWrapper() : logger(getLogger("DiskBasedUniqueIndexEnv")) {}
+    CHLoggerWrapper() : logger(getLogger("SSTFileEnv")) {}
 
     rocksdb::Status Close() override
     {
@@ -479,6 +479,10 @@ SSTFileWriteStream::~SSTFileWriteStream() = default;
 
 void SSTFileWriteStream::preFinalize()
 {
+    if (pre_finalized)
+        return;
+    pre_finalized = true;
+
     hashing->finalize();
     plain_file->preFinalize();
 }

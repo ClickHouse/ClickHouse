@@ -41,7 +41,9 @@ public:
 
         DeserializeBinaryBulkStatePtr clone() const override
         {
-            /// Return empty shell - will be lazily initialized from current reader's buffer
+            /// Return a fresh state — iterator and reader are NOT carried over.
+            /// The cloned state will lazily re-init from the SST stream getter,
+            /// starting from SeekToFirst with current_row_position = 0.
             return std::make_shared<DeserializeBinaryBulkStateSortedStringKV>();
         }
     };

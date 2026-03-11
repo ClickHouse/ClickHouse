@@ -211,15 +211,10 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.continuous_reading = false;
         if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
         {
-            deserialize_settings.sst_read_stream_getter
-            = [&](const ISerialization::SubstreamPath & substream_path) -> MergeTreeReaderStreamSingleColumnWholePart *
+            deserialize_settings.sst_read_stream_getter = [&](const ISerialization::SubstreamPath & substream_path) -> SSTFileReadStream *
             {
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                    name_and_type,
-                    substream_path,
-                    SST_DATA_FILE_EXTENSION,
-                    data_part_info_for_read->getChecksums(),
-                    storage_settings);
+                    name_and_type, substream_path, SST_DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
                 chassert(stream_name);
                 return sst_read_streams.at(*stream_name).get();
             };

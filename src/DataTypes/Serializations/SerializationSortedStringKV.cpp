@@ -160,6 +160,14 @@ void SerializationSortedStringKV::deserializeBinaryBulkWithMultipleStreams(
 
             uint64_t base_offset = 0;
             auto sst_size = sst_stream->getFileSize();
+
+            /// Handle empty SST file (e.g. part with zero rows after DELETE)
+            if (sst_size == 0)
+            {
+                column = std::move(mutable_column);
+                return;
+            }
+
             sst_state->sst_file_reader = std::make_shared<SSTFileReader>(sst_stream, base_offset, sst_size);
 
             rocksdb::ReadOptions read_opts;

@@ -29,7 +29,7 @@ class WriteBuffer;
 class ProtobufReader;
 class ProtobufWriter;
 class SSTFileWriteStream;
-class MergeTreeReaderStreamSingleColumnWholePart;
+class SSTFileReadStream;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -357,8 +357,8 @@ public:
 
     /// Getter for SST read stream.
     /// Injected by MergeTreeDataReader and used by SST-based serializations
-    /// to obtain the MergeTreeReaderStreamSingleColumnWholePart for deserialization.
-    using SSTReadStreamGetter = std::function<MergeTreeReaderStreamSingleColumnWholePart *(const SubstreamPath &)>;
+    /// to obtain the SSTFileReadStream for deserialization.
+    using SSTReadStreamGetter = std::function<SSTFileReadStream *(const SubstreamPath &)>;
 
     struct SerializeBinaryBulkSettings
     {

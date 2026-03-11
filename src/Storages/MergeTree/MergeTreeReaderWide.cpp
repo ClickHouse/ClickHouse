@@ -621,7 +621,7 @@ void MergeTreeReaderWide::readData(
     if (dynamic_cast<const DataTypeSortedStringKV *>(name_and_type.type->getCustomName()))
     {
         deserialize_settings.sst_read_stream_getter
-            = [&](const ISerialization::SubstreamPath & substream_path) -> MergeTreeReaderStreamSingleColumnWholePart *
+            = [&](const ISerialization::SubstreamPath & substream_path) -> SSTFileReadStream *
             {
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
                     name_and_type,
