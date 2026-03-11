@@ -25,7 +25,7 @@ ${CLICKHOUSE_LOCAL} \
     --path "${WORKING_FOLDER}" \
     --config-file "${CONFIG_FILE}" \
     --log_queries=1 \
-    --query "SELECT 42 AS answer; SYSTEM FLUSH LOGS; SELECT count() > 0 FROM system.query_log WHERE query LIKE '%SELECT 42%' AND current_database = currentDatabase()"
+    --query "SELECT 42 AS answer; SYSTEM FLUSH LOGS query_log; SELECT count() > 0 FROM system.query_log WHERE query LIKE '%SELECT 42%' AND current_database = currentDatabase()"
 
 # With --no-system-tables, system.query_log should not be available even with a config
 ${CLICKHOUSE_LOCAL} \
