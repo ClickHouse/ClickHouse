@@ -3,6 +3,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <numeric>
+#include <vector>
+
 namespace DB
 {
 
@@ -15,18 +18,36 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_COMBINATION_RESULT_ELEMENTS = 1000000;
 
-/// Compute C(n, k) but return 0 on overflow or if result > limit
+/// Compute C(n, k) exactly, return 0 if result > limit.
+/// Uses GCD reduction to keep intermediates small and avoid overflow.
 static size_t combinationCountCapped(size_t n, size_t k, size_t limit)
 {
     if (k > n) return 0;
     if (k == 0 || k == n) return 1;
     if (k > n - k) k = n - k;
+
+    /// Store numerator factors to allow cross-cancellation with denominators.
+    std::vector<size_t> numer(k);
+    for (size_t i = 0; i < k; ++i)
+        numer[i] = n - i;
+
+    for (size_t i = 2; i <= k; ++i)
+    {
+        size_t d = i;
+        for (size_t j = 0; j < k && d > 1; ++j)
+        {
+            size_t g = std::gcd(numer[j], d);
+            numer[j] /= g;
+            d /= g;
+        }
+    }
+
     size_t result = 1;
     for (size_t i = 0; i < k; ++i)
     {
-        if (result > limit / (n - i))
+        if (numer[i] > 1 && result > limit / numer[i])
             return 0;
-        result = result * (n - i) / (i + 1);
+        result *= numer[i];
     }
     return result <= limit ? result : 0;
 }
