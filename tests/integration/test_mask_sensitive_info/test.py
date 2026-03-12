@@ -8,7 +8,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster, with_default_target_node
 from helpers.test_tools import TSV
-from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -32,7 +31,6 @@ node_unity = cluster.add_instance(
     with_azurite=True,
     with_remote_database_disk=False,
     image="clickhouse/integration-test-with-unity-catalog",
-    with_installed_binary=False,
     tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "

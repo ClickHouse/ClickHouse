@@ -991,8 +991,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ///  mock glue catalog in tests only.
         bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
 
-        if (!from_named_collection && requires_arguments && engine_args.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
+        if (requires_arguments && url.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires URL as argument", database_engine_name);
+
 
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
