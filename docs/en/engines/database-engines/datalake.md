@@ -65,7 +65,7 @@ The following settings are supported:
 Named collections could also be used:
 
 ```sql
-CREATE NAMED COLLECTION collection_name AS
+CREATE NAMED COLLECTION unity_catalog_settings AS
    url = 'http://localhost:8080/api/2.1/unity-catalog',
    warehouse = 'unity',
    catalog_type = 'unity',
