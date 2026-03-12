@@ -11,16 +11,18 @@ void Stats::StatsCollector::add(uint64_t microseconds, size_t requests_inc, size
     work_time += microseconds;
     requests += requests_inc;
     requests_bytes += bytes_inc;
-    sampler.insert(microseconds);
+    sampler.insert(static_cast<double>(microseconds));
 }
 
 void Stats::addRead(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
+    std::lock_guard lock(mutex);
     read_collector.add(microseconds, requests_inc, bytes_inc);
 }
 
 void Stats::addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
+    std::lock_guard lock(mutex);
     write_collector.add(microseconds, requests_inc, bytes_inc);
 }
 
@@ -36,14 +38,15 @@ void Stats::clear()
 {
     read_collector.clear();
     write_collector.clear();
+    errors = 0;
 }
 
 std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency)
 {
     assert(requests != 0);
-    double seconds = work_time / 1'000'000.0 / concurrency;
+    double seconds = static_cast<double>(work_time) / 1'000'000.0 / static_cast<double>(concurrency);
 
-    return {requests / seconds, requests_bytes / seconds};
+    return {static_cast<double>(requests) / seconds, static_cast<double>(requests_bytes) / seconds};
 }
 
 double Stats::StatsCollector::getPercentile(double percent)
@@ -62,8 +65,14 @@ void Stats::report(size_t concurrency)
     if (0 == read_requests && 0 == write_requests)
         return;
 
-    auto [read_rps, read_bps] = read_collector.getThroughput(concurrency);
-    auto [write_rps, write_bps] = write_collector.getThroughput(concurrency);
+    double read_rps = 0;
+    double read_bps = 0;
+    double write_rps = 0;
+    double write_bps = 0;
+    if (read_requests != 0)
+        std::tie(read_rps, read_bps) = read_collector.getThroughput(concurrency);
+    if (write_requests != 0)
+        std::tie(write_rps, write_bps) = write_collector.getThroughput(concurrency);
 
     std::cerr << "read requests " << read_requests << ", write requests " << write_requests << ", ";
     if (errors)
@@ -127,6 +136,8 @@ void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_t
     results.SetObject();
 
     results.AddMember("timestamp", Value(start_timestamp), allocator);
+    results.AddMember("errors", Value(static_cast<uint64_t>(errors.load())), allocator);
+    results.AddMember("ops", Value(static_cast<uint64_t>(read_collector.requests + write_collector.requests)), allocator);
 
     const auto get_results = [&](auto & collector)
     {

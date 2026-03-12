@@ -8,14 +8,29 @@ import random
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
+
+from .info import Info
+
+
+class _Colors:
+    """ANSI color codes for terminal output"""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
 
 
 @dataclasses.dataclass
@@ -58,6 +73,9 @@ class Result(MetaClasses.Serializable):
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
+        BLOCKER = "blocker"
+        ISSUE = "issue"
+        INFRA = "infra"
 
     name: str
     status: str
@@ -65,6 +83,7 @@ class Result(MetaClasses.Serializable):
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
     files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
+    assets: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -76,9 +95,11 @@ class Result(MetaClasses.Serializable):
         stopwatch: Utils.Stopwatch = None,
         status="",
         files=None,
+        assets=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
+        labels=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -149,9 +170,10 @@ class Result(MetaClasses.Serializable):
             duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
+            assets=assets or [],
             files=files or [],
             links=links or [],
-        )
+        ).set_label(labels or [])
 
     @staticmethod
     def get():
@@ -197,6 +219,9 @@ class Result(MetaClasses.Serializable):
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
 
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
+
     def set_status(self, status) -> "Result":
         self.status = status
         self.dump()
@@ -216,13 +241,14 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def set_files(self, files) -> "Result":
+    def set_files(self, files, strict=True) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
-        for file in files:
-            assert Path(
-                file
-            ).is_file(), f"Not valid file [{file}] from file list [{files}]"
+        if strict:
+            for file in files:
+                assert Path(
+                    file
+                ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
         for file in self.files:
@@ -234,6 +260,30 @@ class Result(MetaClasses.Serializable):
         self.files += files
         self.dump()
         return self
+
+    def set_on_error_hook(self, hook: str) -> "Result":
+        """
+        Sets a bash script to execute when the job encounters a critical error.
+
+        This hook runs on job-level failures such as:
+        - Hard timeout exceeded
+        - Job killed or terminated by the system
+        - Infrastructure failures
+
+        The hook script should handle cleanup, log collection, or any other
+        recovery actions needed before the job terminates.
+
+        Args:
+            hook: Bash script/commands to execute on error
+
+        Returns:
+            Self for method chaining
+        """
+        self.ext["on_error_hook"] = hook
+        return self
+
+    def get_on_error_hook(self) -> str:
+        return self.ext.get("on_error_hook", "")
 
     def set_info(self, info: str) -> "Result":
         if self.info:
@@ -310,7 +360,17 @@ class Result(MetaClasses.Serializable):
     def set_label(self, label):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
-        self.ext["labels"].append(label)
+        if isinstance(label, list):
+            self.ext["labels"].extend(label)
+        else:
+            self.ext["labels"].append(label)
+        return self
+
+    def remove_label(self, label):
+        if not self.ext.get("labels", None):
+            return
+        self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
+        return self
 
     def get_labels(self):
         return self.ext.get("labels", [])
@@ -352,7 +412,9 @@ class Result(MetaClasses.Serializable):
         name="Tests",
         env=None,
         pytest_report_file=None,
+        pytest_logfile=None,
         logfile=None,
+        timeout=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -364,6 +426,7 @@ class Result(MetaClasses.Serializable):
             env (dict, optional): Environment variables for the pytest command
             pytest_report_file (str, optional): Path to write the pytest jsonl report
             logfile (str, optional): Path to write pytest output logs
+            timeout (int, optional): Hard timeout in seconds to kill the pytest process
 
         Returns:
             Result: A Result object with test cases as sub-Results
@@ -374,14 +437,15 @@ class Result(MetaClasses.Serializable):
             files.append(pytest_report_file)
         else:
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
-        if logfile:
-            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if pytest_logfile:
+                full_command += f" --log-file={pytest_logfile}"
+                files.append(pytest_logfile)
             if logfile:
-                full_command += f" --log-file={logfile}"
+                files.append(logfile)
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -392,7 +456,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            _res = Shell.check(full_command, verbose=True)
+            Shell.run(full_command, log_file=logfile, timeout=timeout)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
@@ -515,6 +579,7 @@ class Result(MetaClasses.Serializable):
             if result_.status in (
                 self.Status.ERROR,
                 self.Status.FAILED,
+                self.Status.DROPPED,
                 self.StatusExtended.FAIL,
             ):
                 has_failed = True
@@ -695,10 +760,42 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
-            info_lines = [
-                f"~~~~~ truncated {truncated_count} lines ~~~~~"
-            ] + info_lines[-MAX_LINES_IN_INFO:]
+            # For clang-tidy and similar builds, find the first error/warning
+            # and show context around it instead of just the last lines
+            first_error_idx = None
+            for idx, line in enumerate(info_lines):
+                # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
+                if ": error:" in line or ": warning:" in line:
+                    first_error_idx = idx
+                    break
+
+            if first_error_idx is not None:
+                # Show context around the first error (lines before and after)
+                CONTEXT_BEFORE = 50
+                CONTEXT_AFTER = MAX_LINES_IN_INFO - CONTEXT_BEFORE - 1
+                start_idx = max(0, first_error_idx - CONTEXT_BEFORE)
+                end_idx = min(len(info_lines), first_error_idx + CONTEXT_AFTER + 1)
+
+                truncated_before = start_idx
+                truncated_after = len(info_lines) - end_idx
+
+                new_info_lines = []
+                if truncated_before > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_before} lines at the beginning ~~~~~"
+                    )
+                new_info_lines.extend(info_lines[start_idx:end_idx])
+                if truncated_after > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_after} lines at the end ~~~~~"
+                    )
+                info_lines = new_info_lines
+            else:
+                # Default behavior: keep the last MAX_LINES_IN_INFO lines
+                truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_LINES_IN_INFO:]
             truncated = True
 
         # Create and return the result object with status and log file (if any)
@@ -800,11 +897,38 @@ class Result(MetaClasses.Serializable):
         add_frame = not output
         sub_indent = indent + "  "
 
+        # Check if colors should be used: local run + TTY + terminal supports colors
+        use_colors = (
+            Info().is_local_run
+            and sys.stdout.isatty()
+            and os.environ.get("TERM", "").lower() != "dumb"
+        )
+
+        # Define color variables once to avoid repetition
+        status_color = ""
+        frame_color = ""
+        reset_color = ""
+
+        if use_colors:
+            reset_color = _Colors.RESET
+            if self.is_success():
+                status_color = _Colors.GREEN + _Colors.BOLD
+                frame_color = _Colors.GREEN
+            elif self.is_failure() or self.is_error():
+                status_color = _Colors.RED + _Colors.BOLD
+                frame_color = _Colors.RED
+            else:
+                status_color = _Colors.YELLOW + _Colors.BOLD
+                frame_color = _Colors.YELLOW
+
         if add_frame:
-            output = indent + "+" * 80 + "\n"
+            output = f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            # Capitalize status and only show name if it's not empty
+            status_text = str(self.status).capitalize()
+            name_text = f" [{self.name}]" if self.name else ""
+            output += f"{indent}{status_color}{status_text}{reset_color}{name_text}\n"
             truncated_info = self.get_info_truncated(
                 max_info_lines_cnt=max_info_lines_cnt,
                 truncate_from_top=truncate_from_top,
@@ -825,7 +949,7 @@ class Result(MetaClasses.Serializable):
                 )
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
+            output += f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         return output
 
@@ -854,6 +978,47 @@ class Result(MetaClasses.Serializable):
         else:
             raise RuntimeError("Not implemented")
         return self
+
+    def to_event(self, info: "Info"):
+        result_dict = Result.to_dict(self)
+
+        def _prune_result_info(result):
+            if not isinstance(result, dict):
+                return
+            result.pop("info", None)
+
+            results = result.get("results")
+            if not isinstance(results, list):
+                return
+            for r in results:
+                _prune_result_info(r)
+
+        _prune_result_info(result_dict)
+
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=info.sha,
+            ci_status=self.status,
+            result=result_dict,
+            ext={
+                "pr_number": info.pr_number,
+                "pr_title": info.pr_title,
+                "branch": info.git_branch,
+                "commit_message": info.commit_message,
+                "linked_pr_number": info.linked_pr_number or 0,
+                "parent_pr_number": info.get_kv_data("parent_pr_number") or 0,
+                "repo_name": info.repo_name,
+                "report_url": info.get_job_report_url(latest=False),
+                "change_url": info.change_url,
+                "workflow_name": info.workflow_name,
+                "base_branch": info.base_branch,
+                "run_id": info.run_id,
+                "run_url": info.run_url,
+                "commit_authors": info.commit_authors,
+                "is_cancelled": self.ext.get("is_cancelled", False),
+            },
+        )
 
 
 class ResultInfo:
@@ -919,58 +1084,36 @@ class _ResultS3:
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        local_dir = Path(local_path).parent
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        latest_result_file = Shell.get_output(
-            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
-            strict=True,
-            verbose=True,
-        )
-        version = int(latest_result_file.split("_")[-1])
-        S3.copy_file_from_s3(
-            s3_path=f"{s3_path}/{latest_result_file}", local_path=local_dir
-        )
-        Shell.check(
-            f"cp {local_dir}/{latest_result_file} {local_path}",
-            strict=True,
-            verbose=True,
-        )
-        return version
+        s3_file = f"{s3_path}/{file_name}"
+
+        return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
 
     @classmethod
     def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
         result.dump()
         filename = Path(result.file_name()).name
-        file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        s3_path_versioned = f"{s3_path}{file_name_versioned}"
-        if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
-        if not S3.put(
-            s3_path=s3_path_versioned,
+        s3_file = f"{s3_path}{filename}"
+
+        return S3.copy_file_to_s3_with_version(
+            s3_path=s3_file,
             local_path=result.file_name(),
-            if_none_matched=True,
-            no_strict=no_strict,
+            version=version,
             text=True,
-        ):
-            print("Failed to put versioned Result")
-            return False
-        if not S3.put(
-            s3_path=s3_path,
-            local_path=result.file_name(),
             no_strict=no_strict,
-            text=True,
-        ):
-            print("Failed to put non-versioned Result")
-        return True
+        )
 
     @classmethod
     def upload_result_files_to_s3(
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
-        s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-
+        parts = [
+            s3_subprefix.strip("/"),
+            Utils.normalize_string(result.name).strip("/"),
+        ]
+        s3_subprefix = "/".join([p for p in parts if p])
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
@@ -984,31 +1127,64 @@ class _ResultS3:
                 unique_files[file_str] = file  # Keep original file reference
 
         for file_str, file in unique_files.items():
-            if not Path(file).is_file():
-                print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: File [{file}] was not found")
-                file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
-            elif file in _uploaded_file_link:
-                # in case different sub results have the same file for upload
-                file_link = _uploaded_file_link[file]
-            else:
-                is_text = False
-                for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
-                    if file.endswith(text_file_suffix):
-                        print(
-                            f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
-                        )
-                        is_text = True
-                        break
-                file_link = S3._upload_file_to_s3(
-                    file,
-                    upload_to_s3=True,
-                    text=is_text,
-                    s3_subprefix=s3_subprefix,
+            try:
+                if not Path(file).is_file():
+                    print(
+                        f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload"
+                    )
+                    result.set_info(f"WARNING: File [{file}] was not found")
+                    file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+                elif file in _uploaded_file_link:
+                    # in case different sub results have the same file for upload
+                    file_link = _uploaded_file_link[file]
+                else:
+                    is_text = False
+                    for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
+                        if file.endswith(text_file_suffix):
+                            print(
+                                f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
+                            )
+                            is_text = True
+                            break
+                    file_link = S3._upload_file_to_s3(
+                        file,
+                        upload_to_s3=True,
+                        text=is_text,
+                        s3_subprefix=s3_subprefix,
+                    )
+                    _uploaded_file_link[file] = file_link
+
+                result.links.append(file_link)
+            except Exception as e:
+                traceback.print_exc()
+                print(
+                    f"ERROR: Failed to upload file [{file}] for result [{result.name}]"
                 )
-                _uploaded_file_link[file] = file_link
-            result.links.append(file_link)
+                result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
+
+        # Upload assets in parallel (preserving relative paths for HTML interlinking)
+        if result.assets:
+            asset_paths = [
+                Path(a).resolve() for a in result.assets if Path(a).is_file()
+            ]
+            if asset_paths:
+                common_root = os.path.commonpath([p.parent for p in asset_paths])
+                env = _Environment.get()
+                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                    "//", "/"
+                )
+
+                print(
+                    f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
+                )
+                print(asset_paths)
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for asset in asset_paths:
+                        rel_path = asset.relative_to(common_root)
+                        s3_path = f"{base_s3_prefix}/{rel_path}"
+                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
+        result.assets = []
 
         if result.results:
             for result_ in result.results:
@@ -1571,6 +1747,9 @@ class ResultTranslator:
                                 )
                                 test_results[node_id] = test_result
                             else:
+                                # accumulate duration setup + call + teardown
+                                test_results[node_id].duration += duration
+
                                 # Always override with a failure, or keep existing failure
                                 if (
                                     status == Result.StatusExtended.FAIL
@@ -1578,7 +1757,6 @@ class ResultTranslator:
                                     == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
-                                    test_results[node_id].duration = duration
                                 # Update info if we now have traceback
                                 if traceback_str:
                                     if not test_results[node_id].info:
@@ -1597,7 +1775,6 @@ class ResultTranslator:
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
                                         test_results[node_id].status = status
-                                        test_results[node_id].duration = duration
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")
@@ -1617,31 +1794,33 @@ class ResultTranslator:
 
             R = Result.create_from(name=name, results=list(test_results.values()))
 
-            if session_exitstatus not in (0, 1):
-                R.status = Result.Status.ERROR
-                if session_exitstatus not in (2,):
-                    R.info = f"Test execution was interrupted (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (3,):
-                    R.info = f"Internal error in pytest or a plugin (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (4,):
-                    R.info = f"pytest command line usage error (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (5,):
-                    R.info = (
-                        f"No tests were collected (exit status: {session_exitstatus})"
-                    )
-                else:
-                    R.info = f"Unknown error (exit status: {session_exitstatus})"
+            if session_exitstatus == 0:
+                assert (
+                    R.status == Result.Status.SUCCESS
+                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
+
             if session_exitstatus == 1:
                 if R.status == Result.Status.SUCCESS:
                     print(
                         f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )
                     R.status = Result.Status.ERROR
-            elif session_exitstatus == 0:
-                assert (
-                    R.status == Result.Status.SUCCESS
-                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
 
+            R.status = Result.Status.ERROR
+            if session_exitstatus == 2:
+                R.info = "Test execution was interrupted"
+            elif session_exitstatus == 3:
+                R.info = "Internal error in pytest or a plugin"
+            elif session_exitstatus == 4:
+                R.info = "pytest command line usage error"
+            elif session_exitstatus == 5:
+                R.info = "No tests were collected"
+            else:
+                R.info = "Unknown error"
+
+            R.info += f" (exit status: {session_exitstatus})"
             return R
 
         except Exception as e:

@@ -20,7 +20,7 @@ FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresho
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -63,7 +63,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         return 0;
 
     size_t n = limit_step->getLimitForSorting();
-    if (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization)
+    if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;
 
     SortingStep::Type sorting_step_type = sorting_step->getType();
@@ -72,19 +72,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     const auto & sort_description = sorting_step->getSortDescription();
 
-    /// We only support ORDER BY <single column> right now. But easy to extend and support
-    /// multiple columns - just use the 1st column as the threshold and change comparisons
-    /// at a couple of places (from < to <=)
-    if (sort_description.size() > 1)
-        return 0;
+    const size_t num_sort_columns = sort_description.size();
+    auto sort_column_name = sort_description.front().column_name;
 
-    const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
+    const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
     if (!sort_column.type->isValueRepresentedByNumber() || sort_column.type->isNullable())
         return 0;
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
-
-    auto sort_column_name = sort_description.front().column_name;
 
     ///remove alias
     if (sort_column_name.contains('.'))
@@ -107,9 +102,16 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         }
         else
         {
-            LOG_TRACE(getLogger("optimizeTopK"), "Could not resolve column alias {}", sort_column_name);
+            LOG_DEBUG(getLogger("optimizeTopK"), "Could not resolve column alias {} {}", sort_column_name, column_node->type);
             return 0;
         }
+    }
+
+    const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
+    if (std::find(read_columns.begin(), read_columns.end(), sort_column_name) == read_columns.end())
+    {
+        LOG_DEBUG(getLogger("optimizeTopK"), "Could not find column {} in ReadFromMergeTreeStep", sort_column_name);
+        return 0;
     }
 
     TopKThresholdTrackerPtr threshold_tracker = nullptr;
@@ -123,6 +125,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
+
+    bool added_step = false;
 
     if  (settings.use_top_k_dynamic_filtering &&
          !read_from_mergetree_step->getPrewhereInfo())
@@ -141,8 +145,27 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
+        auto initial_header = read_from_mergetree_step->getOutputHeader();
+
         LOG_TRACE(getLogger("optimizeTopK"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
+
+        auto updated_header = read_from_mergetree_step->getOutputHeader();
+        if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+        {
+            auto dag = ActionsDAG::makeConvertingActions(
+                updated_header->getColumnsWithTypeAndName(),
+                initial_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name, read_from_mergetree_step->getContext());
+
+            auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+            auto & converting_node = nodes.emplace_back();
+            converting_node.step = std::move(converting_step);
+
+            node->children.push_back(&converting_node);
+            std::swap(node->step, converting_node.step);
+            added_step = true;
+        }
     }
 
     ///TopKThresholdTracker acts as a link between 3 components
@@ -152,9 +175,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     ///                                  \
     ///                                __topKFilter() (Prewhere filtering)
 
-    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
+    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, num_sort_columns, n, direction, where_clause, threshold_tracker});
 
-    return 0;
+    return added_step ? 1 : 0;
 }
 
 }

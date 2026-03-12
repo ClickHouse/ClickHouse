@@ -9,4 +9,25 @@
     <named_collections>
         <local />
     </named_collections>
+    <remote_servers>
+        <cluster0>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster0>
+    </remote_servers>
+    <shared_database_catalog />
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+        <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
+    </distributed_ddl>
+    <backups>
+        <allowed_disk>default</allowed_disk>
+        <allowed_path>/var/lib/clickhouse/</allowed_path>
+        <allowed_path>/var/lib/clickhouse/user_files/</allowed_path>
+    </backups>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 </clickhouse>

@@ -1,7 +1,8 @@
-personal_ws-1.1 en 3452
-aarch
+personal_ws-1.1 en 3588 
 AArch
+ABIs
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -123,6 +124,7 @@ CDATA
 CDFs
 CDMA
 CESU
+CHouse
 CIDR
 CIDRToRange
 CKMAN
@@ -179,6 +181,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -191,6 +194,7 @@ CodeBlock
 CodeLLDB
 Codecs
 CollapsingMergeTree
+Collatz
 Combinators
 Compat
 CompiledExpressionCacheBytes
@@ -206,24 +210,6 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
-conversio
-convertCharset
-cooldown
-coroutines
-corrmatrix
-corrMatrix
-corrstable
-corrStable
-cors
-CORS
-cosineDistance
-countDigits
-countDistinctIf
-countEqual
-counterintuitively
-countIf
-countMatches
-countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -259,6 +245,7 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
+DataStoria
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -282,6 +269,7 @@ Deduplicate
 Deduplication
 DefaultTableEngine
 DelayedInserts
+DeleteObject
 DeliveryTag
 DeltaLake
 Deltalake
@@ -296,6 +284,7 @@ DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
 DiskObjectStorageAsyncThreadsActive
+DiskS
 DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
@@ -313,7 +302,6 @@ Doxygen
 Dresseler
 Durre
 ECMA
-EntryAndExit
 ETag
 EachRow
 Ecto
@@ -324,10 +312,10 @@ ElasticSearch
 EmbeddedRocksDB
 Embeddings
 Encodings
+EntryAndExit
 Enum
 Enums
 Eoan
-epilog
 EphemeralNode
 EscapingRule
 Ethereum
@@ -346,11 +334,15 @@ FFFFFFFF
 FIPS
 FOSDEM
 FQDN
+FULLFSYNC
+FailPoint
 Failover
+Failpoints
 FarmHash
 FastFormats
 FileCluster
 FileLog
+FileSegment
 FilesystemCacheBytes
 FilesystemCacheElements
 FilesystemCacheFiles
@@ -378,6 +370,7 @@ FreeBSD
 Fuzzer
 Fuzzers
 GHCN
+GRPCThreads
 GTID
 GTest
 Gb
@@ -393,6 +386,7 @@ GetDestinationIndexFromUnidirectionalEdge
 GetFaces
 GetIndexesFromUnidirectionalEdge
 GetNeighbors
+GetObject
 GetOriginIndexFromUnidirectionalEdge
 GetPentagonIndexes
 GetRes
@@ -416,13 +410,14 @@ HMAC
 HNSW
 HSTS
 HTTPConnection
+HTTPSecureThreads
 HTTPThreads
 HTTPs
-HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
 Haversine
+HeadObject
 Heredoc
 HexAreaKm
 HexAreaM
@@ -476,6 +471,7 @@ Integrations
 IntelliJ
 IntelliSense
 InterserverConnection
+InterserverSecureThreads
 InterserverThreads
 IntervalDay
 IntervalHour
@@ -490,39 +486,6 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
-InterserverSecureThreads
-intExp
-intHash
-IntN
-invalidCertificateHandler
-invariants
-invertedindexes
-INVOKER
-IOPrefetchThreads
-IOPrefetchThreadsActive
-IOThreads
-IOThreadsActive
-IOUringInFlightEvents
-IOUringPendingEvents
-IOWriterThreads
-IOWriterThreadsActive
-IProcessor
-IPTrie
-IPv
-irate
-isAdjustedToUTC
-isConstant
-isDecimalOverflow
-isFinite
-isInfinite
-isIPAddressInRange
-isIPv
-isMergeTreePartCoveredBy
-isNaN
-isNotDistinctFrom
-isNotNull
-isNull
-isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -665,6 +628,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -714,8 +678,10 @@ MemorySanitizer
 MemoryShared
 MemoryTracking
 MemoryVirtual
+MemoryWorker
 Menne
 MergeJoin
+MergeMutate
 MergeState
 MergeTree
 MergeTreeAllRangesAnnouncementsSent
@@ -732,6 +698,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash
@@ -741,6 +708,7 @@ Milovidov
 MinHash
 MinIO
 MinMax
+MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -796,6 +764,7 @@ Noaa
 NodeJs
 NonMonotonic
 NonZeroUInt
+NotPruned
 NuRaft
 NumHexagons
 NumPy
@@ -809,6 +778,7 @@ NumericIndexedVector
 NumericIndexedVectors
 OAuth
 ODBCDriver
+OEIS
 OFNS
 OKLCH
 OKLab
@@ -866,6 +836,7 @@ OSUserTimeNormalized
 OTLP
 OUTFILE
 ObjectId
+ObjectStorage
 Oblakov
 Observability
 Octonica
@@ -882,6 +853,7 @@ OpenSUSE
 OpenSky
 OpenStack
 OpenTelemetry
+OpenedFileCache
 OrDefault
 OrNull
 OrZero
@@ -907,6 +879,7 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
+PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -962,9 +935,9 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
-prolog
 PromHouse
 PromQL
+PrometheusThreads
 Promql
 Promtail
 Protobuf
@@ -972,6 +945,7 @@ ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
+PutObject
 PyArrow
 PyCharm
 QBit
@@ -986,6 +960,7 @@ QueryConditionCacheHits
 QueryConditionCacheMisses
 QueryPlan
 QueryPreempted
+QueryProfiler
 QueryResultCacheNondeterministicFunctionHandling
 QueryResultCacheSystemTableHandling
 QueryThread
@@ -994,6 +969,7 @@ QuickSight
 QuoteMeta
 RBAC
 RClickHouse
+REPL
 RHEL
 RIPEMD
 ROLLUP
@@ -1010,9 +986,10 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
-REPL
 ReDoS
+ReadBuffer
 ReadTaskRequestsSent
+ReadWriteBufferFromHTTP
 ReadonlyReplica
 RecipeNLG
 Recompressing
@@ -1065,6 +1042,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTed
 SELECTs
 SERIALIZABLE
 SIGTERM
@@ -1154,6 +1132,8 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
+Subrequest
+Subrequests
 Substrings
 SummingMergeTree
 SuperSet
@@ -1168,8 +1148,8 @@ TABLUM
 TAVG
 TCPConnection
 TCPHandler
-TCPThreads
 TCPSecureThreads
+TCPThreads
 TDigest
 TINYINT
 TLSv
@@ -1200,6 +1180,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1214,6 +1195,7 @@ Theils
 ThreadMonotonic
 ThreadPoolFSReaderThreads
 ThreadPoolFSReaderThreadsActive
+ThreadPoolReader
 ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
@@ -1256,8 +1238,8 @@ UDFs
 UInt
 UIntN
 ULID
-ULIDs
 ULIDStringToDateTime
+ULIDs
 UMTS
 UNDROP
 UPDATEs
@@ -1295,6 +1277,7 @@ VIEWs
 Vadim
 Valgrind
 ValueType
+VectorScan
 Vectorized
 VersionBadge
 VersionHistory
@@ -1304,8 +1287,15 @@ VideoContainer
 ViewAllLink
 VirtualBox
 Vose
+WABT
 WALs
+WASM
+WKB
+WKT
 WSFG
+WasmEdge
+WasmTime
+WebAssembly
 Welch
 Welch's
 Werror
@@ -1325,10 +1315,10 @@ XHTML
 XIRR
 XNPV
 XORs
+XRay
 Xeon
 YAML
 YAMLRegExpTree
-YTsaurus
 YTsaurus
 YYYY
 YYYYMMDD
@@ -1408,12 +1398,12 @@ approxtopk
 approxtopsum
 areaCartesian
 areaSpherical
+argAndMax
+argAndMin
 argMax
 argMin
 argmax
 argmin
-argAndMax
-argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1504,6 +1494,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
@@ -1732,6 +1723,7 @@ countMatchesCaseInsensitive
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF
+counterintuitively
 covarPop
 covarPopMatrix
 covarPopStable
@@ -1883,6 +1875,7 @@ dictGetOrNull
 dictGetUUID
 dictHas
 dictIsIn
+differentiators
 disableProtocols
 disjunction
 disjunctions
@@ -1938,6 +1931,8 @@ enqueued
 enum
 enum's
 enums
+ephemerals
+epilog
 erfc
 errorCodeToName
 estimateCompressionRatio
@@ -1945,6 +1940,8 @@ etag
 evalMLMethod
 exFAT
 exceptio
+executables
+executeStep
 executio
 expiryMsec
 exponentialMovingAverage
@@ -1969,11 +1966,14 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 failover
+failpoint
+failpoints
 fallbacks
 farmFingerprint
 farmHash
 fastops
 fcoverage
+fdatasync
 fibonacci
 fifo
 fileCluster
@@ -2003,7 +2003,6 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
-Flink
 flipCoordinates
 fluentd
 fmtlib
@@ -2069,11 +2068,13 @@ geometadata
 geoparquet
 geospatial
 geotoh
+getChildren
 getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
 getOSKernelVersion
+getOrSet
 getServerPort
 getServerSetting
 getSetting
@@ -2142,12 +2143,12 @@ groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
+gsutil
 gtest
 gtid
 gunzip
 gzip
 gzipped
-GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2231,6 +2232,7 @@ initialQueryID
 initialQueryStartTime
 initializeAggregation
 injective
+inlined
 innogames
 inodes
 insertio
@@ -2249,6 +2251,7 @@ invalidCertificateHandler
 invariants
 invertedindexes
 irate
+isAdjustedToUTC
 isConstant
 isDecimalOverflow
 isFinite
@@ -2368,6 +2371,7 @@ libs
 libunwind
 libuv
 libvirt
+lifecycle
 linearizability
 linearizable
 linearize
@@ -2395,6 +2399,7 @@ lowCardinalityKeys
 lowcardinality
 lowerUTF
 lowercased
+lseek
 lttb
 lzma
 macOS
@@ -2451,6 +2456,7 @@ memtables
 mergeTreeIndex
 mergeTreePartInfo
 mergeTreeProjection
+mergeTreeTextIndex
 mergeable
 mergetree
 messageID
@@ -2544,9 +2550,7 @@ mysql
 mysqldump
 mysqljs
 mytable
-Nagios
 naiveBayesClassifier
-Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2743,6 +2747,8 @@ prebuilt
 preconfigured
 pred
 preemptable
+prefecthed
+prefecthes
 preferServerCiphers
 prefetch
 prefetched
@@ -2786,10 +2792,10 @@ procfs
 profiler
 projectio
 proleptic
+prolog
 prometheus
 prometheusQuery
 prometheusQueryRange
-PrometheusThreads
 proportionsZTest
 proto
 protobuf
@@ -2810,6 +2816,7 @@ pushdown
 pwrite
 py
 qbit
+qrencode
 qryn
 quantile
 quantileBFloat
@@ -2850,6 +2857,7 @@ quartile
 queryID
 queryString
 queryStringAndFragment
+queueing
 rabbitmq
 raduis
 randBernoulli
@@ -2872,11 +2880,13 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKB
 readWKBLineString
 readWKBMultiLineString
 readWKBMultiPolygon
 readWKBPoint
 readWKBPolygon
+readWKT
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2992,11 +3002,13 @@ rustc
 rustup
 rw
 sRGB
+sandboxed
 sapce
 sasl
 satisfiable
 scala
 sccache
+scheduleDataProcessingJob
 schemas
 sectio
 seekable
@@ -3024,6 +3036,7 @@ shortkeys
 shoutout
 showCertificate
 sigmoid
+signedness
 signup
 simdjson
 simpleJSON
@@ -3156,6 +3169,7 @@ subqueries
 subquery
 subranges
 subreddits
+subrequest
 subsecond
 subseconds
 subsequence
@@ -3375,6 +3389,7 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+totp
 tpcds
 tpch
 transactio
@@ -3385,6 +3400,7 @@ transactional
 transactionally
 translateUTF
 translocality
+transpiler
 trie
 trigrams
 trimBoth
@@ -3395,6 +3411,7 @@ tryBase
 tryDecrypt
 tryIdnaEncode
 tryPunycodeDecode
+tryUpdateDiskMetadataCacheForPart
 tskv
 tsv
 tui
@@ -3462,10 +3479,12 @@ unmerged
 unoptimized
 unparsed
 unpooled
+unprefetched
 unrealiable
 unreplicated
 unresolvable
 unrounded
+unsampled
 unshuffled
 untracked
 untrusted
@@ -3521,6 +3540,7 @@ visitParamExtractString
 visitParamExtractUInt
 visitParamHas
 vruntime
+wasm
 wchc
 wchs
 webpage
@@ -3556,7 +3576,6 @@ xeus
 xkcd
 xlarge
 xml
-XRay
 xray
 xxHash
 xz
@@ -3574,7 +3593,3 @@ znodes
 zookeeperSessionUptime
 zstd
 zxid
-readWKT
-readWKB
-WKT
-WKB

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,12 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 namespace DB
 {
@@ -103,6 +98,8 @@ public:
         {
             const UInt64 parent_hindex = data_hindex[row];
             const UInt8 child_resolution = data_resolution[row];
+
+            validateH3Cell(parent_hindex);
 
             if (child_resolution > MAX_H3_RES)
                 throw Exception(

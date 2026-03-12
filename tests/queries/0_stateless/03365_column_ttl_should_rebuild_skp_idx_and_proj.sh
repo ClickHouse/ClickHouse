@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-parallel-replicas
+# add_minmax_index_for_numeric_columns=0: Would use the index and not the projection
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists tbl;"
-${CLICKHOUSE_CLIENT} --query "create table tbl (timestamp DateTime, x UInt32 TTL timestamp + INTERVAL 1 MONTH, y UInt32 TTL timestamp + INTERVAL 1 DAY, index i x type minmax granularity 1, projection p (select x order by y)) engine MergeTree order by () settings min_bytes_for_wide_part = 1, index_granularity = 1;"
+${CLICKHOUSE_CLIENT} --query "create table tbl (timestamp DateTime, x UInt32 TTL timestamp + INTERVAL 1 MONTH, y UInt32 TTL timestamp + INTERVAL 1 DAY, index i x type minmax granularity 1, projection p (select x order by y)) engine MergeTree order by () settings min_bytes_for_wide_part = 1, index_granularity = 1, add_minmax_index_for_numeric_columns=0;"
 ${CLICKHOUSE_CLIENT} --query "insert into tbl select today() - 100, 1, 2 union all select today() - 50, 2, 4;"
 
 # Wait for column TTL to take effect

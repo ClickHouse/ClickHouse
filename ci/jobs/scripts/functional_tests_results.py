@@ -185,6 +185,11 @@ class FTResultsProcessor:
             )
         elif s.server_died:
             state = Result.Status.FAILED
+            for result in test_results:
+                if result.is_failure():
+                    # Promote all individual test failures to ERROR when the server dies,
+                    # so that they can be distinguished from normal test failures in CIDB.
+                    result.status = Result.StatusExtended.ERROR
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR

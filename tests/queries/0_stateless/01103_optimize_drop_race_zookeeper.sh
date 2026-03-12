@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper
+# Tags: race, zookeeper, no-shared-catalog
+# no-shared-catalog: times out in private
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

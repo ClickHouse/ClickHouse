@@ -7,7 +7,12 @@ import sqlite3
 import string
 from contextlib import contextmanager
 
-import pyodbc  # pylint:disable=import-error; for style check
+try:
+    import pyodbc  # pylint:disable=import-error; for style check
+except ImportError:
+    pyodbc = None
+
+import clickhouse_driver.dbapi as chdbapi  # pylint:disable=import-error; for style check
 
 from exceptions import ProgramError
 
@@ -50,6 +55,18 @@ class OdbcConnectingArgs:
         return args
 
 
+class NativeConnectingArgs:
+    def __init__(self, host="localhost", port=9000, user="default", database="default", settings=None):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.database = database
+        self.settings = settings or {}
+
+    def update_database(self, database):
+        self.database = database
+
+
 def _random_str(length=8):
     alphabet = string.ascii_lowercase + string.digits
     return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
@@ -68,9 +85,26 @@ def default_clickhouse_odbc_conn_str():
     )
 
 
+def default_clickhouse_native_conn_args():
+    return NativeConnectingArgs(
+        settings={
+            "default_table_engine": "MergeTree",
+            "union_default_mode": "DISTINCT",
+            "group_by_use_nulls": 1,
+            "join_use_nulls": 1,
+            "allow_create_index_without_type": 1,
+            "create_index_ignore_unique": 1,
+            "cast_keep_nullable": 1,
+            "prefer_column_name_to_alias": 1,
+            "aggregate_functions_null_for_empty": 1,
+        }
+    )
+
+
 class Engines(enum.Enum):
     SQLITE = enum.auto()
     ODBC = enum.auto()
+    NATIVE = enum.auto()
 
     @staticmethod
     def list():
@@ -184,6 +218,8 @@ def setup_connection(engine, conn_str=None, make_debug_request=True):
         engine = Engines[engine.upper()]
 
     if engine == Engines.ODBC:
+        if pyodbc is None:
+            raise ProgramError("pyodbc is not installed, cannot use ODBC engine")
         if conn_str is None:
             raise ProgramError("conn_str has to be set up for ODBC connection")
 
@@ -202,6 +238,33 @@ def setup_connection(engine, conn_str=None, make_debug_request=True):
         connection.DBMS_NAME = connection.getinfo(pyodbc.SQL_DBMS_NAME)
         connection.DATABASE_NAME = connection.getinfo(pyodbc.SQL_DATABASE_NAME)
         connection.USER_NAME = connection.getinfo(pyodbc.SQL_USER_NAME)
+
+    elif engine == Engines.NATIVE:
+        if conn_str is None:
+            conn_str = default_clickhouse_native_conn_args()
+        if isinstance(conn_str, str):
+            raise ProgramError("NATIVE engine requires NativeConnectingArgs, not a string")
+
+        native_args = conn_str
+        logger.debug("Native connection: host=%s port=%s database=%s", native_args.host, native_args.port, native_args.database)
+
+        def native_factory(args):
+            conn = chdbapi.connect(
+                host=args.host,
+                port=args.port,
+                user=args.user,
+                database=args.database,
+            )
+            return conn
+
+        connection = ConnectionWrap.create_form_factory(
+            factory=native_factory,
+            factory_kwargs=native_args,
+        )
+
+        connection.DBMS_NAME = "ClickHouse"
+        connection.DATABASE_NAME = native_args.database
+        connection.USER_NAME = native_args.user
 
     elif engine == Engines.SQLITE:
         conn_str = conn_str if conn_str is not None else ":memory:"
@@ -271,6 +334,12 @@ class ExecResult:
 def execute_request(request, connection):
     cursor = connection.cursor()
     try:
+        # Apply per-connection settings for the native driver
+        if hasattr(connection, '_factory_kwargs') and isinstance(connection._factory_kwargs, NativeConnectingArgs):
+            settings = connection._factory_kwargs.settings
+            if settings and hasattr(cursor, 'set_settings'):
+                cursor.set_settings(settings)
+
         cursor.execute(request)
         if cursor.description:
             logging.debug("request has a description %s", cursor.description)
@@ -280,7 +349,9 @@ def execute_request(request, connection):
         logging.debug("request doesn't have a description")
         connection.commit()
         return ExecResult().as_ok()
-    except (pyodbc.Error, sqlite3.DatabaseError) as err:
+    except (sqlite3.DatabaseError, Exception) as err:
+        if isinstance(err, KeyboardInterrupt):
+            raise
         return ExecResult().as_exception(err)
     finally:
         cursor.close()

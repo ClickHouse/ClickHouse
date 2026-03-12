@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,10 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -101,6 +97,9 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+
+            validateH3Cell(start);
+            validateH3Cell(end);
 
             auto size = gridPathCellsSize(start, end);
             dst_data[row] = size;

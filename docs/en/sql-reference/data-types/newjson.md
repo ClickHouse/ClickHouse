@@ -10,6 +10,7 @@ doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
+import WhenToUseJson from '@site/docs/best-practices/_snippets/_when-to-use-json.md';
 import Link from '@docusaurus/Link'
 
 <Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
@@ -45,15 +46,17 @@ To declare a column of `JSON` type, you can use the following syntax:
 ```
 Where the parameters in the syntax above are defined as:
 
-| Parameter                   | Description                                                                                                                                                                                                                                                                                                                                                | Default Value |
-|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
-| `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure.                                               | `1024`        |
-| `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be converted to type `String`. | `32`          |
-| `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                |               |
-| `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                   |               |
-| `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                           |               |
+| Parameter                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Default Value |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
+| `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
+| `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
+| `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
+| `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
 
-## Creating JSON {#creating-json}
+<WhenToUseJson />
+
+## Creating `JSON` {#creating-json}
 
 In this section we'll take a look at the various ways that you can create `JSON`.
 
@@ -834,6 +837,18 @@ Note: because of storing some additional information inside the data structure, 
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
+## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
+
+The main way to set a limit on dynamic paths in JSON is to use `max_dynamic_paths` parameter inside the JSON type declaration.
+But changing `max_dynamic_paths` for existing columns requires running `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)` that will start a background mutation that will rewrite all existing parts.
+Such mutation can be really heavy and can affect the server performance until the mutation is finished. To avoid this, you can use these 3 settings that can help you to change the limit on dynamic paths in MergeTree tables for new data parts:
+
+- `merge_max_dynamic_subcolumns_in_wide_part` - a MergeTree setting that limits the number of dynamic subcolumns for each JSON column during merge into a Wide data part.
+- `merge_max_dynamic_subcolumns_in_compact_part` - a MergeTree setting that limits the number of dynamic subcolumns for each JSON column during merge into a Compact data part.
+- `max_dynamic_subcolumns_in_json_type_parsing` - a session setting that limits the number of dynamic subcolumns for each JSON column during parsing of JSON data into a JSON column.
+
+Note: limit on dynamic paths cannot exceed the value specified in `max_dynamic_paths` parameter, even if values of described settings are higher.
+
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
@@ -992,6 +1007,75 @@ SELECT json, json.a, json.b, json.c FROM test;
 │ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
+
+## Lazy Type Hints (Experimental) {#lazy-type-hints}
+
+:::note
+This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
+:::
+
+When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
+
+**Lazy type hints** allow adding type hints as a metadata-only operation without rewriting existing data:
+
+- **Old parts**: Type hints are applied at query time by casting from `Dynamic` to the hinted type
+- **New parts**: Type hints are materialized during `INSERT` operations
+- **Merges**: Type hints are materialized when parts are merged
+
+This means you can add type hints instantly, and the data will be gradually converted as normal background merges occur.
+
+### Enabling Lazy Type Hints {#enabling-lazy-type-hints}
+
+```sql
+SET allow_experimental_json_lazy_type_hints = 1;
+```
+
+### Example {#lazy-type-hints-example}
+
+```sql title="Query"
+-- Create a table and insert data
+CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
+
+-- Enable experimental setting
+SET allow_experimental_json_lazy_type_hints = 1;
+
+-- Add type hints - this completes instantly without mutation
+ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
+
+-- Query the data - type hints are applied at read time
+SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
+```
+
+```text title="Response"
+┌─json.user_id─┬─toTypeName(json.user_id)─┬─json.score─┬─toTypeName(json.score)─┐
+│          123 │ UInt64                   │       95.5 │ Float64                │
+└──────────────┴──────────────────────────┴────────────┴────────────────────────┘
+```
+
+### Verifying No Mutation Occurred {#verifying-no-mutation-occurred}
+
+You can verify that the `ALTER` completed without a mutation by checking the `system.mutations` table:
+
+```sql
+SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
+```
+
+With lazy type hints enabled, this query returns no rows, confirming the operation was metadata-only.
+
+### Materializing Type Hints {#materializing-type-hints}
+
+To materialize type hints in existing data, you can either:
+
+1. **Wait for background merges**: ClickHouse will automatically materialize type hints when parts are merged
+2. **Force merge**: Use `OPTIMIZE TABLE test_lazy FINAL` to merge all parts immediately
+3. **Rewrite parts**: Use `ALTER TABLE test_lazy REWRITE PARTS` to rewrite parts with the new metadata
+
+### Limitations {#lazy-type-hints-limitations}
+
+- This feature is experimental and may change in future versions
+- Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
+- The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 

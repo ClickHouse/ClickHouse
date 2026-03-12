@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -10,7 +10,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -98,10 +97,8 @@ public:
             const UInt64 origin = data_hindex_origin[row];
             const UInt64 dest = data_hindex_dest[row];
 
-            if (!isValidCell(origin))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid origin H3 index: {}", origin);
-            if (!isValidCell(dest))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid dest H3 index: {}", dest);
+            validateH3Cell(origin);
+            validateH3Cell(dest);
 
             UInt64 res = getUnidirectionalEdge(origin, dest);
             dst_data[row] = res;
@@ -124,7 +121,21 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdge)
 {
-    factory.registerFunction<FunctionH3GetUnidirectionalEdge>();
+    FunctionDocumentation::Description description = R"(
+Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin and destination).
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdge(origin, destination)";
+    FunctionDocumentation::Arguments arguments = {
+        {"origin", "The origin H3 cell index.", {"UInt64"}},
+        {"destination", "The destination H3 cell index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686030622195711)", "1248204388774707199"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionH3GetUnidirectionalEdge>(documentation);
 }
 
 }

@@ -10,10 +10,11 @@
 namespace DB
 {
 
-constexpr auto STATS_FILE_PREFIX = "statistics_";
-constexpr auto STATS_FILE_SUFFIX = ".stats";
+constexpr std::string_view STATS_FILE_PREFIX = "statistics_";
+constexpr std::string_view STATS_FILE_SUFFIX = ".stats";
 
 class Field;
+class Block;
 
 struct StatisticsUtils
 {
@@ -58,7 +59,6 @@ protected:
 
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 struct Estimate
 {
@@ -75,35 +75,55 @@ using Estimates = std::unordered_map<String, Estimate>;
 class ColumnStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_);
+    using StatsMap = std::map<StatisticsType, StatisticsPtr>;
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
-    void serialize(WriteBuffer & buf);
-    void deserialize(ReadBuffer & buf);
-
-    String getStatisticName() const;
-    const String & getColumnName() const;
-
-    UInt64 rowCount() const;
+    void serialize(WriteBuffer & buf) const;
+    static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
+
+    UInt64 getNumRows() const { return rows; }
+    UInt64 estimateCardinality() const;
+    UInt64 estimateDefaults() const;
 
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
     Float64 estimateRange(const Range & range) const;
-    UInt64 estimateCardinality() const;
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
+    DataTypePtr getDataType() const { return stats_desc.data_type; }
+
+    const StatsMap & getStats() const { return stats; }
+    bool structureEquals(const ColumnStatistics & other) const;
+    std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    String column_name;
-    DataTypePtr data_type;
-    std::map<StatisticsType, StatisticsPtr> stats;
+    StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+};
+
+class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
+{
+public:
+    static constexpr std::string_view FILENAME = "statistics.packed";
+
+    ColumnsStatistics() = default;
+    using Base = std::map<String, ColumnStatisticsPtr>;
+    using Base::Base;
+
+    explicit ColumnsStatistics(const ColumnsDescription & columns);
+    ColumnsStatistics cloneEmpty() const;
+
+    void build(const Block & block);
+    void buildIfExists(const Block & block);
+    void merge(const ColumnsStatistics & other);
+    Estimates getEstimates() const;
 };
 
 struct ColumnDescription;
@@ -121,9 +141,8 @@ public:
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnsStatistics getMany(const ColumnsDescription & columns) const;
-
-    StatisticsPtr getSingleStats(const SingleStatisticsDescription & stats_desc, DataTypePtr data_type) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
+    ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

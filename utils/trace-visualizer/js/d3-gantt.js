@@ -93,9 +93,15 @@
         const tipDirection = d => y(d.band) - maxTipHeight < documentBodyScrollTop()? 's': 'n';
         function tipText(d) {
             const runtime = d.t2 - d.t1;
+            const attributeRows = d.attributes
+                ? Object.entries(d.attributes)
+                    .map(([key, value]) => `<tr><td><span class="attribute">${key}</span></td><td>${value}</td></tr>`)
+                    .join('')
+                : '';
             return `
                 <table>
                     <tr><td colspan="2">${d.text}</td></tr>
+                    ${attributeRows}
                     <tr><td><strong>begin</strong></td><td>${d.t1.toFixed(3)}</td></tr>
                     <tr><td><strong>end</strong></td><td>${d.t2.toFixed(3)}</td></tr>
                     <tr><td><strong>runtime</strong></td><td>${runtime.toFixed(3)}</td></tr>
@@ -478,7 +484,7 @@
                 filtered_runtime += d.t2 - d.t1;
             }
         }
-    
+
         render();
         return gantt;
     }

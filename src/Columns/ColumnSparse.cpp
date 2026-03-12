@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnSparse::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    values->getValueNameImpl(name_buf, getValueIndex(n), options);
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -300,7 +300,8 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n < _size);
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -357,7 +358,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
     size_t res_offset = 0;
@@ -371,13 +372,13 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             if (filt[i])
             {
                 res_offsets_data.push_back(res_offset);
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offset;
                 ++values_result_size_hint;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }
@@ -407,7 +408,7 @@ void ColumnSparse::filter(const Filter & filt)
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
 
     size_t res_offset = 0;
     auto offset_it = begin();
@@ -420,13 +421,13 @@ void ColumnSparse::filter(const Filter & filt)
             if (filt[i])
             {
                 res_offsets_data[res_offsets_pos] = res_offset;
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offsets_pos;
                 ++res_offset;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }
@@ -729,7 +730,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (_size == 0)
+    if (_size == 0 || replicate_offsets.back() == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
     auto res_offsets = offsets->cloneEmpty();
@@ -799,12 +800,21 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
     hash.update(_size);
 }
 
-void ColumnSparse::getExtremes(Field & min, Field & max) const
+void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (_size == 0)
+    if (start >= end)
     {
         values->get(0, min);
         values->get(0, max);
+        return;
+    }
+
+    /// For ColumnSparse, range-based extremes are not trivially supported
+    /// due to the sparse representation. Fall back to cut + getExtremes.
+    if (start != 0 || end != _size)
+    {
+        auto sub_column = cut(start, end - start);
+        sub_column->getExtremes(min, max, 0, end - start);
         return;
     }
 
@@ -826,7 +836,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    values->getExtremes(min, max);
+    values->getExtremes(min, max, 0, values->size());
 }
 
 void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
@@ -840,7 +850,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const

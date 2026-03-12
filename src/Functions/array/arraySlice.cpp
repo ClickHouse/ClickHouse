@@ -109,7 +109,7 @@ public:
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));
             else
             {
-                auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, 1), size);
+                auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, static_cast<Int8>(1)), size);
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *const_offset_column, *length_column);
             }
         }

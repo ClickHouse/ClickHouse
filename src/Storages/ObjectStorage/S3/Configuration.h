@@ -105,6 +105,7 @@ public:
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
+    void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
@@ -124,7 +125,7 @@ public:
     void validateNamespace(const String & name) const override;
     bool isStaticConfiguration() const override { return static_configuration; }
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,

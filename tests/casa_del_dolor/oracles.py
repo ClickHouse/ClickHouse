@@ -38,7 +38,7 @@ class ClickHouseTable:
         )
 
     def get_hash_query(self, rename=None):
-        return f"SELECT cityHash64(groupArray(sipHash128(*))) FROM (SELECT * FROM {self.get_sql_escaped_full_name(rename)}{" FINAL" if self.supports_final() else ""} ORDER BY ALL);"
+        return f"SELECT cityHash64(groupArray(sipHash128(*))) FROM (SELECT * FROM {self.get_sql_escaped_full_name(rename)}{' FINAL' if self.supports_final() else ''} ORDER BY ALL);"
 
     def supports_final(self) -> bool:
         to_check: str = self.table_engine
@@ -163,3 +163,109 @@ class ElOraculoDeTablas:
                 )
             except Exception as ex:
                 logger.warn(f"Error while renaming table after restarting server: {ex}")
+
+    HEALTH_CHECKS = [
+        "broken detached part(s)",
+        "broken replica(s)",
+        "broken data part(s)",
+        "shared catalog replica(s) needing recovery",
+        "shared catalog drop/detach error(s)",
+        "readonly replica(s)",
+        "part(s) with excessive errors",
+        "replica(s) with REPLICA_ALREADY_EXISTS errors",
+        "replication queue exception(s)",
+        "LOGICAL_ERROR(s) in text_log",
+        "CORRUPTED_DATA(s) in text_log",
+    ]
+
+    DETAIL_QUERIES = [
+        "SELECT database, table, name FROM system.detached_parts WHERE startsWith(name, 'broken') LIMIT 3;",
+        "SELECT database, table, lost_part_count FROM system.replicas WHERE lost_part_count > 0 LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3;",
+        "",
+        "",
+        "SELECT database, table, last_exception FROM system.replicas WHERE readonly_start_time IS NOT NULL LIMIT 3;",
+        "SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT database, table, last_exception FROM system.replication_queue WHERE last_exception != '' LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
+    ]
+
+    def run_health_check(
+        self, cluster: ClickHouseCluster, servers: list[ClickHouseInstance], logger
+    ):
+        for next_node in servers:
+            logger.info(f"Collecting monitoring information for node {next_node.name}")
+            client = Client(
+                host=next_node.ip_address, port=9000, command=cluster.client_bin_path
+            )
+            info_str = ""
+            try:
+                info_str = client.query(
+                    """
+                    SELECT x FROM (
+                    (SELECT count() x, 1 y FROM system.detached_parts WHERE startsWith("name", 'broken'))
+                     UNION ALL
+                    (SELECT ifNull(sum(lost_part_count), 0), 2 y FROM system.replicas)
+                     UNION ALL
+                    (SELECT count() x, 3 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))
+                     UNION ALL
+                    (SELECT count() x, 4 y FROM clusterAllReplicas(default, system.clusters)
+                     WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)
+                     UNION ALL
+                    (SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, system.metrics) WHERE "name" = 'SharedCatalogDropDetachLocalTablesErrors')
+                     UNION ALL
+                    (SELECT count() x, 6 y FROM clusterAllReplicas(default, system.replicas) WHERE readonly_start_time IS NOT NULL)
+                     UNION ALL
+                    (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
+                     WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
+                     UNION ALL
+                    (SELECT count() x, 8 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))
+                     UNION ALL
+                    (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
+                     UNION ALL
+                    (SELECT count() x, 10 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%'))
+                     UNION ALL
+                    (SELECT count() x, 11 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%'))
+                    ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
+                    """
+                )
+            except Exception as ex:
+                logger.warn(
+                    f"Error occurred while fetching monitoring information for node {next_node.name}: {ex}"
+                )
+                continue
+            if not isinstance(info_str, str) or info_str == "":
+                logger.warn(
+                    f"No monitoring information found for node {next_node.name}"
+                )
+                continue
+
+            fetched_info: list[int] = [
+                int(line) for line in info_str.split("\n") if line
+            ]
+            for idx, check_name in enumerate(ElOraculoDeTablas.HEALTH_CHECKS):
+                if fetched_info[idx] != 0:
+                    details = ""
+                    detail_query = ElOraculoDeTablas.DETAIL_QUERIES[idx]
+                    if detail_query:
+                        try:
+                            detail_str = client.query(detail_query)
+                            if isinstance(detail_str, str) and detail_str:
+                                details = "\nDetails:\n  " + detail_str.replace(
+                                    "\n", "\n  "
+                                )
+                        except Exception as ex:
+                            logger.warn(
+                                f"Failed to fetch details for '{check_name}': {ex}"
+                            )
+                    message: str = (
+                        f"Health check '{check_name}' failed on node {next_node.name}: {fetched_info[idx]} issues found{details}"
+                    )
+                    logger.warn(message)
+                    raise ValueError(message)

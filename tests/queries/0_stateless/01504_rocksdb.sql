@@ -6,7 +6,8 @@ DROP TABLE IF EXISTS 01504_test;
 
 CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key2); -- { serverError UNKNOWN_IDENTIFIER }
-CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key, value); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE 01504_test (key String, value UInt32) Engine=EmbeddedRocksDB PRIMARY KEY(key, value);
+DROP TABLE IF EXISTS 01504_test;
 CREATE TABLE 01504_test (key Tuple(String, UInt32), value UInt64) Engine=EmbeddedRocksDB PRIMARY KEY(key);
 
 DROP TABLE IF EXISTS 01504_test;

@@ -149,7 +149,7 @@ private:
         Float64 pred_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            pred_cumsum += sorted_array2[i] / total_sum;
+            pred_cumsum += static_cast<Float64>(sorted_array2[i]) / total_sum;
             pred_cumsum_ratio[i] = pred_cumsum;
         }
 
@@ -159,16 +159,16 @@ private:
         Float64 ltv_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            ltv_cumsum += array2[i] / total_sum;
+            ltv_cumsum += static_cast<Float64>(array2[i]) / total_sum;
             ltv_cumsum_ratio[i] = ltv_cumsum;
         }
 
-        Float64 random_gain_cumsum_ratio = 0.5 * (array_size + 1);
+        Float64 random_gain_cumsum_ratio = 0.5 * static_cast<Float64>(array_size + 1);
         Float64 accumulate_pred_ratio = std::accumulate(pred_cumsum_ratio.begin(), pred_cumsum_ratio.end(), 0.0);
         Float64 accumulate_ltv_ratio = std::accumulate(ltv_cumsum_ratio.begin(), ltv_cumsum_ratio.end(), 0.0);
 
-        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / array_size;
-        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / array_size;
+        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / static_cast<Float64>(array_size);
+        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / static_cast<Float64>(array_size);
 
         return std::make_tuple(pred_gini, gini_labels, pred_gini / gini_labels);
     }

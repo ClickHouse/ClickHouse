@@ -3,7 +3,7 @@
 DROP TABLE IF EXISTS tab SYNC;
 
 SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 SET allow_suspicious_low_cardinality_types=1;
 SET mutations_sync = 2;
 

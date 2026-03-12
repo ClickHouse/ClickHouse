@@ -85,6 +85,9 @@ public:
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
         auto & out = getOutputStream(response);
 
+        if (config().expose_info)
+            metrics_writer().writeInfo(out);
+
         if (config().expose_events)
             metrics_writer().writeEvents(out);
 
@@ -132,9 +135,9 @@ protected:
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
         /// Initialize query scope.
-        std::optional<CurrentThread::QueryScope> query_scope;
+        CurrentThread::QueryScope query_scope;
         if (context)
-            query_scope.emplace(context);
+            query_scope = CurrentThread::QueryScope::create(context);
 
         handlingRequestWithContext(request, response);
     }
