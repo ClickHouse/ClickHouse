@@ -3550,10 +3550,27 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
             }
 
             if (new_last_zxid <= last_zxid)
+            {
+                /// This can happen when a batch log entry is re-preprocessed:
+                /// PreAppendLogLeader preprocesses all sub-entries (advancing zxid past the batch),
+                /// then NuRaft calls pre_commit which tries to preprocess them again.
+                /// Find the matching uncommitted transaction and update its log_idx.
+                if (log_idx != 0)
+                {
+                    for (auto & txn : uncommitted_transactions)
+                    {
+                        if (txn.zxid == new_last_zxid && txn.log_idx == 0)
+                        {
+                            txn.log_idx = log_idx;
+                            return current_digest;
+                        }
+                    }
+                }
                 throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
                                 new_last_zxid, last_zxid);
+            }
         }
 
         new_digest = current_digest.value;

@@ -62,6 +62,28 @@ public:
 
     static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
 
+    /// Batch log entry format: packs multiple requests into a single NuRaft log entry.
+    /// Format: [int64_t magic] [uint32_t count] [uint32_t size_1] [entry_1] [uint32_t size_2] [entry_2] ...
+    /// Each sub-entry has the same format as getZooKeeperLogEntry output.
+    static constexpr int64_t KEEPER_BATCH_MAGIC = -0x4B505242'41544348LL;
+
+    static nuraft::ptr<nuraft::buffer> getZooKeeperBatchLogEntry(const KeeperRequestsForSessions & requests_for_sessions);
+
+    static bool isBatchEntry(nuraft::buffer & data);
+
+    /// Information about a sub-entry location within a batch buffer
+    struct SubEntryInfo
+    {
+        size_t data_offset;  /// offset of sub-entry data within the batch buffer
+        size_t data_size;    /// size of sub-entry data
+    };
+
+    /// Extract sub-entry offsets and sizes from a batch buffer
+    static std::vector<SubEntryInfo> getSubEntries(nuraft::buffer & data);
+
+    /// Create a standalone nuraft::buffer for the sub-entry at the given offset/size within a batch buffer
+    static nuraft::ptr<nuraft::buffer> extractSubEntryBuffer(nuraft::buffer & data, const SubEntryInfo & info);
+
     virtual std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session) = 0;
 
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT

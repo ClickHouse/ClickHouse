@@ -29,7 +29,7 @@ if (BUILD_STANDALONE_KEEPER)
     if (SPLIT_DEBUG_SYMBOLS)
         clickhouse_split_debug_symbols(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH ../clickhouse-keeper)
     else()
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
         install(TARGETS clickhouse-keeper RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 

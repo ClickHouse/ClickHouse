@@ -2,7 +2,7 @@ concurrency: 20
 iterations: 10000
 delay: 4
 timelimit: 300
-continue_on_errors: true
+continue_on_error: true
 
 connections:
   operation_timeout_ms: 3000
@@ -75,7 +75,7 @@ generator:
         remove_factor: 0.8
       set:
         weight: 2
-        path: 
+        path:
           - "/test3"
           - "/test4"
         path:
@@ -84,7 +84,7 @@ generator:
           random_string:
             size: 10
     get:
-      path: 
+      path:
         - "/test3"
         - "/test4"
       path:
@@ -93,26 +93,26 @@ generator:
     multi:
       weight: 10
       get:
-        path: 
+        path:
           - "/test3"
           - "/test4"
         path:
           children_of: "/test"
       list:
-        path: 
+        path:
           - "/test3"
         path:
           children_of: "/test"
 
     list:
-      path: 
+      path:
         - "/test3"
         - "/test4"
       path:
         children_of: "/test"
 
 output:
-  file: 
+  file:
     path: "output.json"
     with_timestamp: true
   stdout: true

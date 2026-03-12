@@ -112,7 +112,11 @@ Runner::Runner(
         concurrency = DEFAULT_CONCURRENCY;
     else
         concurrency = config->getUInt64("concurrency", DEFAULT_CONCURRENCY);
-    std::cerr << "Concurrency: " << concurrency << std::endl;
+    std::cerr << "Concurrency (number of threads): " << concurrency << std::endl;
+
+    max_requests_in_flight = config->getUInt64("max_requests_in_flight", 1);
+    max_requests_in_flight = std::max(max_requests_in_flight, size_t(1));
+    std::cerr << "Max requests in flight (per thread): " << max_requests_in_flight << std::endl;
 
     static constexpr uint64_t DEFAULT_ITERATIONS = 0;
     if (max_iterations_)
@@ -245,45 +249,119 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
     }
 
+    std::mutex thread_mutex;
+    std::condition_variable cv;
+    size_t requests_in_flight {0};
+    bool should_reconnect = false;
+    SCOPE_EXIT({ chassert(requests_in_flight == 0); });
+
+    UInt64 prev_timestamp_ns = clock_gettime_ns_adjusted(0);
+
     while (true)
     {
-        bool extracted = false;
+        SCOPE_EXIT({
+            UInt64 now = clock_gettime_ns_adjusted(prev_timestamp_ns);
+            info->total_thread_ns += now - prev_timestamp_ns;
+            prev_timestamp_ns = now;
+        });
 
-        while (!extracted)
+        /// Get a request from the queue.
         {
-            extracted = queue->tryPop(request_with_callbacks, 100);
-
-            if (shutdown
-                || (max_iterations && requests_executed >= max_iterations))
+            Stopwatch queue_time;
+            bool extracted = queue->tryPop(request_with_callbacks, 100);
+            info->queue_wait_ns += queue_time.elapsedNanoseconds();
+            if (!extracted)
             {
-                return;
+                if (max_iterations && requests_executed >= max_iterations)
+                    break;
+                if (shutdown)
+                    break;
+                continue;
             }
+        }
+
+        /// Wait for a previous request to finish if we have too many in flight.
+        ///
+        /// (We could have a fast path here, where the mutex is not locked if requests_in_flight is already < requests_in_flight.
+        ///  But there's no point because this is rare under the expected workload.
+        ///  Normally you'd give keeper-bench enough resources that the throughput is limited by
+        ///  request execution time, not by keeper-bench overhead, so requests_in_flight should
+        ///  be at the limit most of the time.)
+        {
+            Stopwatch response_time;
+            std::unique_lock lock(thread_mutex);
+
+            if (should_reconnect)
+            {
+                cv.wait(lock, [&] { return requests_in_flight == 0; });
+
+                while (!shutdown.load())
+                {
+                    try
+                    {
+                        zookeepers = refreshConnections();
+                        break;
+                    }
+                    catch (...)
+                    {
+                        std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+                    }
+                }
+            }
+            else
+            {
+                cv.wait(lock, [&] { return requests_in_flight < max_requests_in_flight; });
+            }
+            info->response_wait_ns += response_time.elapsedNanoseconds();
+
+            if (shutdown)
+                break;
+
+            ++requests_in_flight;
         }
 
         const auto connection_index = distribution(rng);
         auto & zk = zookeepers[connection_index];
 
-        auto promise = std::make_shared<std::promise<size_t>>();
-        auto future = promise->get_future();
-        Coordination::ResponseCallback callback = [&request_with_callbacks, promise](const Coordination::Response & response)
+        Coordination::ResponseCallback callback = [&, this, request_with_callbacks, request_watch = Stopwatch()](const Coordination::Response & response)
         {
-            bool set_exception = true;
-
             if (response.error == Coordination::Error::ZOK)
             {
                 for (const auto & success_callback : request_with_callbacks.on_success_callbacks)
                     success_callback();
-                set_exception = false;
+
+                auto response_size = response.bytesSize();
+                auto microseconds = request_watch.elapsedMicroseconds();
+
+                std::lock_guard lock(mutex);
+
+                if (request_with_callbacks.request->isReadRequest())
+                    info->addRead(microseconds, 1, request_with_callbacks.request->bytesSize() + response_size);
+                else
+                    info->addWrite(microseconds, 1, request_with_callbacks.request->bytesSize() + response_size);
+            }
+            else
+            {
+                std::cerr << "Error: " << Coordination::errorMessage(response.error) << "\nFor request:\n" << request_with_callbacks.request->toString() << std::endl;
+
+                if (!continue_on_error)
+                {
+                    shutdown = true;
+                    stopped_early_because_of_error = true;
+                }
             }
 
-            if (set_exception)
-                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-            else
-                promise->set_value(response.bytesSize());
+            {
+                std::unique_lock lock(thread_mutex);
+                --requests_in_flight;
+
+                if (response.error == Coordination::Error::ZSESSIONEXPIRED)
+                    should_reconnect = true;
+            }
+            cv.notify_all();
         };
 
         const auto & request = request_with_callbacks.request;
-        Stopwatch watch;
 
         if (enable_tracing)
         {
@@ -297,56 +375,38 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         try
         {
             zk->executeGenericRequest(request, callback);
-            auto response_size = future.get();
-            auto microseconds = watch.elapsedMicroseconds();
-
-            std::lock_guard lock(mutex);
-
-            if (request->isReadRequest())
-                info->addRead(microseconds, 1, request->bytesSize() + response_size);
-            else
-                info->addWrite(microseconds, 1, request->bytesSize() + response_size);
         }
         catch (...)
         {
             std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
             if (request)
-                std::cerr << "For request:\n" << request->toString() << std::endl;
+                std::cerr << "When starting request:\n" << request->toString() << std::endl;
 
             if (!continue_on_error)
             {
                 shutdown = true;
-                throw;
+                stopped_early_because_of_error = true;
+                break;
             }
             info->errors.fetch_add(1, std::memory_order_relaxed);
 
-            bool got_expired = false;
             for (const auto & connection : zookeepers)
             {
                 if (connection->isExpired())
                 {
-                    got_expired = true;
+                    std::unique_lock lock(thread_mutex);
+                    should_reconnect = true;
                     break;
-                }
-            }
-            if (got_expired)
-            {
-                while (true)
-                {
-                    try
-                    {
-                        zookeepers = refreshConnections();
-                        break;
-                    }
-                    catch (...)
-                    {
-                        std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
-                    }
                 }
             }
         }
 
         ++requests_executed;
+    }
+
+    {
+        std::unique_lock lock(thread_mutex);
+        cv.wait(lock, [&] { return requests_in_flight == 0; });
     }
 }
 
@@ -390,12 +450,17 @@ bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && reques
 }
 
 
-void Runner::runBenchmark()
+bool Runner::runBenchmark()
 {
     if (generator)
-        runBenchmarkWithGenerator();
+    {
+        return runBenchmarkWithGenerator();
+    }
     else
+    {
         runBenchmarkFromLog();
+        return true;
+    }
 }
 
 
@@ -1174,7 +1239,7 @@ void Runner::runBenchmarkFromLog()
     }
 }
 
-void Runner::runBenchmarkWithGenerator()
+bool Runner::runBenchmarkWithGenerator()
 {
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
     queue.emplace(concurrency);
@@ -1227,6 +1292,8 @@ void Runner::runBenchmarkWithGenerator()
     info->writeJSON(out, concurrency, start_timestamp_ms);
     auto output_string = std::move(out.str());
     writeOutputString(output_string, start_timestamp_ms);
+
+    return !stopped_early_because_of_error.load();
 }
 
 

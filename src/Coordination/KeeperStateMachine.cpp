@@ -254,45 +254,71 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto request_for_session = parseRequest(data, /*final=*/false);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
-
-    request_for_session->log_idx = log_idx;
-
-    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    if (isBatchEntry(data))
     {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.pre_commit,
-            request_for_session->request->tracing_context,
-            start_time_us);
+        auto sub_entries = getSubEntries(data);
+        for (const auto & sub_entry_info : sub_entries)
+        {
+            auto sub_buf = extractSubEntryBuffer(data, sub_entry_info);
+            auto request_for_session = parseRequest(*sub_buf, /*final=*/false);
+            if (!request_for_session->zxid)
+                request_for_session->zxid = log_idx;
 
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.pre_commit,
-            [&]
+            request_for_session->log_idx = log_idx;
+
+            try
             {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
-    };
-
-    try
-    {
-        preprocess(*request_for_session);
+                preprocess(*request_for_session);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to preprocess request from batch at log index {}", log_idx));
+                throw;
+            }
+        }
     }
-    catch (...)
+    else
     {
-        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
-        throw;
-    }
+        auto request_for_session = parseRequest(data, /*final=*/false);
+        if (!request_for_session->zxid)
+            request_for_session->zxid = log_idx;
 
-    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+        request_for_session->log_idx = log_idx;
+
+        const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+        {
+            ZooKeeperOpentelemetrySpans::maybeInitialize(
+                request_for_session->request->spans.pre_commit,
+                request_for_session->request->tracing_context,
+                start_time_us);
+
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request_for_session->request->spans.pre_commit,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                        {"keeper.session_id", request_for_session->session_id},
+                        {"keeper.xid", request_for_session->request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        };
+
+        try
+        {
+            preprocess(*request_for_session);
+        }
+        catch (...)
+        {
+            maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+            throw;
+        }
+
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+    }
 
     return result;
 }
@@ -334,6 +360,73 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
 
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
+}
+
+nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperBatchLogEntry(const KeeperRequestsForSessions & requests_for_sessions)
+{
+    /// First, serialize each request individually and collect sub-entry buffers
+    std::vector<nuraft::ptr<nuraft::buffer>> sub_entries;
+    sub_entries.reserve(requests_for_sessions.size());
+
+    for (const auto & request_for_session : requests_for_sessions)
+        sub_entries.push_back(getZooKeeperLogEntry(request_for_session));
+
+    /// Write the batch buffer: [magic:int64] [count:uint32] [size_1:uint32] [entry_1] [size_2:uint32] [entry_2] ...
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(KEEPER_BATCH_MAGIC, write_buf);
+    DB::writeIntBinary(static_cast<uint32_t>(requests_for_sessions.size()), write_buf);
+
+    for (const auto & sub_entry : sub_entries)
+    {
+        DB::writeIntBinary(static_cast<uint32_t>(sub_entry->size()), write_buf);
+        write_buf.write(reinterpret_cast<const char *>(sub_entry->data_begin()), sub_entry->size());
+    }
+
+    return write_buf.getBuffer();
+}
+
+bool IKeeperStateMachine::isBatchEntry(nuraft::buffer & data)
+{
+    if (data.size() < sizeof(int64_t))
+        return false;
+    /// Read native-byte-order int64 from start of buffer (matches writeIntBinary)
+    int64_t maybe_magic;
+    memcpy(&maybe_magic, data.data_begin(), sizeof(int64_t));
+    return maybe_magic == KEEPER_BATCH_MAGIC;
+}
+
+std::vector<IKeeperStateMachine::SubEntryInfo> IKeeperStateMachine::getSubEntries(nuraft::buffer & data)
+{
+    chassert(isBatchEntry(data));
+    ReadBufferFromNuraftBuffer buf(data);
+
+    int64_t magic;
+    DB::readIntBinary(magic, buf);
+
+    uint32_t count;
+    DB::readIntBinary(count, buf);
+
+    std::vector<SubEntryInfo> entries;
+    entries.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        uint32_t sub_size;
+        DB::readIntBinary(sub_size, buf);
+        /// The data offset is the current position in the underlying memory buffer
+        size_t data_offset = buf.count();
+        entries.push_back({.data_offset = data_offset, .data_size = sub_size});
+        buf.ignore(sub_size);
+    }
+
+    return entries;
+}
+
+nuraft::ptr<nuraft::buffer> IKeeperStateMachine::extractSubEntryBuffer(nuraft::buffer & data, const SubEntryInfo & info)
+{
+    auto sub_buf = nuraft::buffer::alloc(info.data_size);
+    memcpy(sub_buf->data_begin(), data.data_begin() + info.data_offset, info.data_size);
+    return sub_buf;
 }
 
 std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
@@ -599,17 +692,6 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
-
-    auto request_for_session = parseRequest(data, true);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
-
-    request_for_session->log_idx = log_idx;
-
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
-        return nullptr;
-
     auto try_push = [&](KeeperResponseForSession & response)
     {
         response.response->enqueue_ts = std::chrono::steady_clock::now();
@@ -624,29 +706,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         }
     };
 
-    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
-    {
-        ZooKeeperOpentelemetrySpans::maybeInitialize(
-            request_for_session->request->spans.commit,
-            request_for_session->request->tracing_context,
-            start_time_us);
-
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            request_for_session->request->spans.commit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
-    };
-
-    try
+    /// Commit a single parsed request. Shared by both batch and single-entry paths.
+    auto commitSingleRequest = [&](std::shared_ptr<KeeperRequestForSession> request_for_session)
     {
         const auto op_num = request_for_session->request->getOpNum();
         if (op_num == Coordination::OpNum::SessionID)
@@ -669,7 +730,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         else
         {
             if (op_num == Coordination::OpNum::Close)
-
             {
                 std::lock_guard cache_lock(request_cache_mutex);
                 parsed_request_cache.erase(request_for_session->session_id);
@@ -703,17 +763,84 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
+    };
+
+    if (isBatchEntry(data))
+    {
+        auto sub_entries = getSubEntries(data);
+        for (const auto & sub_entry_info : sub_entries)
+        {
+            auto sub_buf = extractSubEntryBuffer(data, sub_entry_info);
+            auto request_for_session = parseRequest(*sub_buf, true);
+            if (!request_for_session->zxid)
+                request_for_session->zxid = log_idx;
+            request_for_session->log_idx = log_idx;
+
+            if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
+                return nullptr;
+
+            try
+            {
+                commitSingleRequest(request_for_session);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
+                throw;
+            }
+        }
 
         keeper_context->setLastCommitIndex(log_idx);
     }
-    catch (...)
+    else
     {
-        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
-        tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
-        throw;
-    }
+        const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
-    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+        auto request_for_session = parseRequest(data, true);
+        if (!request_for_session->zxid)
+            request_for_session->zxid = log_idx;
+
+        request_for_session->log_idx = log_idx;
+
+        if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
+            return nullptr;
+
+        const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+        {
+            ZooKeeperOpentelemetrySpans::maybeInitialize(
+                request_for_session->request->spans.commit,
+                request_for_session->request->tracing_context,
+                start_time_us);
+
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request_for_session->request->spans.commit,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                        {"keeper.session_id", request_for_session->session_id},
+                        {"keeper.xid", request_for_session->request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        };
+
+        try
+        {
+            commitSingleRequest(request_for_session);
+            keeper_context->setLastCommitIndex(log_idx);
+        }
+        catch (...)
+        {
+            maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+            tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
+            throw;
+        }
+
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+    }
 
     return nullptr;
 }
@@ -785,14 +912,30 @@ void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!keeper_context->localLogsPreprocessed())
         return;
 
-    auto request_for_session = parseRequest(data, true);
-    // If we received a log from an older node, use the log_idx as the zxid
-    // log_idx will always be larger or equal to the zxid so we can safely do this
-    // (log_idx is increased for all logs, while zxid is only increased for requests)
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
+    if (isBatchEntry(data))
+    {
+        /// Rollback sub-entries in reverse order
+        auto sub_entries = getSubEntries(data);
+        for (size_t i = sub_entries.size(); i > 0; --i)
+        {
+            auto sub_buf = extractSubEntryBuffer(data, sub_entries[i - 1]);
+            auto request_for_session = parseRequest(*sub_buf, true);
+            if (!request_for_session->zxid)
+                request_for_session->zxid = log_idx;
+            rollbackRequest(*request_for_session, false);
+        }
+    }
+    else
+    {
+        auto request_for_session = parseRequest(data, true);
+        // If we received a log from an older node, use the log_idx as the zxid
+        // log_idx will always be larger or equal to the zxid so we can safely do this
+        // (log_idx is increased for all logs, while zxid is only increased for requests)
+        if (!request_for_session->zxid)
+            request_for_session->zxid = log_idx;
 
-    rollbackRequest(*request_for_session, false);
+        rollbackRequest(*request_for_session, false);
+    }
 }
 
 template<typename Storage>
