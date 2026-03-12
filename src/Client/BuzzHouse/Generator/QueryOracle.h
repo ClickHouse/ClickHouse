@@ -22,8 +22,7 @@ struct MatchHandler
     /// predicate: returns true if this message should be handled
     std::function<bool(const google::protobuf::Message &)> predicate;
     /// handler: mutates or processes the message
-    /// returns true if the message was consumed and recursion into its children should stop
-    std::function<bool(google::protobuf::Message &)> handler;
+    std::function<void(google::protobuf::Message &)> handler;
 };
 
 class QueryOracle
@@ -48,7 +47,6 @@ private:
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
     bool can_test_oracle_result;
-    bool can_test_success;
     bool measure_performance;
     bool compare_explain;
 
@@ -71,7 +69,6 @@ public:
                                                 : std::filesystem::temp_directory_path())
         , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
-        , can_test_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }
@@ -84,19 +81,6 @@ public:
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
-
-    /// Roundtrip oracle: verifies that encoding/encryption functions compose correctly.
-    /// Query 1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
-    /// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col
-    /// Both queries must return the same value, catching any roundtrip failures.
-    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
-
-    /// COUNT(DISTINCT expr) consistency oracle
-    /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
-    /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
-    /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
-    void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
-    void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(

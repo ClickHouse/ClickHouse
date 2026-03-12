@@ -636,13 +636,6 @@ void QueryStatus::throwQueryWasCancelled() const
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
-void QueryStatus::throwIfKilled()
-{
-    if (!is_killed.load())
-        return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
-}
-
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())

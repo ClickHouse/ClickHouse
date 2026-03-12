@@ -49,10 +49,11 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     return new_col_holder;
 }
 
-void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
+DataTypePtr ColumnFixedString::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
 {
     if (options.notFull(name_buf))
         writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
+    return std::make_shared<DataTypeString>();
 }
 
 

@@ -213,7 +213,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         {
             data_type = (*creator)(parameters);
         }
-        catch (...) // Ok: tryGetDataType is a try-pattern
+        catch (...)
         {
             return nullptr;
         }

@@ -17,29 +17,12 @@ class SQLRelationCol
 public:
     String rel_name;
     DB::Strings path;
-    SQLType * tp = nullptr; /// Non-owning; nullptr when type is unknown (subqueries, CTEs, virtual columns)
-    ColumnSpecial special = ColumnSpecial::NONE;
 
     SQLRelationCol() = default;
 
     SQLRelationCol(const String & rname, const DB::Strings & names)
         : rel_name(rname)
         , path(names)
-    {
-    }
-
-    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t)
-        : rel_name(rname)
-        , path(names)
-        , tp(t)
-    {
-    }
-
-    SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t, const ColumnSpecial sp)
-        : rel_name(rname)
-        , path(names)
-        , tp(t)
-        , special(sp)
     {
     }
 
@@ -81,10 +64,6 @@ public:
         , gexpr(g)
     {
     }
-
-    SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
-
-    ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
 };
 
 class QueryLevel
@@ -95,12 +74,12 @@ public:
     bool allow_aggregates = true;
     bool allow_window_funcs = true;
     bool group_by_all = false;
-    uint32_t level = 0;
+    uint32_t level;
     uint32_t cte_counter = 0;
     uint32_t window_counter = 0;
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
-    DB::Strings projections;
+    std::vector<String> projections;
 
     QueryLevel() = default;
 
@@ -122,9 +101,11 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
 class CatalogBackup
 {
 public:
-    BackupOut bout;
+    uint32_t backup_num = 0;
     bool everything = false;
+    BackupRestore_BackupOutput outf;
     std::optional<OutFormat> out_format;
+    BackupParams out_params;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
@@ -149,7 +130,8 @@ enum class TableRequirement
 {
     NoRequirement = 0,
     RequireMergeTree = 1,
-    RequireReplaceable = 2
+    RequireReplaceable = 2,
+    RequireProjection = 3,
 };
 
 class StatementGenerator
@@ -178,7 +160,6 @@ private:
     bool allow_subqueries = true;
     bool enforce_final = false;
     bool allow_engine_udf = true;
-    bool chain_views = false; ///< When set, next joinedTableOrFunction call picks a view (for MV chaining)
 
     uint32_t depth = 0;
     uint32_t width = 0;
@@ -190,7 +171,6 @@ private:
     uint32_t cache_counter = 0;
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
-    uint32_t freeze_counter = 0;
 
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
@@ -314,10 +294,7 @@ private:
         ProjectionExpr,
         DictExpr,
         JoinExpr,
-        StarExpr,
-        LitAggrState,
-        LitReinterpret,
-        LitAccurateCast
+        StarExpr
     };
 
     enum class PredOp
@@ -345,16 +322,15 @@ private:
         SystemTable,
         MergeUDF,
         ClusterUDF,
+        MergeIndexUDF,
         LoopUDF,
         ValuesUDF,
         RandomDataUDF,
         Dictionary,
         URLEncodedTable,
         TableEngineUDF,
-        RandomTableUDF,
-        MergeIndexUDF,
         MergeProjectionUDF,
-        MergeTextIndexUDF,
+        RandomTableUDF,
         MergeIndexAnalyzeUDF
     };
 
@@ -514,8 +490,8 @@ private:
         ColumnDef * cd);
     void addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
-    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool projection, IndexDef * idef);
-    void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef);
+    void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, bool projection, IndexDef * idef);
+    void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, bool force = false) const;
@@ -526,7 +502,7 @@ private:
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg, const SQLDatabase & d);
-    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
+    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
@@ -590,7 +566,7 @@ private:
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
     void generateLimitBy(RandomGenerator & rg, LimitByStatement * ls);
     void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * lim);
-    void generateOffset(RandomGenerator & rg, bool has_order_by, bool has_limit, OffsetStatement * off);
+    void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
         bool enforce_having,
@@ -600,20 +576,19 @@ private:
         std::vector<GroupCol> & gcols,
         Expr * expr);
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
-    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, ColumnSpecial special, Expr * expr);
+    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
-    String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
     String getNextHTTPURL(RandomGenerator & rg, bool secure);
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
-    void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
+    void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
     void generateDerivedTable(
         RandomGenerator & rg,
         SQLRelation & rel,
@@ -708,6 +683,10 @@ private:
                 = 2 * static_cast<uint32_t>(added_partition_columns_in_data_file < toadd_partition_columns_in_data_file);
             const uint32_t add_storage_class_name = 2 * static_cast<uint32_t>(added_storage_class_name < toadd_storage_class_name);
             const uint32_t add_structure = 4 * static_cast<uint32_t>(added_structure < toadd_structure);
+            const uint32_t prob_space = add_path + add_format + add_compression + add_partition_strategy
+                + add_partition_columns_in_data_file + add_storage_class_name + add_structure;
+            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+            const uint32_t nopt = next_dist(rg.generator);
 
             if constexpr (std::is_same_v<U, TableEngine>)
             {
@@ -717,97 +696,99 @@ private:
             {
                 next = source->add_params();
             }
-            rg.pickWeighted(
-                {{add_path,
-                  [&]
-                  {
-                      /// Path to the bucket
-                      next->set_key(
-                          b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url")
-                                     : (b.isOnAzure() ? "blob_path" : "path"));
-                      next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
-                      added_path++;
-                  }},
-                 {add_format,
-                  [&]
-                  {
-                      /// Format
-                      const InOutFormat next_format
-                          = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                          ? b.file_format.value()
-                          : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+            if (add_path && nopt < (add_path + 1))
+            {
+                /// Path to the bucket
+                next->set_key(
+                    b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url") : (b.isOnAzure() ? "blob_path" : "path"));
+                next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
+                added_path++;
+            }
+            else if (add_format && nopt < (add_path + add_format + 1))
+            {
+                /// Format
+                const InOutFormat next_format
+                    = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                    ? b.file_format.value()
+                    : rg.pickRandomly(rg.pickRandomly(inOutFormats));
 
-                      next->set_key("format");
-                      next->set_value(InOutFormat_Name(next_format).substr(6));
-                      added_format++;
-                  }},
-                 {add_compression,
-                  [&]
-                  {
-                      /// Compression
-                      const String next_compression
-                          = (b.file_comp.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                          ? b.file_comp.value()
-                          : rg.pickRandomly(compressionMethods);
+                next->set_key("format");
+                next->set_value(InOutFormat_Name(next_format).substr(6));
+                added_format++;
+            }
+            else if (add_compression && nopt < (add_path + add_format + add_compression + 1))
+            {
+                /// Compression
+                const String next_compression = (b.file_comp.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                    ? b.file_comp.value()
+                    : rg.pickRandomly(compressionMethods);
 
-                      next->set_key("compression");
-                      next->set_value(next_compression);
-                      added_compression++;
-                  }},
-                 {add_partition_strategy,
-                  [&]
-                  {
-                      /// Partition strategy
-                      const String next_ps
-                          = (b.partition_strategy.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                          ? b.partition_strategy.value()
-                          : (rg.nextBool() ? "wildcard" : "hive");
+                next->set_key("compression");
+                next->set_value(next_compression);
+                added_compression++;
+            }
+            else if (add_partition_strategy && nopt < (add_path + add_format + add_compression + add_partition_strategy + 1))
+            {
+                /// Partition strategy
+                const String next_ps = (b.partition_strategy.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                    ? b.partition_strategy.value()
+                    : (rg.nextBool() ? "wildcard" : "hive");
 
-                      next->set_key("partition_strategy");
-                      next->set_value(next_ps);
-                      added_partition_strategy++;
-                  }},
-                 {add_partition_columns_in_data_file,
-                  [&]
-                  {
-                      /// Partition columns in data file
-                      const String next_pcdf
-                          = (b.partition_columns_in_data_file.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                          ? b.partition_columns_in_data_file.value()
-                          : (rg.nextBool() ? "1" : "0");
+                next->set_key("partition_strategy");
+                next->set_value(next_ps);
+                added_partition_strategy++;
+            }
+            else if (
+                add_partition_columns_in_data_file
+                && nopt < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + 1))
+            {
+                /// Partition columns in data file
+                const String next_pcdf
+                    = (b.partition_columns_in_data_file.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                    ? b.partition_columns_in_data_file.value()
+                    : (rg.nextBool() ? "1" : "0");
 
-                      next->set_key("partition_columns_in_data_file");
-                      next->set_value(next_pcdf);
-                      added_partition_columns_in_data_file++;
-                  }},
-                 {add_storage_class_name,
-                  [&]
-                  {
-                      /// Storage class name in S3
-                      const String next_scn
-                          = (b.storage_class_name.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                          ? b.storage_class_name.value()
-                          : (rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING");
+                next->set_key("partition_columns_in_data_file");
+                next->set_value(next_pcdf);
+                added_partition_columns_in_data_file++;
+            }
+            else if (
+                add_storage_class_name
+                && nopt
+                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
+                       + add_storage_class_name + 1))
+            {
+                /// Storage class name in S3
+                const String next_scn = (b.storage_class_name.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
+                    ? b.storage_class_name.value()
+                    : (rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING");
 
-                      next->set_key("storage_class_name");
-                      next->set_value(next_scn);
-                      added_storage_class_name++;
-                  }},
-                 {add_structure,
-                  [&]
-                  {
-                      /// Structure for table function
-                      next->set_key("structure");
-                      if constexpr (std::is_same_v<U, TableEngine>)
-                      {
-                          UNREACHABLE();
-                      }
-                      else
-                      {
-                          next->set_value(getTableStructure(rg, b, true));
-                      }
-                      added_structure++;
-                  }}});
+                next->set_key("storage_class_name");
+                next->set_value(next_scn);
+                added_storage_class_name++;
+            }
+            else if (
+                add_structure
+                && nopt
+                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
+                       + add_storage_class_name + add_structure + 1))
+            {
+                /// Structure for table function
+                next->set_key("structure");
+                if constexpr (std::is_same_v<U, TableEngine>)
+                {
+                    UNREACHABLE();
+                }
+                else
+                {
+                    next->set_value(getTableStructure(rg, b, true));
+                }
+                added_structure++;
+            }
+            else
+            {
+                UNREACHABLE();
+            }
         }
     }
 
@@ -841,16 +822,11 @@ public:
     const std::function<bool(const SQLTable &)> detached_tables = [](const SQLTable & t) { return t.isDettached(); };
     const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return v.isDettached(); };
     const std::function<bool(const SQLDictionary &)> detached_dictionaries = [](const SQLDictionary & d) { return d.isDettached(); };
-    const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases
-        = [](const std::shared_ptr<SQLDatabase> & db) { return db->isAttached() && (db->shard_counter > 0 || db->replica_counter > 0); };
-    const std::function<bool(const SQLTable &)> replicated_tables
-        = [](const SQLTable & t) { return t.isAttached() && (t.shard_counter > 0 || t.replica_counter > 0); };
 
     template <typename T>
     std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
-        const bool b_is_deterministic = b.is_deterministic;
-        return [b_is_deterministic](const T & t) { return t.isAttached() && (t.is_deterministic || !b_is_deterministic); };
+        return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
     }
 
     template <TableRequirement req>

@@ -522,7 +522,6 @@ class ClickHouseCluster:
         thread_fuzzer_settings={},
         azurite_default_port=0,
         server_binaries=[],
-        with_dolor=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -599,8 +598,6 @@ class ClickHouseCluster:
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
 
         self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
-
-        self.with_dolor = with_dolor
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -760,7 +757,7 @@ class ClickHouseCluster:
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
-        self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
+        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -1995,6 +1992,7 @@ class ClickHouseCluster:
         randomize_settings=True,
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
+        with_dolor=False,
         extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -2025,7 +2023,7 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if not self.with_dolor and with_remote_database_disk is None:
+        if not with_dolor and with_remote_database_disk is None:
             with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
@@ -2127,6 +2125,7 @@ class ClickHouseCluster:
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
+            with_dolor=with_dolor,
             extra_parameters=extra_parameters,
         )
 
@@ -3842,10 +3841,6 @@ class ClickHouseCluster:
                 self.wait_ytsaurus_to_start()
 
             if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
-                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
-                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
-                    run_and_check, letsencrypt_pebble_pull_cmd, nothrow=True, timeout=600
-                )
                 letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
                 run_and_check(letsencrypt_pebble_start_cmd)
                 self.wait_letsencrypt_pebble_to_start()
@@ -3873,9 +3868,9 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            if self.with_dolor:
-                # Copy binaries and start ClickHouse for dolor instances
-                for instance in self.instances.values():
+            # Copy binaries and start ClickHouse for dolor instances
+            for instance in self.instances.values():
+                if instance.with_dolor:
                     i = 0
                     for val in self.server_binaries:
                         subprocess.run(
@@ -3969,7 +3964,7 @@ class ClickHouseCluster:
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
                 # Collect exit codes for later inspection
-                if self.with_dolor:
+                if instance.with_dolor:
                     container = self.docker_client.containers.get(instance.docker_id)
                     res = container.wait()
                     exit_code = res["StatusCode"]
@@ -4323,6 +4318,7 @@ class ClickHouseInstance:
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
+        with_dolor=False,
         extra_parameters=None,
     ):
         self.name = name
@@ -4471,7 +4467,7 @@ class ClickHouseInstance:
         # Use a common path for data lakes on the filesystem
         self.lakehouses_path = (
             "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
-            if self.cluster.with_dolor
+            if with_dolor
             else ""
         )
 
@@ -4487,6 +4483,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.with_dolor = with_dolor
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4935,13 +4932,6 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
-    def stop_clickhouse_client(self, signal="INT"):
-        client_pid = self.get_process_pid("clickhouse client")
-        self.exec_in_container(
-            ["bash", "-c", f"kill -{signal} {client_pid}"],
-            user="root",
-        )
-
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
@@ -5323,7 +5313,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
+                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version",
             ]
         )
         if fix_metadata:
@@ -5340,7 +5330,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(
@@ -5592,7 +5582,7 @@ class ClickHouseInstance:
                 self.with_installed_binary,
             )
 
-        if not self.cluster.with_dolor:
+        if not self.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
             if self.with_installed_binary:
                 # Ignore CPU overload in this case
@@ -5794,8 +5784,6 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = "- " + self.odbc_ini_path
 
-        if self.cluster.with_dolor:
-            entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
         if self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
@@ -5819,12 +5807,12 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if self.cluster.with_dolor:
+        if self.with_dolor:
             binary_volume = ""
         elif not self.with_installed_binary:
-            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse:ro"
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
         else:
-            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh:ro"
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
 
         external_dirs_volumes = ""
         if self.external_dirs:

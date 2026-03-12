@@ -66,7 +66,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getDefaultSerialization();
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -285,7 +285,7 @@ public:
                 }
             }
         }
-        catch (...) // Ok: exception saved via setScanException for later handling
+        catch (...)
         {
             setScanException();
             data_files_cv.notify_all();

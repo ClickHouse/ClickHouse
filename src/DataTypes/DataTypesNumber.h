@@ -36,7 +36,7 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    SerializationPtr doGetDefaultSerialization() const override
     {
         return std::make_shared<SerializationNumber<T>>();
     }
