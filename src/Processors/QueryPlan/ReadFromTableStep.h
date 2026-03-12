@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -9,7 +10,7 @@ class ReadFromTableStep : public ISourceStep
 {
 public:
     ReadFromTableStep(
-        SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
+        SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool is_merge_tree_, bool use_parallel_replicas_ = false);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -22,11 +23,14 @@ public:
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
+    bool isMergeTree() const { return is_merge_tree; }
 
     QueryPlanStepPtr clone() const override;
+
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
+    bool is_merge_tree = false;
     bool use_parallel_replicas = false;
 };
 

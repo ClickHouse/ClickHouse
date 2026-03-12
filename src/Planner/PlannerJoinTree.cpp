@@ -1063,16 +1063,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     if (table_node)
                     {
+                        bool is_merge_tree = false;
                         String table_name;
                         if (!table_node->getTemporaryTableName().empty())
                             table_name = table_node->getTemporaryTableName();
                         else
+                        {
                             table_name = table_node->getStorageID().getFullTableName();
+                            is_merge_tree = table_node->getStorage()->isMergeTree();
+                        }
 
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
-                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
+                            is_merge_tree);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
@@ -2503,9 +2508,11 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
 
     const auto * children_step = root_node->children.front()->step.get();
+    const auto * read_from_table_step = typeid_cast<const ReadFromTableStep *>(children_step);
     bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
                            || typeid_cast<const ReadNothingStep *>(children_step)
-                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+                           || typeid_cast<const ReadFromPreparedSource *>(children_step)
+                           || (read_from_table_step && read_from_table_step->isMergeTree());
     if (!is_allowed_storage)
         return;
 

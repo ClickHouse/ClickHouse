@@ -709,6 +709,13 @@ void executeQueryWithParallelReplicas(
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     const auto & shard = cluster->getShardsInfo().at(0);
 
+    std::shared_ptr<const QueryPlan> remote_query_plan;
+    if (new_context->getSettingsRef()[Setting::serialize_query_plan])
+    {
+        remote_query_plan = createRemotePlanForParallelReplicas(query_ast, *header, new_context, processed_stage);
+        remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    }
+
     const auto & settings = new_context->getSettingsRef();
     /// do not build local plan for distributed queries for now (address it later)
     /// when parallel_replicas_prefer_local_replica is false, skip local plan to allow the load balancer to pick any replica
@@ -730,13 +737,6 @@ void executeQueryWithParallelReplicas(
         {
             query_plan = std::move(*local_plan);
             return;
-        }
-
-        std::shared_ptr<const QueryPlan> remote_query_plan;
-        if (new_context->getSettingsRef()[Setting::serialize_query_plan])
-        {
-            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
@@ -802,7 +802,8 @@ void executeQueryWithParallelReplicas(
             std::move(storage_limits),
             std::move(connection_pools),
             std::nullopt,
-            shard.pool);
+            shard.pool,
+            std::move(remote_query_plan));
 
         query_plan.addStep(std::move(read_from_remote));
     }
