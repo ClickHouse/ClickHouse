@@ -32,19 +32,22 @@ struct SemiAntiJoinSideChecker
     bool is_anti = false;
     bool skip_left = false;
     bool skip_right = false;
-    bool resolving_join_on = false;
 
     SemiAntiJoinSideChecker() = default;
 
-    SemiAntiJoinSideChecker(JoinStrictness strictness, JoinKind kind, const ContextPtr & context, bool resolving_join_on_expression);
+    SemiAntiJoinSideChecker(
+        const JoinNode & join_node,
+        JoinStrictness strictness,
+        JoinKind kind,
+        const ContextPtr & context,
+        const IQueryTreeNode * resolving_join_on_expression);
 
     bool shouldSkipSide(JoinTableSide side) const;
 
-    /// Check access by comparing table expression nodes directly.
-    /// Used when the side is not known upfront (e.g. qualified matcher resolution).
+    /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
+    /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
     void throwIfTableAccessDenied(
-        const JoinNode & join_node,
-        const IQueryTreeNode & table_expression_node,
+        JoinTableSide side,
         const IQueryTreeNode & node_for_error_message,
         const IQueryTreeNode & scope_node) const;
 };

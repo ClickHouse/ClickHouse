@@ -7075,12 +7075,19 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0) \
     DECLARE(Bool, semi_join_compatibility, false, R"(
-When enabled, `SEMI` JOIN only returns columns from the preserved side per SQL standard. For `LEFT SEMI JOIN` only left table columns are returned, for `RIGHT SEMI JOIN` only right table columns. When disabled, `SELECT *` returns columns from both sides (legacy behavior). Explicit qualified matchers like `SELECT t1.*, t2.*` are not affected by this setting.
+When enabled, `SEMI` JOIN restricts column access to the preserved side per SQL standard.
+For `LEFT SEMI JOIN` only left table columns are accessible in `SELECT` and `WHERE` clauses (including qualified matchers like `t1.*`), for `RIGHT SEMI JOIN` only right table columns.
+Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
+`JOIN ON` expressions can access both sides regardless of this setting.
+When disabled, `SELECT *` returns columns from both sides (legacy behavior).
     )", 0) \
     DECLARE(Bool, anti_join_compatibility, false, R"(
-When enabled, `ANTI` JOIN only returns columns from the preserved side per SQL standard. For `LEFT ANTI JOIN` only left table columns are returned, for `RIGHT ANTI JOIN` only right table columns. When disabled, `SELECT *` returns columns from both sides (legacy behavior). Explicit qualified matchers like `SELECT t1.*, t2.*` are not affected by this setting.
+When enabled, `ANTI` JOIN restricts column access to the preserved side per SQL standard.
+For `LEFT ANTI JOIN` only left table columns are accessible in `SELECT` and `WHERE` clauses (including qualified matchers like `t1.*`), for `RIGHT ANTI JOIN` only right table columns.
+Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
+`JOIN ON` expressions can access both sides regardless of this setting.
+When disabled, `SELECT *` returns columns from both sides (legacy behavior).
     )", 0) \
-    \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.

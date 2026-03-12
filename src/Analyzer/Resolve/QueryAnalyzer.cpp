@@ -1703,15 +1703,13 @@ void checkSemiAntiJoinTableAccess(
         {
             /// Found the relevant SEMI/ANTI JOIN, check access
             SemiAntiJoinSideChecker checker(
+                *join_node,
                 join_node->getStrictness(),
                 join_node->getKind(),
                 scope.context,
                 scope.resolving_join_on_expression);
-            checker.throwIfTableAccessDenied(
-                *join_node,
-                *table_expression_node,
-                *node_for_error_message,
-                *scope.scope_node);
+            JoinTableSide side = is_from_left ? JoinTableSide::Left : JoinTableSide::Right;
+            checker.throwIfTableAccessDenied(side, *node_for_error_message, *scope.scope_node);
             return;
         }
 
@@ -4490,9 +4488,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         expressions_visitor.visit(join_node_typed.getJoinExpression());
         auto join_expression = join_node_typed.getJoinExpression();
 
-        /// Set flag to allow access to both sides in JOIN ON expression
-        scope.resolving_join_on_expression = true;
-        SCOPE_EXIT(scope.resolving_join_on_expression = false);
+        /// Set pointer to current JOIN node to allow access to both sides in its ON expression
+        scope.resolving_join_on_expression = join_node.get();
+        SCOPE_EXIT(scope.resolving_join_on_expression = nullptr);
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         join_node_typed.getJoinExpression() = std::move(join_expression);

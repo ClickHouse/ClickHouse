@@ -93,3 +93,11 @@ SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LE
 -- t3 is non-preserved in SEMI JOIN, t1 is in outer regular JOIN
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT JOIN (SELECT * FROM (SELECT 2 AS b) t2 LEFT SEMI JOIN (SELECT 3 AS c) t3 ON true) sub ON true; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT JOIN (SELECT * FROM (SELECT 2 AS b) t2 LEFT SEMI JOIN (SELECT 3 AS c) t3 ON true) sub ON true;
+
+-- Nested: (t1 LEFT SEMI JOIN t2) LEFT JOIN t3
+-- In outer JOIN's ON clause, t2 (non-preserved in inner SEMI JOIN) should still be inaccessible
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t2.b = t3.c; -- { serverError UNKNOWN_IDENTIFIER }
+-- But t1 (preserved in inner SEMI JOIN) should be accessible in outer JOIN's ON clause
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
+-- Test that inner SEMI JOIN's own ON expression can still access both sides
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON t1.a = t2.b LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;

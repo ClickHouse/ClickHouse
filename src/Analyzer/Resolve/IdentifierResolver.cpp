@@ -979,8 +979,12 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 }
 
 /// Helper structure to check SEMI/ANTI JOIN side access restrictions
-SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(JoinStrictness strictness, JoinKind kind, const ContextPtr & context, bool resolving_join_on_expression)
-    : resolving_join_on(resolving_join_on_expression)
+SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
+    const JoinNode & join_node,
+    JoinStrictness strictness,
+    JoinKind kind,
+    const ContextPtr & context,
+    const IQueryTreeNode * resolving_join_on_expression)
 {
     is_semi = strictness == JoinStrictness::Semi;
     is_anti = strictness == JoinStrictness::Anti;
@@ -992,27 +996,28 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(JoinStrictness strictness, Join
         || (is_anti && settings[Setting::anti_join_compatibility]);
     skip_left = skip_non_preserved_side && isRight(kind);
     skip_right = skip_non_preserved_side && isLeft(kind);
+
+    /// If we are resolving the ON expression of THIS specific JOIN node, allow access to both sides
+    if (resolving_join_on_expression && resolving_join_on_expression == &join_node)
+    {
+        skip_left = false;
+        skip_right = false;
+    }
 }
 
 bool SemiAntiJoinSideChecker::shouldSkipSide(JoinTableSide side) const
 {
-    /// In JOIN ON expression, both sides should be accessible
-    if (resolving_join_on)
-        return false;
     return (skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right);
 }
 
 void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
-    const JoinNode & join_node,
-    const IQueryTreeNode & table_expression_node,
+    JoinTableSide side,
     const IQueryTreeNode & node_for_error_message,
     const IQueryTreeNode & scope_node) const
 {
     if (!skip_left && !skip_right)
         return;
-    bool is_left_side = table_expression_node.isEqual(*join_node.getLeftTableExpression());
-    bool is_right_side = table_expression_node.isEqual(*join_node.getRightTableExpression());
-    if ((skip_left && is_left_side) || (skip_right && is_right_side))
+    if ((skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right))
     {
         const char * join_type_str = is_semi ? "SEMI" : "ANTI";
         const char * side_str = skip_right ? "right" : "left";
@@ -1047,7 +1052,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     }
 
     /// Check SEMI/ANTI JOIN side access restrictions
-    SemiAntiJoinSideChecker side_checker(join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
+    SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
     {
