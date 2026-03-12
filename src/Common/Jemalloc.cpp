@@ -119,7 +119,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...)
+    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedAllocationSampleTracking);
     }
@@ -142,7 +142,7 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...)
+    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedDeallocationSampleTracking);
     }

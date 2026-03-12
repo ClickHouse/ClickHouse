@@ -1132,6 +1132,8 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
+Subrequest
+Subrequests
 Substrings
 SummingMergeTree
 SuperSet
@@ -1492,6 +1494,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
@@ -3166,6 +3169,7 @@ subqueries
 subquery
 subranges
 subreddits
+subrequest
 subsecond
 subseconds
 subsequence

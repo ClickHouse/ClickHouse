@@ -1813,6 +1813,19 @@ void validateVirtualColumns(IStorage & storage)
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
                 storage_column.name, storage.getName());
         }
+
+        /// An EPHEMERAL user column has no physical storage and no read-time expression,
+        /// so it cannot properly shadow a virtual column of the same name.
+        /// This leads to a type mismatch: the Block header uses the user column's type
+        /// while the data comes from the virtual column (which may have a different type).
+        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral
+            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
+                storage_column.name, storage.getName());
+        }
     }
 }
 

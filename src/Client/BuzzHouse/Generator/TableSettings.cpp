@@ -47,7 +47,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'", "'compatibility'"};
+             static const DB::Strings choices = {"'throw'", "'drop'", "'rebuild'", "'compatibility'"};
              return rg.pickRandomly(choices);
          },
          {"'throw'", "'drop'", "'rebuild'", "'compatibility'"},
@@ -105,7 +105,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
+             static const DB::Strings choices = {"'ignore'", "'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomly(choices);
          },
          {"'ignore'", "'throw'", "'drop'", "'rebuild'"},
@@ -130,7 +130,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'v1'", "'v2'", "'v3'"};
+             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'"};
              return rg.pickRandomly(choices);
          },
          {"'v1'", "'v2'", "'v3'"},
@@ -179,7 +179,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
+             static const DB::Strings choices = {"'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomly(choices);
          },
          {"'throw'", "'drop'", "'rebuild'"},
@@ -250,7 +250,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
+             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'"};
              return rg.pickRandomly(choices);
          },
          {"'Simple'", "'Trivial'", "'StochasticSimple'"},
@@ -352,7 +352,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'v1'", "'v2'", "'v3'"};
+             static const DB::Strings choices = {"'v1'", "'v2'", "'v3'"};
              return rg.pickRandomly(choices);
          },
          {"'v1'", "'v2'", "'v3'"},
@@ -363,7 +363,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
              return rg.pickRandomly(choices);
          },
          {"'map'", "'map_with_buckets'", "'advanced'"},
@@ -372,7 +372,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
              return rg.pickRandomly(choices);
          },
          {"'map'", "'map_with_buckets'", "'advanced'"},
@@ -389,6 +389,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"primary_key_compress_block_size", highRangeSetting},
     {"primary_key_lazy_load", trueOrFalseSetting},
     {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", probRangeSetting},
+    {"propagate_types_serialization_versions_to_nested_types", trueOrFalseSetting},
     {"ratio_of_defaults_for_sparse_serialization", CHSetting(probRange, {"0", "0.0001", "0.001", "0.003", "0.005", "0.01", "0.1"}, false)},
     {"refresh_parts_interval",
      CHSetting(
@@ -427,7 +428,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'none'", "'local'", "'any'"};
+             static const DB::Strings choices = {"'none'", "'local'", "'any'"};
              return rg.pickRandomly(choices);
          },
          {"'none'", "'local'", "'any'"},
@@ -436,7 +437,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'basic'", "'with_types'"};
+             static const DB::Strings choices = {"'basic'", "'with_types'"};
              return rg.pickRandomly(choices);
          },
          {"'basic'", "'with_types'"},
@@ -506,7 +507,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'single_stream'", "'with_size_stream'"};
+             static const DB::Strings choices = {"'single_stream'", "'with_size_stream'"};
              return rg.pickRandomly(choices);
          },
          {"'single_stream'", "'with_size_stream'"},
@@ -515,12 +516,13 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
+             static const DB::Strings choices = {"'basic'", "'allow_sparse'"};
              return rg.pickRandomly(choices);
          },
          {"'basic'", "'allow_sparse'"},
          false)},
     {"table_disk", trueOrFalseSetting},
+    {"table_readonly", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_async_block_ids_cache", trueOrFalseSetting},
@@ -537,6 +539,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"vertical_merge_algorithm_min_rows_to_activate", rowsRangeSetting},
     {"vertical_merge_optimize_lightweight_delete", trueOrFalseSetting},
+    {"vertical_merge_optimize_ttl_delete", trueOrFalseSetting},
     {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
     {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
     {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},
@@ -640,7 +643,7 @@ static std::unordered_map<String, CHSetting> fileTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+                static const DB::Strings choices = {"'read'", "'pread'", "'mmap'"};
                 return rg.pickRandomly(choices);
             },
             {"'read'", "'pread'", "'mmap'"},
@@ -693,7 +696,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                static const DB::Strings choices = {"'default'", "'stream'", "'dead_letter_queue'"};
                 return rg.pickRandomly(choices);
             },
             {"'default'", "'stream'", "'dead_letter_queue'"},
@@ -704,7 +707,7 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
+                static const DB::Strings choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
                 return rg.pickRandomly(choices);
             },
             {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"},
@@ -747,11 +750,131 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     }
     if (!fc.disks.empty())
     {
-        const auto & disk_setting
-            = CHSetting([&](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(fc.disks) + "'"; }, {}, false);
+        const auto & disk_setting = CHSetting(
+            [&](RandomGenerator & rg, FuzzConfig &) -> String
+            {
+                const auto & di = rg.pickRandomly(fc.disks);
+                /// Inline local disk definition
+                if (di.type == "Local" && rg.nextSmallNumber() < 4)
+                {
+                    String res = "disk(type = local, path = '" + di.path + "'";
+                    const uint32_t space_opt = rg.nextSmallNumber();
+                    if (space_opt < 3)
+                        res += ", keep_free_space_bytes = "
+                            + std::to_string(
+                                   rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)));
+                    else if (space_opt < 5)
+                        res += ", keep_free_space_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+                    if (rg.nextBool())
+                        res += ", thread_pool_size = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128));
+                    return res + ")";
+                }
+                /// Inline object_storage disk definition (only for Local object storage — no external credentials needed)
+                if (di.type == "ObjectStorage" && di.object_storage_type == "Local" && rg.nextSmallNumber() < 4)
+                {
+                    String res = "disk(type = object_storage, object_storage_type = local_blob_storage, path = '" + di.path + "'";
+                    /// metadata_type: local, plain, or plain_rewritable
+                    if (rg.nextBool())
+                    {
+                        static const DB::Strings meta_types = {"local", "plain", "plain_rewritable"};
+                        const String & mt = rg.pickRandomly(meta_types);
+                        res += ", metadata_type = " + mt;
+                        if (mt == "local" && rg.nextBool())
+                            res += ", metadata_path = '" + di.path + "metadata/'";
+                        if (rg.nextBool())
+                            res += ", metadata_keep_free_space_bytes = "
+                                + std::to_string(
+                                       rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)));
+                    }
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", enable_distributed_cache = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (fc.allow_transactions && rg.nextSmallNumber() < 4)
+                        res += ", use_fake_transaction = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", read_only = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", remove_shared_recursive_file_limit = "
+                            + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", object_metadata_cache_size = "
+                            + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1024) * UINT64_C(1024)));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", key_compatibility_prefix = 'compat_" + di.name + "/'";
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", thread_pool_size = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128));
+                    return res + ")";
+                }
+                /// Inline encrypted disk wrapping a non-encrypted local disk
+                const auto enc_it = std::find_if(
+                    fc.disks.begin(),
+                    fc.disks.end(),
+                    [&](const DiskInfo & d) { return !d.is_encrypted && d.type == "Local" && d.name != di.name; });
+                if (!di.is_encrypted && !di.is_cached && enc_it != fc.disks.end() && rg.nextSmallNumber() < 3)
+                {
+                    struct
+                    {
+                        const char * algo;
+                        size_t hex_len;
+                    } static constexpr algos[] = {{"AES_128_CTR", 32}, {"AES_192_CTR", 48}, {"AES_256_CTR", 64}};
+                    const auto & alg = algos[rg.randomInt<uint32_t>(0, 2)];
+                    String key;
+                    for (size_t i = 0; i < alg.hex_len / 16; i++)
+                        key += fmt::format("{:016x}", rg.randomInt<uint64_t>(0, std::numeric_limits<uint64_t>::max()));
+                    return "disk(type = encrypted, disk = '" + enc_it->name + "', path = 'encrypted_" + enc_it->name
+                        + "/', algorithm = " + alg.algo + ", key_hex = " + key + ")";
+                }
+                /// Inline cache disk wrapping a non-cached local disk
+                const auto cache_it = std::find_if(
+                    fc.disks.begin(),
+                    fc.disks.end(),
+                    [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name; });
+                if (!di.is_cached && cache_it != fc.disks.end() && rg.nextSmallNumber() < 3)
+                {
+                    String res = "disk(type = cache, disk = '" + cache_it->name + "', path = 'inline_cache_" + cache_it->name + "/'";
+                    res += ", max_size = '"
+                        + std::to_string(rg.thresholdGenerator<uint64_t>(
+                            0.2, 0.2, UINT64_C(1024) * UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(1024)))
+                        + "'";
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", cache_on_write_operations = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                    {
+                        const bool slru = rg.nextBool();
+                        res += ", cache_policy = " + String(slru ? "'SLRU'" : "'LRU'");
+                        if (slru && rg.nextBool())
+                            res += ", slru_size_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.1, 0.9));
+                    }
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", max_elements = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT64_C(1000000)));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", max_file_segment_size = "
+                            + std::to_string(rg.thresholdGenerator<uint64_t>(
+                                0.2, 0.2, UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(128)));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", enable_filesystem_query_cache_limit = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", load_metadata_asynchronously = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", background_download_threads = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", allow_dynamic_cache_resize = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", boundary_alignment = "
+                            + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, UINT64_C(512), UINT64_C(1024) * UINT64_C(1024)));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", keep_free_space_size_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+                    if (rg.nextSmallNumber() < 4)
+                        res += ", keep_free_space_elements_ratio = " + std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
+                    return res + ")";
+                }
+                return "'" + di.name + "'";
+            },
+            {},
+            false);
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
         dataLakeSettings.insert({{"disk", disk_setting}});
+        allDatabaseSettings.insert({{"disk", disk_setting}});
     }
     if (fc.enable_fault_injection_settings)
     {
@@ -767,7 +890,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'keep'", "'delete'", "'move'", "'tag'"};
+                    static const DB::Strings choices = {"'keep'", "'delete'", "'move'", "'tag'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
@@ -781,7 +904,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'path'", "'partition'"};
+                    static const DB::Strings choices = {"'path'", "'partition'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'path'", "'partition'"},
@@ -807,7 +930,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
                 {
-                    static const DB::Strings & choices = {"'none'", "'hive'", "'regex'"};
+                    static const DB::Strings choices = {"'none'", "'hive'", "'regex'"};
                     return rg.pickRandomly(choices);
                 },
                 {"'none'", "'hive'", "'regex'"},

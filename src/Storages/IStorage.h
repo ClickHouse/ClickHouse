@@ -574,6 +574,8 @@ public:
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
 
+    virtual Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
+
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);
 

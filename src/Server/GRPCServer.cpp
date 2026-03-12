@@ -1445,7 +1445,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
             }
         }

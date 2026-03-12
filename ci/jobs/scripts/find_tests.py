@@ -307,6 +307,7 @@ class Targeting:
                         info=f"Skipped: {e}",
                     )
                 )
+                raise
 
         return tests, Result(
             name="Fetch relevant tests",

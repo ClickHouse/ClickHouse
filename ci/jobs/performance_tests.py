@@ -276,13 +276,11 @@ def parse_args():
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_kv_data("previous_commits_sha") or []
-    assert commits, "No commits found to fetch reference build"
+    commits = info.get_kv_data("master_track_commits_sha") or []
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
-
     return None
 
 
@@ -323,10 +321,9 @@ def main():
 
     if Utils.is_arm():
         if compare_against_master:
-            if info.git_branch == "master":
-                link_for_ref_ch = find_prev_build(info, "build_arm_release")
-                assert link_for_ref_ch, "previous clickhouse build has not been found"
-            else:
+            link_for_ref_ch = find_prev_build(info, "build_arm_release")
+            if not link_for_ref_ch:
+                print("WARNING: No build found for master track commits, falling back to latest master build")
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -335,10 +332,9 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            if info.git_branch == "master":
-                link_for_ref_ch = find_prev_build(info, "build_amd_release")
-                assert link_for_ref_ch, "previous clickhouse build has not been found"
-            else:
+            link_for_ref_ch = find_prev_build(info, "build_amd_release")
+            if not link_for_ref_ch:
+                print("WARNING: No build found for master track commits, falling back to latest master build")
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -774,19 +770,6 @@ def main():
                 name="Check Results", status=status, info=message, duration=sw.duration
             )
         )
-
-    # dmesg -T > dmesg.log
-    #
-    # ls -lath
-    #
-    # 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
-    #    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    #    report analyze benchmark metrics \
-    #    ./*.core.dmp ./*.core
-
-    ## If the files aren't same, copy it
-    # cmp --silent compare.log /tmp/praktika/compare.log || \
-    #  cp compare.log /output
 
     files_to_attach = []
     if res:

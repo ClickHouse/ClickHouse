@@ -53,6 +53,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -94,6 +95,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
+    extern const DatabaseReplicatedSettingsBool internal_replication;
 }
 
 namespace ErrorCodes
@@ -216,7 +218,7 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
-        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value);
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -488,7 +490,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
@@ -559,17 +561,14 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
 }
 
-void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
+void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
 {
-    const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+    auto collection = NamedCollectionFactory::instance().get(collection_name);
 
-    if (!config_ref.has(config_prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
-
-    cluster_auth_info.cluster_username = config_ref.getString(config_prefix + ".cluster_username", "");
-    cluster_auth_info.cluster_password = config_ref.getString(config_prefix + ".cluster_password", "");
-    cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
-    cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
+    cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
@@ -1170,7 +1169,7 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
             args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
             args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
         {
         }
     }

@@ -124,6 +124,15 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
+    Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & args,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        ContextPtr context,
+        const StorageID & storage_id) override;
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,

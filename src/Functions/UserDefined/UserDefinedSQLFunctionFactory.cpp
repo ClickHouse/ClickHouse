@@ -280,8 +280,16 @@ void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage 
 {
     for (const auto & [name, create_function_query] : function_storage.getAllObjects())
     {
-        if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, wasm_module_manager);
+        try
+        {
+            if (create_function_query->as<ASTCreateWasmFunctionQuery>())
+                UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, wasm_module_manager);
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(fmt::format("while loading user defined function {}", backQuote(name)));
+            throw;
+        }
     }
 }
 

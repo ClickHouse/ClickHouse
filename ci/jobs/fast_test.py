@@ -204,6 +204,11 @@ def main():
     os.makedirs(build_dir, exist_ok=True)
 
     if res and JobStages.CMAKE in stages:
+        # The sccache server sometimes fails to start because of issues with S3.
+        # Start it explicitly with retries before cmake, since cmake can invoke
+        # the compiler during configuration. Non-fatal: build can proceed without it.
+        if not Shell.check("sccache --start-server", retries=3):
+            print("WARNING: sccache server failed to start, build will proceed without it")
         results.append(
             # TODO: commented out to make job platform agnostic
             #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \

@@ -28,10 +28,10 @@ Default value with NULL tuple
 Nullable(Int32)
 Nested Nullable(Tuple) - outer nullable
 (1,'inner')
-Nullable(Tuple(Int32, String))
+Tuple(Int32, String)
 Nested Nullable(Tuple) - NULL outer
-\N
-Nullable(Tuple(Int32, String))
+(0,'')
+Tuple(Int32, String)
 Regular Tuple with Nullable element
 \N
 Nullable(String)

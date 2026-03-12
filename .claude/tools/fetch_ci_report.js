@@ -180,7 +180,8 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
  * Check if a status represents a failure
  */
 function isFailureStatus(status) {
-  return status === 'failed' || status === 'FAIL' || status === 'failure';
+  return status === 'failed' || status === 'FAIL' || status === 'failure' ||
+         status === 'error' || status === 'ERROR';
 }
 
 /**
