@@ -590,6 +590,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&ttl, nullptr);
     f(&settings_changes, nullptr);
     f(&settings_resets, nullptr);
+    f(nullptr, &add_enum_values);
     f(&select, nullptr);
     f(&sql_security, nullptr);
     f(&rename_to, nullptr);

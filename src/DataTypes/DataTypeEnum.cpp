@@ -376,7 +376,7 @@ DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEn
         const Int64 candidate64 = add.isRelative() ? max_base64 + val64 : val64;
         if (candidate64 < std::numeric_limits<TypeBase>::min() || candidate64 > std::numeric_limits<TypeBase>::max())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
-                toString(val), name, EnumName<TypeBase>::value);
+                candidate64, name, EnumName<TypeBase>::value);
 
         const auto val_base_type = static_cast<TypeBase>(candidate64);
         auto name_it = name_to_value.find(name);
