@@ -37,7 +37,14 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
     : ObjectInfo(RelativePathWithMetadata(
           data_manifest_file_entry_->file_path,
-          ObjectMetadata{static_cast<uint64_t>(data_manifest_file_entry_->parsed_entry->file_size_in_bytes), {}, {}, {}, {}}))
+          /// Do NOT pre-populate ObjectMetadata here — even though file_size_in_bytes is available
+          /// from the Iceberg manifest. StorageObjectStorageSource::createReader checks
+          /// `if (!object_info->getObjectMetadata())` to decide whether to fetch real metadata
+          /// from the object storage backend. That fetch populates etag and last_modified, which
+          /// are required for page cache, filesystem cache, and parquet metadata cache to work.
+          /// Pre-populating with only size_bytes would bypass the fetch and leave etag empty,
+          /// silently disabling all caching.
+          std::nullopt))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
           data_manifest_file_entry_->resolved_schema_id,

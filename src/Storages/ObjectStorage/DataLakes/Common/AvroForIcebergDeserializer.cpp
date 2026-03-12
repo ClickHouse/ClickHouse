@@ -226,7 +226,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             sort_order_id = sort_order_id_value.safeGet<Int32>();
     }
 
-    Int64 file_size_in_bytes = 0;
+    std::optional<Int64> file_size_in_bytes;
     if (hasPath(c_data_file_file_size_in_bytes))
         file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
