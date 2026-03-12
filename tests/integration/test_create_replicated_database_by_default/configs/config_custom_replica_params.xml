@@ -1,0 +1,26 @@
+<clickhouse>
+    <create_replicated_database_by_default>true</create_replicated_database_by_default>
+    <async_load_databases>false</async_load_databases>
+    <database_replicated>
+        <default_replica_path>/clickhouse/databases/{uuid}_suffix</default_replica_path>
+        <default_replica_shard_name>{shard}_suffix</default_replica_shard_name>
+        <default_replica_name>{replica}_suffix</default_replica_name>
+    </database_replicated>
+    <distributed_ddl>
+        <path>/clickhouse/queue/</path>
+    </distributed_ddl>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

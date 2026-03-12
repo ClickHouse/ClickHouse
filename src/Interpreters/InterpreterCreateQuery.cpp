@@ -143,6 +143,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool create_replicated_database_by_default;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -261,7 +262,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             create.set(create.storage, storage);
         }
         auto engine = make_intrusive<ASTFunction>();
-        engine->name = "Atomic";
+        bool use_replicated = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::create_replicated_database_by_default].value;
+        /// Do not create Replicated database for predefined databases (system, information_schema, etc.) and the default database.
+        if (use_replicated
+            && !DatabaseCatalog::isPredefinedDatabase(database_name)
+            && database_name != DatabaseCatalog::DEFAULT_DATABASE)
+            engine->name = "Replicated";
+        else
+            engine->name = "Atomic";
         engine->setNoEmptyArgs(true);
         create.storage->set(create.storage->engine, engine);
     }
