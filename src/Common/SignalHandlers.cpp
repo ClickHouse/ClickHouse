@@ -183,7 +183,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
                 terminate_current_exception_trace[i] = stack_trace_frames[i];
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
     else
     {

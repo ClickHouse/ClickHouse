@@ -22,10 +22,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
     : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type_->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , buckets(buckets_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {

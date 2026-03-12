@@ -410,9 +410,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down)
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
     {
-        const auto & column_conditions = static_cast<FilterInfoExt *>(format_filter_info->opaque.get())->column_conditions;
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);

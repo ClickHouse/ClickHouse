@@ -169,9 +169,9 @@ bool SQLDatabase::isSharedDatabase() const
     return deng == DatabaseEngineValues::DShared;
 }
 
-bool SQLDatabase::isLazyDatabase() const
+bool SQLDatabase::isBackupDatabase() const
 {
-    return deng == DatabaseEngineValues::DLazy;
+    return deng == DatabaseEngineValues::DBackup;
 }
 
 bool SQLDatabase::isOrdinaryDatabase() const
@@ -232,27 +232,13 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
         const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
         const uint32_t unit_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().unity_catalog.has_value());
-        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + unit_cat;
-        chassert(prob_space > 0);
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
 
-        if (glue_cat && (nopt < glue_cat + 1))
-        {
-            catalog = LakeCatalog::Glue;
-        }
-        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-        {
-            catalog = LakeCatalog::Hive;
-        }
-        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-        {
-            catalog = LakeCatalog::REST;
-        }
-        else if (unit_cat && (nopt < glue_cat + hive_cat + rest_cat + unit_cat + 1))
-        {
-            catalog = LakeCatalog::Unity;
-        }
+        chassert(glue_cat + hive_cat + rest_cat + unit_cat > 0);
+        rg.pickWeighted(
+            {{glue_cat, [&] { catalog = LakeCatalog::Glue; }},
+             {hive_cat, [&] { catalog = LakeCatalog::Hive; }},
+             {rest_cat, [&] { catalog = LakeCatalog::REST; }},
+             {unit_cat, [&] { catalog = LakeCatalog::Unity; }}});
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
         format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue) ? LakeFormat::Iceberg
@@ -746,7 +732,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> & formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
 
         file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
@@ -996,11 +982,13 @@ void SQLFunction::setName(Function * f) const
 
 const String & ColumnPathChain::getBottomName() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].cname;
 }
 
 SQLType * ColumnPathChain::getBottomType() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].tp;
 }
 

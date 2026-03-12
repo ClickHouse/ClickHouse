@@ -146,7 +146,7 @@ ast_fuzzer_any_query	0
 ast_fuzzer_runs	0
 asterisk_include_alias_columns	0
 asterisk_include_materialized_columns	0
-async_insert	0
+async_insert	1
 async_insert_busy_timeout_decrease_rate	0.2
 async_insert_busy_timeout_increase_rate	0.2
 async_insert_busy_timeout_max_ms	200

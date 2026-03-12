@@ -149,12 +149,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        batch_num: Batch number for naming output file
+        job_params: List of job parameters for naming output file
     """
     import subprocess
     from pathlib import Path
@@ -166,7 +166,9 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
         print("No profraw files found", flush=True)
         return
 
-    final_file = f"./it-{batch_num}.profdata"
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
+    final_file = f"./it-{joined_job_params}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(
@@ -213,10 +215,12 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
             except Exception as e:
                 print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
         print(f"  Deleted {deleted_count} profraw files", flush=True)
+        return final_file
     else:
         print(f"ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
+        return None
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
@@ -857,7 +861,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merge_profraw_files(llvm_profdata_cmd, batch_num)
+        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+
+        # Attach profdata file to the result report so it is uploaded
+        # unconditionally (even when tests fail) and visible in the CI report.
+        if merged_profdata and os.path.exists(merged_profdata):
+            R.files.append(merged_profdata)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
