@@ -22,6 +22,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -907,6 +908,16 @@ BlockIO InterpreterInsertQuery::execute()
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
+
+    /// Validate that the target column types are permitted by the current settings.
+    /// This guards against clients (e.g. newer versions with different defaults) sending
+    /// binary blocks with experimental or suspicious types that are disabled on this server.
+    {
+        const DataTypeValidationSettings type_validation_settings(context->getSettingsRef());
+        for (const auto & column : query_sample_block)
+            validateDataType(column.type, type_validation_settings);
+    }
+
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
