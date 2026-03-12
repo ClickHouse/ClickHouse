@@ -23,6 +23,7 @@ ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- val1=100, val2='' (default), val3=0.0 (default) → val2, val3 should be skipped
@@ -54,6 +55,7 @@ ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both key=0 and val=0 are defaults → should NOT remove all columns
@@ -80,6 +82,7 @@ ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Part 1: a=100, b=0 (default), c='' (default)
@@ -114,6 +117,7 @@ ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- b='' (default) → b should be skipped
@@ -145,6 +149,7 @@ ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- Both nullable cols are NULL (default) → should be skipped
@@ -184,6 +189,7 @@ ENGINE = MergeTree
 ORDER BY (key1, key2)
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 -- key2=0 (default), val=0 (default) → both should be skipped

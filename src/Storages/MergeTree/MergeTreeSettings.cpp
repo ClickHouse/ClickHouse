@@ -197,6 +197,13 @@ namespace ErrorCodes
     └────────┴────────────────────┘
     ```
     )", 0) \
+    DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
+    If enabled, columns whose values are entirely type-defaults in a given INSERT
+    block are not written to the data part on disk. When the part is later read,
+    missing columns are filled with defaults — the same mechanism used by
+    `ALTER TABLE ADD COLUMN`. This saves disk space for sparse-update workloads
+    where most columns in each INSERT are left at their type's default value.
+    )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128

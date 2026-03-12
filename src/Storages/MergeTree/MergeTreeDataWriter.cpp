@@ -89,6 +89,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsBool skip_empty_columns_on_insert;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
@@ -816,20 +817,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    /// Skip writing columns whose values are entirely type-defaults.
-    /// This saves disk space for sparse-update workloads where most columns
-    /// in each INSERT are left at their type's default.
-    /// Columns marked for sparse serialization are excluded — they are already
-    /// efficiently stored and removing them would break sparse serialization invariants.
+    /// When skip_empty_columns_on_insert is enabled, columns whose values are
+    /// entirely type-defaults are not written to the part on disk. This saves
+    /// disk space for sparse-update workloads where most columns in each INSERT
+    /// are left at their type's default. Missing columns are filled with defaults
+    /// on read — the same mechanism used by ALTER TABLE ADD COLUMN.
     /// Patch parts are excluded — they require all columns for lightweight UPDATE.
     bool has_empty_columns = false;
-    if (!new_data_part->info.isPatch())
+    if ((*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] && !new_data_part->info.isPatch())
     {
         NameSet empty_columns;
         for (const auto & col : block)
         {
-            if (ISerialization::hasKind(infos.getKindStack(col.name), ISerialization::Kind::SPARSE))
-                continue;
             if (col.column->hasOnlyDefaults())
                 empty_columns.insert(col.name);
         }
