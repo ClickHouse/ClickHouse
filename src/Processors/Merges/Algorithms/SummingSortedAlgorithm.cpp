@@ -851,7 +851,9 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(header, inputs, description);
+    /// Always use origin_header (the un-flattened header) for removeReplicatedFromSortingColumns,
+    /// because `header` may be flattened below when allow_tuple_element_aggregation is enabled.
+    removeReplicatedFromSortingColumns(columns_definition.origin_header, inputs, description);
     removeConstAndSparse(inputs);
     if (columns_definition.allow_tuple_element_aggregation)
         header = std::make_shared<Block>(Nested::flattenTupleRecursive(*header));
@@ -868,11 +870,9 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    /// When allow_tuple_element_aggregation is enabled, base class `header` has been flattened in initialize(),
-    if (columns_definition.allow_tuple_element_aggregation)
-        removeReplicatedFromSortingColumns(columns_definition.origin_header, input, description);
-    else
-        removeReplicatedFromSortingColumns(header, input, description);
+    /// Always use origin_header (the un-flattened header) for column position lookup,
+    /// since `header` may have been flattened in initialize() and column positions would differ.
+    removeReplicatedFromSortingColumns(columns_definition.origin_header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);

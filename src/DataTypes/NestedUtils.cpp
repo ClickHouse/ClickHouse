@@ -267,6 +267,19 @@ Block flattenTupleRecursive(const Block & block)
     return result;
 }
 
+/// Count the number of leaf (non-tuple) columns after recursive flattening.
+static size_t countFlattenedColumnsRecursive(const DataTypePtr & data_type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
+    if (!tuple_type || tuple_type->getElements().empty() || data_type->hasCustomName())
+        return 1;
+
+    size_t count = 0;
+    for (const auto & element_type : tuple_type->getElements())
+        count += countFlattenedColumnsRecursive(element_type);
+    return count;
+}
+
 /// Flatten tuple columns: input a vector of columns, return a new vector with all tuples expanded
 /// All tuples are flattened recursively
 Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns)
@@ -281,7 +294,10 @@ Columns flattenTupleColumnsRecursive(const Block & header, const Columns & colum
     }
 
     Columns result;
-    result.reserve(header.columns());
+    size_t total_flattened = 0;
+    for (size_t i = 0; i < header.columns(); ++i)
+        total_flattened += countFlattenedColumnsRecursive(header.getByPosition(i).type);
+    result.reserve(total_flattened);
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
