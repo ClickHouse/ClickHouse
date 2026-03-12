@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
+    extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -331,6 +332,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
+
+        if (!metadata_snapshot->hasSamplingKey())
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                "Sampling is not supported: the table does not have a sampling key");
+
         DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)

@@ -4016,6 +4016,7 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
     DECLARE(GeoToH3ArgumentOrder, geotoh3_argument_order, GeoToH3ArgumentOrder::LAT_LON, R"(
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 )", BETA) \
+    DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
 and an exception is thrown if the block contains too many partitions.
