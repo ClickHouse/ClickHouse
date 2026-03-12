@@ -134,6 +134,7 @@ SELECT toMacAddress('00:1A:2B:3C:4D'); -- { serverError CANNOT_PARSE_MAC_ADDRESS
 SELECT toMacAddress('00:1A:2B:3C:4D:5E:6F'); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
 
 -- Test 18: Test LowCardinality(MacAddress)
+SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS test_macaddress_lowcardinality;
 CREATE TABLE test_macaddress_lowcardinality
 (
