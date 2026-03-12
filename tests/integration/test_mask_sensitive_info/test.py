@@ -575,6 +575,25 @@ def test_create_database_datalake():
         target_node=node_unity,
     )
 
+    for toggle, secret in enumerate(["[HIDDEN]", password2]):
+        assert (
+            node_unity.query(f"SHOW CREATE DATABASE datalake_db_b0 {show_secrets}={toggle}")
+            == f"CREATE DATABASE datalake_db_b0\\nENGINE = DataLakeCatalog(datalake_nc_secrets)\n"
+        )
+        assert (
+            node_unity.query(
+            f"SELECT engine_full FROM system.databases WHERE name = 'datalake_db_b0' "
+            f"{show_secrets}={toggle}"
+            )
+            == TSV(
+            [
+                [
+                    "",
+                ],
+            ]
+            )
+        )
+
     node_unity.query("DROP DATABASE IF EXISTS datalake_db_b0")
     node_unity.query("DROP NAMED COLLECTION IF EXISTS datalake_nc")
     node_unity.query("DROP NAMED COLLECTION IF EXISTS datalake_nc_secrets")
