@@ -3,7 +3,6 @@ import os
 import random
 import re
 import string
-import time
 
 import pytest
 
@@ -30,7 +29,6 @@ node_unity = cluster.add_instance(
         "configs/overrides.xml",
     ],
     user_configs=["configs/users.xml"],
-    with_zookeeper=True,
     with_azurite=True,
     with_remote_database_disk=False,
     image="clickhouse/integration-test-with-unity-catalog",
@@ -1126,7 +1124,6 @@ def test_backup_table_azure_named_collection():
 def test_on_cluster():
     password = new_password()
 
-    node.query("DROP TABLE IF EXISTS table_oncl ON CLUSTER 'test_shard_localhost'")
     node.query(
         f"CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')"
     )
@@ -1139,24 +1136,23 @@ def test_on_cluster():
     )
 
     # Check logs of DDLWorker during executing of this query.
-    # Log lines may not be flushed immediately, so retry.
-    ddl_log_patterns = [
-        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
-        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
-        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
-        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')",
-    ]
-    for pattern in ddl_log_patterns:
-        for _ in range(10):
-            if node.contains_in_log(pattern):
-                break
-            time.sleep(0.5)
-        assert node.contains_in_log(pattern)
+    assert node.contains_in_log(
+        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+    )
+    assert node.contains_in_log(
+        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+    )
+    assert node.contains_in_log(
+        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+    )
+    assert node.contains_in_log(
+        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql80:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
+    )
     assert system_query_log_contains_search_pattern(
         "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql80:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
 
-    node.query("DROP TABLE IF EXISTS table_oncl ON CLUSTER 'test_shard_localhost'")
+    node.query("DROP TABLE table_oncl")
 
 
 def test_iceberg_cluster_function():
@@ -1186,13 +1182,13 @@ def test_iceberg_cluster_function():
 
 def test_query_masking_rule_with_ddl():
     table_name = "test_ddl_masking"
-    node.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER 'test_shard_localhost'")
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(
         f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
     )
 
-    assert_eq_with_retry(node, f"SELECT count() FROM system.tables WHERE table='{table_name}'", "1\n")
+    assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
     assert "sensetive_data" in node.query(
         f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
     )
-    node.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER 'test_shard_localhost'")
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
