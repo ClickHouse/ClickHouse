@@ -3362,20 +3362,22 @@ std::unordered_set<String> Context::getSharedDatabasesAcrossNamespaces() const
     if (value.empty())
         return result;
 
-    /// Parse comma-separated list, trimming whitespace around each name.
+    /// Parse comma-separated list, trimming all ASCII whitespace around each name.
+    /// XML configs may contain newlines/tabs between entries, so we must not
+    /// limit trimming to spaces only.
     size_t start = 0;
     while (start < value.size())
     {
         size_t end = value.find(',', start);
         if (end == String::npos)
             end = value.size();
-        /// Trim leading whitespace.
+        /// Trim leading whitespace (space, tab, newline, carriage return).
         size_t name_start = start;
-        while (name_start < end && value[name_start] == ' ')
+        while (name_start < end && std::isspace(static_cast<unsigned char>(value[name_start])))
             ++name_start;
         /// Trim trailing whitespace.
         size_t name_end = end;
-        while (name_end > name_start && value[name_end - 1] == ' ')
+        while (name_end > name_start && std::isspace(static_cast<unsigned char>(value[name_end - 1])))
             --name_end;
         if (name_end > name_start)
             result.emplace(value.substr(name_start, name_end - name_start));
