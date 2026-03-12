@@ -84,7 +84,7 @@ def ensure_testns_t1():
     test execution order does not matter (required by the flaky check which
     runs tests 3 times in randomized order).
     """
-    q("CREATE DATABASE IF NOT EXISTS tenant1__testns")
+    q1("CREATE DATABASE IF NOT EXISTS testns")
     q1("CREATE TABLE IF NOT EXISTS testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     # Idempotent insert: only add rows if table is empty (avoids duplicates on re-runs)
     if q1("SELECT count() FROM testns.t1").strip() == "0":
@@ -93,7 +93,7 @@ def ensure_testns_t1():
 
 def ensure_tenant2_testns_t1():
     """Ensure tenant2's 'testns' database and 't1' table exist with data (10,20,30)."""
-    q("CREATE DATABASE IF NOT EXISTS tenant2__testns")
+    q2("CREATE DATABASE IF NOT EXISTS testns")
     q2("CREATE TABLE IF NOT EXISTS testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     if q2("SELECT count() FROM testns.t1").strip() == "0":
         q2("INSERT INTO testns.t1 VALUES (10), (20), (30)")
@@ -126,7 +126,7 @@ def test_create_database():
 # ============================================================
 def test_create_table_and_query():
     # Ensure database exists (test may run before test_create_database)
-    q("CREATE DATABASE IF NOT EXISTS tenant1__testns")
+    q1("CREATE DATABASE IF NOT EXISTS testns")
     # Clean up from previous flaky re-runs
     q1("DROP TABLE IF EXISTS testns.t1")
     q1("CREATE TABLE testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")

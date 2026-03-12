@@ -62,7 +62,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             String separator = getContext()->getDatabaseNamespaceSeparator();
             String prefix = ns + separator;
             rewritten_query
-                << "SELECT _db_name AS name FROM ("
+                << "SELECT DISTINCT _db_name AS name FROM ("
                 << "SELECT if(startsWith(name, " << DB::quote << prefix
                 << "), substr(name, " << (prefix.size() + 1)
                 << "), name) AS _db_name FROM system.databases"
