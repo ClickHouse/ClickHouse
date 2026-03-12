@@ -160,7 +160,13 @@ void SerializationMacAddress::deserializeBinaryBulk(IColumn & column, ReadBuffer
     const auto initial_size = x.size();
     x.resize(initial_size + limit);
     const auto size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(MacAddress) * limit);
-    x.resize(initial_size + size / sizeof(MacAddress));
+    const auto new_size = initial_size + size / sizeof(MacAddress);
+    x.resize(new_size);
+
+    /// readBig writes raw 8-byte values directly into storage, bypassing the MacAddress
+    /// constructor that enforces the 48-bit mask. Re-apply the mask to maintain the invariant.
+    for (size_t i = initial_size; i < new_size; ++i)
+        x[i] = MacAddress(x[i].toUnderType());
 }
 
 }
