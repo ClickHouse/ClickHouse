@@ -77,6 +77,28 @@ def q(query, **kwargs):
     return node.query(query, **kwargs)
 
 
+def ensure_testns_t1():
+    """Ensure tenant1's 'testns' database and 't1' table exist with data (1,2,3).
+
+    Called at the start of every test that reads from testns.t1 so that
+    test execution order does not matter (required by the flaky check which
+    runs tests 3 times in randomized order).
+    """
+    q("CREATE DATABASE IF NOT EXISTS tenant1__testns")
+    q1("CREATE TABLE IF NOT EXISTS testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
+    # Idempotent insert: only add rows if table is empty (avoids duplicates on re-runs)
+    if q1("SELECT count() FROM testns.t1").strip() == "0":
+        q1("INSERT INTO testns.t1 VALUES (1), (2), (3)")
+
+
+def ensure_tenant2_testns_t1():
+    """Ensure tenant2's 'testns' database and 't1' table exist with data (10,20,30)."""
+    q("CREATE DATABASE IF NOT EXISTS tenant2__testns")
+    q2("CREATE TABLE IF NOT EXISTS testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
+    if q2("SELECT count() FROM testns.t1").strip() == "0":
+        q2("INSERT INTO testns.t1 VALUES (10), (20), (30)")
+
+
 # ============================================================
 # Test 1: Server setting is active
 # ============================================================
@@ -103,6 +125,8 @@ def test_create_database():
 # Test 3: CREATE TABLE and query with namespace
 # ============================================================
 def test_create_table_and_query():
+    # Ensure database exists (test may run before test_create_database)
+    q("CREATE DATABASE IF NOT EXISTS tenant1__testns")
     # Clean up from previous flaky re-runs
     q1("DROP TABLE IF EXISTS testns.t1")
     q1("CREATE TABLE testns.t1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
@@ -115,6 +139,7 @@ def test_create_table_and_query():
 # Test 4: USE database works with namespace
 # ============================================================
 def test_use_database():
+    ensure_testns_t1()
     result = q1("USE testns; SELECT currentDatabase()")
     # currentDatabase() should return the physical name
     assert "tenant1__testns" in result
@@ -124,6 +149,7 @@ def test_use_database():
 # Test 5: SHOW DATABASES filters by namespace and strips prefix
 # ============================================================
 def test_show_databases():
+    ensure_testns_t1()
     result = q1("SHOW DATABASES LIKE 'testns'")
     assert result.strip() == "testns"
 
@@ -148,6 +174,7 @@ def test_tenant_isolation():
 # Test 7: Switching back to tenant1 sees tenant1's data
 # ============================================================
 def test_tenant1_sees_own_data():
+    ensure_testns_t1()
     result = q1("SELECT * FROM testns.t1 ORDER BY x")
     assert result.strip() == "1\n2\n3"
 
@@ -177,6 +204,8 @@ def test_drop_database():
 # Test 10: Without namespace, physical names are visible
 # ============================================================
 def test_admin_sees_physical_names():
+    ensure_testns_t1()
+    ensure_tenant2_testns_t1()
     result = q("SELECT count() FROM system.databases WHERE name = 'tenant1__testns'")
     assert result.strip() == "1"
     result = q("SELECT count() FROM system.databases WHERE name = 'tenant2__testns'")
@@ -187,6 +216,7 @@ def test_admin_sees_physical_names():
 # Test 11: SHOW CREATE DATABASE strips namespace prefix
 # ============================================================
 def test_show_create_database():
+    ensure_testns_t1()
     result = q1("SHOW CREATE DATABASE testns")
     assert "testns" in result
     assert "tenant1__testns" not in result
@@ -197,6 +227,7 @@ def test_show_create_database():
 # Test 12: SHOW CREATE TABLE strips namespace prefix
 # ============================================================
 def test_show_create_table():
+    ensure_testns_t1()
     result = q1("SHOW CREATE TABLE testns.t1")
     assert "testns" in result
     assert "tenant1__testns" not in result
@@ -206,6 +237,7 @@ def test_show_create_table():
 # Test 13: ALTER DATABASE with namespace
 # ============================================================
 def test_alter_database():
+    ensure_testns_t1()
     q1("ALTER DATABASE testns MODIFY COMMENT 'tenant1 test database'")
     result = q1("SELECT comment FROM system.databases WHERE name = 'tenant1__testns'")
     assert result.strip() == "tenant1 test database"
@@ -215,6 +247,7 @@ def test_alter_database():
 # Test 14: SHOW TABLES FROM with namespace
 # ============================================================
 def test_show_tables():
+    ensure_testns_t1()
     result = q1("SHOW TABLES FROM testns")
     assert "t1" in result
 
@@ -223,6 +256,7 @@ def test_show_tables():
 # Test 15: RENAME TABLE across databases within same namespace
 # ============================================================
 def test_rename_table():
+    ensure_testns_t1()
     q("DROP DATABASE IF EXISTS tenant1__otherdb")
     q1("CREATE DATABASE otherdb")
     q1("RENAME TABLE testns.t1 TO otherdb.t1_moved")
@@ -236,6 +270,7 @@ def test_rename_table():
 # Test 16: EXISTS TABLE with namespace
 # ============================================================
 def test_exists_table():
+    ensure_testns_t1()
     result = q1("EXISTS TABLE testns.t1")
     assert result.strip() == "1"
     result = q1("EXISTS TABLE testns.nonexistent")
@@ -246,6 +281,7 @@ def test_exists_table():
 # Test 17: EXISTS DATABASE with namespace
 # ============================================================
 def test_exists_database():
+    ensure_testns_t1()
     result = q1("EXISTS DATABASE testns")
     assert result.strip() == "1"
     result = q1("EXISTS DATABASE nonexistent_db")
@@ -256,6 +292,8 @@ def test_exists_database():
 # Test 18: TRUNCATE TABLE with namespace
 # ============================================================
 def test_truncate_table():
+    ensure_testns_t1()
+    q1("DROP TABLE IF EXISTS testns.t_trunc")
     q1("CREATE TABLE testns.t_trunc (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO testns.t_trunc VALUES (100), (200)")
     result = q1("SELECT count() FROM testns.t_trunc")
@@ -270,6 +308,8 @@ def test_truncate_table():
 # Test 19: OPTIMIZE TABLE with namespace
 # ============================================================
 def test_optimize_table():
+    ensure_testns_t1()
+    q1("DROP TABLE IF EXISTS testns.t_opt")
     q1("CREATE TABLE testns.t_opt (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO testns.t_opt VALUES (1)")
     q1("INSERT INTO testns.t_opt VALUES (2)")
@@ -283,6 +323,9 @@ def test_optimize_table():
 # Test 20: EXCHANGE TABLES with namespace
 # ============================================================
 def test_exchange_tables():
+    ensure_testns_t1()
+    q1("DROP TABLE IF EXISTS testns.t_ex1")
+    q1("DROP TABLE IF EXISTS testns.t_ex2")
     q1("CREATE TABLE testns.t_ex1 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("CREATE TABLE testns.t_ex2 (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO testns.t_ex1 VALUES (11)")
@@ -300,6 +343,8 @@ def test_exchange_tables():
 # Test 21: UNDROP TABLE with namespace
 # ============================================================
 def test_undrop_table():
+    ensure_testns_t1()
+    q1("DROP TABLE IF EXISTS testns.t_undrop")
     q1(
         "SET database_atomic_wait_for_drop_and_detach_synchronously = 0; "
         "CREATE TABLE testns.t_undrop (x UInt32) ENGINE = MergeTree() ORDER BY x"
@@ -348,6 +393,7 @@ def test_default_database():
 # Test 24: DESCRIBE TABLE with namespace
 # ============================================================
 def test_describe_table():
+    ensure_testns_t1()
     result = q1("DESCRIBE TABLE testns.t1")
     assert "x" in result
     assert "UInt32" in result
@@ -357,6 +403,7 @@ def test_describe_table():
 # Test 25: Cross-database JOIN within same namespace
 # ============================================================
 def test_cross_database_join():
+    ensure_testns_t1()
     q("DROP DATABASE IF EXISTS tenant1__joindb")
     q1("CREATE DATABASE joindb")
     q1(
@@ -374,6 +421,7 @@ def test_cross_database_join():
 # Test 26: INSERT ... SELECT across namespaced databases
 # ============================================================
 def test_insert_select():
+    ensure_testns_t1()
     q("DROP DATABASE IF EXISTS tenant1__srcdb")
     q1("CREATE DATABASE srcdb")
     q1("CREATE TABLE srcdb.src (x UInt32) ENGINE = MergeTree() ORDER BY x")
@@ -390,6 +438,8 @@ def test_insert_select():
 # Test 27: CREATE VIEW on namespaced table
 # ============================================================
 def test_view():
+    ensure_testns_t1()
+    q1("DROP VIEW IF EXISTS testns.v1")
     q1("CREATE VIEW testns.v1 AS SELECT x * 10 AS x10 FROM testns.t1")
     result = q1("SELECT * FROM testns.v1 ORDER BY x10")
     assert result.strip() == "10\n20\n30"
@@ -404,6 +454,8 @@ def test_view():
 # Test 28: ATTACH/DETACH with namespace
 # ============================================================
 def test_attach_detach():
+    ensure_testns_t1()
+    q1("DROP TABLE IF EXISTS testns.t_ad")
     q1("CREATE TABLE testns.t_ad (x UInt32) ENGINE = MergeTree() ORDER BY x")
     q1("INSERT INTO testns.t_ad VALUES (77)")
     q1("DETACH TABLE testns.t_ad")
@@ -422,6 +474,8 @@ def test_attach_detach():
 # databases even by using the physical name
 # ============================================================
 def test_cross_tenant_isolation():
+    ensure_testns_t1()
+    ensure_tenant2_testns_t1()
     # tenant1 tries to access "tenant2__testns" — this gets namespaced
     # to "tenant1__tenant2__testns" which doesn't exist
     error = node.query_and_get_error(
@@ -437,6 +491,7 @@ def test_cross_tenant_isolation():
 # Test 30: INFORMATION_SCHEMA access from tenant user
 # ============================================================
 def test_information_schema():
+    ensure_testns_t1()
     result = q1(
         "SELECT count() > 0 FROM INFORMATION_SCHEMA.TABLES "
         "WHERE table_schema = 'tenant1__testns'"
