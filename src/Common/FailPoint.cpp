@@ -127,6 +127,8 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
+    PAUSEABLE_ONCE(backup_pause_on_start) \
+    PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     REGULAR(sc_intentions_commit_fail) \

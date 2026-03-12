@@ -532,6 +532,11 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
             && command.type != AlterCommand::Type::MODIFY_COLUMN && command.type != AlterCommand::Type::RENAME_COLUMN)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
+
+        if (command.type == AlterCommand::Type::MODIFY_COLUMN && command.to_remove != AlterCommand::RemoveProperty::NO_PROPERTY)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Removing column property '{}' from column '{}' is not supported by Iceberg storage", command.to_remove, command.column_name);
     }
 }
 

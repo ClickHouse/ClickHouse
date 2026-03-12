@@ -459,7 +459,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
     }
 
     if (shards.empty())

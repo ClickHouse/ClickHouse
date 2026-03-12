@@ -59,15 +59,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 {
     if (!reader)
     {
-        format_filter_info->initOnce([&]
-            {
-                format_filter_info->initKeyCondition(getPort().getHeader());
-
-                auto ext = std::make_shared<Parquet::FilterInfoExt>();
-                if (format_filter_info->key_condition)
-                    format_filter_info->key_condition->extractSingleColumnConditions(ext->column_conditions, nullptr);
-                format_filter_info->opaque = ext;
-            });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
             {
                 if (format_settings.parquet.enable_row_group_prefetch && parser_shared_resources->max_io_threads > 0)
