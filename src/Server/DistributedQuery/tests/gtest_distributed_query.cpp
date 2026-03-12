@@ -2,6 +2,7 @@
 #include <memory>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_register.h>
 

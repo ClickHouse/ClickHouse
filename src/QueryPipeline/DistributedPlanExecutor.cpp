@@ -37,6 +37,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>

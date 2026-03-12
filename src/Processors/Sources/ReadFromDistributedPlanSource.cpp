@@ -13,7 +13,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
     if (!started)
     {
         started = true;
-        distributed_query_executor = createDistributedQueryExecutor(unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::getQueryContext(), cancellation_flag);
+        distributed_query_executor = createDistributedQueryExecutor(unique_query_id, distributed_query_plan, task_to_host_map, CurrentThread::tryGetQueryContext(), cancellation_flag);
         distributed_query_executor->start();
     }
 
