@@ -1508,6 +1508,12 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                         }
                     }
                 }
+
+                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
+                {
+                    command.default_kind = column_from_table.default_desc.kind;
+                    command.default_expression = column_from_table.default_desc.expression;
+                }
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)

@@ -846,10 +846,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
                 command->type = ASTAlterCommand::MODIFY_COLUMN;
 
-                /// Make sure that type is not populated when REMOVE/MODIFY SETTING/RESET SETTING is used, because we wouldn't modify the type, which can be confusing
+                /// Make sure that type is not populated when REMOVE/MODIFY SETTING/RESET SETTING/ADD ENUM VALUES is used,
+                /// because we wouldn't modify the type, which can be confusing
                 chassert(
                     nullptr == command_col_decl->as<const ASTColumnDeclaration &>().getType()
-                    || (command->remove_property.empty() && nullptr == command_settings_changes && nullptr == command_settings_resets));
+                    || (command->remove_property.empty() && nullptr == command_settings_changes
+                        && nullptr == command_settings_resets && nullptr == command_add_enum_values));
             }
             else if (s_modify_order_by.ignore(pos, expected))
             {
