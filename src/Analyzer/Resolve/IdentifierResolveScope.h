@@ -184,6 +184,8 @@ struct IdentifierResolveScope
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
+    /// True when resolving JOIN ON expression (where both sides should be accessible)
+    bool resolving_join_on_expression = false;
 
     /// JOINs count
     size_t joins_count = 0;

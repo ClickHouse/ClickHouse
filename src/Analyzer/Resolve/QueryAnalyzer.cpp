@@ -25,6 +25,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
@@ -36,6 +37,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1654,6 +1657,70 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     }
 }
 
+/** Check if a table expression is from the non-preserved side of a SEMI or ANTI JOIN.
+  * Throws an exception if access is not allowed.
+  * Traverses the JOIN tree to find the relevant SEMI/ANTI JOIN node.
+  */
+void checkSemiAntiJoinTableAccess(
+    const QueryTreeNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope,
+    const QueryTreeNodePtr & node_for_error_message)
+{
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (!nearest_query_scope)
+        return;
+    auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+    if (!query_node || !query_node->getJoinTree())
+        return;
+
+    /// Traverse the JOIN tree to find SEMI/ANTI JOIN nodes that contain the table expression
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(query_node->getJoinTree().get());
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        const auto * join_node = const_cast<IQueryTreeNode *>(current)->as<JoinNode>();
+        if (!join_node)
+            continue;
+
+        /// Check if this is a SEMI or ANTI JOIN
+        if (join_node->getStrictness() != JoinStrictness::Semi && join_node->getStrictness() != JoinStrictness::Anti)
+        {
+            /// Not a SEMI/ANTI JOIN, continue traversing
+            stack.push(join_node->getLeftTableExpression().get());
+            stack.push(join_node->getRightTableExpression().get());
+            continue;
+        }
+
+        /// Check if the table expression is from this JOIN
+        bool is_from_left = isFromJoinTree(table_expression_node.get(), join_node->getLeftTableExpression().get());
+        bool is_from_right = isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
+
+        if (is_from_left || is_from_right)
+        {
+            /// Found the relevant SEMI/ANTI JOIN, check access
+            SemiAntiJoinSideChecker checker(
+                join_node->getStrictness(),
+                join_node->getKind(),
+                scope.context,
+                scope.resolving_join_on_expression);
+            checker.throwIfTableAccessDenied(
+                *join_node,
+                *table_expression_node,
+                *node_for_error_message,
+                *scope.scope_node);
+            return;
+        }
+
+        /// Continue traversing
+        stack.push(join_node->getLeftTableExpression().get());
+        stack.push(join_node->getRightTableExpression().get());
+    }
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched expression node then
@@ -1739,6 +1806,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             matcher_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     }
+
+    /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
+    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
 
     NamesAndTypes matched_columns;
 
@@ -4419,7 +4489,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         expressions_visitor.visit(join_node_typed.getJoinExpression());
         auto join_expression = join_node_typed.getJoinExpression();
+
+        /// Set flag to allow access to both sides in JOIN ON expression
+        scope.resolving_join_on_expression = true;
+        SCOPE_EXIT(scope.resolving_join_on_expression = false);
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
         join_node_typed.getJoinExpression() = std::move(join_expression);
     }
     else if (join_node_typed.isUsingJoinExpression())
