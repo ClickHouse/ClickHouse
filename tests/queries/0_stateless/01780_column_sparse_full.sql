@@ -1,5 +1,7 @@
 -- This test checks, that common SQL operations work
 -- with mixed columns (sparse and full) in table.
+-- LIMIT without ORDER BY relies on natural MergeTree scan order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_sparse_full;
 

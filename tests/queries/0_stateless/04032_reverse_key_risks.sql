@@ -98,3 +98,36 @@ SELECT count() FROM t_reverse_minmax;
 SELECT min(a), max(a) FROM t_reverse_minmax;
 
 DROP TABLE t_reverse_minmax;
+
+-- ==========================================================================
+-- Positive test for force_primary_key_reverse_order setting
+-- Verifies that the setting rewrites ORDER BY columns to DESC and that
+-- tables are created successfully without explicit allow_experimental_reverse_key.
+-- ==========================================================================
+
+SET force_primary_key_reverse_order = 1;
+
+-- Single-column ORDER BY: should be rewritten to DESC
+DROP TABLE IF EXISTS t_force_reverse_single;
+CREATE TABLE t_force_reverse_single (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- Verify DESC appears in the stored ORDER BY (allow_experimental_reverse_key was auto-enabled)
+SELECT create_table_query LIKE '%ORDER BY x DESC%' FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_force_reverse_single';
+
+-- Multi-column ORDER BY: all columns should be rewritten to DESC
+DROP TABLE IF EXISTS t_force_reverse_multi;
+CREATE TABLE t_force_reverse_multi (a UInt64, b String, c DateTime) ENGINE = MergeTree ORDER BY (a, b, c);
+SELECT create_table_query LIKE '%a DESC%b DESC%c DESC%' FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_force_reverse_multi';
+
+-- Verify data roundtrip works correctly with forced reverse keys
+INSERT INTO t_force_reverse_single SELECT number FROM numbers(10);
+SELECT x FROM t_force_reverse_single ORDER BY x ASC;
+
+INSERT INTO t_force_reverse_multi VALUES (1, 'a', '2024-01-01'), (2, 'b', '2024-01-02'), (3, 'c', '2024-01-03');
+SELECT a, b FROM t_force_reverse_multi ORDER BY a ASC;
+
+DROP TABLE t_force_reverse_single;
+DROP TABLE t_force_reverse_multi;
+
+SET force_primary_key_reverse_order = 0;
