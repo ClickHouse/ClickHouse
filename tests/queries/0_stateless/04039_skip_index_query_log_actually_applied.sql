@@ -3,6 +3,7 @@
 --
 -- Before the fix, all useful_indices were logged regardless of whether they
 -- filtered out any parts
+-- Tags: no-parallel-replicas
 
 DROP TABLE IF EXISTS t_skip_applied;
 
@@ -26,13 +27,14 @@ INSERT INTO t_skip_applied SELECT number, 10 + number FROM numbers(10);
 INSERT INTO t_skip_applied SELECT 100 + number, number FROM numbers(10);
 
 -- Both idx_a and idx_b appear: idx_b dropped part1's granule, idx_a dropped part2's granule.
-SELECT count() FROM t_skip_applied WHERE a = 5 AND b = 5 SETTINGS log_queries = 1, log_queries_min_type = 'QUERY_FINISH';
+-- use_skip_indexes_on_data_read=0 forces mark-selection path so indices actually drop granules here.
+SELECT count() FROM t_skip_applied WHERE a = 5 AND b = 5 SETTINGS log_queries = 1, log_queries_min_type = 'QUERY_FINISH', use_skip_indexes_on_data_read = 0;
 
 SYSTEM FLUSH LOGS;
 
 SELECT
-    has(skip_indices, 'idx_a') AS idx_a_logged,
-    has(skip_indices, 'idx_b') AS idx_b_logged
+    has(skip_indices, concat(currentDatabase(), '.t_skip_applied.idx_a')) AS idx_a_logged,
+    has(skip_indices, concat(currentDatabase(), '.t_skip_applied.idx_b')) AS idx_b_logged
 FROM system.query_log
 WHERE
     current_database = currentDatabase()
@@ -43,13 +45,13 @@ LIMIT 1;
 
 -- Only idx_a appears: idx_a runs first (set indices declared first), filters all granules
 -- for both parts (50 is not in {0..9} and similarly, 50 is not in {100..109}), so idx_b never runs and idx_b NOT logged.
-SELECT count() FROM t_skip_applied WHERE a = 50 AND b = 50 SETTINGS log_queries = 1, log_queries_min_type = 'QUERY_FINISH';
+SELECT count() FROM t_skip_applied WHERE a = 50 AND b = 50 SETTINGS log_queries = 1, log_queries_min_type = 'QUERY_FINISH', use_skip_indexes_on_data_read = 0;
 
 SYSTEM FLUSH LOGS;
 
 SELECT
-    has(skip_indices, 'idx_a') AS idx_a_logged,
-    has(skip_indices, 'idx_b') AS idx_b_logged
+    has(skip_indices, concat(currentDatabase(), '.t_skip_applied.idx_a')) AS idx_a_logged,
+    has(skip_indices, concat(currentDatabase(), '.t_skip_applied.idx_b')) AS idx_b_logged
 FROM system.query_log
 WHERE
     current_database = currentDatabase()
