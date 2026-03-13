@@ -34,8 +34,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_create_replicated_database_by_default(started_cluster):
-    """Verify create_replicated_database_by_default behaviour:
+def test_default_database_engine_replicated(started_cluster):
+    """Verify default_database_engine=Replicated behaviour:
     1. CREATE DATABASE without ENGINE creates a Replicated database with correct
        default params and working replication.
     2. An explicit ENGINE clause is still honoured."""

@@ -1,6 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
+            <default_database_engine>Replicated</default_database_engine>
             <database_replicated_allow_replicated_engine_arguments>3</database_replicated_allow_replicated_engine_arguments>
             <database_replicated_allow_explicit_uuid>3</database_replicated_allow_explicit_uuid>
         </default>

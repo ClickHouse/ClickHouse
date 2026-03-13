@@ -1,5 +1,4 @@
 <clickhouse>
-    <create_replicated_database_by_default>true</create_replicated_database_by_default>
     <async_load_databases>false</async_load_databases>
     <database_replicated>
         <default_replica_path>/clickhouse/databases/{uuid}_suffix</default_replica_path>

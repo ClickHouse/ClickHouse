@@ -126,6 +126,7 @@ namespace Setting
     extern const SettingsBool data_type_default_nullable;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
+    extern const SettingsDefaultDatabaseEngine default_database_engine;
     extern const SettingsDefaultTableEngine default_table_engine;
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
@@ -143,7 +144,6 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool create_replicated_database_by_default;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -262,9 +262,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             create.set(create.storage, storage);
         }
         auto engine = make_intrusive<ASTFunction>();
-        bool use_replicated = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::create_replicated_database_by_default].value;
-        /// Do not create Replicated database for predefined databases (system, information_schema, etc.) and the default database.
-        if (use_replicated
+        auto default_database_engine = getContext()->getSettingsRef()[Setting::default_database_engine].value;
+        if (default_database_engine == DefaultDatabaseEngine::Ordinary)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Default Ordinary database engine is obsolete");
+        if (default_database_engine == DefaultDatabaseEngine::Replicated
             && !DatabaseCatalog::isPredefinedDatabase(database_name)
             && database_name != DatabaseCatalog::DEFAULT_DATABASE)
             engine->name = "Replicated";
