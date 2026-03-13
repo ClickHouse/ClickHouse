@@ -42,6 +42,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsUInt64 replacing_merge_cleanup_period_seconds;
 }
 
 namespace
@@ -213,6 +214,57 @@ String getBestPartitionToOptimizeEntire(
 
     return best_partition_it->first;
 }
+
+} // anonymous namespace
+
+String MergeTreeDataMergerMutator::getBestPartitionForPeriodicCleanup(
+    const PartitionsStatistics & stats,
+    time_t current_time) const
+{
+    const auto settings = data.getSettings();
+
+    if (!(*settings)[MergeTreeSetting::replacing_merge_cleanup_period_seconds])
+        return {};
+
+    Int64 occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    Int64 max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+    Int64 optimize_entire_partition_threshold = (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition];
+    if (occupied > 1 && max_tasks_count - occupied < optimize_entire_partition_threshold)
+    {
+        LOG_INFO(log,
+            "Not enough idle threads to execute periodic cleanup merge. See settings "
+            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' and 'background_pool_size'");
+        return {};
+    }
+
+    String best_partition;
+    time_t best_next_time = std::numeric_limits<time_t>::max();
+
+    for (const auto & [partition_id, partition_stats] : stats)
+    {
+        /// Skip empty partitions — nothing to clean up
+        if (partition_stats.part_count == 0)
+            continue;
+
+        auto it = next_cleanup_merge_time_by_partition.find(partition_id);
+        const time_t next_time = (it != next_cleanup_merge_time_by_partition.end()) ? it->second : 0;
+
+        if (current_time < next_time)
+            continue;
+
+        /// Among all ready partitions, pick the one whose cleanup is most overdue
+        if (next_time < best_next_time)
+        {
+            best_next_time = next_time;
+            best_partition = partition_id;
+        }
+    }
+
+    return best_partition;
+}
+
+namespace
+{
 
 CollectedPartsRanges grabAllPossibleRanges(
     const PartsCollectorPtr & parts_collector,
@@ -443,6 +495,36 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             /*partition_id=*/best,
             /*final=*/true,
             /*optimize_skip_merged_partitions=*/true);
+    }
+
+    if (auto best = getBestPartitionForPeriodicCleanup(partitions_stats, current_time); !best.empty())
+    {
+        auto result = selectAllPartsToMergeWithinPartition(
+            metadata_snapshot,
+            parts_collector,
+            merge_predicate,
+            /*partition_id=*/best,
+            /*final=*/true,
+            /*optimize_skip_merged_partitions=*/false);
+
+        if (result.has_value())
+        {
+            chassert(!result->empty());
+            result->front().is_periodic_cleanup = true;
+            /// Update the timer immediately so the same partition is not selected again
+            /// before the merge completes.
+            next_cleanup_merge_time_by_partition[best] = current_time + (*settings)[MergeTreeSetting::replacing_merge_cleanup_period_seconds];
+
+            const auto & storage = data.getStorageID();
+            LOG_DEBUG(log, "Scheduled periodic cleanup merge for table {}.{}, partition '{}'. "
+                           "Next cleanup for this partition allowed after: {}.",
+                           backQuote(storage.database_name),
+                           backQuote(storage.table_name),
+                           best,
+                           toString(next_cleanup_merge_time_by_partition[best]));
+        }
+
+        return result;
     }
 
     return std::unexpected(SelectMergeFailure{

@@ -102,6 +102,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
+    extern const MergeTreeSettingsUInt64 replacing_merge_cleanup_period_seconds;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
@@ -1262,6 +1263,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
+    /// Captured by select_without_hint and read by construct_merge_select_entry to
+    /// propagate the periodic cleanup flag from MergeSelectorChoice to MergeMutateSelectedEntry.
+    bool is_periodic_cleanup = false;
+
     const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
         chassert(choices.size() == 1);
@@ -1322,7 +1327,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             ),
             /*partitions_hint=*/std::nullopt);
 
-        return select_result.and_then(construct_future_part);
+        if (select_result.has_value())
+            is_periodic_cleanup = select_result->front().is_periodic_cleanup;
+
+        return std::move(select_result).and_then(construct_future_part);
     };
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
@@ -1396,7 +1404,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            auto entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            entry->is_periodic_cleanup = is_periodic_cleanup;
+            return entry;
         }
         catch (...)
         {
@@ -1780,9 +1790,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         bool cleanup = merge_entry->future_part->final
             && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
-            && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+            && (
+                ((*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
+                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+                || (merge_entry->is_periodic_cleanup
+                    && (*getSettings())[MergeTreeSetting::replacing_merge_cleanup_period_seconds])
+            );
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
