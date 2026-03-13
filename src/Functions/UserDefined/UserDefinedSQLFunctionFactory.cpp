@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Common/CurrentThread.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -219,7 +220,7 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }
@@ -233,7 +234,7 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
 
     if (ast && CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
     }

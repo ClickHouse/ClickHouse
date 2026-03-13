@@ -73,12 +73,12 @@ if [ ${#patterns[@]} -eq 0 ]; then
 fi
 
 lcov --extract llvm_coverage.info "${patterns[@]}" \
-  --ignore-errors inconsistent,corrupt \
+  --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
   --quiet \
   -o current.changed.info
 
 lcov --extract base_llvm_coverage.info "${patterns[@]}" \
-  --ignore-errors inconsistent,corrupt \
+  --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
   --quiet \
   -o baseline.changed.info
 

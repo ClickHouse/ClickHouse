@@ -4035,11 +4035,12 @@ message AlterItem {
         TTLExpr modify_ttl  = 46;
         bool remove_ttl = 47;
         OptionalPartitionExpr rewrite_parts = 48;
+        OptionalPartitionExpr apply_patches = 49;
         /// For views
-        SelectParen modify_query = 49;
-        RefreshableView refresh = 50;
+        SelectParen modify_query = 50;
+        RefreshableView refresh = 51;
         /// For tables, views and databases
-        string comment = 51;
+        string comment = 52;
     }
 }
 
@@ -4195,6 +4196,25 @@ message SystemCommand {
         uint32 unfreeze = 84;
         DropReplica drop_replica = 85;
         DropDatabaseReplica drop_database_replica = 86;
+        ExprSchemaTable stop_cleanup = 87;
+        ExprSchemaTable start_cleanup = 88;
+        ExprSchemaTable stop_virtual_parts_update = 89;
+        ExprSchemaTable start_virtual_parts_update = 90;
+        ExprSchemaTable stop_reduce_blocking_parts = 91;
+        ExprSchemaTable start_reduce_blocking_parts = 92;
+        bool stop_replicated_ddl_queries = 93;
+        bool start_replicated_ddl_queries = 94;
+        bool jemalloc_purge = 95;
+        bool jemalloc_enable_profile = 96;
+        bool jemalloc_disable_profile = 97;
+        bool jemalloc_flush_profile = 98;
+        bool sync_transaction_log = 99;
+        bool start_thread_fuzzer = 100;
+        bool stop_thread_fuzzer = 101;
+        bool drop_distributed_cache = 102;
+        string restart_disk = 103;
+        string clear_disk_metadata_cache = 104;
+        string unlock_snapshot = 105;
     }
 }
 

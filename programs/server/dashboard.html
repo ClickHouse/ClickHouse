@@ -1406,38 +1406,40 @@ async function drawAll() {
     if (is_drawing) return;
     is_drawing = true;
 
-    let params = getParamsForURL();
-    const chartsArray = document.getElementsByClassName('chart');
-
-    if (!firstLoad) {
+    try {
         hideError();
-    }
-    await Promise.all([...Array(queries.length)].map(async (_, i) => {
-        return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
-            if (!firstLoad) {
+
+        let params = getParamsForURL();
+        const chartsArray = document.getElementsByClassName('chart');
+
+        let had_global_error = false;
+        const results = await Promise.all([...Array(queries.length)].map(async (_, i) => {
+            return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
                 showError(e.message);
-            }
-            return false;
-        });
-    })).then((results) => {
+                had_global_error = true;
+                return false;
+            });
+        }));
+
         if (firstLoad) {
             firstLoad = false;
         } else {
             enableButtons();
         }
-        if (results.includes(true)) {
+
+        if (!had_global_error && results.length > 0) {
+            /// At least one chart was processed without a global error
+            /// (auth/connection).  Show the connected UI.  Individual charts
+            /// may still have per-chart query errors displayed in their divs.
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
-            hideError();
-        } else {
-            document.getElementById('charts').style.height = '0px';
         }
-    });
-
-    is_drawing = false;
+    } finally {
+        is_drawing = false;
+    }
 }
 
 function resize() {

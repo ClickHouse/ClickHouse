@@ -132,7 +132,9 @@ struct NormalizeUTF8Impl
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
 
-                size_t max_to_size = current_to_offset + 4 * to_code_points;
+                /// Each UTF-16 code unit produces at most 3 UTF-8 bytes.
+                /// Chars which require 4 UTF-8 bytes also require 2 UTF-16 code units, so the max expansion factor is 3.
+                size_t max_to_size = current_to_offset + 3 * to_code_points;
                 if (res_data.size() < max_to_size)
                     res_data.resize(max_to_size);
 
