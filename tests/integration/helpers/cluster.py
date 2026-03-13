@@ -84,8 +84,8 @@ def with_default_target_node(default_target_node):
         def wrapper(*args, **kwargs):
             bound = sig.bind_partial(*args, **kwargs)
             if bound.arguments.get("target_node") is None:
-                kwargs["target_node"] = default_target_node
-            return func(*args, **kwargs)
+                bound.arguments["target_node"] = default_target_node
+            return func(*bound.args, **bound.kwargs)
 
         return wrapper
 
