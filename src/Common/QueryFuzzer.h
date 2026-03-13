@@ -215,7 +215,6 @@ private:
     void fuzzColumnLikeExpressionList(IAST * ast);
     NullsAction fuzzNullsAction(NullsAction action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
-    void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
