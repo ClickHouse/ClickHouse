@@ -3,7 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
