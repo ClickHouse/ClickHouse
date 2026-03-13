@@ -16,17 +16,23 @@ void SerializationDate32::serializeText(const IColumn & column, size_t row_num, 
 
 void SerializationDate32::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextEscaped(column, istr, settings);
+    /// Accept both 'YYYY-MM-DD' and 'YYYY-MM-DD HH:MM:SS' (time part is discarded).
+    /// This makes `date32_col < '2026-01-01 00:00:00'` work the same as `date32_col < '2026-01-01'`.
+    time_t datetime;
+    readDateTimeText(datetime, istr, time_zone);
     if (!istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Date32");
+    assert_cast<ColumnInt32 &>(column).getData().push_back(
+        time_zone.toDayNum(datetime).toUnderType());
 }
 
 bool SerializationDate32::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    ExtendedDayNum x;
-    if (!tryReadDateText(x, istr, time_zone) || !istr.eof())
+    time_t datetime;
+    if (!tryReadDateTimeText(datetime, istr, time_zone) || !istr.eof())
         return false;
-    assert_cast<ColumnInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnInt32 &>(column).getData().push_back(
+        time_zone.toDayNum(datetime).toUnderType());
     return true;
 }
 
