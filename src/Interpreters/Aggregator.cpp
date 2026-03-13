@@ -461,10 +461,8 @@ Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsDa
     return aggregate_columns;
 }
 
-void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
+void Aggregator::Params::explain(WriteBuffer & out, const std::string & prefix) const
 {
-    String prefix(indent, ' ');
-
     {
         /// Dump keys.
         out << prefix << "Keys:";
@@ -488,7 +486,7 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
         out << prefix << "Aggregates:\n";
 
         for (const auto & aggregate : aggregates)
-            aggregate.explain(out, indent + 4);
+            aggregate.explain(out, prefix, 4);
     }
 }
 

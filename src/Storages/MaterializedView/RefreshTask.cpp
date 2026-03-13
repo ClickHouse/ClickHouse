@@ -21,6 +21,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/QueryScope.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -699,7 +700,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            CurrentThread::QueryScope query_scope;
+            QueryScope query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 

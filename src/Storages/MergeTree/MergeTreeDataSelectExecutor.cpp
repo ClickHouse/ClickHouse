@@ -1,4 +1,5 @@
 #include <optional>
+#include <Common/CurrentThread.h>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -107,6 +108,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
+    extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -331,6 +333,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
+
+        if (!metadata_snapshot->hasSamplingKey())
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                "Sampling is not supported: the table does not have a sampling key");
+
         DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
@@ -944,8 +951,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-
-            }
+           }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
@@ -1086,6 +1092,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const auto num_indices = skip_indexes.useful_indices.size();
+
+    if (!skip_indexes.useful_indices.empty() && context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        for (const auto & idx : skip_indexes.useful_indices)
+            query_context->addSkipIndexAccessInfo(filter_context.storage_id.getFullTableName(), idx.index->index.name);
+    }
 
     const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
     for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)

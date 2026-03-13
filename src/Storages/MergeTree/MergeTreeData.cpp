@@ -1,4 +1,5 @@
 #include <Disks/DiskType.h>
+#include <Common/CurrentThread.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -10459,7 +10460,7 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_ca
     if (bypass_metadata_cache)
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
-    auto query_context = CurrentThread::get().getQueryContext();
+    auto query_context = CurrentThread::get().tryGetQueryContext();
     if (!query_context || !query_context->hasQueryContext()
         || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);

@@ -714,7 +714,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     QueryStatusPtr process_list_element;
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context)
             process_list_element = query_context->getProcessListElement();
     }
@@ -4909,7 +4909,7 @@ void StorageReplicatedMergeTree::addLastSentPart(const MergeTreePartInfo & info)
 void StorageReplicatedMergeTree::waitForUniquePartsToBeFetchedByOtherReplicas(StorageReplicatedMergeTree::ShutdownDeadline shutdown_deadline_)
 {
     /// Will be true in case in case of query
-    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr)
+    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr)
     {
         LOG_TRACE(log, "Will not wait for unique parts to be fetched by other replicas because shutdown called from DROP/DETACH query");
         return;

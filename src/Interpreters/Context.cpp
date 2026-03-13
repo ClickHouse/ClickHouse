@@ -41,6 +41,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -2568,6 +2569,15 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
+void Context::addSkipIndexAccessInfo(const String & full_table_name, const String & skip_index_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->skip_indices.emplace(full_table_name + "." + skip_index_name);
+}
+
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
 {
     return query_factories_info;
@@ -3816,6 +3826,8 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
@@ -3847,6 +3859,8 @@ void Context::clearPageCache() const
     }
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3883,6 +3897,8 @@ void Context::clearMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -4023,6 +4039,8 @@ void Context::clearIndexUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -4059,6 +4077,8 @@ void Context::clearIndexMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)

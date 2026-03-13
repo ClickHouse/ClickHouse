@@ -386,7 +386,7 @@ IExecutableFunction::IExecutableFunction()
 {
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_for_nulls])
         {
             short_circuit_function_evaluation_for_nulls = true;

@@ -429,7 +429,8 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            status_.includes('fail') || status_.includes('error') || status_.includes('dropped');
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
+            && status_ !== 'xfail';
         const isWarning =
             status_.includes('pending') || status_.includes('running');
 
@@ -546,6 +547,8 @@
     function getStatusPriority(status) {
         const statusLower = (status || '').toLowerCase();
         // Priority order: errors/failures first, then warnings, then success, then others
+        if (statusLower === 'xpass') return 0;  // unexpected pass: treat as failure
+        if (statusLower === 'xfail') return 2;  // expected failure: treat as success
         if (statusLower.includes('error') || statusLower.includes('fail') || statusLower.includes('dropped')) return 0;
         if (statusLower.includes('pending') || statusLower.includes('running')) return 1;
         if (statusLower.includes('success') || statusLower === 'ok') return 2;
@@ -604,6 +607,8 @@
     // Function to determine status class based on value
     function getStatusClass(status) {
         const lowerStatus = status.toLowerCase();
+        if (lowerStatus === 'xfail') return 'status-success';  // expected failure: green
+        if (lowerStatus === 'xpass') return 'status-fail';     // unexpected pass: red
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';

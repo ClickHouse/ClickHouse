@@ -18,13 +18,17 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromOStream.h>
 
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -35,13 +39,18 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -49,6 +58,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/SyncReplicaMode.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <pcg_random.hpp>
 #include <Common/SipHash.h>
@@ -598,143 +608,63 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
     if (create.columns_list && create.columns_list->indices)
     {
-        /// No-arg index types: safe to swap to and clear any existing arguments.
-        static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
-        /// BF index types: require positional arguments — swap name only, keep args.
-        static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1"};
-        /// Simple no-arg tokenizers valid as text index tokenizer values.
-        static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
-        static const Strings posting_list_codecs = {"none", "bitpacking"};
-
         for (auto & ast : create.columns_list->indices->children)
         {
-            auto * index = ast->as<ASTIndexDeclaration>();
-            if (!index)
-                continue;
-
-            auto index_type = index->getType();
-            if (!index_type)
-                continue;
-
-            /// Fuzz named parameters of text index independently of type swap.
-            if (index_type->name == "text" && index_type->arguments)
-            {
-                for (auto & arg_ast : index_type->arguments->children)
-                {
-                    auto * equals_fn = arg_ast->as<ASTFunction>();
-                    if (!equals_fn || equals_fn->name != "equals" || !equals_fn->arguments || equals_fn->arguments->children.size() != 2)
-                        continue;
-
-                    const auto * param_id = equals_fn->arguments->children[0]->as<ASTIdentifier>();
-                    if (!param_id)
-                        continue;
-
-                    auto & value_ast = equals_fn->arguments->children[1];
-
-                    if (param_id->name() == "tokenizer")
-                    {
-                        if (value_ast->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
-                        {
-                            /// Swap between no-arg string-form tokenizers.
-                            value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, simple_tokenizers));
-                        }
-                        else if (auto * tok_fn = value_ast->as<ASTFunction>())
-                        {
-                            if (tok_fn->name == "ngrams" && tok_fn->arguments && !tok_fn->arguments->children.empty()
-                                && fuzz_rand() % 5 == 0)
-                            {
-                                /// ngram_size >= 1
-                                tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1));
-                            }
-                            else if (
-                                tok_fn->name == "sparseGrams" && tok_fn->arguments && tok_fn->arguments->children.size() == 3
-                                && fuzz_rand() % 5 == 0)
-                            {
-                                /// min_length in [3, 100], max_length in [min_length, 100],
-                                /// min_cutoff_length in [min_length, max_length].
-                                auto min_len = UInt64(fuzz_rand() % 8 + 3);
-                                auto max_len = std::min(min_len + UInt64(fuzz_rand() % 20 + 1), UInt64(100));
-                                auto cutoff = min_len + UInt64(fuzz_rand() % (max_len - min_len + 1));
-                                tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(min_len);
-                                tok_fn->arguments->children[1] = make_intrusive<ASTLiteral>(max_len);
-                                tok_fn->arguments->children[2] = make_intrusive<ASTLiteral>(cutoff);
-                            }
-                        }
-                    }
-                    else if (param_id->name() == "posting_list_codec")
-                    {
-                        if (fuzz_rand() % 5 == 0)
-                            value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, posting_list_codecs));
-                    }
-                    else if (param_id->name() == "dictionary_block_frontcoding_compression")
-                    {
-                        if (fuzz_rand() % 5 == 0)
-                            value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2));
-                    }
-                    else if (param_id->name() == "dictionary_block_size" || param_id->name() == "posting_list_block_size")
-                    {
-                        if (fuzz_rand() % 5 == 0)
-                            value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2048 + 1));
-                    }
-                }
-            }
-
-            /// Fuzz index granularity (1/10 probability).
-            if (fuzz_rand() % 10 == 0)
-                index->granularity = UInt64(1) << (fuzz_rand() % 14); /// 1 to 8192
-
-            /// Randomly swap the index type (1/10 probability).
-            if (fuzz_rand() % 10 == 0)
-            {
-                if (bf_index_types.contains(index_type->name))
-                {
-                    /// Swap between the two BF types, leaving arguments in place.
-                    index_type->name = (index_type->name == "ngrambf_v1") ? "tokenbf_v1" : "ngrambf_v1";
-                }
-                else
-                {
-                    /// For text and other simple types, swap to a no-arg type and clear arguments.
-                    index_type->name = pickRandomly(fuzz_rand, simple_index_types);
-                    if (index_type->arguments)
-                        index_type->arguments->children.clear();
-                }
-            }
+            if (auto * index = ast->as<ASTIndexDeclaration>())
+                fuzzIndexDeclaration(*index);
         }
     }
 
     if (create.storage && create.storage->engine)
     {
-        /// Replace ReplicatedMergeTree to ordinary MergeTree
-        /// to avoid inconsistency of metadata in zookeeper.
         auto & engine_name = create.storage->engine->name;
-        if (startsWith(engine_name, "Replicated"))
+
+        if (create.database && !create.table)
         {
-            engine_name = engine_name.substr(strlen("Replicated"));
-            if (auto & arguments = create.storage->engine->arguments)
+            /// For database engine fuzzing, only swap between parameter-free engines.
+            /// Avoid touching Replicated (needs ZooKeeper), Lazy (needs arg), or external
+            /// engines (MySQL/PostgreSQL need connection params).
+            static const Strings safe_database_engines = {"Atomic", "Memory"};
+            if ((engine_name == "Atomic" || engine_name == "Memory") && fuzz_rand() % 10 == 0)
             {
-                auto & children = arguments->children;
-                if (children.size() <= 2)
-                    arguments.reset();
-                else
-                    children.erase(children.begin(), children.begin() + 2);
+                engine_name = pickRandomly(fuzz_rand, safe_database_engines);
+                if (auto & arguments = create.storage->engine->arguments)
+                    arguments->children.clear();
             }
         }
-
-        /// Swap between MergeTree variants that require no mandatory extra columns.
-        /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
-        /// GraphiteMergeTree requires a config name, so those are excluded.
-        if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
+        else
         {
-            static const Strings safe_mergetree_engines = {
-                "MergeTree",
-                "AggregatingMergeTree",
-                "SummingMergeTree",
-                "ReplacingMergeTree",
-            };
-            engine_name = pickRandomly(fuzz_rand, safe_mergetree_engines);
-            /// Clear engine arguments to avoid arity mismatches with the new engine
-            if (auto & arguments = create.storage->engine->arguments)
-                arguments->children.clear();
+            /// Replace ReplicatedMergeTree to ordinary MergeTree
+            /// to avoid inconsistency of metadata in zookeeper.
+            if (startsWith(engine_name, "Replicated"))
+            {
+                engine_name = engine_name.substr(strlen("Replicated"));
+                if (auto & arguments = create.storage->engine->arguments)
+                {
+                    auto & children = arguments->children;
+                    if (children.size() <= 2)
+                        arguments.reset();
+                    else
+                        children.erase(children.begin(), children.begin() + 2);
+                }
+            }
+
+            /// Swap between MergeTree variants that require no mandatory extra columns.
+            /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
+            /// GraphiteMergeTree requires a config name, so those are excluded.
+            if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
+            {
+                static const Strings safe_mergetree_engines = {
+                    "MergeTree",
+                    "AggregatingMergeTree",
+                    "SummingMergeTree",
+                    "ReplacingMergeTree",
+                };
+                engine_name = pickRandomly(fuzz_rand, safe_mergetree_engines);
+                /// Clear engine arguments to avoid arity mismatches with the new engine
+                if (auto & arguments = create.storage->engine->arguments)
+                    arguments->children.clear();
+            }
         }
     }
 
@@ -807,6 +737,97 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             fuzz_setting("vertical_merge_algorithm_min_bytes_to_activate", UInt64(1) << (fuzz_rand() % 14));
     }
 
+    /// Fuzz CREATE MATERIALIZED VIEW: toggle POPULATE and refresh strategy parameters
+    if (create.is_materialized_view)
+    {
+        if (fuzz_rand() % 20 == 0)
+            create.is_populate = !create.is_populate;
+
+        if (create.refresh_strategy)
+        {
+            /// Fuzz refresh period
+            if (create.refresh_strategy->period && fuzz_rand() % 5 == 0)
+                create.refresh_strategy->period->interval.seconds = static_cast<UInt64>(fuzz_rand() % 3600) + 1;
+
+            /// Fuzz spread (jitter)
+            if (create.refresh_strategy->spread && fuzz_rand() % 5 == 0)
+                create.refresh_strategy->spread->interval.seconds = static_cast<UInt64>(fuzz_rand() % 300);
+
+            /// Toggle APPEND
+            if (fuzz_rand() % 10 == 0)
+                create.refresh_strategy->append = !create.refresh_strategy->append;
+
+            /// Toggle schedule kind between EVERY and AFTER
+            if (create.refresh_strategy->schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
+            {
+                create.refresh_strategy->schedule_kind = (create.refresh_strategy->schedule_kind == RefreshScheduleKind::EVERY)
+                    ? RefreshScheduleKind::AFTER
+                    : RefreshScheduleKind::EVERY;
+            }
+        }
+    }
+
+    /// Fuzz SQL SECURITY type for ordinary and materialized views
+    if (create.supportSQLSecurity() && create.sql_security && fuzz_rand() % 10 == 0)
+    {
+        auto * sec = create.sql_security->as<ASTSQLSecurity>();
+        if (sec && sec->type)
+        {
+            static constexpr SQLSecurityType security_types[] = {SQLSecurityType::INVOKER, SQLSecurityType::DEFINER, SQLSecurityType::NONE};
+            sec->type = security_types[fuzz_rand() % std::size(security_types)];
+        }
+    }
+
+    /// Fuzz CREATE DICTIONARY: swap layout type and fuzz lifetime
+    if (create.is_dictionary && create.dictionary)
+    {
+        /// Swap layout among parameter-free layout types
+        if (create.dictionary->layout && fuzz_rand() % 5 == 0)
+        {
+            static const Strings simple_layouts = {"flat", "hashed", "sparse_hashed", "direct"};
+            create.dictionary->layout->layout_type = simple_layouts[fuzz_rand() % simple_layouts.size()];
+        }
+
+        /// Fuzz lifetime bounds
+        if (create.dictionary->lifetime && fuzz_rand() % 5 == 0)
+        {
+            const UInt64 new_max = static_cast<UInt64>(fuzz_rand() % 3600) + 1;
+            const UInt64 new_min = fuzz_rand() % (new_max + 1);
+            create.dictionary->lifetime->min_sec = new_min;
+            create.dictionary->lifetime->max_sec = new_max;
+        }
+    }
+
+    /// Fuzz dictionary attribute flags and default values
+    if (create.is_dictionary && create.dictionary_attributes_list)
+    {
+        for (auto & child : create.dictionary_attributes_list->children)
+        {
+            auto * attr = child->as<ASTDictionaryAttributeDeclaration>();
+            if (!attr)
+                continue;
+
+            /// Toggle injective: affects GROUP BY optimization
+            if (fuzz_rand() % 10 == 0)
+                attr->injective = !attr->injective;
+
+            /// Toggle hierarchical: enables dictGetHierarchy / dictIsIn
+            if (fuzz_rand() % 20 == 0)
+                attr->hierarchical = !attr->hierarchical;
+
+            /// Toggle bidirectional (only meaningful with hierarchical)
+            if (attr->hierarchical && fuzz_rand() % 10 == 0)
+                attr->bidirectional = !attr->bidirectional;
+
+            /// Fuzz default value literal
+            if (attr->default_value && fuzz_rand() % 5 == 0)
+            {
+                if (auto * lit = attr->default_value->as<ASTLiteral>())
+                    lit->value = fuzzField(lit->value);
+            }
+        }
+    }
+
     /// Toggle CREATE ↔ CREATE OR REPLACE
     if (fuzz_rand() % 100 == 0)
         create.create_or_replace = !create.create_or_replace;
@@ -836,12 +857,16 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             drop_storage_clause(create.storage->partition_by);
     }
 
-    /// Drop a random projection (exercises projection removal path)
-    if (create.columns_list && create.columns_list->projections && !create.columns_list->projections->children.empty()
-        && fuzz_rand() % 50 == 0)
+    /// Fuzz or drop existing projections
+    if (create.columns_list && create.columns_list->projections)
     {
         auto & projs = create.columns_list->projections->children;
-        projs.erase(projs.begin() + fuzz_rand() % projs.size());
+        for (auto & proj_ast : projs)
+            if (auto * proj = proj_ast->as<ASTProjectionDeclaration>())
+                fuzzProjectionDeclaration(*proj);
+        /// Drop a random projection (exercises projection removal path)
+        if (!projs.empty() && fuzz_rand() % 50 == 0)
+            projs.erase(projs.begin() + fuzz_rand() % projs.size());
     }
 
     /// Drop a random constraint (exercises constraint removal path)
@@ -949,6 +974,111 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
                 break;
         }
     }
+}
+
+void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
+{
+    auto index_type = index.getType();
+    if (!index_type)
+        return;
+
+    /// No-arg index types: safe to swap to and clear any existing arguments.
+    static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
+    /// BF index types: require positional arguments — swap name only, keep args.
+    static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1"};
+    /// Simple no-arg tokenizers valid as text index tokenizer values.
+    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array"};
+    static const Strings posting_list_codecs = {"none", "bitpacking"};
+
+    /// Fuzz named parameters of text index independently of type swap.
+    if (index_type->name == "text" && index_type->arguments)
+    {
+        for (auto & arg_ast : index_type->arguments->children)
+        {
+            auto * equals_fn = arg_ast->as<ASTFunction>();
+            if (!equals_fn || equals_fn->name != "equals" || !equals_fn->arguments || equals_fn->arguments->children.size() != 2)
+                continue;
+
+            const auto * param_id = equals_fn->arguments->children[0]->as<ASTIdentifier>();
+            if (!param_id)
+                continue;
+
+            auto & value_ast = equals_fn->arguments->children[1];
+
+            if (param_id->name() == "tokenizer")
+            {
+                if (value_ast->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
+                {
+                    /// Swap between no-arg string-form tokenizers.
+                    value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, simple_tokenizers));
+                }
+                else if (auto * tok_fn = value_ast->as<ASTFunction>())
+                {
+                    if (tok_fn->name == "ngrams" && tok_fn->arguments && !tok_fn->arguments->children.empty() && fuzz_rand() % 5 == 0)
+                    {
+                        /// ngram_size >= 1
+                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1));
+                    }
+                    else if (
+                        tok_fn->name == "sparseGrams" && tok_fn->arguments && tok_fn->arguments->children.size() == 3
+                        && fuzz_rand() % 5 == 0)
+                    {
+                        /// min_length in [3, 100], max_length in [min_length, 100],
+                        /// min_cutoff_length in [min_length, max_length].
+                        auto min_len = UInt64(fuzz_rand() % 8 + 3);
+                        auto max_len = std::min(min_len + UInt64(fuzz_rand() % 20 + 1), UInt64(100));
+                        auto cutoff = min_len + UInt64(fuzz_rand() % (max_len - min_len + 1));
+                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(min_len);
+                        tok_fn->arguments->children[1] = make_intrusive<ASTLiteral>(max_len);
+                        tok_fn->arguments->children[2] = make_intrusive<ASTLiteral>(cutoff);
+                    }
+                }
+            }
+            else if (param_id->name() == "posting_list_codec")
+            {
+                if (fuzz_rand() % 5 == 0)
+                    value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, posting_list_codecs));
+            }
+            else if (param_id->name() == "dictionary_block_frontcoding_compression")
+            {
+                if (fuzz_rand() % 5 == 0)
+                    value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2));
+            }
+            else if (param_id->name() == "dictionary_block_size" || param_id->name() == "posting_list_block_size")
+            {
+                if (fuzz_rand() % 5 == 0)
+                    value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2048 + 1));
+            }
+        }
+    }
+
+    /// Fuzz index granularity (1/10 probability).
+    if (fuzz_rand() % 10 == 0)
+        index.granularity = UInt64(1) << (fuzz_rand() % 14); /// 1 to 8192
+
+    /// Randomly swap the index type (1/10 probability).
+    if (fuzz_rand() % 10 == 0)
+    {
+        if (bf_index_types.contains(index_type->name))
+        {
+            /// Swap between the two BF types, leaving arguments in place.
+            index_type->name = (index_type->name == "ngrambf_v1") ? "tokenbf_v1" : "ngrambf_v1";
+        }
+        else
+        {
+            /// For text and other simple types, swap to a no-arg type and clear arguments.
+            index_type->name = pickRandomly(fuzz_rand, simple_index_types);
+            if (index_type->arguments)
+                index_type->arguments->children.clear();
+        }
+    }
+}
+
+void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projection)
+{
+    UNUSED(projection);
+
+    /// TODO finish this soon
 }
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
@@ -2517,8 +2647,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 if (fuzz_rand() % 50 == 0)
                 {
-                    select->having()->children.clear();
-
                     addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
                 }
             }
@@ -2536,7 +2664,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             if (fuzz_rand() % 50 == 0)
             {
-                select->where()->children.clear();
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
             }
             else if (!select->prewhere().get())
@@ -2562,7 +2689,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             if (fuzz_rand() % 50 == 0)
             {
-                select->prewhere()->children.clear();
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
             }
             else if (!select->where().get())
@@ -2588,7 +2714,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             if (fuzz_rand() % 50 == 0)
             {
-                select->qualify()->children.clear();
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::QUALIFY);
             }
         }
@@ -2845,37 +2970,123 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             case ASTAlterCommand::ADD_COLUMN:
             case ASTAlterCommand::MODIFY_COLUMN:
                 /// fuzzColumnDeclaration is normally only called from fuzzCreateQuery;
-                /// exercise it here too so ALTER MODIFY COLUMN paths get the same coverage
+                /// exercise it here too so ALTER ADD/MODIFY COLUMN paths get the same coverage
                 if (alter_cmd->col_decl)
                     if (auto * col = alter_cmd->col_decl->as<ASTColumnDeclaration>())
                         fuzzColumnDeclaration(*col);
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->first = !alter_cmd->first;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_not_exists = !alter_cmd->if_not_exists;
                 break;
             case ASTAlterCommand::DROP_COLUMN:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->clear_column = !alter_cmd->clear_column;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_exists = !alter_cmd->if_exists;
+                break;
+            case ASTAlterCommand::ADD_INDEX:
+                /// Apply the same index-specific mutations as fuzzCreateQuery does for CREATE TABLE
+                if (alter_cmd->index_decl)
+                    if (auto * idx = alter_cmd->index_decl->as<ASTIndexDeclaration>())
+                        fuzzIndexDeclaration(*idx);
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->first = !alter_cmd->first;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_not_exists = !alter_cmd->if_not_exists;
                 break;
             case ASTAlterCommand::DROP_INDEX:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->clear_index = !alter_cmd->clear_index;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_exists = !alter_cmd->if_exists;
+                break;
+            case ASTAlterCommand::ADD_CONSTRAINT:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_not_exists = !alter_cmd->if_not_exists;
+                break;
+            case ASTAlterCommand::ADD_PROJECTION:
+                /// Apply the same projection-specific mutations as fuzzCreateQuery
+                if (alter_cmd->projection_decl)
+                    if (auto * proj = alter_cmd->projection_decl->as<ASTProjectionDeclaration>())
+                        fuzzProjectionDeclaration(*proj);
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_not_exists = !alter_cmd->if_not_exists;
                 break;
             case ASTAlterCommand::DROP_PROJECTION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->clear_projection = !alter_cmd->clear_projection;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_exists = !alter_cmd->if_exists;
                 break;
+            case ASTAlterCommand::ADD_STATISTICS:
+            case ASTAlterCommand::MODIFY_STATISTICS: {
+                /// Fuzz stat types the same way fuzzColumnDeclaration does
+                static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq"};
+                if (alter_cmd->statistics_decl)
+                    if (auto * stats = alter_cmd->statistics_decl->as<ASTStatisticsDeclaration>())
+                        if (stats->types)
+                            for (auto & type_ast : stats->types->children)
+                                if (auto * afn = type_ast->as<ASTFunction>(); afn && fuzz_rand() % 5 == 0)
+                                    afn->name = pickRandomly(fuzz_rand, stat_types);
+                break;
+            }
             case ASTAlterCommand::DROP_STATISTICS:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->clear_statistics = !alter_cmd->clear_statistics;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_exists = !alter_cmd->if_exists;
+                break;
+            case ASTAlterCommand::MODIFY_SETTING:
+            case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+                /// Fuzz individual setting values (same strategy as ASTSetQuery handler)
+                if (alter_cmd->settings_changes)
+                    if (auto * aset = alter_cmd->settings_changes->as<ASTSetQuery>())
+                        for (auto & c : aset->changes)
+                            if (fuzz_rand() % 50 == 0)
+                                c.value = fuzzField(c.value);
+                break;
+            case ASTAlterCommand::RESET_SETTING:
+                /// Occasionally drop a setting name from the reset list
+                if (alter_cmd->settings_resets && alter_cmd->settings_resets->children.size() > 1 && fuzz_rand() % 20 == 0)
+                {
+                    auto & resets = alter_cmd->settings_resets->children;
+                    resets.erase(resets.begin() + fuzz_rand() % resets.size());
+                }
+                break;
+            case ASTAlterCommand::REPLACE_PARTITION:
+                /// Toggle between REPLACE PARTITION FROM and ATTACH PARTITION FROM
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->replace = !alter_cmd->replace;
                 break;
             case ASTAlterCommand::DROP_PARTITION:
             case ASTAlterCommand::ATTACH_PARTITION:
-            case ASTAlterCommand::MOVE_PARTITION:
             case ASTAlterCommand::DROP_DETACHED_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->part = !alter_cmd->part;
+                break;
+            case ASTAlterCommand::MOVE_PARTITION:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->detach = !alter_cmd->detach;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
+                /// Cycle move destination type between DISK, VOLUME, TABLE
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const DataDestinationType dest_types[] = {
+                        DataDestinationType::DISK,
+                        DataDestinationType::VOLUME,
+                        DataDestinationType::TABLE,
+                    };
+                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                }
+                break;
+            case ASTAlterCommand::DROP_CONSTRAINT:
+            case ASTAlterCommand::COMMENT_COLUMN:
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->if_exists = !alter_cmd->if_exists;
                 break;
             default:
                 break;
@@ -2967,6 +3178,302 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 50 == 0)
             replace_transformer->is_strict = !replace_transformer->is_strict;
         fuzz(replace_transformer->children);
+    }
+    else if (auto * create_function = typeid_cast<ASTCreateSQLFunctionQuery *>(ast.get()))
+    {
+        /// Toggle OR REPLACE / IF NOT EXISTS flags to exercise all creation paths
+        if (fuzz_rand() % 50 == 0)
+            create_function->or_replace = !create_function->or_replace;
+        if (fuzz_rand() % 50 == 0)
+            create_function->if_not_exists = !create_function->if_not_exists;
+        /// Fuzz the lambda expression body
+        fuzz(create_function->children);
+    }
+    else if (auto * system_query = typeid_cast<ASTSystemQuery *>(ast.get()))
+    {
+        using Type = ASTSystemQuery::Type;
+        /// Toggle paired commands to exercise both code paths with the same operand.
+        /// Includes START/STOP pairs, individual/bulk reload pairs, and ENABLE/DISABLE pairs.
+        if (fuzz_rand() % 20 == 0)
+        {
+            static const std::pair<Type, Type> toggleable_pairs[] = {
+                {Type::STOP_MERGES, Type::START_MERGES},
+                {Type::STOP_TTL_MERGES, Type::START_TTL_MERGES},
+                {Type::STOP_FETCHES, Type::START_FETCHES},
+                {Type::STOP_MOVES, Type::START_MOVES},
+                {Type::STOP_REPLICATED_SENDS, Type::START_REPLICATED_SENDS},
+                {Type::STOP_REPLICATION_QUEUES, Type::START_REPLICATION_QUEUES},
+                {Type::STOP_REPLICATED_DDL_QUERIES, Type::START_REPLICATED_DDL_QUERIES},
+                {Type::STOP_DISTRIBUTED_SENDS, Type::START_DISTRIBUTED_SENDS},
+                {Type::STOP_THREAD_FUZZER, Type::START_THREAD_FUZZER},
+                {Type::STOP_PULLING_REPLICATION_LOG, Type::START_PULLING_REPLICATION_LOG},
+                {Type::STOP_CLEANUP, Type::START_CLEANUP},
+                {Type::STOP_VIEW, Type::START_VIEW},
+                {Type::STOP_VIEWS, Type::START_VIEWS},
+                {Type::STOP_REPLICATED_VIEW, Type::START_REPLICATED_VIEW},
+                {Type::STOP_VIRTUAL_PARTS_UPDATE, Type::START_VIRTUAL_PARTS_UPDATE},
+                {Type::STOP_REDUCE_BLOCKING_PARTS, Type::START_REDUCE_BLOCKING_PARTS},
+                {Type::STOP_LISTEN, Type::START_LISTEN},
+                {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
+                /* These are too slow
+                {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
+                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},
+                {Type::RELOAD_MODEL, Type::RELOAD_MODELS},*/
+                {Type::JEMALLOC_ENABLE_PROFILE, Type::JEMALLOC_DISABLE_PROFILE},
+                {Type::JEMALLOC_PURGE, Type::JEMALLOC_FLUSH_PROFILE},
+                {Type::FLUSH_LOGS, Type::FLUSH_ASYNC_INSERT_QUEUE},
+                {Type::ALLOCATE_MEMORY, Type::FREE_MEMORY},
+                {Type::RESTART_REPLICA, Type::RESTORE_REPLICA},
+                {Type::RESTART_DISK, Type::CLEAR_DISK_METADATA_CACHE},
+            };
+            for (const auto & [a_type, b_type] : toggleable_pairs)
+            {
+                if (system_query->type == a_type)
+                {
+                    system_query->type = b_type;
+                    break;
+                }
+                else if (system_query->type == b_type)
+                {
+                    system_query->type = a_type;
+                    break;
+                }
+            }
+        }
+        /// Toggle IF EXISTS
+        if (fuzz_rand() % 20 == 0)
+            system_query->if_exists = !system_query->if_exists;
+        /// Cycle through SYNC REPLICA / SYNC DATABASE REPLICA modes
+        if ((system_query->type == Type::SYNC_REPLICA || system_query->type == Type::SYNC_DATABASE_REPLICA) && fuzz_rand() % 5 == 0)
+        {
+            static const SyncReplicaMode sync_modes[] = {
+                SyncReplicaMode::DEFAULT,
+                SyncReplicaMode::STRICT,
+                SyncReplicaMode::LIGHTWEIGHT,
+                SyncReplicaMode::PULL,
+            };
+            system_query->sync_replica_mode = sync_modes[fuzz_rand() % std::size(sync_modes)];
+        }
+        /// Fuzz SUSPEND duration — try zero, boundary, and large values
+        if (system_query->type == Type::SUSPEND && fuzz_rand() % 5 == 0)
+        {
+            static const UInt64 suspend_seconds[] = {0, 1, 2, 5, 10, 3600};
+            system_query->seconds = suspend_seconds[fuzz_rand() % std::size(suspend_seconds)];
+        }
+        /// Rotate among view commands that all take a table argument
+        {
+            static const Type view_cmd_types[] = {
+                Type::REFRESH_VIEW,
+                Type::START_VIEW,
+                Type::START_REPLICATED_VIEW,
+                Type::STOP_VIEW,
+                Type::STOP_REPLICATED_VIEW,
+                Type::CANCEL_VIEW,
+                Type::WAIT_VIEW,
+            };
+            for (const auto & t : view_cmd_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = view_cmd_types[fuzz_rand() % std::size(view_cmd_types)];
+                    break;
+                }
+            }
+        }
+        /// Rotate among no-argument SYNC commands
+        {
+            static const Type sync_types[] = {
+                Type::SYNC_TRANSACTION_LOG,
+                Type::SYNC_FILE_CACHE,
+                Type::SYNC_FILESYSTEM_CACHE,
+            };
+            for (const auto & t : sync_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = sync_types[fuzz_rand() % std::size(sync_types)];
+                    break;
+                }
+            }
+        }
+        /// Cycle WAIT FAILPOINT action between PAUSE / RESUME / UNSPECIFIED
+        if (system_query->type == Type::WAIT_FAILPOINT && fuzz_rand() % 5 == 0)
+        {
+            static const ASTSystemQuery::FailPointAction fp_actions[] = {
+                ASTSystemQuery::FailPointAction::UNSPECIFIED,
+                ASTSystemQuery::FailPointAction::PAUSE,
+                ASTSystemQuery::FailPointAction::RESUME,
+            };
+            system_query->fail_point_action = fp_actions[fuzz_rand() % std::size(fp_actions)];
+        }
+        /// Rotate among failpoint commands that all take a fail_point_name argument
+        if ((system_query->type == Type::ENABLE_FAILPOINT || system_query->type == Type::DISABLE_FAILPOINT
+             || system_query->type == Type::NOTIFY_FAILPOINT || system_query->type == Type::WAIT_FAILPOINT)
+            && fuzz_rand() % 10 == 0)
+        {
+            static const Type failpoint_types[] = {
+                Type::ENABLE_FAILPOINT,
+                Type::DISABLE_FAILPOINT,
+                Type::NOTIFY_FAILPOINT,
+                Type::WAIT_FAILPOINT,
+            };
+            system_query->type = failpoint_types[fuzz_rand() % std::size(failpoint_types)];
+        }
+        /// Toggle TEST VIEW between SET FAKE TIME and UNSET FAKE TIME
+        if (system_query->type == Type::TEST_VIEW && fuzz_rand() % 5 == 0)
+        {
+            if (system_query->fake_time_for_view.has_value())
+                system_query->fake_time_for_view.reset();
+            else
+                system_query->fake_time_for_view = static_cast<Int64>(fuzz_rand() % 2000000000LL);
+        }
+        /// Toggle CLEAR FILESYSTEM CACHE between clearing all, by name, and by name+key+offset
+        if (system_query->type == Type::CLEAR_FILESYSTEM_CACHE && fuzz_rand() % 5 == 0)
+        {
+            if (system_query->filesystem_cache_name.empty())
+            {
+                system_query->filesystem_cache_name = "default";
+            }
+            else if (system_query->key_to_drop.empty())
+            {
+                system_query->key_to_drop = std::to_string(fuzz_rand());
+            }
+            else if (!system_query->offset_to_drop.has_value())
+            {
+                system_query->offset_to_drop = fuzz_rand() % 1024;
+            }
+            else
+            {
+                /// Reset back to clearing all
+                system_query->filesystem_cache_name.clear();
+                system_query->key_to_drop.clear();
+                system_query->offset_to_drop.reset();
+            }
+        }
+        /// Toggle CLEAR DISTRIBUTED CACHE between drop-connections mode and server-id mode
+        if (system_query->type == Type::CLEAR_DISTRIBUTED_CACHE && fuzz_rand() % 5 == 0)
+        {
+            system_query->distributed_cache_drop_connections = !system_query->distributed_cache_drop_connections;
+            if (!system_query->distributed_cache_drop_connections && system_query->distributed_cache_server_id.empty())
+                system_query->distributed_cache_server_id = "server_" + std::to_string(fuzz_rand() % 4);
+        }
+        /// Toggle CLEAR SCHEMA CACHE optional storage specifier
+        if (system_query->type == Type::CLEAR_SCHEMA_CACHE && fuzz_rand() % 5 == 0)
+        {
+            if (system_query->schema_cache_storage.empty())
+            {
+                static const String storages[] = {"S3", "HDFS", "URL", "File", "AzureBlobStorage"};
+                system_query->schema_cache_storage = storages[fuzz_rand() % std::size(storages)];
+            }
+            else
+                system_query->schema_cache_storage.clear();
+        }
+        /// Toggle CLEAR FORMAT SCHEMA CACHE optional format specifier
+        if (system_query->type == Type::CLEAR_FORMAT_SCHEMA_CACHE && fuzz_rand() % 5 == 0)
+        {
+            if (system_query->schema_cache_format.empty())
+            {
+                static const String formats[] = {"Protobuf", "CapnProto", "FlatBuffers", "MsgPack"};
+                system_query->schema_cache_format = formats[fuzz_rand() % std::size(formats)];
+            }
+            else
+                system_query->schema_cache_format.clear();
+        }
+        /// Fuzz ALLOCATE MEMORY size with boundary and large values
+        if (system_query->type == Type::ALLOCATE_MEMORY && fuzz_rand() % 5 == 0)
+        {
+            static const UInt64 mem_sizes[] = {0, 1, 4096, 1ULL << 20, 1ULL << 30};
+            system_query->untracked_memory_size = mem_sizes[fuzz_rand() % std::size(mem_sizes)];
+        }
+        /// Toggle CLEAR QUERY CACHE between clearing all and clearing by tag
+        if (system_query->type == Type::CLEAR_QUERY_CACHE && fuzz_rand() % 5 == 0)
+        {
+            if (system_query->query_result_cache_tag.has_value())
+                system_query->query_result_cache_tag.reset();
+            else
+                system_query->query_result_cache_tag = "fuzz_tag_" + std::to_string(fuzz_rand() % 4);
+        }
+        /// Rotate among no-argument cache-clear types to exercise different cache subsystems
+        /// with the same surrounding query context
+        {
+            static const Type plain_cache_types[] = {
+                Type::CLEAR_DNS_CACHE,
+                Type::CLEAR_CONNECTIONS_CACHE,
+                Type::CLEAR_MARK_CACHE,
+                Type::CLEAR_PRIMARY_INDEX_CACHE,
+                Type::CLEAR_UNCOMPRESSED_CACHE,
+                Type::CLEAR_INDEX_MARK_CACHE,
+                Type::CLEAR_INDEX_UNCOMPRESSED_CACHE,
+                Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
+                Type::CLEAR_TEXT_INDEX_TOKENS_CACHE,
+                Type::CLEAR_TEXT_INDEX_HEADER_CACHE,
+                Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE,
+                Type::CLEAR_TEXT_INDEX_CACHES,
+                Type::CLEAR_MMAP_CACHE,
+                Type::CLEAR_QUERY_CONDITION_CACHE,
+                Type::CLEAR_COMPILED_EXPRESSION_CACHE,
+                Type::CLEAR_ICEBERG_METADATA_CACHE,
+                Type::CLEAR_PAGE_CACHE,
+                Type::CLEAR_S3_CLIENT_CACHE,
+            };
+            for (const auto & t : plain_cache_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = plain_cache_types[fuzz_rand() % std::size(plain_cache_types)];
+                    break;
+                }
+            }
+        }
+        /// Toggle between the two prewarm cache types (same optional-table structure)
+        if ((system_query->type == Type::PREWARM_MARK_CACHE || system_query->type == Type::PREWARM_PRIMARY_INDEX_CACHE)
+            && fuzz_rand() % 5 == 0)
+        {
+            system_query->type
+                = (system_query->type == Type::PREWARM_MARK_CACHE) ? Type::PREWARM_PRIMARY_INDEX_CACHE : Type::PREWARM_MARK_CACHE;
+        }
+        /// Rotate among no-argument reload commands
+        {
+            static const Type reload_types[] = {
+                Type::RELOAD_CONFIG,
+                Type::RELOAD_USERS,
+                Type::RELOAD_ASYNCHRONOUS_METRICS,
+                Type::RELOAD_EMBEDDED_DICTIONARIES,
+            };
+            for (const auto & t : reload_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = reload_types[fuzz_rand() % std::size(reload_types)];
+                    break;
+                }
+            }
+        }
+        /// Fuzz RELOAD DELTA KERNEL TRACING level string
+        if (system_query->type == Type::RELOAD_DELTA_KERNEL_TRACING && fuzz_rand() % 5 == 0)
+        {
+            static const String tracing_levels[] = {"none", "error", "warning", "information", "debug", "trace"};
+            system_query->delta_kernel_tracing_level = tracing_levels[fuzz_rand() % std::size(tracing_levels)];
+        }
+        /// Fuzz DROP REPLICA optional fields: shard, is_drop_whole_replica, with_tables
+        if ((system_query->type == Type::DROP_REPLICA || system_query->type == Type::DROP_DATABASE_REPLICA
+             || system_query->type == Type::DROP_CATALOG_REPLICA)
+            && fuzz_rand() % 5 == 0)
+        {
+            const uint32_t choice = fuzz_rand() % 3;
+            if (choice == 0)
+                system_query->is_drop_whole_replica = !system_query->is_drop_whole_replica;
+            else if (choice == 1)
+                system_query->with_tables = !system_query->with_tables;
+            else
+            {
+                if (system_query->shard.empty())
+                    system_query->shard = "shard_" + std::to_string(fuzz_rand() % 4);
+                else
+                    system_query->shard.clear();
+            }
+        }
+        fuzz(system_query->children);
     }
     else
     {

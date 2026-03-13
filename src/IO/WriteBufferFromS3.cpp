@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
 
