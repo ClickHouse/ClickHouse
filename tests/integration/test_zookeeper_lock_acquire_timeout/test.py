@@ -16,7 +16,7 @@ cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.x
 node = cluster.add_instance(
     "node",
     with_zookeeper=True,
-    main_configs=["configs/zookeeper.xml", "configs/disable_ddl.xml"],
+    main_configs=["configs/zookeeper.xml", "configs/disable_ddl.xml", "configs/auxiliary_zookeepers.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
@@ -31,23 +31,27 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_zookeeper_lock_acquire_timeout(started_cluster):
+@pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
+def test_zookeeper_lock_acquire_timeout(started_cluster, zk_name):
     """
     Test that queries fail with TIMEOUT_EXCEEDED when they can't acquire
-    the zookeeper_mutex within the configured timeout.
+    the zookeeper_mutex (or auxiliary_zookeepers_mutex) within the configured timeout.
 
     Strategy:
-    1. Pause ZooKeeper so getZooKeeper() blocks indefinitely on reconnection
+    1. Pause ZooKeeper so getZooKeeper()/getAuxiliaryZooKeeper() blocks on reconnection
     2. Fire one query with long timeout (holds mutex while blocked on ZK)
     3. Fire concurrent queries with short timeout - they should fail fast
     4. Verify the short-timeout queries fail with TIMEOUT_EXCEEDED quickly
     """
-    node.query("SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 1")
+    zk_filter = "" if zk_name == "default" else f" AND zookeeperName = '{zk_name}'"
+    base_query = f"SELECT * FROM system.zookeeper WHERE path = '/'{zk_filter} LIMIT 1"
+
+    node.query(base_query)
     with cluster.pause_container("zoo1"):
         # once this query fails, it means the Zookeeper session is expired
         with pytest.raises(QueryRuntimeException) as e:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 1")
-        assert "KEEPER_EXCEPTION" in str(e)
+            node.query(base_query)
+        assert "KEEPER_EXCEPTION" in str(e.value)
 
         long_timeout_ms = 30000
         short_timeout_ms = 200
@@ -60,7 +64,7 @@ def test_zookeeper_lock_acquire_timeout(started_cluster):
             start = time.time()
             try:
                 node.query(
-                    f"SELECT '{query_id}', * FROM system.zookeeper WHERE path = '/' LIMIT 1",
+                    f"SELECT '{query_id}', * FROM system.zookeeper WHERE path = '/'{zk_filter} LIMIT 1",
                     settings={"get_zookeeper_lock_acquire_timeout_ms": lock_acquire_timeout_ms},
                     timeout=(lock_acquire_timeout_ms / 1000) * 10,
                     query_id=query_id,
@@ -94,17 +98,19 @@ def test_zookeeper_lock_acquire_timeout(started_cluster):
         assert len(results) == num_short_queries, f"Expected {num_short_queries} results, got {len(results)}"
         for r in results:
             assert r[0] == "error", f"Expected error, got {r[0]}"
-            assert "acquiring ZooKeeper lock" in r[2], f"Expected 'acquiring ZooKeeper lock' error, got {r[2]}"
+            assert "acquiring" in r[2] and "ZooKeeper lock" in r[2], f"Expected 'acquiring ... ZooKeeper lock' error, got {r[2]}"
             assert r[1] < max_short_query_duration_seconds, f"Expected timeout < {max_short_query_duration_seconds}s, got {r[1]}s"
 
 
-def test_zookeeper_lock_acquire_timeout_success_when_no_contention(started_cluster):
+@pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
+def test_zookeeper_lock_acquire_timeout_success_when_no_contention(started_cluster, zk_name):
     """
     Verify that queries succeed normally when there's no lock contention,
     even with a short timeout configured.
     """
+    zk_filter = "" if zk_name == "default" else f" AND zookeeperName = '{zk_name}'"
     result = node.query(
-        "SELECT count() FROM system.zookeeper WHERE path = '/'",
+        f"SELECT count() FROM system.zookeeper WHERE path = '/'{zk_filter}",
         settings={"get_zookeeper_lock_acquire_timeout_ms": 100},
     )
-    assert int(result.strip()) >= 0
+    assert int(result.strip()) > 0

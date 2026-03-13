@@ -450,9 +450,9 @@ struct ContextSharedPart : boost::noncopyable
 
     ConfigurationPtr sensitive_data_masker_config;
 
-    mutable std::mutex auxiliary_zookeepers_mutex;
-    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
+    mutable std::timed_mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers; /// Map for auxiliary ZooKeeper clients. Protected by auxiliary_zookeepers_mutex.
+    ConfigurationPtr auxiliary_zookeepers_config;                        /// Stores auxiliary zookeepers configs. Protected by auxiliary_zookeepers_mutex.
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -5120,7 +5120,12 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (hasQueryContext())
+        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    std::unique_lock lock(shared->auxiliary_zookeepers_mutex, std::defer_lock);
+    if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring auxiliary ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
     const auto config_name = "auxiliary_zookeepers." + name;
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
