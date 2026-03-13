@@ -1432,12 +1432,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (has_column)
             {
                 const auto & column_from_table = columns.get(command.column_name);
-                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
-                {
-                    command.default_kind = column_from_table.default_desc.kind;
-                    command.default_expression = column_from_table.default_desc.expression;
-                }
-
                 struct EnumTypeInfo
                 {
                     const IDataTypeEnum * enum_type = nullptr;
