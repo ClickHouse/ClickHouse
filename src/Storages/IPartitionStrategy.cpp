@@ -95,7 +95,6 @@ namespace
         ContextPtr context,
         const std::string & file_format,
         bool globbed_path,
-        bool contains_partition_wildcard,
         bool partition_columns_in_data_file)
     {
         if (!partition_by)
@@ -106,11 +105,6 @@ namespace
         if (globbed_path)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with a globbed path", "hive");
-        }
-
-        if (contains_partition_wildcard)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy hive can not be used with a '_partition_id' wildcard in the path");
         }
 
         if (file_format.empty() || file_format == "auto")
@@ -247,7 +241,6 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 context,
                 file_format,
                 globbed_path,
-                contains_partition_wildcard,
                 partition_columns_in_data_file);
         case StrategyType::NONE:
         {

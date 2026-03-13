@@ -1,5 +1,4 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -97,7 +96,6 @@
 namespace ProfileEvents
 {
     extern const Event Query;
-    extern const Event InsertQuery;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -384,7 +382,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
-        element.query_skip_indices.insert(access_info.skip_indices.begin(), access_info.skip_indices.end());
     }
 
     /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
@@ -476,7 +473,6 @@ QueryLogElement logQueryStart(
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
             elem.query_views = info.views;
-            elem.query_skip_indices = info.skip_indices;
         }
 
         if (async_insert)
@@ -1124,8 +1120,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().tryGetQueryContext());
-    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().getQueryContext());
+    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1180,7 +1176,7 @@ static BlockIO executeQueryImpl(
             try
             {
                 /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
+                /// If you format AST, parse it back, and format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 auto format_ast = [](ASTPtr ast)
@@ -1229,18 +1225,6 @@ static BlockIO executeQueryImpl(
                 }
 
                 chassert(ast2);
-
-                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
-                {
-                    WriteBufferFromOwnString ast_tree1;
-                    WriteBufferFromOwnString ast_tree2;
-                    out_ast->dumpTree(ast_tree1);
-                    ast2->dumpTree(ast_tree2);
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
-                        ast_tree1.str(), ast_tree2.str());
-                }
 
                 String formatted2 = format_ast(ast2);
 
@@ -1312,7 +1296,7 @@ static BlockIO executeQueryImpl(
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1584,9 +1568,6 @@ static BlockIO executeQueryImpl(
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
-                // Increment InsertQuery for async insert with inline data
-                ProfileEvents::increment(ProfileEvents::InsertQuery);
-
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
@@ -2045,11 +2026,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
             context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
-            auto fuzz_session_context = Context::createCopy(context);
-            fuzz_session_context->makeSessionContext();
-
-            auto fuzz_context = Context::createCopy(fuzz_session_context);
-            fuzz_context->makeQueryContext();
+            auto fuzz_context = Context::createCopy(context);
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setCurrentQueryId("");
 
@@ -2057,20 +2034,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
+                if (result.second.pipeline.pulling())
                 {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
+                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
                 }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
-                }
+                CompletedPipelineExecutor executor(result.second.pipeline);
+                executor.execute();
             }
 
             base_ast = fuzzed_ast;
@@ -2266,7 +2235,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,

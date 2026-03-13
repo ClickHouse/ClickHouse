@@ -147,7 +147,7 @@ public:
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
@@ -167,13 +167,6 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
-    ColumnPtr cut(size_t start, size_t length) const override
-    {
-        if (from_blob_task)
-            return convertFrom()->cut(start, length);
-        return wrapped_column->cut(start, length);
-    }
-
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }
     void filter(const Filter &) override { throwInapplicable(); }
     void expand(const Filter &, bool) override { throwInapplicable(); }

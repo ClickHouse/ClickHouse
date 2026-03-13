@@ -95,6 +95,17 @@ public:
         PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
+    static MarkRanges filterMarksUsingMergedIndex(
+        MergeTreeIndices indices,
+        MergeTreeIndexMergedConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
+        LoggerPtr log);
+
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
         MergeTreeData::DataPartPtr part,
         MergeTreeIndexPtr skip_index_minmax,
@@ -215,7 +226,6 @@ public:
         const ReadFromMergeTree::Indexes & indexes;
         const std::optional<TopKFilterInfo> & top_k_filter_info;
         const MergeTreeReaderSettings & reader_settings;
-        StorageID storage_id;
         LoggerPtr log;
         size_t num_streams;
         bool find_exact_ranges;

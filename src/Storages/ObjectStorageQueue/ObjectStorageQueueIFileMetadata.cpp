@@ -479,7 +479,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
 
     if (!reduce_retry_count)
     {
-        processing_reset_without_failure = true;
         prepareResetProcessingRequests(requests);
         return;
     }
@@ -524,26 +523,6 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 
         /// NOTE: we don't check that processed_node_path exists here because the cleanup thread
         /// may have already removed it (e.g. when `s3queue_tracked_files_limit` is reached).
-    });
-#endif
-}
-
-void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
-{
-    SCOPE_EXIT({
-        (*file_status).reset();
-        created_processing_node = false;
-    });
-
-    LOG_TRACE(log, "File {} processing was reset for retry (rows: {})", path, file_status->processed_rows.load());
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        chassert(
-            !zk_client->exists(processing_node_path),
-            fmt::format("Expected path {} not to exist after reset for {}", processing_node_path, path));
     });
 #endif
 }

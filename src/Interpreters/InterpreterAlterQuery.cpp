@@ -181,16 +181,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    std::vector<const ASTAlterCommand *> execute_commands;
 
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
-        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
-        {
-            execute_commands.push_back(command_ast);
-        }
-        else if (auto alter_command = AlterCommand::parse(command_ast))
+        if (auto alter_command = AlterCommand::parse(command_ast))
         {
             alter_commands.emplace_back(std::move(*alter_command));
         }
@@ -355,14 +350,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
         if (!partition_commands_pipe.empty())
             res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
-    }
-
-    for (const auto * execute_command : execute_commands)
-    {
-        ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
-        auto execute_pipe = table->executeCommand(execute_command->execute_command_name, args_ast, getContext());
-        if (!execute_pipe.empty())
-            res.pipeline = QueryPipeline(std::move(execute_pipe));
     }
 
     return res;
@@ -688,11 +675,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::APPLY_PATCHES:
         {
             required_access.emplace_back(AccessType::ALTER_UPDATE, database, table);
-            break;
-        }
-        case ASTAlterCommand::EXECUTE_COMMAND:
-        {
-            required_access.emplace_back(AccessType::ALTER_EXECUTE, database, table);
             break;
         }
     }

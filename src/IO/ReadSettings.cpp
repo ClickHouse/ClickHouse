@@ -12,7 +12,7 @@ namespace DB
 
 ReadSettings getReadSettings()
 {
-    auto query_context = CurrentThread::tryGetQueryContext();
+    auto query_context = CurrentThread::getQueryContext();
     if (query_context)
         return query_context->getReadSettings();
 

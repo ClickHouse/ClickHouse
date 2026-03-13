@@ -1,6 +1,5 @@
 #include <Runner.h>
 #include <atomic>
-#include <chrono>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Columns/IColumn.h>
@@ -318,7 +317,6 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
                 shutdown = true;
                 throw;
             }
-            info->errors.fetch_add(1, std::memory_order_relaxed);
 
             bool got_expired = false;
             for (const auto & connection : zookeepers)
@@ -973,10 +971,7 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
               << std::endl;
 };
 
-void requestFromLogExecutor(
-    std::shared_ptr<ConcurrentBoundedQueue<RequestFromLog>> queue,
-    RequestFromLogStats & request_stats,
-    Stats * bench_info)
+void requestFromLogExecutor(std::shared_ptr<ConcurrentBoundedQueue<RequestFromLog>> queue, RequestFromLogStats & request_stats)
 {
     RequestFromLog request_from_log;
     std::optional<std::future<void>> last_request;
@@ -984,38 +979,21 @@ void requestFromLogExecutor(
     {
         auto request_promise = std::make_shared<std::promise<void>>();
         last_request = request_promise->get_future();
-        auto start_time = std::chrono::steady_clock::now();
         Coordination::ResponseCallback callback = [&,
-                                                  request_promise,
-                                                  start_time,
-                                                  request = request_from_log.request,
-                                                  expected_result = request_from_log.expected_result,
-                                                  subrequest_expected_results = std::move(request_from_log.subrequest_expected_results),
-                                                  bench_info](
-                                                     const Coordination::Response & response) mutable
+                                                   request_promise,
+                                                   request = request_from_log.request,
+                                                   expected_result = request_from_log.expected_result,
+                                                   subrequest_expected_results = std::move(request_from_log.subrequest_expected_results)](
+                                                      const Coordination::Response & response) mutable
         {
             auto & stats = request->isReadRequest() ? request_stats.read_requests : request_stats.write_requests;
 
             stats.total.fetch_add(1, std::memory_order_relaxed);
 
-            if (bench_info)
-            {
-                auto end_time = std::chrono::steady_clock::now();
-                auto microseconds = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count());
-                size_t response_bytes = response.bytesSize();
-                if (request->isReadRequest())
-                    bench_info->addRead(microseconds, 1, request->bytesSize() + response_bytes);
-                else
-                    bench_info->addWrite(microseconds, 1, request->bytesSize() + response_bytes);
-            }
-
             if (expected_result)
             {
                 if (*expected_result != response.error)
                     stats.unexpected_results.fetch_add(1, std::memory_order_relaxed);
-
-                if (bench_info && *expected_result != response.error)
-                    bench_info->errors.fetch_add(1, std::memory_order_relaxed);
 
 #if 0
                 if (*expected_result != response.error)
@@ -1104,11 +1082,6 @@ void Runner::runBenchmarkFromLog()
         {
             dumpStats("Write", stats.write_requests);
             dumpStats("Read", stats.read_requests);
-            std::lock_guard lock(mutex);
-            info->report(concurrency);
-            DB::WriteBufferFromOwnString out;
-            info->writeJSON(out, concurrency, 0);
-            writeOutputString(out.str(), 0);
         }
     });
 
@@ -1126,7 +1099,7 @@ void Runner::runBenchmarkFromLog()
         executor_id_to_queue.emplace(request.executor_id, executor_queue);
         auto scheduled = pool->trySchedule([&, executor_queue]() mutable
         {
-            requestFromLogExecutor(std::move(executor_queue), stats, info.get());
+            requestFromLogExecutor(std::move(executor_queue), stats);
         });
 
         if (!scheduled)
@@ -1226,12 +1199,7 @@ void Runner::runBenchmarkWithGenerator()
     DB::WriteBufferFromOwnString out;
     info->writeJSON(out, concurrency, start_timestamp_ms);
     auto output_string = std::move(out.str());
-    writeOutputString(output_string, start_timestamp_ms);
-}
 
-
-void Runner::writeOutputString(const std::string & output_string, int64_t start_timestamp_ms)
-{
     if (print_to_stdout)
         std::cout << output_string << std::endl;
 

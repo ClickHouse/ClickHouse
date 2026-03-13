@@ -265,7 +265,7 @@ def run_func_test(
         commands.append(full_command)
         check_command = (
             full_command
-            + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
         try:
@@ -279,8 +279,7 @@ def run_func_test(
                 "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
-                "DATABASE_REPLICATION_FAILED",
-                "QUERY_WAS_CANCELLED",
+                "QUERY_WAS_CANCELLED"
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(
