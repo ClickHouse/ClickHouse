@@ -120,11 +120,17 @@ public:
 
         if (mutations_state_ptr)
         {
-            Int64 left_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.getOriginalPartitionId(), left.info.getDataVersion());
+            Int64 left_mutation_version = [&] TSA_NO_THREAD_SAFETY_ANALYSIS
+            {
+                return mutations_state_ptr->getCurrentMutationVersion(
+                    left.info.getOriginalPartitionId(), left.info.getDataVersion());
+            }();
 
-            Int64 right_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.info.getOriginalPartitionId(), right.info.getDataVersion());
+            Int64 right_mutation_version = [&] TSA_NO_THREAD_SAFETY_ANALYSIS
+            {
+                return mutations_state_ptr->getCurrentMutationVersion(
+                    left.info.getOriginalPartitionId(), right.info.getDataVersion());
+            }();
 
             if (left_mutation_version != right_mutation_version)
                 return std::unexpected(PreformattedMessage::create(
@@ -181,7 +187,11 @@ public:
         if (it == patches_by_partition.end() || it->second.empty())
             return {};
 
-        Int64 next_version = mutations_state_ptr->getNextMutationVersion(partition_id, first_part.getDataVersion());
+        Int64 next_version = [&] TSA_NO_THREAD_SAFETY_ANALYSIS
+        {
+            return mutations_state_ptr->getNextMutationVersion(partition_id, first_part.getDataVersion());
+        }();
+
         return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
     }
 
