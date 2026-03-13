@@ -1,5 +1,6 @@
 -- Test TTL GROUP BY with LowCardinality columns in SET expression
 -- This verifies the fix for type mismatch crash when using LowCardinality types
+SET allow_suspicious_low_cardinality_types=1;
 
 DROP TABLE IF EXISTS ttl_group_by__fuzz_13;
 
