@@ -47,7 +47,7 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
         source_id=1, field_id=1000, transform=DayTransform(), name="datetime_day"
     )
 )
-DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=1, transform=DayTransform()))
 DEFAULT_SCHEMA = Schema(
     NestedField(field_id=1, name="datetime", field_type=TimestampType(), required=False),
     NestedField(field_id=2, name="value", field_type=LongType(), required=False),

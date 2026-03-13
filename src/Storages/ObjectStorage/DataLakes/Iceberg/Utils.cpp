@@ -1155,7 +1155,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 }
                 full_argument += column_name;
                 if (clickhouse_transform_name->time_zone)
-                    full_argument += ", " + *clickhouse_transform_name->time_zone;
+                    full_argument += ", '" + *clickhouse_transform_name->time_zone + "'";
                 full_argument += ")";
             }
             else
