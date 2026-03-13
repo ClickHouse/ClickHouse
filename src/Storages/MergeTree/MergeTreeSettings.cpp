@@ -68,6 +68,12 @@ namespace ErrorCodes
     DECLARE(UInt64, index_granularity, 8192, R"(
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
+
+    To delegate granule sizing entirely to `index_granularity_bytes` with no
+    row-count limit, set to `0`. This is intended for tables with very wide rows
+    where the byte-based limit is the natural constraint. Not recommended for
+    narrow tables, where the default row-count limit of
+    8192 prevents an excessively sparse primary index.
     )", 0) \
     \
     /** Data storing format settings. */ \
@@ -1564,7 +1570,8 @@ namespace ErrorCodes
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
     Maximum size of data granules in bytes.
 
-    To restrict the granule size only by number of rows, set to `0` (not recommended).
+    To restrict the granule size only by number of rows, set to `0` (not recommended). Note
+    that in ClickHouse Cloud this setting cannot be set to `0`.
     )", 0) \
     DECLARE(UInt64, min_index_granularity_bytes, 1024, R"(
     Min allowed size of data granules in bytes.

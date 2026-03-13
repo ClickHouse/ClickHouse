@@ -173,6 +173,8 @@ Each data part is logically divided into granules. A granule is the smallest ind
 
 The granule size is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in a granule lays in the `[1, index_granularity]` range, depending on the size of the rows. The size of a granule can exceed `index_granularity_bytes` if the size of a single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
+Setting `index_granularity = 0` disables the row-count limit entirely, so granule size is controlled solely by `index_granularity_bytes`. This can be useful for tables with very wide rows (e.g. tables with hundreds of TiB of data) where the byte-based limit naturally produces well-sized granules and the row-count limit would otherwise require an artificially large value. For tables with narrow rows, the default row-count limit of 8192 is effective and removing it can result in an extremely sparse primary index with degraded query performance. When in doubt, keep the default value.
+
 ## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
 Take the `(CounterID, Date)` primary key as an example. In this case, the sorting and index can be illustrated as follows:
