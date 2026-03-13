@@ -29,7 +29,7 @@ pycparser==2.22
 pydantic==2.11.7
 pydantic_core==2.33.2
 PyGithub==2.6.1
-PyJWT==2.10.1
+PyJWT==2.12.0
 pylint==3.1.0
 PyNaCl==1.5.0
 python-dateutil==2.9.0.post0
