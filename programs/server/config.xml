@@ -2044,7 +2044,8 @@
 
         <!-- Optional control parameters (uncomment to use): -->
         <!-- <requests_per_minute>60</requests_per_minute> -->
-        <!-- <max_retries>3</max_retries> -->
-        <!-- <retry_delay_ms>1000</retry_delay_ms> -->
+        <!-- <max_retries>3</max_retries> -->          <!-- max 20 -->
+        <!-- <retry_delay_ms>1000</retry_delay_ms> --> <!-- max 3600000 (1 hour) -->
+        <!-- <retry_max_delay_ms>60000</retry_max_delay_ms> --> <!-- cap for exponential backoff; must be >= retry_delay_ms -->
     </ai>
 </clickhouse>

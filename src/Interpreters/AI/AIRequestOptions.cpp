@@ -19,6 +19,8 @@
 
 #include <Interpreters/AI/AIRequestOptions.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Poco/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #pragma clang diagnostic push
@@ -94,12 +96,13 @@ AIRequestOptions AIRequestOptions::fromJSON(const String & json_str)
         get_size_t("requests_per_minute", opts.requests_per_minute);
         get_size_t("max_retries", opts.max_retries);
         get_size_t("retry_delay_ms", opts.retry_delay_ms);
+        get_size_t("retry_max_delay_ms", opts.retry_max_delay_ms);
 
         /// Check for unknown keys
         static const std::unordered_set<std::string> known_keys = {
             "provider", "model", "api_key", "base_url", "temperature", "max_tokens", "top_p", "seed",
             "frequency_penalty", "presence_penalty", "requests_per_minute",
-            "max_retries", "retry_delay_ms"
+            "max_retries", "retry_delay_ms", "retry_max_delay_ms"
         };
 
         for (auto it = json.begin(); it != json.end(); ++it)
@@ -170,10 +173,12 @@ void AIRequestOptions::mergeWithConfig(const Poco::Util::AbstractConfiguration &
         mergeDefaultSize(requests_per_minute, 0, "ai.requests_per_minute");
         mergeDefaultSize(max_retries, 3, "ai.max_retries");
         mergeDefaultSize(retry_delay_ms, 1000, "ai.retry_delay_ms");
+        mergeDefaultSize(retry_max_delay_ms, 60000, "ai.retry_max_delay_ms");
     }
-    catch (...)
+    catch (const Poco::Exception & e)
     {
-        /// Server config may not be available, ignore
+        /// Config value type mismatch (e.g. ai.temperature set to a non-numeric string) - log and use defaults
+        LOG_WARNING(getLogger("AIRequestOptions"), "Failed to read AI settings from server config: {}. Check config.xml for type errors.", e.message());
     }
 }
 
@@ -188,6 +193,24 @@ void AIRequestOptions::validate() const
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "AI model not specified. Set 'model' in options_json or 'ai.model' in config.xml");
+
+    if (max_retries > 20)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "max_retries must be <= 20, got {}", max_retries);
+
+    /// Prevent overflow in exponential backoff: retry_delay_ms * (1 << max_retries) must fit in uint64_t.
+    /// With max_retries <= 20, the shift is at most 2^19 = 524288.
+    /// So retry_delay_ms must be <= UINT64_MAX / 524288 ~ 3.5e13, but we cap at 3600000 (1 hour) as a sanity check.
+    if (retry_delay_ms > 3600000)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "retry_delay_ms must be <= 3600000 (1 hour), got {}", retry_delay_ms);
+
+    if (retry_max_delay_ms > 0 && retry_max_delay_ms < retry_delay_ms)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "retry_max_delay_ms ({}) must be >= retry_delay_ms ({})", retry_max_delay_ms, retry_delay_ms);
 }
 
 }

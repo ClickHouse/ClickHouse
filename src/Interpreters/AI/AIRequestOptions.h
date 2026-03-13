@@ -52,6 +52,7 @@ struct AIRequestOptions
     size_t requests_per_minute = 0;
     size_t max_retries = 3;
     size_t retry_delay_ms = 1000;
+    size_t retry_max_delay_ms = 60000;
 
     /// Parse options from JSON string
     /// @throws Exception if JSON is invalid

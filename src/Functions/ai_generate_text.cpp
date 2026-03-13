@@ -138,7 +138,7 @@ Requires the `allow_experimental_ai_functions` setting to be enabled.
 All parameters can be configured in the server configuration under the `ai` section:
 `ai.provider`, `ai.model`, `ai.api_key`, `ai.base_url`, `ai.temperature`, `ai.max_tokens`,
 `ai.top_p`, `ai.seed`, `ai.frequency_penalty`, `ai.presence_penalty`, `ai.requests_per_minute`,
-`ai.max_retries`, `ai.retry_delay_ms`.
+`ai.max_retries`, `ai.retry_delay_ms`, `ai.retry_max_delay_ms`.
 Values specified in `options_json` take priority over the server configuration.
 When `api_key` is not set in the configuration, it falls back to environment variables
 (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`). When `base_url` is not set, the provider's
@@ -158,8 +158,9 @@ Supported fields in `options_json` (all optional, valid ranges depend on the pro
 - `frequency_penalty` (Float64) — Penalizes tokens based on how often they appear in the output so far. Positive values reduce repetition. Overrides `ai.frequency_penalty` in config.xml.
 - `presence_penalty` (Float64) — Penalizes tokens based on whether they have appeared in the output at all. Positive values encourage topic diversity. Overrides `ai.presence_penalty` in config.xml.
 - `requests_per_minute` (Int, default 0) — Maximum number of API calls per minute. 0 means no rate limiting. Useful to stay within provider rate limits across a large query. Overrides `ai.requests_per_minute` in config.xml.
-- `max_retries` (Int, default 3) — Maximum number of automatic retries when a rate-limit error is returned by the API. Overrides `ai.max_retries` in config.xml.
-- `retry_delay_ms` (Int, default 1000) — Initial retry delay in milliseconds. Doubles on each subsequent retry (exponential backoff). Overrides `ai.retry_delay_ms` in config.xml.
+- `max_retries` (Int, default 3, max 20) — Maximum number of automatic retries when a rate-limit error is returned by the API. Overrides `ai.max_retries` in config.xml.
+- `retry_delay_ms` (Int, default 1000, max 3600000) — Initial retry delay in milliseconds. Doubles on each subsequent retry (exponential backoff). Overrides `ai.retry_delay_ms` in config.xml.
+- `retry_max_delay_ms` (Int, default 60000) — Maximum retry delay in milliseconds. Caps the exponential backoff so the delay never exceeds this value. Must be >= `retry_delay_ms`. Overrides `ai.retry_max_delay_ms` in config.xml.
 )";
     FunctionDocumentation::Syntax syntax
         = "ai_generate_text(system_prompt, user_prompt [, options_json])";
@@ -172,7 +173,7 @@ Supported fields in `options_json` (all optional, valid ranges depend on the pro
          "`provider` — falls back to `ai.provider` in config.xml (required if not set there); "
          "`model` — falls back to `ai.model` in config.xml (required if not set there); "
          "`temperature`, `max_tokens`, `top_p`, `seed`, `frequency_penalty`, `presence_penalty` — fall back to `ai.*` in config.xml, then provider defaults; "
-         "`requests_per_minute` — falls back to `ai.requests_per_minute` in config.xml, then 0 (no limit); `max_retries` — falls back to `ai.max_retries` in config.xml, then 3; `retry_delay_ms` — falls back to `ai.retry_delay_ms` in config.xml, then 1000.",
+         "`requests_per_minute` — falls back to `ai.requests_per_minute` in config.xml, then 0 (no limit); `max_retries` — falls back to `ai.max_retries` in config.xml, then 3 (max 20); `retry_delay_ms` — falls back to `ai.retry_delay_ms` in config.xml, then 1000 (max 3600000); `retry_max_delay_ms` — falls back to `ai.retry_max_delay_ms` in config.xml, then 60000.",
          {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
