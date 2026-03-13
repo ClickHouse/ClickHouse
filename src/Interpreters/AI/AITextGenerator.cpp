@@ -69,7 +69,7 @@ ColumnPtr AITextGenerator::generateText(
     auto client = std::move(*result.client);
 
     /// Create rate limiter
-    RequestRateLimiter rate_limiter(options.requests_per_minute);
+    RequestRateLimiter rate_limiter(options.requests_per_minute.value_or(0));
 
     /// Process each row
     const auto & data = user_prompts.getChars();
@@ -112,7 +112,7 @@ String AITextGenerator::generateSingle(
     String prompt = AIPromptRender::buildPrompt(system_prompt, user_prompt);
 
     /// Retry loop
-    for (size_t attempt = 0; attempt <= options.max_retries; ++attempt)
+    for (size_t attempt = 0; attempt <= *options.max_retries; ++attempt)
     {
         try
         {
@@ -144,15 +144,15 @@ String AITextGenerator::generateSingle(
         }
         catch (const std::exception & e)
         {
-            if (attempt < options.max_retries && isRetryableError(e.what()))
+            if (attempt < *options.max_retries && isRetryableError(e.what()))
             {
                 const uint64_t delay_ms = std::min(
-                    options.retry_delay_ms * (static_cast<uint64_t>(1) << attempt),
-                    static_cast<uint64_t>(options.retry_max_delay_ms));
+                    *options.retry_delay_ms * (static_cast<uint64_t>(1) << attempt),
+                    static_cast<uint64_t>(*options.retry_max_delay_ms));
                 LOG_WARNING(
                     getLogger("AITextGenerator"),
                     "Retryable error detected, retrying after {}ms (attempt {}/{}): {}",
-                    delay_ms, attempt + 1, options.max_retries, e.what());
+                    delay_ms, attempt + 1, *options.max_retries, e.what());
                 sleepForMilliseconds(delay_ms);
                 continue;
             }
@@ -161,7 +161,7 @@ String AITextGenerator::generateSingle(
     }
 
     /// Unreachable, but satisfies the compiler
-    throw Exception(ErrorCodes::NETWORK_ERROR, "AI API call failed after {} retries", options.max_retries);
+    throw Exception(ErrorCodes::NETWORK_ERROR, "AI API call failed after {} retries", *options.max_retries);
 }
 
 bool AITextGenerator::isRetryableError(const String & msg)

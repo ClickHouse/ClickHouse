@@ -48,11 +48,11 @@ struct AIRequestOptions
     std::optional<double> frequency_penalty;
     std::optional<double> presence_penalty;
 
-    /// Control parameters
-    size_t requests_per_minute = 0;
-    size_t max_retries = 3;
-    size_t retry_delay_ms = 1000;
-    size_t retry_max_delay_ms = 60000;
+    /// Control parameters (optional so that JSON-supplied values always take precedence over config)
+    std::optional<size_t> requests_per_minute;
+    std::optional<size_t> max_retries;
+    std::optional<size_t> retry_delay_ms;
+    std::optional<size_t> retry_max_delay_ms;
 
     /// Parse options from JSON string
     /// @throws Exception if JSON is invalid
@@ -61,6 +61,9 @@ struct AIRequestOptions
     /// Merge with server configuration
     /// Config values are used as fallback when option is not set
     void mergeWithConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Fill in default values for unset control parameters
+    void resolveDefaults();
 
     /// Validate options
     /// @throws Exception if options are invalid (e.g., provider or model missing)

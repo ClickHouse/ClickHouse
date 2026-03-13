@@ -104,6 +104,7 @@ public:
         /// 2. Parse and validate options
         auto options = AIRequestOptions::fromJSON(options_json);
         options.mergeWithConfig(getContext()->getConfigRef());
+        options.resolveDefaults();
         options.validate();
 
         /// 3. Generate text using AITextGenerator

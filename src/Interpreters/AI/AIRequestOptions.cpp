@@ -71,7 +71,7 @@ AIRequestOptions AIRequestOptions::fromJSON(const String & json_str)
                 target = json[key].get<int>();
         };
 
-        auto get_size_t = [&](const std::string & key, size_t & target)
+        auto get_size_t = [&](const std::string & key, std::optional<size_t> & target)
         {
             if (json.contains(key) && json[key].is_number_integer())
             {
@@ -130,56 +130,63 @@ void AIRequestOptions::mergeWithConfig(const Poco::Util::AbstractConfiguration &
 {
     try
     {
-        /// Helper lambda to merge optional values from config
-        auto mergeOptionalString = [&](std::optional<String> & opt, const char * key)
+        /// Helper lambdas to merge optional values from config
+        auto merge_string = [&](std::optional<String> & opt, const char * key)
         {
             if (!opt && config.has(key))
                 opt = config.getString(key);
         };
 
-        auto mergeOptionalDouble = [&](std::optional<double> & opt, const char * key)
+        auto merge_double = [&](std::optional<double> & opt, const char * key)
         {
             if (!opt && config.has(key))
                 opt = config.getDouble(key);
         };
 
-        auto mergeOptionalInt = [&](std::optional<int> & opt, const char * key)
+        auto merge_int = [&](std::optional<int> & opt, const char * key)
         {
             if (!opt && config.has(key))
                 opt = config.getInt(key);
         };
 
-        auto mergeDefaultSize = [&](size_t & value, size_t default_value, const char * key)
+        auto merge_size = [&](std::optional<size_t> & opt, const char * key)
         {
-            if (value == default_value && config.has(key))
-                value = config.getUInt(key);
+            if (!opt && config.has(key))
+                opt = config.getUInt(key);
         };
 
         /// Merge string options
-        mergeOptionalString(provider, "ai.provider");
-        mergeOptionalString(model, "ai.model");
-        mergeOptionalString(api_key, "ai.api_key");
-        mergeOptionalString(base_url, "ai.base_url");
+        merge_string(provider, "ai.provider");
+        merge_string(model, "ai.model");
+        merge_string(api_key, "ai.api_key");
+        merge_string(base_url, "ai.base_url");
 
         /// Merge generation parameters
-        mergeOptionalDouble(temperature, "ai.temperature");
-        mergeOptionalInt(max_tokens, "ai.max_tokens");
-        mergeOptionalDouble(top_p, "ai.top_p");
-        mergeOptionalInt(seed, "ai.seed");
-        mergeOptionalDouble(frequency_penalty, "ai.frequency_penalty");
-        mergeOptionalDouble(presence_penalty, "ai.presence_penalty");
+        merge_double(temperature, "ai.temperature");
+        merge_int(max_tokens, "ai.max_tokens");
+        merge_double(top_p, "ai.top_p");
+        merge_int(seed, "ai.seed");
+        merge_double(frequency_penalty, "ai.frequency_penalty");
+        merge_double(presence_penalty, "ai.presence_penalty");
 
-        /// Merge control parameters (with default values)
-        mergeDefaultSize(requests_per_minute, 0, "ai.requests_per_minute");
-        mergeDefaultSize(max_retries, 3, "ai.max_retries");
-        mergeDefaultSize(retry_delay_ms, 1000, "ai.retry_delay_ms");
-        mergeDefaultSize(retry_max_delay_ms, 60000, "ai.retry_max_delay_ms");
+        /// Merge control parameters
+        merge_size(requests_per_minute, "ai.requests_per_minute");
+        merge_size(max_retries, "ai.max_retries");
+        merge_size(retry_delay_ms, "ai.retry_delay_ms");
+        merge_size(retry_max_delay_ms, "ai.retry_max_delay_ms");
     }
     catch (const Poco::Exception & e)
     {
         /// Config value type mismatch (e.g. ai.temperature set to a non-numeric string) - log and use defaults
         LOG_WARNING(getLogger("AIRequestOptions"), "Failed to read AI settings from server config: {}. Check config.xml for type errors.", e.message());
     }
+}
+
+void AIRequestOptions::resolveDefaults()
+{
+    if (!max_retries)        max_retries = 3;
+    if (!retry_delay_ms)     retry_delay_ms = 1000;
+    if (!retry_max_delay_ms) retry_max_delay_ms = 60000;
 }
 
 void AIRequestOptions::validate() const
@@ -194,23 +201,23 @@ void AIRequestOptions::validate() const
             ErrorCodes::BAD_ARGUMENTS,
             "AI model not specified. Set 'model' in options_json or 'ai.model' in config.xml");
 
-    if (max_retries > 20)
+    if (*max_retries > 20)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "max_retries must be <= 20, got {}", max_retries);
+            "max_retries must be <= 20, got {}", *max_retries);
 
     /// Prevent overflow in exponential backoff: retry_delay_ms * (1 << max_retries) must fit in uint64_t.
     /// With max_retries <= 20, the shift is at most 2^19 = 524288.
     /// So retry_delay_ms must be <= UINT64_MAX / 524288 ~ 3.5e13, but we cap at 3600000 (1 hour) as a sanity check.
-    if (retry_delay_ms > 3600000)
+    if (*retry_delay_ms > 3600000)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "retry_delay_ms must be <= 3600000 (1 hour), got {}", retry_delay_ms);
+            "retry_delay_ms must be <= 3600000 (1 hour), got {}", *retry_delay_ms);
 
-    if (retry_max_delay_ms > 0 && retry_max_delay_ms < retry_delay_ms)
+    if (*retry_max_delay_ms > 0 && *retry_max_delay_ms < *retry_delay_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "retry_max_delay_ms ({}) must be >= retry_delay_ms ({})", retry_max_delay_ms, retry_delay_ms);
+            "retry_max_delay_ms ({}) must be >= retry_delay_ms ({})", *retry_max_delay_ms, *retry_delay_ms);
 }
 
 }
