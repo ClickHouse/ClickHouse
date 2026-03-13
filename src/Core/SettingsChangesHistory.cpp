@@ -312,6 +312,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             // {"allow_database_unity_catalog", false, true, "Turned ON by default for Antalya (alias)."},
             // {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
             // {"input_format_parquet_use_metadata_cache", true, true, "New setting, turned ON by default"}, // https://github.com/Altinity/ClickHouse/pull/586
+            {"allow_experimental_database_iceberg", false, true, "Turned ON by default for Antalya."},
+            {"allow_experimental_database_unity_catalog", false, true, "Turned ON by default for Antalya."},
+            {"allow_experimental_database_glue_catalog", false, true, "Turned ON by default for Antalya."},
+            {"allow_database_iceberg", false, true, "Turned ON by default for Antalya (alias)."},
+            {"allow_database_unity_catalog", false, true, "Turned ON by default for Antalya (alias)."},
+            {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
+
+            {"input_format_parquet_use_metadata_cache", true, true, "New setting, turned ON by default"}, // https://github.com/Altinity/ClickHouse/pull/586
             // {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
             // {"object_storage_remote_initiator", false, false, "New setting."},
             {"allow_experimental_iceberg_read_optimization", true, true, "New setting."},
