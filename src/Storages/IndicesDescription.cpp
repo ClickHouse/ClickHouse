@@ -252,8 +252,12 @@ IndicesDescription::parse(const String & str, const ColumnsDescription & columns
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
+    {
+        const auto * index_def = index->as<ASTIndexDeclaration>();
+        bool is_implicit = index_def && index_def->name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX);
         result.emplace_back(
-            IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
+            IndexDescription::getIndexFromAST(index, columns, is_implicit, escape_index_filenames, context));
+    }
 
     return result;
 }
