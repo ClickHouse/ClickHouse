@@ -25,3 +25,14 @@ INSERT INTO test_default_virtual_override (key) SELECT number FROM numbers(10);
 SELECT key, _part_offset FROM test_default_virtual_override ORDER BY key;
 
 DROP TABLE test_default_virtual_override;
+
+-- ALTER TABLE ADD COLUMN must also reject EPHEMERAL columns conflicting with virtual column names.
+-- The CREATE TABLE path is validated, but the ALTER path must be too.
+CREATE TABLE test_alter_add_ephemeral_virtual (key UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE test_alter_add_ephemeral_virtual ADD COLUMN `_part_offset` UInt8 EPHEMERAL 0; -- { serverError ILLEGAL_COLUMN }
+DROP TABLE test_alter_add_ephemeral_virtual;
+
+-- ALTER TABLE MODIFY COLUMN must also reject changing a column to EPHEMERAL if it conflicts.
+CREATE TABLE test_alter_modify_ephemeral_virtual (key UInt32, `_part_offset` UInt8 DEFAULT 0) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE test_alter_modify_ephemeral_virtual MODIFY COLUMN `_part_offset` UInt8 EPHEMERAL 0; -- { serverError ILLEGAL_COLUMN }
+DROP TABLE test_alter_modify_ephemeral_virtual;
