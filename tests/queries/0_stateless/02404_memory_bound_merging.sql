@@ -1,4 +1,6 @@
 -- Tags: no-parallel, no-random-merge-tree-settings, long
+-- EXPLAIN PIPELINE output depends on in-order aggregation which is sensitive to MergeTree key direction
+SET force_primary_key_reverse_order = 0;
 
 drop table if exists pr_t;
 drop table if exists dist_t_different_dbs;
