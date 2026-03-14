@@ -250,7 +250,9 @@ try
                 }
                 SchemaReaderPtr schema_reader;
                 auto schema_reader_settings = format_settings;
-                schema_reader_settings.log_full_buffer_fallback_during_schema_inference = true;
+                if (!schema_reader_settings)
+                    schema_reader_settings = getFormatSettings(context);
+                schema_reader_settings->log_full_buffer_fallback_during_schema_inference = true;
 
                 try
                 {
