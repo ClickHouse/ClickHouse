@@ -31,6 +31,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -162,6 +163,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace
@@ -412,6 +414,35 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
         applyVisitor(FieldVisitorToString(), field));
 }
 
+std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
+    const SharedHeader & header,
+    const QueryTreeNodePtr & condition_node,
+    const PlannerContextPtr & planner_context,
+    const String & description)
+{
+    if (!condition_node)
+        return std::nullopt;
+
+    auto [condition_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        condition_node,
+        header->getColumnsWithTypeAndName(),
+        planner_context,
+        {});
+    correlated_subtrees.assertEmpty("in " + description + " expression");
+
+    const auto * output = condition_actions_dag.getOutputs().at(0);
+    if (!output->result_type->canBeUsedInBooleanContext())
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "{} expression must be boolean, got {}",
+            description,
+            output->result_type->getName());
+    }
+
+    return std::make_pair(std::move(condition_actions_dag), output->result_name);
+}
+
 class QueryAnalysisResult
 {
 public:
@@ -460,6 +491,8 @@ public:
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
         if (limit_length != 0 &&
+            !query_node.hasLimitAfter() &&
+            !query_node.hasLimitUntil() &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
@@ -862,7 +895,10 @@ void addDistinctStep(QueryPlan & query_plan,
       * 2. There is no LIMIT BY.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
+    if ((!query_node.hasOrderBy() || !before_order)
+        && !query_node.hasLimitBy()
+        && !query_node.hasLimitAfter()
+        && !query_node.hasLimitUntil())
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
@@ -1064,6 +1100,50 @@ void addLimitByStep(
     query_plan.addStep(std::move(limit_by_step));
 }
 
+void addLimitRangeStep(
+    QueryPlan & query_plan,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const QueryNode & query_node)
+{
+    if (query_node.isLimitWithTies())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
+
+    if (query_node.hasOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
+
+    if (query_analysis_result.is_limit_length_negative
+        || query_analysis_result.is_limit_offset_negative
+        || query_analysis_result.fractional_limit > 0
+        || query_analysis_result.fractional_offset > 0)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
+    }
+
+    std::optional<UInt64> limit_length;
+    if (query_node.hasLimit())
+        limit_length = query_analysis_result.limit_length;
+
+    auto start_condition = buildLimitRangeCondition(
+        query_plan.getCurrentHeader(),
+        query_node.getLimitAfter(),
+        planner_context,
+        "LIMIT AFTER");
+    auto end_condition = buildLimitRangeCondition(
+        query_plan.getCurrentHeader(),
+        query_node.getLimitUntil(),
+        planner_context,
+        "LIMIT UNTIL");
+
+    auto limit_range_step = std::make_unique<LimitRangeStep>(
+        query_plan.getCurrentHeader(),
+        std::move(start_condition),
+        std::move(end_condition),
+        limit_length);
+    limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
+    query_plan.addStep(std::move(limit_range_step));
+}
+
 void addPreliminaryLimitStep(
     QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -1153,6 +1233,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
 
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
+        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
         && !query_analysis_result.query_has_array_join_in_join_tree
         && query_analysis_result.fractional_limit == 0
@@ -1245,6 +1326,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
+        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
@@ -2208,12 +2290,15 @@ void Planner::buildPlanForQueryNode()
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
+        const bool has_limit_range = query_node.hasLimitAfter() || query_node.hasLimitUntil();
+        if (has_limit_range && apply_limit && apply_offset)
+            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node);
+        else if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
         addExtremesStepIfNeeded(query_plan, planner_context);
 
-        bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
+        bool limit_applied = applied_prelimit || (has_limit_range && apply_limit && apply_offset) || (query_node.isLimitWithTies() && apply_offset);
 
         /** Limit is no longer needed if there is prelimit.
           *
@@ -2221,7 +2306,7 @@ void Planner::buildPlanForQueryNode()
           * This is the case for various optimizations for distributed queries,
           * and when LIMIT cannot be applied it will be applied on the initiator anyway.
           */
-        if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
+        if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
         else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
@@ -2277,4 +2362,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-

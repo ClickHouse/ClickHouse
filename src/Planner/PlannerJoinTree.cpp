@@ -702,6 +702,8 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
       * and also set the number of threads to 1.
       */
     if (main_query_node.hasLimit()
+        && !main_query_node.hasLimitAfter()
+        && !main_query_node.hasLimitUntil()
         && !main_query_node.isDistinct()
         && !main_query_node.isLimitWithTies()
         && !main_query_node.hasPrewhere()

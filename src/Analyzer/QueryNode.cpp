@@ -328,6 +328,18 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getLimit()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasLimitAfter())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT AFTER\n";
+        getLimitAfter()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasLimitUntil())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT UNTIL\n";
+        getLimitUntil()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasOffset())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
@@ -551,6 +563,12 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST(options));
+
+    if (hasLimitAfter())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, getLimitAfter()->toAST(options));
+
+    if (hasLimitUntil())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, getLimitUntil()->toAST(options));
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));

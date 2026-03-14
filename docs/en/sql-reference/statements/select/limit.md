@@ -131,14 +131,17 @@ This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference
 You can limit the result to a *range* of rows between two boundary conditions:
 
 ```sql
-LIMIT n AFTER start_expr [UNTIL end_expr]
+LIMIT [n] AFTER start_expr [UNTIL end_expr]
+LIMIT [n] UNTIL end_expr
 ```
 
-- **AFTER start_expr**: Start output from the first row where `start_expr` is true (that row is included).
-- **UNTIL end_expr**: Stop before the first row where `end_expr` is true (that row is excluded).
-- **n**: Maximum number of rows to return (optional when UNTIL is used; when present, caps the range).
+- `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
+- `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
+- `n`: Maximum number of rows to return (optional; when present, caps the range).
 
 Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
+
+If the first `UNTIL` match appears before the first `AFTER` match, the result is empty.
 
 **Examples:**
 
@@ -151,8 +154,8 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 10 AFTER number >= 2 UNTIL 
 ```
 
 :::note
-- WITH TIES, fractional/negative LIMIT/OFFSET, and OFFSET are not supported together with AFTER/UNTIL.
-- Preliminary LIMIT pushdown is disabled when AFTER/UNTIL is used.
+- `WITH TIES`, fractional/negative `LIMIT`/`OFFSET`, and `OFFSET` are not supported together with `AFTER`/`UNTIL`.
+- Preliminary `LIMIT` pushdown is disabled when `AFTER`/`UNTIL` is used.
 :::
 
 ## Considerations {#considerations}

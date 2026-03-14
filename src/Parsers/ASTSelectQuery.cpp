@@ -227,15 +227,21 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if (limitLength())
+    if (limitLength() || limitAfter() || limitUntil())
     {
-        ostr << s.nl_or_ws << indent_str << "LIMIT ";
+        ostr << s.nl_or_ws << indent_str << "LIMIT";
         if (limitOffset())
         {
+            ostr << " ";
             limitOffset()->format(ostr, s, state, frame);
             ostr << ", ";
         }
-        limitLength()->format(ostr, s, state, frame);
+        else if (limitLength())
+        {
+            ostr << " ";
+        }
+        if (limitLength())
+            limitLength()->format(ostr, s, state, frame);
         if (limitAfter())
         {
             ostr << s.nl_or_ws << indent_str << " AFTER ";
@@ -549,6 +555,8 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_BY,
         Expression::LIMIT_OFFSET,
         Expression::LIMIT_LENGTH,
+        Expression::LIMIT_AFTER,
+        Expression::LIMIT_UNTIL,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
     };

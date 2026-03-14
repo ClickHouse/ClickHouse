@@ -27,7 +27,7 @@ LimitRangeTransform::LimitRangeTransform(
     const String & start_column_name_,
     ExpressionActionsPtr end_expression_,
     const String & end_column_name_,
-    size_t limit_)
+    std::optional<UInt64> limit_)
     : ISimpleTransform(header_, header_, true)
     , start_expression(std::move(start_expression_))
     , start_column_name(start_column_name_)
@@ -35,6 +35,9 @@ LimitRangeTransform::LimitRangeTransform(
     , end_column_name(end_column_name_)
     , limit(limit_)
 {
+    if (limit && *limit == 0)
+        stopReading();
+
     if (start_expression)
     {
         Block block = getInputPort().getHeader().cloneEmpty();
@@ -99,22 +102,15 @@ void LimitRangeTransform::sliceChunk(Chunk & chunk, size_t start_row, size_t end
     chunk.setColumns(std::move(columns), length);
 }
 
-IProcessor::Status LimitRangeTransform::prepare()
-{
-    if (finished)
-    {
-        input.close();
-        return Status::Finished;
-    }
-    return ISimpleTransform::prepare();
-}
-
 void LimitRangeTransform::transform(Chunk & chunk)
 {
-    if (chunk.empty() || finished)
+    if (chunk.empty())
+        return;
+
+    if (limit && rows_output >= *limit)
     {
-        if (!chunk.empty())
-            chunk.clear();
+        stopReading();
+        chunk.clear();
         return;
     }
 
@@ -122,24 +118,45 @@ void LimitRangeTransform::transform(Chunk & chunk)
     size_t output_start = 0;
     size_t output_end = num_rows;
 
+    ColumnPtr start_col;
+    if (!started && start_expression)
+    {
+        Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        start_expression->execute(block, block.rows());
+        start_col = block.getByPosition(start_column_position).column;
+    }
+
+    ColumnPtr end_col;
+    if (end_expression)
+    {
+        Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        end_expression->execute(block, block.rows());
+        end_col = block.getByPosition(end_column_position).column;
+    }
+
     if (!started)
     {
-        if (start_expression)
+        if (start_col)
         {
-            Block block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-            start_expression->execute(block, block.rows());
-            ColumnPtr start_col = block.getByPosition(start_column_position).column;
-            size_t first = findFirstTrue(start_col, block.rows());
-            if (first >= block.rows())
+            const size_t first_start = findFirstTrue(start_col, num_rows);
+            const size_t first_end = end_col ? findFirstTrue(end_col, num_rows) : num_rows;
+
+            if (first_end <= first_start)
+            {
+                if (first_end < num_rows)
+                    stopReading();
+                chunk.clear();
+                return;
+            }
+
+            if (first_start >= num_rows)
             {
                 chunk.clear();
                 return;
             }
+
             started = true;
-            output_start = first;
-            Columns cols = block.getColumns();
-            cols.erase(cols.begin() + start_column_position);
-            chunk.setColumns(std::move(cols), block.rows());
+            output_start = first_start;
         }
         else
         {
@@ -154,39 +171,44 @@ void LimitRangeTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (end_expression && output_end > output_start)
+    if (end_col && output_end > output_start)
     {
-        Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        end_expression->execute(block, block.rows());
-        ColumnPtr end_col = block.getByPosition(end_column_position).column;
-        size_t first_end = findFirstTrue(end_col, block.rows());
-        if (first_end < block.rows())
+        size_t first_end = findFirstTrue(end_col, num_rows);
+        if (first_end < num_rows)
             output_end = first_end;
     }
 
-    if (limit > 0)
+    if (output_end <= output_start)
     {
-        size_t remaining = limit - rows_output;
+        if (end_col && output_end < num_rows)
+            stopReading();
+
+        chunk.clear();
+        return;
+    }
+
+    if (limit)
+    {
+        UInt64 remaining = *limit - rows_output;
         if (remaining == 0)
         {
-            finished = true;
+            stopReading();
             chunk.clear();
             return;
         }
+
         size_t take = output_end - output_start;
         if (take > remaining)
-        {
             output_end = output_start + remaining;
-        }
     }
 
     sliceChunk(chunk, output_start, output_end);
     rows_output += chunk.getNumRows();
 
-    if (limit > 0 && rows_output >= limit)
-        finished = true;
-    else if (end_expression && output_end < num_rows_cur)
-        finished = true;
+    if (limit && rows_output >= *limit)
+        stopReading();
+    else if (end_col && output_end < num_rows_cur)
+        stopReading();
 }
 
 }

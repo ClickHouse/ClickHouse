@@ -3414,16 +3414,22 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT with AFTER or UNTIL, use LimitRangeStep
-    if (query.limitLength() && (query.limitAfter() || query.limitUntil()))
+    if (query.limitAfter() || query.limitUntil())
     {
-        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
         if (query.limit_with_ties)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
-        if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative
-            || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
         if (query.limitOffset())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
+
+        std::optional<UInt64> limit_length;
+        if (query.limitLength())
+        {
+            const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative
+                || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
+            limit_length = lim_info.limit_length;
+        }
 
         const auto & header = query_plan.getCurrentHeader();
         auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context);
@@ -3432,7 +3438,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             header,
             std::move(start_condition),
             std::move(end_condition),
-            lim_info.limit_length);
+            limit_length);
         limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
         query_plan.addStep(std::move(limit_range_step));
         return;

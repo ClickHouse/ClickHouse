@@ -72,6 +72,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserExpressionWithOptionalAlias exp_elem(false);
+    ParserExpression expression_p;
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
     ParserInterpolateExpressionList interpolate_list;
@@ -408,89 +409,108 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_limit.ignore(pos, expected))
     {
         ParserToken s_comma(TokenType::Comma);
+        ParserKeyword s_after(Keyword::AFTER);
+        ParserKeyword s_until(Keyword::UNTIL);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
-            return false;
-
-        if (s_comma.ignore(pos, expected))
+        if (s_after.ignore(pos, expected))
         {
-            limit_offset = limit_length;
+            if (!expression_p.parse(pos, limit_after, expected))
+                return false;
+
+            if (s_until.ignore(pos, expected))
+            {
+                if (!expression_p.parse(pos, limit_until, expected))
+                    return false;
+            }
+        }
+        else if (s_until.ignore(pos, expected))
+        {
+            if (!expression_p.parse(pos, limit_until, expected))
+                return false;
+        }
+        else
+        {
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
 
-            if (s_with_ties.ignore(pos, expected))
+            if (s_comma.ignore(pos, expected))
+            {
+                limit_offset = limit_length;
+                if (!exp_elem.parse(pos, limit_length, expected))
+                    return false;
+
+                if (s_with_ties.ignore(pos, expected))
+                {
+                    limit_with_ties_occurred = true;
+                    select_query->limit_with_ties = true;
+                }
+            }
+            else if (s_offset.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_offset, expected))
+                    return false;
+
+                has_offset_clause = true;
+            }
+            else if (s_with_ties.ignore(pos, expected))
             {
                 limit_with_ties_occurred = true;
                 select_query->limit_with_ties = true;
             }
-        }
-        else if (s_offset.ignore(pos, expected))
-        {
-            if (!exp_elem.parse(pos, limit_offset, expected))
-                return false;
 
-            has_offset_clause = true;
-        }
-        else if (s_with_ties.ignore(pos, expected))
-        {
-            limit_with_ties_occurred = true;
-            select_query->limit_with_ties = true;
-        }
-
-        if (limit_with_ties_occurred && distinct_on_expression_list)
-            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
-
-        if (s_by.ignore(pos, expected))
-        {
-            /// WITH TIES was used alongside LIMIT BY
-            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
-            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occurred)
+            if (limit_with_ties_occurred && distinct_on_expression_list)
                 throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
-            if (distinct_on_expression_list)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
-
-            limit_by_length = limit_length;
-            limit_by_offset = limit_offset;
-            limit_length = nullptr;
-            limit_offset = nullptr;
-
-            if (s_all.ignore(pos, expected))
+            if (s_by.ignore(pos, expected))
             {
-                select_query->limit_by_all = true;
-                limit_by_expression_list = make_intrusive<ASTExpressionList>();
-            }
-            else
-            {
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
-        }
+                /// WITH TIES was used alongside LIMIT BY
+                /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+                /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+                if (limit_with_ties_occurred)
+                    throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
-        /// LIMIT n [AFTER expr] [UNTIL expr] - only when we have limit_length (not LIMIT BY)
-        if (limit_length)
-        {
-            ParserKeyword s_after(Keyword::AFTER);
-            ParserKeyword s_until(Keyword::UNTIL);
-            if (s_after.ignore(pos, expected))
-            {
-                if (!exp_elem.parse(pos, limit_after, expected))
-                    return false;
-                if (s_until.ignore(pos, expected))
+                if (distinct_on_expression_list)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
+
+                limit_by_length = limit_length;
+                limit_by_offset = limit_offset;
+                limit_length = nullptr;
+                limit_offset = nullptr;
+
+                if (s_all.ignore(pos, expected))
                 {
-                    if (!exp_elem.parse(pos, limit_until, expected))
+                    select_query->limit_by_all = true;
+                    limit_by_expression_list = make_intrusive<ASTExpressionList>();
+                }
+                else
+                {
+                    if (!exp_list.parse(pos, limit_by_expression_list, expected))
                         return false;
                 }
             }
-            else if (s_until.ignore(pos, expected))
+
+            /// `LIMIT [n] AFTER expr [UNTIL expr]` or `LIMIT [n] UNTIL expr` after plain `LIMIT` (not `LIMIT BY`).
+            if (limit_length)
             {
-                if (!exp_elem.parse(pos, limit_until, expected))
-                    return false;
+                if (s_after.ignore(pos, expected))
+                {
+                    if (!expression_p.parse(pos, limit_after, expected))
+                        return false;
+                    if (s_until.ignore(pos, expected))
+                    {
+                        if (!expression_p.parse(pos, limit_until, expected))
+                            return false;
+                    }
+                }
+                else if (s_until.ignore(pos, expected))
+                {
+                    if (!expression_p.parse(pos, limit_until, expected))
+                        return false;
+                }
             }
         }
 
-        if (top_length && limit_length)
+        if (top_length && (limit_length || limit_after || limit_until))
             throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
     }
     else if (s_offset.ignore(pos, expected))

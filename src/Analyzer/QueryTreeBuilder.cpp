@@ -458,6 +458,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
+    auto select_limit_after = select_query_typed.limitAfter();
+    if (select_limit_after)
+        current_query_tree->getLimitAfter() = buildExpression(select_limit_after, current_context);
+
+    auto select_limit_until = select_query_typed.limitUntil();
+    if (select_limit_until)
+        current_query_tree->getLimitUntil() = buildExpression(select_limit_until, current_context);
+
     /// Combine limit expression with limit and offset settings into final limit expression
     /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
     /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
