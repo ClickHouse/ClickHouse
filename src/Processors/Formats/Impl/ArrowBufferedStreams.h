@@ -143,8 +143,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     // arrow do its own buffering and coalescing of reads.
     // (ReadBuffer is not a good abstraction in this case, but it works.)
     bool avoid_buffering = false,
-    std::shared_ptr<ThreadPool> io_pool = nullptr,
-    bool log_full_buffer_fallback = false);
+    std::shared_ptr<ThreadPool> io_pool = nullptr);
 
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(

@@ -255,8 +255,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     const std::string & format_name,
     const std::string & magic_bytes,
     bool avoid_buffering,
-    std::shared_ptr<ThreadPool> io_pool,
-    bool log_full_buffer_fallback)
+    std::shared_ptr<ThreadPool> io_pool)
 {
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
@@ -289,7 +288,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
         fallback_reason = "stream is not seekable";
     }
 
-    if (log_full_buffer_fallback)
+    if (settings.log_full_buffer_fallback_during_schema_inference)
     {
         LOG_WARNING(
             getLogger("ArrowBufferedInputStream"),

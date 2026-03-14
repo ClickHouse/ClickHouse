@@ -142,18 +142,9 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
     ReadBuffer & in,
     const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped,
-    bool log_full_buffer_fallback = false)
+    std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(
-        in,
-        format_settings,
-        is_stopped,
-        "Arrow",
-        ARROW_MAGIC_BYTES,
-        /* avoid_buffering */ false,
-        /* io_pool */ nullptr,
-        log_full_buffer_fallback);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
         return nullptr;
 
@@ -219,7 +210,7 @@ void ArrowSchemaReader::initializeIfNeeded()
     else
     {
         std::atomic<int> is_stopped = 0;
-        file_reader = createFileReader(in, format_settings, is_stopped, /* log_full_buffer_fallback */ true);
+        file_reader = createFileReader(in, format_settings, is_stopped);
     }
 }
 
