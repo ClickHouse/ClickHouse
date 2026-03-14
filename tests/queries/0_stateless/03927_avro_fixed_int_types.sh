@@ -19,7 +19,7 @@ ${CLICKHOUSE_LOCAL} <<EOF
     int64 Int64,
   );
 
-  INSERT INTO test FROM INFILE '${CLICKHOUSE_TMP}/fixed.avro' FORMAT avro;
+  INSERT INTO test FROM INFILE 'data_avro/fixed.avro' FORMAT avro;
 
   SELECT * FROM test FORMAT CSV;
 EOF
