@@ -108,9 +108,18 @@ static void getFileReaderAndSchema(
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> & file_reader,
     std::shared_ptr<arrow::Schema> & schema,
     const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
+    std::atomic<int> & is_stopped,
+    bool log_full_buffer_fallback = false)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES);
+    auto arrow_file = asArrowFile(
+        in,
+        format_settings,
+        is_stopped,
+        "ORC",
+        ORC_MAGIC_BYTES,
+        /* avoid_buffering */ false,
+        /* io_pool */ nullptr,
+        log_full_buffer_fallback);
     if (is_stopped)
         return;
 
@@ -168,7 +177,7 @@ void ORCSchemaReader::initializeIfNeeded()
         return;
 
     std::atomic<int> is_stopped = 0;
-    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped, /* log_full_buffer_fallback */ true);
 
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueUnsafe();

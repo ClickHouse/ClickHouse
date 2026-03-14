@@ -1290,7 +1290,15 @@ void ArrowParquetSchemaReader::initializeIfNeeded()
         return;
 
     std::atomic<int> is_stopped{0};
-    arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    arrow_file = asArrowFile(
+        in,
+        format_settings,
+        is_stopped,
+        "Parquet",
+        PARQUET_MAGIC_BYTES,
+        /* avoid_buffering */ true,
+        /* io_pool */ nullptr,
+        /* log_full_buffer_fallback */ true);
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
