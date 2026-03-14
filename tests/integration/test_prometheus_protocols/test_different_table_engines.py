@@ -290,11 +290,8 @@ def test_external_tables():
         "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
     )
 
-    # FIXME: The table structure should be:
-    # "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String)"
-    # Renamed it because of the bug and potential type mismatch.
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "
+        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
         "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
     )
     node.query(

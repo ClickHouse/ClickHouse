@@ -63,16 +63,6 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
         {
             /// A target table is specified.
             target.table_id = target_table_id;
-
-            if (target_kind == ViewTarget::Metrics && mode < LoadingStrictnessLevel::ATTACH)
-            {
-                auto target_table = DatabaseCatalog::instance().getTable(target_table_id, local_context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr(local_context, false);
-                for (const auto & column : target_metadata->columns)
-                    if (column.type->lowCardinality())
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                        "External metrics table cannot have LowCardinality columns for now.");
-            }
         }
         else
         {
