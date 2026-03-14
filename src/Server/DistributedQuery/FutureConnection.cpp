@@ -44,13 +44,13 @@ int FutureConnection::getEventFd() const
 
 bool FutureConnection::isReady() const
 {
-    return future.valid();
+    return future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 }
 
 Poco::Net::Socket FutureConnection::getSocket()
 {
-    if (!future.valid())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureConnection does not have a valid future, check is Ready() before calling getSocket()");
+    if (!isReady())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureConnection does not have a ready future, check is Ready() before calling getSocket()");
 
     // since it is a shared_future, multiple calls to get() are allowed and will return the same socket once it is set.
     return future.get();
