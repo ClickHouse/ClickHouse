@@ -820,7 +820,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("Gorilla, ZSTD"),
     Codec("ALP"),
     Codec("ALP, LZ4"),
-    Codec("ALP, ZSTD")
+    Codec("ALP, ZSTD"),
+    Codec("ALP(RD)"),
+    Codec("ALP(RD), LZ4"),
+    Codec("ALP(RD), ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -918,7 +921,10 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("Gorilla, ZSTD"),
             Codec("ALP"),
             Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD")
+            Codec("ALP, ZSTD"),
+            Codec("ALP(RD)"),
+            Codec("ALP(RD), LZ4"),
+            Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
@@ -936,7 +942,10 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("Gorilla, ZSTD"),
             Codec("ALP"),
             Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD")
+            Codec("ALP, ZSTD"),
+            Codec("ALP(RD)"),
+            Codec("ALP(RD), LZ4"),
+            Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
@@ -990,7 +999,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("Gorilla, ZSTD"),
             Codec("ALP"),
             Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD")
+            Codec("ALP, ZSTD"),
+            Codec("ALP(RD)"),
+            Codec("ALP(RD), LZ4"),
+            Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
@@ -1008,7 +1020,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("Gorilla, ZSTD"),
             Codec("ALP"),
             Codec("ALP, LZ4"),
-            Codec("ALP, ZSTD")
+            Codec("ALP, ZSTD"),
+            Codec("ALP(RD)"),
+            Codec("ALP(RD), LZ4"),
+            Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
@@ -1056,7 +1071,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("ALP")
+            Codec("ALP"),
+            Codec("ALP(RD)")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
@@ -1070,7 +1086,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("ALP")
+            Codec("ALP"),
+            Codec("ALP(RD)")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
@@ -1144,7 +1161,10 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
             Codec("Gorilla, ZSTD", 1.0),
             Codec("ALP", 1.1),
             Codec("ALP, LZ4", 1.0),
-            Codec("ALP, ZSTD", 1.0)
+            Codec("ALP, ZSTD", 1.0),
+            Codec("ALP(RD)", 1.1),
+            Codec("ALP(RD), LZ4", 1.0),
+            Codec("ALP(RD), ZSTD", 1.0)
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MinMaxGenerator())),
