@@ -41,6 +41,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <Columns/ColumnString.h>
+
 #include <algorithm>
 #include <cassert>
 #include <stack>
@@ -62,6 +64,79 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+/// For patterns like ^literal$, ^(lit1|lit2|...)$, or ^lit1|lit2|...$,
+/// extract the exact-match alternatives. Returns an empty vector if the
+/// pattern contains any regex metacharacters that prevent exact matching.
+static std::vector<String> extractExactMatchAlternativesFromRegexp(const String & regexp)
+{
+    if (regexp.size() < 2 || regexp.front() != '^' || regexp.back() != '$')
+        return {};
+
+    /// Strip ^ and $
+    std::string_view inner(regexp.data() + 1, regexp.size() - 2);
+
+    /// Strip optional single outer group parentheses
+    if (inner.size() >= 2 && inner.front() == '(' && inner.back() == ')')
+    {
+        /// Verify the parens are matched: scan for the closing paren of the opening one.
+        size_t depth = 1;
+        size_t i = 1;
+        for (; i < inner.size() - 1 && depth > 0; ++i)
+        {
+            if (inner[i] == '\\')
+            {
+                ++i; /// skip escaped char
+                continue;
+            }
+            if (inner[i] == '(')
+                ++depth;
+            else if (inner[i] == ')')
+                --depth;
+        }
+        /// Only strip if the opening paren matches the closing one at the end.
+        if (depth == 0 && i == inner.size() - 1)
+            inner = inner.substr(1, inner.size() - 2);
+    }
+
+    if (inner.empty())
+        return {};
+
+    std::vector<String> alternatives;
+    String current;
+
+    for (size_t i = 0; i < inner.size(); ++i)
+    {
+        char c = inner[i];
+        if (c == '|')
+        {
+            if (current.empty())
+                return {};
+            alternatives.push_back(std::move(current));
+            current.clear();
+        }
+        else if (c == '\\' && i + 1 < inner.size())
+        {
+            ++i;
+            current += inner[i];
+        }
+        else if (c == '.' || c == '*' || c == '+' || c == '?' || c == '['
+                || c == ']' || c == '(' || c == ')' || c == '{' || c == '}')
+        {
+            /// Regex metacharacter found — not a simple literal alternative.
+            return {};
+        }
+        else
+        {
+            current += c;
+        }
+    }
+
+    if (!current.empty())
+        alternatives.push_back(std::move(current));
+
+    return alternatives;
 }
 
 /// for "^prefix..." string it returns "prefix"
@@ -403,11 +478,35 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// This optimization can't process alternation - this would require
-                /// a comprehensive parsing of regular expression.
-                if (expression.contains('|'))
-                    return false;
+                /// Try to extract exact-match alternatives from patterns like ^(val1|val2|...)$.
+                auto alternatives = extractExactMatchAlternativesFromRegexp(expression);
+                if (!alternatives.empty())
+                {
+                    if (alternatives.size() == 1)
+                    {
+                        /// Single exact match: use a point range [val, val].
+                        out.function = RPNElement::FUNCTION_IN_RANGE;
+                        out.range = Range(alternatives[0]);
+                        out.relaxed = true;
+                        return true;
+                    }
 
+                    /// Multiple exact matches: build an IN set.
+                    auto string_col = ColumnString::create();
+                    for (const auto & alt : alternatives)
+                        string_col->insert(alt);
+
+                    Columns set_columns = {std::move(string_col)};
+                    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+                    indexes_mapping.push_back({0, out.key_columns[0], {}});
+
+                    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+                    out.function = RPNElement::FUNCTION_IN_SET;
+                    out.relaxed = true;
+                    return true;
+                }
+
+                /// Fall back to prefix extraction for patterns like ^prefix...
                 String prefix = extractFixedPrefixFromRegularExpression(expression);
                 if (prefix.empty())
                     return false;
