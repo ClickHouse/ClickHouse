@@ -2,7 +2,7 @@ import pytest
 import re
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -65,9 +65,9 @@ test_queries = [
 
 # Executes the test queries in the "prometheus_receiver" service and check the results.
 # We send data to the "prometheus_receiver" directly via RemoteWrite protocol.
-def check_queries_in_prometheus_receiver():
+def check_queries_in_prometheus_receiver(eps=0):
     for query, result, _ in test_queries:
-        assert (
+        assert tsv_close_to(
             execute_query_via_http_api(
                 cluster.prometheus_ip["receiver"],
                 cluster.prometheus_port["receiver"],
@@ -75,16 +75,17 @@ def check_queries_in_prometheus_receiver():
                 query,
                 timestamp,
             )
-            == result
+            , result
+            , eps=eps
         )
 
 
 # Executes the test queries in the "prometheus_reader" service and check the results.
 # We send data to ClickHouse via RemoteWrite protocol and
 # then "prometheus_reader" reads data from ClickHouse via RemoteRead protocol.
-def check_queries_in_prometheus_reader():
+def check_queries_in_prometheus_reader(eps=0):
     for query, result, _ in test_queries:
-        assert (
+        assert tsv_close_to(
             execute_query_via_http_api(
                 cluster.prometheus_ip["reader"],
                 cluster.prometheus_port["reader"],
@@ -92,16 +93,19 @@ def check_queries_in_prometheus_reader():
                 query,
                 timestamp,
             )
-            == result
+            , result
+            , eps=eps
         )
 
 
 # Executes the test queries in ClickHouse and test the results.
-def check_queries_in_clickhouse():
+def check_queries_in_clickhouse(eps=0):
     for query, _, chresult in test_queries:
-        assert node.query(
-            f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"
-        ) == TSV(chresult)
+        assert tsv_close_to(
+            node.query(f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"),
+            chresult,
+            eps=eps,
+        )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -116,10 +120,10 @@ def start_cluster():
 
 
 # Sends presets to clickhouse and execute the test queries.
-def check():
+def check(eps=0):
     send_preset_to_clickhouse()
-    check_queries_in_prometheus_reader()
-    check_queries_in_clickhouse()
+    check_queries_in_prometheus_reader(eps=eps)
+    check_queries_in_clickhouse(eps=eps)
 
 # Drops TimeSeries table
 def drop_prometheus_table():
@@ -175,6 +179,13 @@ def test_custom_id_algorithm():
     )
     check()
     assert re.search(r"\bid\s+FixedString\(16\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+
+
+# Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
+def test_microsecond_precision():
+    node.query("CREATE TABLE prometheus (timestamp DateTime64(6)) ENGINE=TimeSeries")
+    check(eps=1e-9)  # Here eps > 0 because otherwise the check will fail because of different precisions.
+    assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesData(prometheus)"))
 
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
