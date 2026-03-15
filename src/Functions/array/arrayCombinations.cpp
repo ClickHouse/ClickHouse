@@ -24,7 +24,7 @@ static size_t combinationCountCapped(size_t n, size_t k, size_t limit)
 {
     if (k > n) return 0;
     if (k == 0 || k == n) return 1;
-    if (k > n - k) k = n - k;
+    k = std::min(k, n - k);
 
     /// Store numerator factors to allow cross-cancellation with denominators.
     std::vector<size_t> numer(k);
