@@ -387,6 +387,7 @@ bool IAST::isNonReadOnlyQuery(const IAST * ast)
         case QueryKind::Backup:
         case QueryKind::Restore:
         case QueryKind::Copy:
+        case QueryKind::Snapshot:
             return true;
 
         case QueryKind::None:

@@ -638,7 +638,7 @@ void TCPHandler::runImpl()
                             {
                                 setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
                                 ThreadStatus thread_status;
-                                CurrentThread::QueryScope async_query_scope = CurrentThread::QueryScope::create(async_context);
+                                QueryScope async_query_scope = QueryScope::create(async_context);
                                 bool query_started = false;
 
                                 /// Called by executeQuery after ProcessList::insert and quota checks pass —
