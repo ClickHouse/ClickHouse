@@ -1,5 +1,3 @@
--- Tags: long
-
 -- Tests queries that could/should be supported by sharded aggregation but in the early stages of
 -- development does not support them for now.
 
