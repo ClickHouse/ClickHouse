@@ -134,5 +134,87 @@ if [ "$COUNT_NATIVE" -lt 7 ]; then
     exit 1
 fi
 
+# --- ExceptionBeforeStart: client receives the error, not a query_id ---
+# These tests exercise the QueryStartedCallback path: on_query_started() is never called because
+# executeQuery throws before logQueryStart, so started_promise->set_exception() is set and the
+# client receives the error synchronously rather than a detached query_id.
+
+# 11. HTTP: INSERT into nonexistent table — error is returned to client, not query_id.
+echo "=== HTTP: ExceptionBeforeStart — error returned (not query_id) when query fails before start ==="
+ERR_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&detach_non_readonly_queries=1&query_id=${QUERY_ID_PREFIX}noexist_http" \
+    -X POST --data-binary "INSERT INTO table_that_does_not_exist_03812 SELECT 1" 2>/dev/null || true)
+if echo "$ERR_HTTP" | grep -qi "UNKNOWN_TABLE\|Code:"; then
+    echo "Error returned to client: yes"
+else
+    echo "Error returned to client: no (response: $ERR_HTTP)"
+fi
+
+# 12. Native: INSERT into nonexistent table — error is returned to client, not query_id.
+echo "=== Native: ExceptionBeforeStart — error returned (not query_id) when query fails before start ==="
+ERR_NATIVE=$(${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID_PREFIX}noexist_native" --detach_non_readonly_queries 1 \
+    -q "INSERT INTO table_that_does_not_exist_03812 SELECT 1" 2>&1 || true)
+if echo "$ERR_NATIVE" | grep -qi "UNKNOWN_TABLE\|doesn.*exist"; then
+    echo "Error returned to client: yes"
+else
+    echo "Error returned to client: no (response: $ERR_NATIVE)"
+fi
+
+# --- system.processes: detached query is visible immediately after query_id is returned ---
+# Because on_query_started() fires after ProcessList::insert (inside executeQueryImpl), the query
+# is guaranteed to be in system.processes by the time the HTTP/native response is received.
+# No sleep is required before the check — this determinism is the whole point of QueryStartedCallback.
+
+# 13. HTTP: detached query appears in system.processes immediately.
+echo "=== HTTP: Detached query visible in system.processes immediately after query_id returned ==="
+QID_PROC_HTTP="${QUERY_ID_PREFIX}proc_http"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&detach_non_readonly_queries=1&query_id=${QID_PROC_HTTP}" \
+    -X POST --data-binary "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" > /dev/null
+IN_PROC_HTTP=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${QID_PROC_HTTP}'" 2>/dev/null)
+echo "Query visible in system.processes: $([ "${IN_PROC_HTTP}" -gt 0 ] && echo yes || echo no)"
+
+# 14. Native: detached query appears in system.processes immediately.
+echo "=== Native: Detached query visible in system.processes immediately after query_id returned ==="
+QID_PROC_NATIVE="${QUERY_ID_PREFIX}proc_native"
+${CLICKHOUSE_CLIENT} --query_id "${QID_PROC_NATIVE}" --detach_non_readonly_queries 1 \
+    -q "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" > /dev/null
+IN_PROC_NATIVE=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${QID_PROC_NATIVE}'" 2>/dev/null)
+echo "Query visible in system.processes: $([ "${IN_PROC_NATIVE}" -gt 0 ] && echo yes || echo no)"
+
+sleep 6  # Wait for both sleep(3) queries above to finish before proceeding.
+
+# --- ExceptionBeforeStart via duplicate query_id ---
+# A second request using the same query_id as a still-running detached query hits
+# QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING inside ProcessList::insert — still ExceptionBeforeStart.
+
+# 15. HTTP: duplicate query_id while first is still running — error returned, not query_id.
+echo "=== HTTP: ExceptionBeforeStart — duplicate query_id rejected ==="
+QID_DUP_HTTP="${QUERY_ID_PREFIX}dup_http"
+RESP_DUP1_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&detach_non_readonly_queries=1&query_id=${QID_DUP_HTTP}" \
+    -X POST --data-binary "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" 2>/dev/null)
+echo "First detach response: $([ -n "$RESP_DUP1_HTTP" ] && echo '<query_id>' || echo '<error>')"
+RESP_DUP2_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&detach_non_readonly_queries=1&query_id=${QID_DUP_HTTP}" \
+    -X POST --data-binary "INSERT INTO ${TABLE} SELECT 1" 2>/dev/null || true)
+if echo "$RESP_DUP2_HTTP" | grep -qi "QUERY_WITH_SAME_ID\|already running\|Code:"; then
+    echo "Duplicate query_id error returned: yes"
+else
+    echo "Duplicate query_id error returned: no (response: $RESP_DUP2_HTTP)"
+fi
+
+# 16. Native: duplicate query_id while first is still running — error returned, not query_id.
+echo "=== Native: ExceptionBeforeStart — duplicate query_id rejected ==="
+QID_DUP_NATIVE="${QUERY_ID_PREFIX}dup_native"
+RESP_DUP1_NATIVE=$(${CLICKHOUSE_CLIENT} --query_id "${QID_DUP_NATIVE}" --detach_non_readonly_queries 1 \
+    -q "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" 2>/dev/null || true)
+echo "First detach response: $([ -n "$RESP_DUP1_NATIVE" ] && echo '<query_id>' || echo '<error>')"
+RESP_DUP2_NATIVE=$(${CLICKHOUSE_CLIENT} --query_id "${QID_DUP_NATIVE}" --detach_non_readonly_queries 1 \
+    -q "INSERT INTO ${TABLE} SELECT 1" 2>&1 || true)
+if echo "$RESP_DUP2_NATIVE" | grep -qi "QUERY_WITH_SAME_ID\|already running"; then
+    echo "Duplicate query_id error returned: yes"
+else
+    echo "Duplicate query_id error returned: no (response: $RESP_DUP2_NATIVE)"
+fi
+
+sleep 6  # Wait for both sleep(3) dup queries above to finish.
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $TABLE"
 echo "OK"
