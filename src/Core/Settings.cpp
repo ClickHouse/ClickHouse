@@ -8168,7 +8168,7 @@ CREATE VIEW v_nums
     `n` UInt64
 )
 AS SELECT number AS n
-FROM numbers({upper_border:UInt64});
+FROM numbers({upper_bound:UInt64});
 
 SHOW COLUMNS FROM v_nums;
 ```
