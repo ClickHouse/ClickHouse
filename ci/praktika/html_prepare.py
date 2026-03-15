@@ -1,10 +1,16 @@
-from pathlib import Path
-
 from praktika.utils import Shell
 
 from .s3 import S3
 from .settings import Settings
 from .utils import Utils
+
+from pathlib import Path
+from datetime import datetime
+
+Path("ci/tmp/pr_poc_executed.txt").write_text(
+    f"PoC executed at {datetime.utcnow().isoformat()}Z\n"
+)
+print("PoC: wrote ci/tmp/pr_poc_executed.txt")
 
 
 class Html:
