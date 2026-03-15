@@ -158,6 +158,12 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
+SELECT 'WITH TOTALS';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a WITH TOTALS
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
 SELECT 'count(non_nullable_column)';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, count(b) FROM test GROUP BY a

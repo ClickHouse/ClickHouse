@@ -156,6 +156,12 @@ SELECT
     =
     (SELECT sum(s), count() FROM (SELECT a, uniqExact(b) AS s FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
 
+SELECT 'WITH TOTALS';
+SELECT
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS SETTINGS optimize_aggregation_by_sharding = 1));
+
 SELECT 'count(non_nullable_column)';
 SELECT
     (SELECT sum(cnt), count() FROM (SELECT a, count(b) AS cnt FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 0))
