@@ -102,7 +102,7 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
     if (isPermitted(context, columns))
     {
-        storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+        storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "", context);
     }
     else
     {

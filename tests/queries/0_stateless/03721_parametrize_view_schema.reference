@@ -10,7 +10,6 @@ FROM numbers({upper_bound:UInt64});
 SHOW COLUMNS IN 03271_parametrized_v;
 -- Should return no columns
 SHOW COLUMNS IN 03271_parametrized_v_expl;
-n	UInt64	NO		\N	
 -- Should return no columns
 SELECT *
 FROM system.columns
@@ -19,7 +18,6 @@ WHERE table = '03271_parametrized_v' AND database = currentDatabase();
 SELECT *
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
-default	03271_parametrized_v_expl	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
 -- Mismatched schema: should return no error
 CREATE VIEW 03271_parametrized_v_expl_mismatch (n UInt64, s String) AS
 SELECT number AS n
@@ -81,7 +79,7 @@ SELECT *
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
 default	03271_parametrized_v_expl	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
--- Mismatched schema: should return error on query tree building
+-- Mismatched schema: should not retuen error while use_declared_schema_for_parameterized_views != 'throwing', but should return no columns
 CREATE OR REPLACE VIEW 03271_parametrized_v_expl_mismatch (n UInt64, s String) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});

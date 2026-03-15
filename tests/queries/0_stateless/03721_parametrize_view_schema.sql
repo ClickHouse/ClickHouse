@@ -70,7 +70,7 @@ SELECT *
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
 
--- Mismatched schema: should return error on query tree building
+-- Mismatched schema: should not retuen error while use_declared_schema_for_parameterized_views != 'throwing', but should return no columns
 CREATE OR REPLACE VIEW 03271_parametrized_v_expl_mismatch (n UInt64, s String) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});

@@ -59,7 +59,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool enable_positional_arguments;
-    extern const ParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
+    extern const SettingsParameterizedViewSchemaDefinitionMode use_declared_schema_for_parameterized_views;
 }
 
 namespace ErrorCodes
@@ -160,6 +160,7 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
+    ContextPtr context,
     bool is_parameterized_view_)
     : StorageWithCommonVirtualColumns(table_id_)
 {
@@ -168,7 +169,7 @@ StorageView::StorageView(
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
         if (
-            (Setting::use_declared_schema_for_parameterized_views != ParameterizedViewSchemaDefinitionMode::OFF && !columns_.empty())
+            (context->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] != ParameterizedViewSchemaDefinitionMode::OFF && !columns_.empty())
             || !query.isParameterizedView()
         )
             storage_metadata.setColumns(columns_);
@@ -535,7 +536,7 @@ void registerStorageView(StorageFactory & factory)
             SelectIntersectExceptQueryVisitor{data}.visit(select);
         }
 
-        return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
+        return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment, args.getLocalContext());
     });
 }
 

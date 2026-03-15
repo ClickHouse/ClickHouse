@@ -2787,6 +2787,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
                                                      /* comment */ "",
+                                                    /* context */ shared_from_this(),
                                                      /* is_parameterized_view */ true);
             res->startup();
             function->setPreferSubqueryToFunctionFormatting(true);
@@ -3075,6 +3076,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
                                                 create,
                                                 ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
+            /* context */ shared_from_this(),
             /* is_parameterized_view */ true);
     res->startup();
     return res;
