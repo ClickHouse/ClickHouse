@@ -3403,11 +3403,12 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 static std::optional<std::pair<ActionsDAG, String>> buildLimitConditionDAG(
     const Block & header,
     const ASTPtr & expr,
-    ContextPtr context)
+    ContextPtr context,
+    PreparedSetsPtr prepared_sets)
 {
     if (!expr)
         return std::nullopt;
-    return std::make_optional(ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr));
+    return std::make_optional(ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr, prepared_sets));
 }
 
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
@@ -3432,8 +3433,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
 
         const auto & header = query_plan.getCurrentHeader();
-        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context);
-        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context);
+        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets);
+        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets);
         auto limit_range_step = std::make_unique<LimitRangeStep>(
             header,
             std::move(start_condition),

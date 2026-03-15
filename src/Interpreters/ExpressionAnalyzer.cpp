@@ -1921,14 +1921,15 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
 std::pair<ActionsDAG, String> ExpressionAnalyzer::buildFilterActionsDAG(
     ContextPtr context_,
     const Block & header,
-    const ASTPtr & expr)
+    const ASTPtr & expr,
+    PreparedSetsPtr prepared_sets_)
 {
     ASTPtr expr_copy = expr->clone();
     NamesAndTypesList source_columns;
     for (const auto & col : header)
         source_columns.emplace_back(col.name, col.type);
     auto syntax_result = TreeRewriter(context_).analyze(expr_copy, source_columns);
-    ExpressionAnalyzer analyzer(expr_copy, syntax_result, context_);
+    ExpressionAnalyzer analyzer(expr_copy, syntax_result, context_, 0, false, false, prepared_sets_);
     ActionsDAG dag(header.getColumnsWithTypeAndName());
     analyzer.getRootActions(expr_copy, false, dag);
     String column_name = expr_copy->getColumnName();

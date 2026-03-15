@@ -1104,7 +1104,8 @@ void addLimitRangeStep(
     QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const QueryNode & query_node)
+    const QueryNode & query_node,
+    UsefulSets & useful_sets)
 {
     if (query_node.isLimitWithTies())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
@@ -1134,6 +1135,12 @@ void addLimitRangeStep(
         query_node.getLimitUntil(),
         planner_context,
         "LIMIT UNTIL");
+
+    if (start_condition)
+        appendSetsFromActionsDAG(start_condition->first, useful_sets);
+
+    if (end_condition)
+        appendSetsFromActionsDAG(end_condition->first, useful_sets);
 
     auto limit_range_step = std::make_unique<LimitRangeStep>(
         query_plan.getCurrentHeader(),
@@ -2292,7 +2299,7 @@ void Planner::buildPlanForQueryNode()
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
         const bool has_limit_range = query_node.hasLimitAfter() || query_node.hasLimitUntil();
         if (has_limit_range && apply_limit && apply_offset)
-            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node);
+            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
         else if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 

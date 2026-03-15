@@ -141,7 +141,8 @@ public:
     static std::pair<ActionsDAG, String> buildFilterActionsDAG(
         ContextPtr context_,
         const Block & header,
-        const ASTPtr & expr);
+        const ASTPtr & expr,
+        PreparedSetsPtr prepared_sets_ = nullptr);
 
     /** Sets that require a subquery to be create.
       * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
