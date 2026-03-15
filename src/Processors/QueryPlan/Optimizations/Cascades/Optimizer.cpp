@@ -42,7 +42,9 @@ void CascadesOptimizer::optimize()
     Stopwatch optimizer_timer;
     OptimizerStatisticsPtr statistics;
     /// FIXME: statistics stub for testing
-    auto query_context = CurrentThread::get().getQueryContext();
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
     constexpr auto stats_hint_param_name = "_internal_join_table_stat_hints";
     if (query_context->getQueryParameters().contains(stats_hint_param_name))
         statistics = createStatisticsFromHint(query_context->getQueryParameters().at(stats_hint_param_name));
