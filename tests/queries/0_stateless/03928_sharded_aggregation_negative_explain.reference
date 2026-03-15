@@ -1,0 +1,8 @@
+Base case: sharded aggregation is used
+1
+Aggregation in order enabled, takes precedence over sharded aggregation
+1
+No GROUP BY keys
+1
+max_rows_to_group_by enabled
+1
