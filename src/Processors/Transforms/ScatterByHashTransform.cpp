@@ -19,6 +19,8 @@ ScatterByHashTransform::ScatterByHashTransform(
 IProcessor::Status ScatterByHashTransform::prepare()
 {
     auto & input = getInputs().front();
+
+    /// Free queues for outputs that have been closed by downstream.
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -26,6 +28,7 @@ IProcessor::Status ScatterByHashTransform::prepare()
             output_queues[shard].clear();
     }
 
+    /// All downstream consumers are done - nothing left to do.
     bool all_finished = true;
     for (auto & output : outputs)
     {
@@ -42,17 +45,14 @@ IProcessor::Status ScatterByHashTransform::prepare()
         return Status::Finished;
     }
 
+    /// Pending input chunk takes priority - split it before doing anything else.
     if (has_pending_input_chunk)
         return Status::Ready;
 
-    /// Any shard has chunks waiting in its queue
-    bool has_queued_chunks = false;
-
-    /// At least one queued chunk can be pushed right now (port is ready)
-    bool has_pushable_queued_chunks = false;
-
-    /// At least one shard's queue reached max_queued_chunks_per_shard
-    bool has_full_queued_shard = false;
+    /// Scan queues to decide what to do next.
+    bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
+    bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
+    bool has_full_queued_shard = false; /// at least one shard's queue reached max_queued_chunks_per_shard
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
@@ -70,6 +70,7 @@ IProcessor::Status ScatterByHashTransform::prepare()
             has_full_queued_shard = true;
     }
 
+    /// Input exhausted - drain remaining queues, then finish.
     if (input.isFinished())
     {
         if (has_queued_chunks)
@@ -80,37 +81,39 @@ IProcessor::Status ScatterByHashTransform::prepare()
         return Status::Finished;
     }
 
-    /// If all pending shard queues are blocked, do not keep pulling input.
+    /// Cannot push any output port
     if (has_queued_chunks && !has_pushable_queued_chunks)
         return Status::PortFull;
 
-    /// Keep at most max_queued_chunks_per_shard buffered chunks per live shard.
+    /// At least one queue is full - drain before pulling more input.
     if (has_full_queued_shard)
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
+    /// Try to pull a new input chunk.
     input.setNeeded();
     if (input.hasData())
     {
-        /// Pull one input chunk and split it into per-shard chunks in work().
         pending_input_chunk = input.pull();
         has_pending_input_chunk = true;
         return Status::Ready;
     }
 
+    /// No new input yet - drain what we can while waiting.
     if (has_pushable_queued_chunks)
         return Status::Ready;
     return Status::NeedData;
 }
 
+/// Split pending input chunk into per-shard queues, then drain queues to output ports.
 void ScatterByHashTransform::work()
 {
     if (has_pending_input_chunk)
     {
-        /// Split the newly pulled input chunk and append per-shard chunks to output queues.
         generateOutputChunks();
         has_pending_input_chunk = false;
     }
 
+    /// Push one queued chunk per shard (if the port can accept it).
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -140,15 +143,16 @@ void ScatterByHashTransform::generateOutputChunks()
     auto columns = pending_input_chunk.detachColumns();
     chassert(!columns.empty());
 
+    /// Materialize key + argument columns and compute per-row hashes.
     auto [payload_columns, key_hashes] = params->aggregator.prepareColumnsForSharding(columns, num_rows, cached_hash_variants);
     chassert(payload_columns.size() == outputs.front().getHeader().columns());
     chassert(key_hashes->size() == num_rows);
     chassert(std::all_of(payload_columns.begin(), payload_columns.end(), [num_rows](const auto & col) { return col->size() == num_rows; }));
 
-    /// Build per-shard row indices.
+    /// Partition rows by hash(key) % num_shards.
     std::vector<IColumn::Selector> per_shard_indices(num_shards);
     for (size_t shard = 0; shard < num_shards; ++shard)
-        /// Assume uniform distribution of keys
+        /// Assume uniform distribution of keys.
         per_shard_indices[shard].reserve(num_rows / num_shards);
 
     for (size_t row = 0; row < num_rows; ++row)
@@ -158,7 +162,7 @@ void ScatterByHashTransform::generateOutputChunks()
     }
 
     /// Emit one chunk per shard. Every chunk shares the same full-size payload columns
-    /// (via ColumnPtr copies) and carries a ShardedChunkInfo with shared hashes
+    /// (zero-copy via ColumnPtr) and carries a ShardedChunkInfo with shared hashes
     /// plus that shard's row indices.
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -169,6 +173,9 @@ void ScatterByHashTransform::generateOutputChunks()
         if (per_shard_indices[shard].empty())
             continue;
 
+        /// num_rows is the full input chunk row count, not this shard's subset, because
+        /// the payload columns are shared full-size. ShardedAggregatingTransform uses
+        /// ShardedChunkInfo::row_indices for the actual row count.
         Chunk output_chunk(payload_columns, num_rows);
         output_chunk.getChunkInfos().add(std::make_shared<ShardedChunkInfo>(key_hashes, std::move(per_shard_indices[shard])));
         output_queues[shard].push_back(std::move(output_chunk));
