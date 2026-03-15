@@ -3445,6 +3445,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             header,
             std::move(start_condition),
             std::move(end_condition),
+            query.limit_after_all,
             limit_length);
         limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
         query_plan.addStep(std::move(limit_range_step));

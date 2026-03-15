@@ -52,6 +52,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    hash_state.update(limit_after_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -246,6 +247,8 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         {
             ostr << s.nl_or_ws << indent_str << " AFTER ";
             limitAfter()->format(ostr, s, state, frame);
+            if (limit_after_all)
+                ostr << " ALL";
             if (limitUntil())
             {
                 ostr << s.nl_or_ws << indent_str << " UNTIL ";

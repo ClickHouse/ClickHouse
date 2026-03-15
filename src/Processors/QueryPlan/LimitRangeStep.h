@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Executes LIMIT [n] AFTER expr [UNTIL expr]. See LimitRangeTransform. */
+/** Executes LIMIT [n] AFTER expr [ALL] [UNTIL expr]. See LimitRangeTransform. */
 class LimitRangeStep : public ITransformingStep
 {
 public:
@@ -16,6 +16,7 @@ public:
         const SharedHeader & input_header_,
         std::optional<std::pair<ActionsDAG, String>> start_condition_,
         std::optional<std::pair<ActionsDAG, String>> end_condition_,
+        bool start_all_,
         std::optional<UInt64> limit_);
 
     String getName() const override { return "LimitRange"; }
@@ -44,6 +45,7 @@ private:
 
     std::optional<std::pair<ActionsDAG, String>> start_condition;
     std::optional<std::pair<ActionsDAG, String>> end_condition;
+    bool start_all = false;
     std::optional<UInt64> limit;
 };
 

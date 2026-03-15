@@ -417,6 +417,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!expression_p.parse(pos, limit_after, expected))
                 return false;
 
+            select_query->limit_after_all = s_all.ignore(pos, expected);
+
             if (s_until.ignore(pos, expected))
             {
                 if (!expression_p.parse(pos, limit_until, expected))
@@ -496,6 +498,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 {
                     if (!expression_p.parse(pos, limit_after, expected))
                         return false;
+                    select_query->limit_after_all = s_all.ignore(pos, expected);
                     if (s_until.ignore(pos, expected))
                     {
                         if (!expression_p.parse(pos, limit_until, expected))

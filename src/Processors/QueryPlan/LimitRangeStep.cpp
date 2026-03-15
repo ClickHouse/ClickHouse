@@ -34,10 +34,12 @@ LimitRangeStep::LimitRangeStep(
     const SharedHeader & input_header_,
     std::optional<std::pair<ActionsDAG, String>> start_condition_,
     std::optional<std::pair<ActionsDAG, String>> end_condition_,
+    bool start_all_,
     std::optional<UInt64> limit_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , start_condition(std::move(start_condition_))
     , end_condition(std::move(end_condition_))
+    , start_all(start_all_)
     , limit(limit_)
 {
 }
@@ -65,7 +67,7 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     pipeline.addSimpleTransform(
-        [start_expression, start_column_name, end_expression, end_column_name, limit_value = limit]
+        [start_expression, start_column_name, end_expression, end_column_name, start_all_value = start_all, limit_value = limit]
         (const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -77,6 +79,7 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             start_column_name,
             end_expression,
             end_column_name,
+            start_all_value,
             limit_value);
     });
 }
@@ -90,7 +93,11 @@ void LimitRangeStep::describeActions(FormatSettings & format_settings) const
     else
         format_settings.out << "none";
     if (start_condition)
+    {
         format_settings.out << " AFTER";
+        if (start_all)
+            format_settings.out << " ALL";
+    }
     if (end_condition)
         format_settings.out << " UNTIL";
     format_settings.out << '\n';
@@ -103,6 +110,7 @@ void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
     else
         map.add("Limit", "none");
     map.add("Has After", start_condition.has_value());
+    map.add("After All", start_all);
     map.add("Has Until", end_condition.has_value());
 }
 
@@ -115,6 +123,8 @@ void LimitRangeStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (limit)
         flags |= 4;
+    if (start_all)
+        flags |= 8;
 
     writeIntBinary(flags, ctx.out);
 
@@ -165,6 +175,7 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(),
         read_condition(flags & 1),
         read_condition(flags & 2),
+        flags & 8,
         limit_value);
 }
 

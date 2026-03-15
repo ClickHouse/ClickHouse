@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -10,9 +11,10 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** Implements LIMIT [n] AFTER expr [UNTIL expr].
- * Outputs rows starting from the first row where start condition is true,
+/** Implements LIMIT [n] AFTER expr [ALL] [UNTIL expr].
+ * Without ALL, outputs rows starting from the first row where start condition is true,
  * until the first row where end condition is true (exclusive) or limit is reached.
+ * With ALL, outputs the union of all matching windows without duplicating rows.
  * If no start condition: output from first row.
  * If no end condition: output until limit or stream end.
  * If there is no limit length: no row cap.
@@ -26,6 +28,7 @@ public:
         const String & start_column_name_,
         ExpressionActionsPtr end_expression_,
         const String & end_column_name_,
+        bool start_all_,
         std::optional<UInt64> limit_);
 
     String getName() const override { return "LimitRange"; }
@@ -39,14 +42,25 @@ private:
     /// Slice chunk to rows [start_row, end_row)
     static void sliceChunk(Chunk & chunk, size_t start_row, size_t end_row);
 
+    /// Filter chunk by arbitrary subset of rows.
+    static void filterChunk(Chunk & chunk, const IColumn::Filter & filter, size_t filtered_rows);
+
+    static bool isTrueAt(const ColumnPtr & column, size_t row_num);
+
+    void transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col);
+
     ExpressionActionsPtr start_expression;
     String start_column_name;
     ExpressionActionsPtr end_expression;
     String end_column_name;
+    bool start_all = false;
     std::optional<UInt64> limit;
 
     bool started = false;
     UInt64 rows_output = 0;
+    UInt64 rows_read = 0;
+    UInt64 repeated_window_end = 0;
+    bool has_repeated_unbounded_window = false;
 
     size_t start_column_position = 0;
     size_t end_column_position = 0;

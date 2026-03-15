@@ -132,10 +132,12 @@ You can limit the result to a *range* of rows between two boundary conditions:
 
 ```sql
 LIMIT [n] AFTER start_expr [UNTIL end_expr]
+LIMIT [n] AFTER start_expr ALL [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
 - `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
+- `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
 - `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
 - `n`: Maximum number of rows to return (optional; when present, caps the range).
 
@@ -151,6 +153,9 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 3;
 
 -- Rows from first row where number >= 2 until (exclusive) first row where number >= 6
 SELECT number FROM numbers(10) ORDER BY number LIMIT 10 AFTER number >= 2 UNTIL number >= 6;
+
+-- Emit 2 rows after every matching row, without duplicating overlaps
+SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number IN (2, 3, 6) ALL;
 ```
 
 :::note

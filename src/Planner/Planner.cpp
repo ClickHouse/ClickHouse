@@ -1146,6 +1146,7 @@ void addLimitRangeStep(
         query_plan.getCurrentHeader(),
         std::move(start_condition),
         std::move(end_condition),
+        query_node.isLimitAfterAll(),
         limit_length);
     limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
     query_plan.addStep(std::move(limit_range_step));

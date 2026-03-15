@@ -8,6 +8,8 @@
 #include <Processors/Chunk.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -21,18 +23,27 @@ static bool canUseTypeForCondition(const DataTypePtr & type)
     return type->canBeUsedInBooleanContext();
 }
 
+static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
+{
+    if (lhs > std::numeric_limits<UInt64>::max() - rhs)
+        return std::numeric_limits<UInt64>::max();
+    return lhs + rhs;
+}
+
 LimitRangeTransform::LimitRangeTransform(
     SharedHeader header_,
     ExpressionActionsPtr start_expression_,
     const String & start_column_name_,
     ExpressionActionsPtr end_expression_,
     const String & end_column_name_,
+    bool start_all_,
     std::optional<UInt64> limit_)
     : ISimpleTransform(header_, header_, true)
     , start_expression(std::move(start_expression_))
     , start_column_name(start_column_name_)
     , end_expression(std::move(end_expression_))
     , end_column_name(end_column_name_)
+    , start_all(start_all_)
     , limit(limit_)
 {
     if (limit && *limit == 0)
@@ -60,33 +71,34 @@ LimitRangeTransform::LimitRangeTransform(
     }
 }
 
+bool LimitRangeTransform::isTrueAt(const ColumnPtr & column, size_t row_num)
+{
+    if (!column)
+        return false;
+
+    const IColumn * col = column.get();
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(col))
+    {
+        if (nullable->isNullAt(row_num))
+            return false;
+
+        col = &nullable->getNestedColumn();
+    }
+
+    if (const auto * uint8 = typeid_cast<const ColumnUInt8 *>(col))
+        return uint8->getData()[row_num] != 0;
+
+    return column->getBool(row_num);
+}
+
 size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_rows)
 {
     if (!column || num_rows == 0)
         return num_rows;
 
-    const IColumn * col = column.get();
-    const UInt8 * null_map = nullptr;
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(col))
-    {
-        null_map = nullable->getNullMapData().data();
-        col = &nullable->getNestedColumn();
-    }
-
-    if (const auto * uint8 = typeid_cast<const ColumnUInt8 *>(col))
-    {
-        const auto & data = uint8->getData();
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            if ((!null_map || !null_map[i]) && data[i] != 0)
-                return i;
-        }
-        return num_rows;
-    }
-
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if ((!null_map || !null_map[i]) && column->getBool(i))
+        if (isTrueAt(column, i))
             return i;
     }
     return num_rows;
@@ -106,6 +118,65 @@ void LimitRangeTransform::sliceChunk(Chunk & chunk, size_t start_row, size_t end
     chunk.setColumns(std::move(columns), length);
 }
 
+void LimitRangeTransform::filterChunk(Chunk & chunk, const IColumn::Filter & filter, size_t filtered_rows)
+{
+    auto columns = chunk.detachColumns();
+    for (auto & col : columns)
+    {
+        if (isColumnConst(*col))
+            col = col->cut(0, filtered_rows);
+        else
+            col = col->filter(filter, filtered_rows);
+    }
+
+    chunk.setColumns(std::move(columns), filtered_rows);
+}
+
+void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col)
+{
+    const size_t num_rows = chunk.getNumRows();
+    IColumn::Filter filter(num_rows, 0);
+    size_t filtered_rows = 0;
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        const UInt64 current_row = rows_read + row;
+        const bool end_match = end_col && isTrueAt(end_col, row);
+        if (end_match)
+        {
+            has_repeated_unbounded_window = false;
+            repeated_window_end = current_row;
+        }
+
+        const bool start_match = start_col && isTrueAt(start_col, row);
+        if (start_match && !end_match)
+        {
+            if (limit)
+                repeated_window_end = std::max(repeated_window_end, saturatingAdd(current_row, *limit));
+            else
+                has_repeated_unbounded_window = true;
+        }
+
+        const bool should_emit = has_repeated_unbounded_window || (limit && current_row < repeated_window_end);
+        if (should_emit)
+        {
+            filter[row] = 1;
+            ++filtered_rows;
+        }
+    }
+
+    rows_read += num_rows;
+
+    if (filtered_rows == 0)
+    {
+        chunk.clear();
+        return;
+    }
+
+    if (filtered_rows < num_rows)
+        filterChunk(chunk, filter, filtered_rows);
+}
+
 void LimitRangeTransform::transform(Chunk & chunk)
 {
     if (chunk.empty())
@@ -123,7 +194,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
     size_t output_end = num_rows;
 
     ColumnPtr start_col;
-    if (!started && start_expression)
+    if (start_expression && (start_all || !started))
     {
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         start_expression->execute(block, block.rows());
@@ -136,6 +207,12 @@ void LimitRangeTransform::transform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         end_expression->execute(block, block.rows());
         end_col = block.getByPosition(end_column_position).column;
+    }
+
+    if (start_all)
+    {
+        transformAll(chunk, start_col, end_col);
+        return;
     }
 
     if (!started)
