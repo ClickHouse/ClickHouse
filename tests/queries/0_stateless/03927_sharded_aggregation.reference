@@ -1,0 +1,55 @@
+Single String key + sum
+1
+Numeric expression key
+1
+No aggregate functions (aggregates_size == 0)
+1
+count() fast path (is_simple_count)
+1
+UInt8 key path
+1
+Multiple aggregate functions (sum, count, max)
+1
+Nullable key
+1
+UInt16 key (key16)
+1
+UInt32 key (key32)
+1
+UInt64 key (key64)
+1
+FixedString key
+1
+Int8 key
+1
+Int16 key
+1
+Int32 key
+1
+Int64 key
+1
+Float32 key
+1
+Float64 key
+1
+min
+1
+avg
+1
+any
+1
+uniq
+1
+uniqExact
+1
+count(non_nullable_column)
+1
+Empty table
+1
+Table Sparse
+1
+Sparse aggregate argument
+1
+Explicit external aggregation settings are ignored on sharded path
+1
+1
