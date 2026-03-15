@@ -1497,6 +1497,18 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
     )
 );
 
+INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP(RD)", 0.88)),
+        ::testing::Values(
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 1024),
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 2048),
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 2816)
+        )
+    )
+);
+
 INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
     CodecTest,
     ::testing::Combine(
@@ -1511,10 +1523,25 @@ INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
     )
 );
 
+INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP(RD)", 0.83)),
+        ::testing::Values(
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 1024),
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2048),
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2816)
+        )
+    )
+);
+
 INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
     CodecTest,
     ::testing::Combine(
-        ::testing::Values(Codec("ALP")),
+        ::testing::Values(
+            Codec("ALP"),
+            Codec("ALP(RD)")
+        ),
         ::testing::ValuesIn(
               generatePyramidOfSequences<Float64>(2050, G(ALPSequentialGenerator.template operator()<Float64>()))
             + generatePyramidOfSequences<Float32>(2050, G(ALPSequentialGenerator.template operator()<Float32>()))

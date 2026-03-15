@@ -792,7 +792,7 @@ public:
     UInt32 encode(const char * source, const UInt32 source_size, char * dest)
     {
         if (source_size % sizeof(T) != 0)
-            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ALP codec, data size {} is not aligned to {}", source_size, sizeof(T));
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ALP(RD) codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
         UInt32 float_count = source_size / sizeof(T);
 
@@ -1232,7 +1232,7 @@ UInt32 CompressionCodecALP::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     // Write ALP header
-    *dest++ = ALP_CODEC_VERSION | (variant == Variant::RD ? 1 << 4 : 0); // meta_byte
+    *dest++ = ALP_CODEC_VERSION | (variant == Variant::RD ? 1 << 4 : 0); // meta_byte (version and variant)
     *dest++ = float_width;
     unalignedStoreLittleEndian<UInt16>(dest, ALP_BLOCK_MAX_FLOAT_COUNT);
     dest += sizeof(UInt16);
@@ -1348,9 +1348,9 @@ void registerCodecALP(CompressionCodecFactory & factory)
                     "ALP codec variant must be an identifier with STD or RD");
 
             const String variant_str = variant_ident->shortName();
-            if (boost::iequals(variant_str, "STD"))
+            if (variant_str == "STD")
                 variant = CompressionCodecALP::Variant::STD;
-            else if (boost::iequals(variant_str, "RD"))
+            else if (variant_str == "RD")
                 variant = CompressionCodecALP::Variant::RD;
             else
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
