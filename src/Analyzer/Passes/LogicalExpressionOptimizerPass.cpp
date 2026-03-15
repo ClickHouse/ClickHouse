@@ -860,9 +860,12 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            tryOptimizeAndEqualsNotEqualsChain(node);
+            /// Run transitive inference first so that the conflict detector can see inferred equalities.
+            /// E.g. `x = 3 AND x = y AND y = 5` — the compare-chain pass infers `x = 5`,
+            /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
             if (getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
+            tryOptimizeAndEqualsNotEqualsChain(node);
             return;
         }
 
@@ -1243,7 +1246,12 @@ private:
                         function_node.getArguments().getNodes().push_back(and_node);
                     }
 
-                    findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                    /// Don't recurse through constant intermediate nodes — any inference would be
+                    /// redundant. E.g. `x < 3 AND y > 3 AND y < 10` builds the chain
+                    /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
+                    /// which is strictly weaker than the existing `x < 3`.
+                    if (!left.first->as<ConstantNode>())
+                        findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };
