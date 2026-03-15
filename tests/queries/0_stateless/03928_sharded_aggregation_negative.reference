@@ -4,3 +4,9 @@ Aggregation in order enabled, takes precedence over sharded aggregation
 1
 No GROUP BY keys
 1
+LowCardinality key
+1
+GROUPING SETS
+1
+Single stream (max_threads = 1)
+1
