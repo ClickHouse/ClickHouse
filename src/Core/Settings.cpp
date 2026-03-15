@@ -3793,7 +3793,7 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
-    DECLARE(Bool, optimize_aggregation_by_sharding, false, R"(
+    DECLARE(Bool, optimize_aggregation_by_sharding, true, R"(
 Enables sharded `GROUP BY` optimization that partitions data by the grouping key before aggregation, allowing each thread to aggregate independently without a merge phase.
 
 Possible values:
