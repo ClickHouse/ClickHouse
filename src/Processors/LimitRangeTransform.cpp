@@ -66,15 +66,19 @@ size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_r
         return num_rows;
 
     const IColumn * col = column.get();
+    const UInt8 * null_map = nullptr;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(col))
+    {
+        null_map = nullable->getNullMapData().data();
         col = &nullable->getNestedColumn();
+    }
 
     if (const auto * uint8 = typeid_cast<const ColumnUInt8 *>(col))
     {
         const auto & data = uint8->getData();
         for (size_t i = 0; i < num_rows; ++i)
         {
-            if (data[i] != 0)
+            if ((!null_map || !null_map[i]) && data[i] != 0)
                 return i;
         }
         return num_rows;
@@ -82,7 +86,7 @@ size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_r
 
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (column->getBool(i))
+        if ((!null_map || !null_map[i]) && column->getBool(i))
             return i;
     }
     return num_rows;

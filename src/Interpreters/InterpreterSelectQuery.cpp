@@ -224,7 +224,6 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -1592,8 +1591,15 @@ InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffse
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, Fractional Offset, Negative or Fractional Limit.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN,
+    /// LIMIT AFTER/UNTIL, Fractional Offset, Negative or Fractional Limit.
+    if (!query.distinct
+        && !query.limitBy()
+        && !query.limit_with_ties
+        && !query.limitAfter()
+        && !query.limitUntil()
+        && !query.arrayJoinExpressionList().first
+        && query.limitLength())
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
 
@@ -3253,7 +3259,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// (1) ORDER BY is not executed
         /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
         /// then you can get no more than limit_length + limit_offset of different rows.
-        if ((!query.orderBy() || !before_order) && !query.limitBy())
+        if ((!query.orderBy() || !before_order) && !query.limitBy() && !query.limitAfter() && !query.limitUntil())
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
             if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
