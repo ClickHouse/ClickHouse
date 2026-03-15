@@ -57,6 +57,7 @@
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <Common/ThreadPool.h>
 #include <unordered_map>
 #include <utility>
 #include <boost/algorithm/string/trim.hpp>
@@ -635,22 +636,23 @@ void HTTPHandler::processQuery(
                 auto started_promise = std::make_shared<std::promise<void>>();
                 auto started_future = started_promise->get_future();
 
-                PODArray<char> async_body_data = std::move(body_data);
-                std::thread(
+                auto async_body_data = std::make_shared<PODArray<char>>(std::move(body_data));
+                GlobalThreadPool::instance().scheduleOrThrow(
                     [query_was_in_body, query, body_for_thread = std::move(async_body_data), async_context, started_promise]() mutable
                     {
+                        // TODO(kavi): should we need new ThreadName?
                         setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
                         ThreadStatus thread_status;
                         CurrentThread::QueryScope async_query_scope = CurrentThread::QueryScope::create(async_context);
-                        bool signaled = false;
+                        bool query_started = false;
 
                         /// Called by executeQuery after ProcessList::insert and quota checks pass —
                         /// the earliest point where ExceptionBeforeStart can no longer occur.
                         auto on_started = [&]()
                         {
-                            if (!signaled)
+                            if (!query_started)
                             {
-                                signaled = true;
+                                query_started = true;
                                 started_promise->set_value();
                             }
                         };
@@ -658,8 +660,8 @@ void HTTPHandler::processQuery(
                         try
                         {
                             String full_input = query_was_in_body
-                                ? String(body_for_thread.data(), body_for_thread.size())
-                                : (body_for_thread.empty() ? query : query + String(body_for_thread.data(), body_for_thread.size()));
+                                ? String(body_for_thread->data(), body_for_thread->size())
+                                : (body_for_thread->empty() ? query : query + String(body_for_thread->data(), body_for_thread->size()));
                             PODArray<char> discard_buf;
                             WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
                             executeQuery(
@@ -676,13 +678,12 @@ void HTTPHandler::processQuery(
                         }
                         catch (...)
                         {
-                            if (!signaled)
+                            if (!query_started)
                                 started_promise->set_exception(std::current_exception());
                             else
                                 tryLogCurrentException(getLogger("HTTPHandler"), "Detached HTTP non-readonly query failed after start");
                         }
-                    })
-                    .detach();
+                    });
 
                 detach_started = std::move(started_future);
                 detach_query_id = context->getClientInfo().current_query_id;

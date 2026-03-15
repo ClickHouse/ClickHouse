@@ -6,6 +6,7 @@
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <Common/ThreadPool.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
@@ -633,7 +634,7 @@ void TCPHandler::runImpl()
                             auto started_promise = std::make_shared<std::promise<void>>();
                             auto started_future = started_promise->get_future();
 
-                            std::thread([async_context, query_copy, started_promise]() mutable
+                            GlobalThreadPool::instance().scheduleOrThrow([async_context, query_copy, started_promise]() mutable
                             {
                                 setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
                                 ThreadStatus thread_status;
@@ -670,7 +671,7 @@ void TCPHandler::runImpl()
                                     else
                                         tryLogCurrentException(getLogger("TCPHandler"), "Detached native non-readonly query failed after start");
                                 }
-                            }).detach();
+                            });
 
                             detach_started = std::move(started_future);
                             detach_query_id = query_state->query_context->getClientInfo().current_query_id;
@@ -687,19 +688,9 @@ void TCPHandler::runImpl()
                 if (detach_started.has_value())
                 {
                     /// Block until the background thread signals that the query has passed
-                    /// ProcessList::insert and quota checks. Throws if those checks fail,
-                    /// which propagates the exception to the client through the normal TCP
-                    /// exception path (sendException in runImpl) — not the sync fallback above.
-                    try
-                    {
-                        detach_started->get();
-                    }
-                    catch (const Exception &e){
-                        // this is the result of any exception happened before actually starting the query
-                        // and should be reported to the user.
-                        std::cout<<"Debug!!! "<<"Got the exception at the main thread. Is it still not sent to the user? exception: "<<e.what()<<"\n";
-                        sendException(e, false);
-                    }
+                    /// ProcessList::insert and quota checks. Re-throw on failure so the
+                    /// outer exception handler (runImpl) sends it to the client via sendException.
+                    detach_started->get();
 
                     /// Send result block with query_id (single column, single row)
                     auto col = ColumnString::create();
