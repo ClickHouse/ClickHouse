@@ -35,7 +35,7 @@ namespace DB
  * ALP codec header (4 bytes):
  *   - meta byte (1 byte):
  *     - bits 0-3: codec version (currently 1)
- *     - bit 4:    variant flag (0 = ALP, 1 = ALP_RD)
+ *     - bit 4:    variant flag (0 = ALP (STD), 1 = ALP RD)
  *     - bits 5-7: reserved (must be 0)
  *   - float width (1 byte):
  *     - 4 or 8 bytes (Float32 / Float64)
@@ -45,8 +45,9 @@ namespace DB
  * The input column is split into blocks of up to ALP_BLOCK_MAX_FLOAT_COUNT values (1024).
  * Each block is encoded independently and can be either compressed or left raw, depending on the estimated gain.
  *
+ * ---
  *
- * Standard (STD) ALP Variant
+ * STANDARD ALP Variant (STD)
  * Core Idea: Decimal-Based Integerization
  * The ALP paper observes that most stored doubles originate as decimals. For a block, we try to represent each float value as an integer:
  *   d = (Int64) round(v * 10^e * 10^(-f))
@@ -87,18 +88,38 @@ namespace DB
  *   - 1 byte: 255 (uncompressed block marker)
  *   - Raw numbers for the block
  *
- * RD (Real Doubles) ALP Variant
- * Core Idea: Dictionary Encoding of Left Bits
- * TODO: Add description of RD variant
- * Block schema:
- *   1 byte (left bit width)
- *   1 byte (dictionary size)
- *   2-bytes (exceptions count)
- *   dictionary entries for left bits (dictionary size entries, each entry is left bit pattern)
- *   ffor payload for dictionary indices
- *   ffor payload for right bits
- *   exceptions (index + raw value)
+ * ---
  *
+ * REAL DOUBLES ALP Variant (RD)
+ * Core Idea: Bit-Split with Dictionary Encoding of the High Bits
+ * Instead of treating values as decimals, it reinterprets every floating-point value as an unsigned integer (32/64-bit)
+ * and splits the bit pattern into two parts at a chosen cut point `left_bits` (1–16) and `right_bits` (remaining bits):
+ *
+ *   value_bits = left_part (top left_bits bits) | right_part (remaining right_bits bits)
+ *
+ * The key observation is that in many float columns the high bits-sign, exponent, and top mantissa - repeat heavily across values in a block.
+ * The left parts therefore form a small vocabulary that can be represented as a compact dictionary (up to 8 entries), while the right parts are bit-packed directly.
+ *
+ * Per-Block left_bits Selection
+ * For each block, the encoder searches for the `left_bits` split point that minimises the estimated encoded block size.
+ * It samples up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values evenly from the block and evaluates every candidate left_bits from 1 to ALP_RD_CUTTING_LIMIT (16).
+ *
+ * Per-Block Encoding Schema (Compressed Case)
+ *   - 1 byte:  left bit-width (UInt8, valid range 1–16)
+ *   - 1 byte:  dictionary size (Int8, valid range 0-8)
+ *   - 2 bytes: exception count (UInt16)
+ *   - Dictionary: dict_size × 2 bytes (UInt16), each a left-part bit pattern, ordered by frequency descending (index 0 = most frequent)
+ *   - Bit-packed dictionary indices: FFOR payload, "bit-width of dictionary size" bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
+ *   - Bit-packed right parts: FFOR payload, right bits per slot, always sized for ALP_BLOCK_MAX_FLOAT_COUNT (1024) slots and base 0
+ *   - Exceptions (one per non-dictionary value):
+ *       - UInt16 index (position in source block - offset)
+ *       - raw value (float or double)
+ *
+ * Per-Block Encoding Schema (Uncompressed Case)
+ *   - 1 byte: 255 (uncompressed block marker)
+ *   - Raw numbers for the block
+ *
+ * ---
  *
  * Notes
  *   - Supported types: 4 and 8 bytes floating point.
@@ -167,7 +188,7 @@ constexpr UInt32 ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS = 32;
 constexpr UInt32 ALP_PARAMS_ESTIMATION_CANDIDATES = 5;
 
 /**
- * ALP RD block header size in bytes: left bit width (1) + dictionary size (1) + exception count (2)
+ * ALP RD block header size in bytes: left bit-width (1) + dictionary size (1) + exception count (2)
  */
 constexpr UInt32 ALP_RD_BLOCK_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt16);
 
@@ -175,8 +196,11 @@ constexpr UInt32 ALP_RD_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt8);
 constexpr UInt8 ALP_RD_UNENCODED_BLOCK_BIT_WIDTH = 255;
 
 constexpr UInt8 ALP_RD_CUTTING_LIMIT = 16;
+/**
+ * Limit the dictionary size to 8 entries (3 bits to encode the dictionary index).
+ */
 constexpr UInt8 ALP_RD_MAX_DICT_BITS = 3;
-constexpr UInt16 ALP_RD_MAX_DICT_SIZE = (1 << ALP_RD_MAX_DICT_BITS); // 8
+constexpr UInt8 ALP_RD_MAX_DICT_SIZE = (1 << ALP_RD_MAX_DICT_BITS); // 8
 
 /**
  * Alignment for internal ALP buffers. Used to align buffers for FFOR encoding/decoding.
@@ -278,18 +302,20 @@ struct ALPUtils
 {
     /**
      * Calculate the number of bits required to encode the given value, based on the position of the most significant bit.
+     * Returns 0 for value 0, otherwise returns the position of the highest set bit.
      */
     static UInt8 calculateBitWidth(const UInt64 value)
     {
         if (unlikely(value == 0))
             return 0;
 
-        const auto bits = sizeof(Int64) * 8 - getLeadingZeroBitsUnsafe<UInt64>(value);
+        const auto bits = sizeof(UInt64) * 8 - getLeadingZeroBitsUnsafe<UInt64>(value);
         return static_cast<UInt8>(bits);
     }
 
     /**
      * Write an unencoded block to the destination buffer.
+     * Returns the pointer to the end of the written block.
      */
     static char * writeUnencoded(const char * source, const UInt16 float_count, char * dest)
     {
@@ -302,11 +328,13 @@ struct ALPUtils
 
     /**
      * Decompress an unencoded block from the source buffer to the destination buffer.
+     * Updates the source and destination pointers to the end of the read and written data, respectively.
+     * Throws an exception if the source or destination buffers do not have enough space for the unencoded block.
      */
     static void decompressUnencodedBlock(const char * & source, const char * source_end, char * & dest, const char * dest_end, const UInt16 float_count)
     {
         const size_t block_size = float_count * sizeof(T);
-        if (source + block_size > source_end || dest + block_size > dest_end)
+        if (unlikely(source + block_size > source_end || dest + block_size > dest_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data, incomplete uncompressed block");
 
         memcpy(dest, source, block_size);
