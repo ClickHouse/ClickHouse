@@ -65,7 +65,7 @@ SELECT count() > 0 FROM (
 SELECT 'Setting is off: transform is be applied';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a
-    SETTINGS max_threads = 8, optimize_aggregation_by_sharding = 0
+    SETTINGS optimize_aggregation_by_sharding = 0
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'UInt16 key (key16)';

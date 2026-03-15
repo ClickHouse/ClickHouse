@@ -6,3 +6,5 @@ Multi-key GROUP BY
 1
 -State combinator (sumState)
 1
+max_rows_to_group_by
+1

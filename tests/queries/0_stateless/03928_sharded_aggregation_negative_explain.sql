@@ -46,16 +46,10 @@ SELECT count() = 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
-SELECT 'max_rows_to_group_by enabled';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'any'
-) WHERE explain LIKE '%ScatterByHashTransform%';
-
 SELECT 'LowCardinality key';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT lc_key, sum(b) FROM test_sharded_agg_neg GROUP BY lc_key
-    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8
+    SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'GROUPING SETS';
@@ -64,13 +58,13 @@ SELECT count() = 0 FROM (
     SELECT sum(b) AS s
     FROM test_sharded_agg_neg
     GROUP BY GROUPING SETS ((a), (u8))
-    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8
+    SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'In-order aggregation (force_aggregation_in_order)';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1, force_aggregation_in_order = 1, max_threads = 8
+    SETTINGS optimize_aggregation_by_sharding = 1, force_aggregation_in_order = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'Single stream (max_threads = 1)';

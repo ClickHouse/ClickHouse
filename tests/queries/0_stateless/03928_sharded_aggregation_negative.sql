@@ -51,15 +51,11 @@ SELECT
     =
     (SELECT sum(b) FROM test_sharded_agg_neg SETTINGS optimize_aggregation_by_sharding = 1);
 
--- max_rows_to_group_by with 'any' mode is non-deterministic (which keys survive depends
--- on processing order), so correctness comparison is not reliable. The EXPLAIN test in
--- 03928_sharded_aggregation_negative_explain.sql verifies that sharded aggregation is not used.
-
 SELECT 'LowCardinality key';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 0, max_threads = 8))
+    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8));
+    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 1));
 
 SELECT 'GROUPING SETS';
 SELECT
@@ -67,13 +63,13 @@ SELECT
         (SELECT sum(b) AS s
          FROM test_sharded_agg_neg
          GROUP BY GROUPING SETS ((a), (u8))
-         SETTINGS optimize_aggregation_by_sharding = 0, max_threads = 8))
+         SETTINGS optimize_aggregation_by_sharding = 0))
     =
     (SELECT sum(s), count() FROM
         (SELECT sum(b) AS s
          FROM test_sharded_agg_neg
          GROUP BY GROUPING SETS ((a), (u8))
-         SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 8));
+         SETTINGS optimize_aggregation_by_sharding = 1));
 
 SELECT 'Single stream (max_threads = 1)';
 SELECT
