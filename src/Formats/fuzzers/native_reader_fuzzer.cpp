@@ -69,9 +69,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         DB::ReadBufferFromMemory in(data + 1, size - 1);
         NativeReader reader(in, server_revision, std::make_optional(format_settings));
 
-        Block block;
-        while ((block = reader.read()))
-            ;
+        while (true)
+        {
+            Block block = reader.read();
+            if (block.empty())
+                break;
+        }
     }
     catch (...)
     {

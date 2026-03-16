@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/StopToken.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
 
@@ -86,7 +87,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// Both calls are wrapped individually so one failing does not skip the other.
         try
         {
-            compartment->invoke<void>("_start", {});
+            compartment->invoke<void>("_start", {}, StopToken{});
         }
         catch (...)
         {
@@ -94,7 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         try
         {
-            compartment->invoke<void>("main", {});
+            compartment->invoke<void>("main", {}, StopToken{});
         }
         catch (...)
         {

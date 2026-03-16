@@ -4,6 +4,7 @@
 #include <Common/MemoryTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
+#include <Interpreters/WebAssembly/WasmTypes.h>
 
 #if USE_WASMTIME
 #    include <Interpreters/WebAssembly/WasmTimeRuntime.h>
@@ -98,17 +99,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         auto compartment = wasm_module->instantiate(cfg);
 
-        /// This call must throw (or return a valid in-bounds pointer) — it must
-        /// never return an out-of-bounds pointer regardless of ptr_val + size_val
+        /// This call must throw (or return a valid in-bounds span) — it must
+        /// never return an out-of-bounds span regardless of ptr_val + size_val
         /// overflow.  ASan will catch any actual OOB access.
         try
         {
-            uint8_t * host_ptr = compartment->getMemory(ptr_val, size_val);
+            std::span<uint8_t> mem_span = compartment->getMemory(ptr_val, size_val);
 
-            /// If the call succeeds, write and read one byte to trigger ASan on OOB.
-            if (size_val > 0)
+            /// If the call succeeds, read one byte to trigger ASan on OOB.
+            if (!mem_span.empty())
             {
-                volatile uint8_t probe = *host_ptr;
+                volatile uint8_t probe = mem_span[0];
                 (void)probe;
             }
         }

@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
 
