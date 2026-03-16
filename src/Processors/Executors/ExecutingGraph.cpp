@@ -136,8 +136,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
     }
 
     uint64_t num_processors = processors->size();
-    std::vector<uint64_t> back_edges_sizes(num_processors, 0);
-    std::vector<uint64_t> direct_edge_sizes(num_processors, 0);
+    VectorWithMemoryTracking<uint64_t> back_edges_sizes(num_processors, 0);
+    VectorWithMemoryTracking<uint64_t> direct_edge_sizes(num_processors, 0);
 
     for (uint64_t node = 0; node < nodes.size(); ++node)
     {
@@ -157,7 +157,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
         nodes.emplace_back(std::make_unique<Node>(processor, nodes.size()));
     }
 
-    std::vector<uint64_t> updated_nodes;
+    VectorWithMemoryTracking<uint64_t> updated_nodes;
 
     for (uint64_t node = 0; node < num_processors; ++node)
     {

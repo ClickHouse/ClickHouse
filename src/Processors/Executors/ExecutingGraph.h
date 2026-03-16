@@ -4,9 +4,9 @@
 #include <Processors/IProcessor.h>
 #include <Common/SharedMutex.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <mutex>
 #include <queue>
-#include <vector>
 
 #include <boost/container/devector.hpp>
 
@@ -124,7 +124,7 @@ public:
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     using NodePtr = std::unique_ptr<Node>;
-    using Nodes = std::vector<NodePtr>;
+    using Nodes = VectorWithMemoryTracking<NodePtr>;
     Nodes nodes;
 
     /// IProcessor * -> processors_id (position in graph)
@@ -165,7 +165,7 @@ private:
     UpdateNodeStatus expandPipeline(boost::container::devector<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
-    std::vector<bool> source_processors;
+    VectorWithMemoryTracking<bool> source_processors;
     std::mutex processors_mutex;
 
     SharedMutex nodes_mutex;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
@@ -142,7 +143,7 @@ protected:
 private:
     void resetOwnedBuffers();
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+    VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

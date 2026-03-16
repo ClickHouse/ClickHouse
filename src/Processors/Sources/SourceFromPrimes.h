@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/ISource.h>
@@ -110,7 +111,7 @@ class PrimesRangedSource final : public ISource
 public:
     PrimesRangedSource(
         UInt64 block_size_,
-        std::vector<Interval> intervals_,
+        VectorWithMemoryTracking<Interval> intervals_,
         UInt64 offset_,
         std::optional<UInt64> limit_,
         UInt64 step_,
@@ -211,7 +212,7 @@ protected:
 private:
     UInt64 block_size;
 
-    std::vector<Interval> intervals;
+    VectorWithMemoryTracking<Interval> intervals;
     size_t interval_idx = 0;
 
     std::optional<UInt64> limit;
@@ -230,7 +231,7 @@ class PrimesSimpleRangedSource final : public ISource
 {
 public:
     PrimesSimpleRangedSource(
-        UInt64 block_size_, std::vector<Interval> intervals_, std::optional<UInt64> limit_, const std::string & column_name)
+        UInt64 block_size_, VectorWithMemoryTracking<Interval> intervals_, std::optional<UInt64> limit_, const std::string & column_name)
         : ISource(PrimesSource::createHeader(column_name))
         , block_size(block_size_)
         , intervals(std::move(intervals_))
@@ -309,7 +310,7 @@ protected:
 private:
     UInt64 block_size;
 
-    std::vector<Interval> intervals;
+    VectorWithMemoryTracking<Interval> intervals;
     size_t interval_idx = 0;
 
     std::optional<UInt64> limit;

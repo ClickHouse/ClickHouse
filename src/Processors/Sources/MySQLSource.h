@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ISource.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
@@ -55,7 +56,7 @@ protected:
     std::unique_ptr<Connection> connection;
 
     const std::unique_ptr<StreamSettings> settings;
-    std::vector<size_t> position_mapping;
+    VectorWithMemoryTracking<size_t> position_mapping;
     ExternalResultDescription description;
 };
 

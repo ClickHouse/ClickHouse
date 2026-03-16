@@ -8,7 +8,7 @@
 #    include <optional>
 #    include <string>
 #    include <unordered_map>
-#    include <vector>
+#    include <Common/VectorWithMemoryTracking.h>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
 #    include <Processors/ISource.h>
@@ -67,7 +67,7 @@ private:
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
-    std::vector<UInt64> addresses;        /// Collected addresses to symbolize
+    VectorWithMemoryTracking<UInt64> addresses;        /// Collected addresses to symbolize
     size_t current_address_index = 0;
 
     /// Track what we've output in header phases

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -50,7 +51,7 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    std::vector<std::list<Chunk>> chunks;
+    VectorWithMemoryTracking<std::list<Chunk>> chunks;
     size_t next_chunk_to_process = 0;
     InputPorts::iterator next_input_to_process;
 
