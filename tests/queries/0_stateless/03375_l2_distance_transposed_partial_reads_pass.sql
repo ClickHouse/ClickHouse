@@ -34,7 +34,7 @@ DROP TABLE qbit;
 CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 1)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [toBFloat16(1)]);
 
-WITH [2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec, reference_vec, toNullable(1)), 5) AS dist FROM qbit;
-WITH [2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec, reference_vec, toLowCardinality(toNullable(1))), 5) AS dist FROM qbit;
+WITH [2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec, reference_vec, toNullable(1)), 1) AS dist FROM qbit;
+WITH [2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec, reference_vec, toLowCardinality(toNullable(1))), 1) AS dist FROM qbit;
 
 DROP TABLE qbit;

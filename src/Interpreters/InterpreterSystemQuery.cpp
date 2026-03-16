@@ -62,6 +62,7 @@
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
 #include <Common/ShellCommand.h>
@@ -72,7 +73,10 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/SystemAllocatedMemoryHolder.h>
 #include <base/sleep.h>
+
+#include "config.h"
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -83,10 +87,17 @@
 #endif
 
 #if USE_JEMALLOC
-#include <Common/Jemalloc.h>
+#    include <Processors/Sources/JemallocProfileSource.h>
+#    include <Common/Jemalloc.h>
 #endif
 
-#include "config.h"
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <delta_kernel_ffi.hpp>
+namespace DB
+{
+    void tracingCallback(struct ffi::Event event);
+}
+#endif
 
 namespace CurrentMetrics
 {
@@ -103,6 +114,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 keeper_max_retries;
+#if USE_JEMALLOC
+    extern const SettingsJemallocProfileFormat jemalloc_profile_text_output_format;
+    extern const SettingsBool jemalloc_profile_text_symbolize_with_inline;
+#endif
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -131,6 +146,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace ActionLocks
@@ -400,6 +416,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+#if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+#endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -420,9 +444,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
-            system_context->clearTextIndexDictionaryBlockCache();
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
+            system_context->clearTextIndexTokensCache();
             break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
@@ -434,7 +458,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexTokensCache();
             system_context->clearTextIndexHeaderCache();
             system_context->clearTextIndexPostingsCache();
             break;
@@ -645,7 +669,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError({
-                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
@@ -704,6 +728,38 @@ BlockIO InterpreterSystemQuery::execute()
             if (asynchronous_metrics)
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
             break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            const auto & level_str = query.delta_kernel_tracing_level;
+            ffi::Level level;
+
+            if (level_str == "ERROR")
+                level = ffi::Level::ERROR;
+            else if (level_str == "WARN")
+                level = ffi::Level::WARN;
+            else if (level_str == "INFO")
+                level = ffi::Level::INFO;
+            else if (level_str == "DEBUG")
+                level = ffi::Level::DEBUG;
+            else if (level_str == "TRACE")
+                level = ffi::Level::TRACE;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+
+            /// Reload tracing with the new level (can be called multiple times)
+            bool success = ffi::enable_event_tracing(tracingCallback, level);
+
+            if (success)
+                LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
+            else
+                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled");
+#endif
         }
         case Type::RECONNECT_ZOOKEEPER:
         {
@@ -907,6 +963,26 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
+        case Type::ALLOCATE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->alloc(query.untracked_memory_size);
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
+        case Type::FREE_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->free();
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
@@ -989,13 +1065,29 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            auto context = getContext();
+            context->checkAccess(AccessType::SYSTEM_JEMALLOC);
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
-            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
-            filename += ".symbolized";
+            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+
+            std::string output_filename;
+            if (format == JemallocProfileFormat::Raw)
+            {
+                output_filename = filename;
+            }
+            else if (format == JemallocProfileFormat::Symbolized)
+            {
+                output_filename = filename + ".symbolized";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            else
+            {
+                output_filename = filename + ".collapsed";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
             auto col = ColumnString::create();
-            col->insertData(filename.data(), filename.size());
+            col->insertData(output_filename.data(), output_filename.size());
             Columns columns;
             columns.emplace_back(std::move(col));
             Chunk chunk(std::move(columns), 1);
@@ -1084,6 +1176,23 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
     const StorageID replica_table_id = table->getStorageID();
+
+    /// The `replica` StorageID may contain a UUID resolved before the DDL guard was acquired.
+    /// If a concurrent RENAME moved the table to a different name, UUID-based resolution in
+    /// `getTableImpl` finds the table at its new name, while the DDL guard only protects
+    /// `replica.table_name`. Verify that the resolved table is actually at the guarded name;
+    /// otherwise we would detach/attach the wrong table.
+    if (replica_table_id.table_name != replica.getTableName())
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} was concurrently renamed to {} during RESTART REPLICA",
+                replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: table was concurrently renamed to {}",
+            replica.getNameForLogs(), replica_table_id.getNameForLogs());
+        return nullptr;
+    }
+
     if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
     {
         if (throw_on_error)
@@ -1109,9 +1218,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica.table_name, getContext());
+        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
 
-        database->detachTable(system_context, replica.table_name);
+        database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
     database->waitDetachedTableNotInUse(replica_table_id.uuid);
@@ -1125,7 +1234,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// After the table is detached, we must re-create and re-attach it.
+    /// If table creation fails (e.g. due to memory allocation failure from fault injection),
+    /// the table is left permanently detached from the database while still existing in ZooKeeper
+    /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
+    /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
+    /// should always eventually succeed for transient errors.
+
     StoragePtr new_table;
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
     while (true)
     {
         try
@@ -1148,7 +1266,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             tryLogCurrentException(
                 getLogger("InterpreterSystemQuery"),
-                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
 
             /// Check if the query was cancelled (e.g. server is shutting down)
             if (auto process_list_element = getContext()->getProcessListElementSafe())
@@ -1156,9 +1274,24 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
             sleepForSeconds(1);
         }
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
     }
 
-    database->attachTable(system_context, replica.table_name, new_table, data_path);
+    database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
     restart_guard.reset();
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
@@ -1224,6 +1357,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
 void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
@@ -1346,16 +1480,17 @@ bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, co
 
 void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
 {
-    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
         dropStorageReplica(query_replica, iterator->table());
 
     LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
-    auto zookeeper = getContext()->getZooKeeper();
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::restoreDatabaseFromKeeperPath");
+    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1577,6 +1712,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
     const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
@@ -1602,7 +1738,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1629,7 +1766,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1666,6 +1804,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1676,8 +1815,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
     }
 }
 
@@ -1951,17 +2090,16 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
+    MergeTreeData::CachesToPrewarm caches;
+    caches.mark_cache = getContext()->getMarkCache();
+    caches.index_mark_cache = getContext()->getIndexMarkCache();
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 void InterpreterSystemQuery::prewarmPrimaryIndexCache()
@@ -1986,7 +2124,9 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    MergeTreeData::CachesToPrewarm caches;
+    caches.primary_index_cache = index_cache;
+    merge_tree->prewarmCaches(pool, caches);
 }
 
 
@@ -2009,6 +2149,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
@@ -2018,7 +2159,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_INDEX_MARK_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
@@ -2067,6 +2208,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            /// No access check required
             break;
         }
         case Type::RECONNECT_ZOOKEEPER:
@@ -2333,6 +2479,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::INSTRUMENT_REMOVE:
         {
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
+        case Type::ALLOCATE_MEMORY:
+        case Type::FREE_MEMORY:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_MEMORY);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

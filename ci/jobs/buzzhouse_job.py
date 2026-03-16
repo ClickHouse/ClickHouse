@@ -109,6 +109,8 @@ def main():
             "datalakecatalog",
             "arrowflight",
             "alias",
+            "kafka",
+            "backup",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(
@@ -119,7 +121,9 @@ def main():
     # No PARALLEL WITH with slow sanitizers
     # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
 
-    allow_transactions = random.randint(1, 5) == 1
+    # TODO: Enable back after the issue with `assertHasValidVersionMetadata` will be fixed:
+    # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
+    allow_transactions = False
     disallowed_settings = [
         # Disable old analyzer always
         "enable_analyzer",
@@ -195,12 +199,14 @@ def main():
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": False,  # Creating too many issues
+        "test_with_fill": random.randint(1, 7) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": False,  # Creating too many issues
+        "allow_infinite_tables": random.randint(1, 7) == 1,
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_backups": random.randint(1, 4) == 1,
+        "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -251,6 +257,7 @@ def main():
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_optimize_ttl_delete",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

@@ -142,7 +142,7 @@ private:
 
 REGISTER_FUNCTION(GetScalar)
 {
-    factory.registerFunction<FunctionGetScalar>();
+    factory.registerFunction<FunctionGetScalar>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     FunctionDocumentation::Description description_shardNum = R"(
 Returns the index of a shard which processes a part of data in a distributed query.

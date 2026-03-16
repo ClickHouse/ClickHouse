@@ -2,7 +2,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <IO/Operators.h>
@@ -11,10 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_)
     : tuple(std::move(tuple_))
@@ -76,23 +71,14 @@ void ColumnQBit::doInsertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 #endif
 
-DataTypePtr ColumnQBit::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnQBit::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    const size_t tuple_size = getBitsCount();
-
-    String type_name = tuple_size == 16 ? "BFloat16"
-        : tuple_size == 32              ? "Float32"
-        : tuple_size == 64              ? "Float64"
-                           : throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected tuple size 16, 32 or 64. Got: {}", tuple_size);
-
     if (options.notFull(name_buf))
     {
         name_buf << "qbit(";
-        tuple->getValueNameAndTypeImpl(name_buf, n, options);
+        tuple->getValueNameImpl(name_buf, n, options);
         name_buf << ")";
     }
-
-    return DataTypeFactory::instance().get(type_name);
 }
 
 void ColumnQBit::get(size_t n, Field & res) const

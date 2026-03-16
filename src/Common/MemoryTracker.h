@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <base/types.h>
@@ -172,7 +173,9 @@ public:
 
     void setFaultProbability(double value)
     {
-        fault_probability.store(value, std::memory_order_relaxed);
+        /// Cap to 0.5 to avoid infinite loops where every allocation fails
+        /// and operations that retry on memory errors can never make progress.
+        fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
     }
 
     void injectFault() const;
