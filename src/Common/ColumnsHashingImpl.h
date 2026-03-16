@@ -247,6 +247,11 @@ public:
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+                return 0;
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return data.hash(keyHolderGetKey(key_holder));
     }
