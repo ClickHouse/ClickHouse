@@ -5,6 +5,7 @@
 #include <sys/resource.h>
 #include <linux/capability.h>
 #include <Common/hasLinuxCapability.h>
+#include <Common/ErrnoException.h>
 
 using namespace DB;
 

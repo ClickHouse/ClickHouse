@@ -8,18 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 KAFKA_BROKER="127.0.0.1:9092"
-KAFKA_PRODUCER_OPTS="--producer-property delivery.timeout.ms=30000 --producer-property linger.ms=0"
 KAFKA_BASE=$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr '_' '-')
 
 # Test JSONEachRow format
 KAFKA_TOPIC="${KAFKA_BASE}-json"
-timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KAFKA_TOPIC \
-    --partitions 1 --replication-factor 1 2>/dev/null | sed 's/Created topic .*/Created topic./'
+rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
 for i in $(seq 1 3); do
     echo "{\"a\": $i, \"b\": \"json_$i\"}"
-done | timeout 30 kafka-console-producer.sh --bootstrap-server $KAFKA_BROKER --topic $KAFKA_TOPIC \
-    $KAFKA_PRODUCER_OPTS 2>/dev/null
+done | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_kafka (a UInt64, b String)
@@ -41,13 +38,11 @@ $CLICKHOUSE_CLIENT -q "
 
 # Test CSV format
 KAFKA_TOPIC_CSV="${KAFKA_BASE}-csv"
-timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KAFKA_TOPIC_CSV \
-    --partitions 1 --replication-factor 1 2>/dev/null | sed 's/Created topic .*/Created topic./'
+rpk topic create $KAFKA_TOPIC_CSV -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
 for i in $(seq 1 3); do
     echo "$i,\"csv_$i\""
-done | timeout 30 kafka-console-producer.sh --bootstrap-server $KAFKA_BROKER --topic $KAFKA_TOPIC_CSV \
-    $KAFKA_PRODUCER_OPTS 2>/dev/null
+done | timeout 30 rpk topic produce $KAFKA_TOPIC_CSV --brokers $KAFKA_BROKER > /dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_kafka (a UInt64, b String)
@@ -69,13 +64,11 @@ $CLICKHOUSE_CLIENT -q "
 
 # Test TSV format
 KAFKA_TOPIC_TSV="${KAFKA_BASE}-tsv"
-timeout 30 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --create --topic $KAFKA_TOPIC_TSV \
-    --partitions 1 --replication-factor 1 2>/dev/null | sed 's/Created topic .*/Created topic./'
+rpk topic create $KAFKA_TOPIC_TSV -p 1 --brokers $KAFKA_BROKER > /dev/null 2>&1 && echo "Created topic."
 
 for i in $(seq 1 3); do
     printf '%d\ttsv_%d\n' "$i" "$i"
-done | timeout 30 kafka-console-producer.sh --bootstrap-server $KAFKA_BROKER --topic $KAFKA_TOPIC_TSV \
-    $KAFKA_PRODUCER_OPTS 2>/dev/null
+done | timeout 30 rpk topic produce $KAFKA_TOPIC_TSV --brokers $KAFKA_BROKER > /dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_kafka (a UInt64, b String)
@@ -95,8 +88,8 @@ $CLICKHOUSE_CLIENT -q "
     SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_kafka;
 "
 
-# Wait for all messages to be consumed
-for i in $(seq 1 30); do
+# Wait for all messages to be consumed (120s to allow for slow consumer group assignment)
+for i in $(seq 1 120); do
     json_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst")
     csv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst")
     tsv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst")
@@ -121,6 +114,6 @@ for fmt in json csv tsv; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_${fmt}_dst" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_${fmt}_kafka" 2>/dev/null
 done
-timeout 10 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --delete --topic $KAFKA_TOPIC 2>/dev/null
-timeout 10 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --delete --topic $KAFKA_TOPIC_CSV 2>/dev/null
-timeout 10 kafka-topics.sh --bootstrap-server $KAFKA_BROKER --delete --topic $KAFKA_TOPIC_TSV 2>/dev/null
+timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
+timeout 10 rpk topic delete $KAFKA_TOPIC_CSV --brokers $KAFKA_BROKER > /dev/null 2>&1
+timeout 10 rpk topic delete $KAFKA_TOPIC_TSV --brokers $KAFKA_BROKER > /dev/null 2>&1

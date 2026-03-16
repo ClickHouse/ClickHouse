@@ -14,6 +14,7 @@
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
@@ -189,6 +190,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
@@ -1517,6 +1519,7 @@ bool isReplicated(const ASTStorage & storage)
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
     /// Temporary tables are created out of databases.
     if (create.isTemporary() && create.attach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");
@@ -1808,6 +1811,19 @@ void validateVirtualColumns(IStorage & storage)
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+
+        /// An EPHEMERAL user column has no physical storage and no read-time expression,
+        /// so it cannot properly shadow a virtual column of the same name.
+        /// This leads to a type mismatch: the Block header uses the user column's type
+        /// while the data comes from the virtual column (which may have a different type).
+        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral
+            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
                 storage_column.name, storage.getName());
         }
     }

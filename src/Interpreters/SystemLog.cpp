@@ -1,5 +1,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -689,6 +690,7 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::prepareTable");
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();

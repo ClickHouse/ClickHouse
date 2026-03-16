@@ -1105,9 +1105,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
-void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)
 {
-    keeper_stats.updateLatency(process_time_ms);
+    keeper_stats.updateLatency(process_time_ms, subrequests);
 }
 
 static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")

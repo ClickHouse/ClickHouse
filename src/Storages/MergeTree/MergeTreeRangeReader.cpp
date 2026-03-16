@@ -20,6 +20,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
 #ifdef __SSE2__
@@ -985,6 +986,32 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return stream.isFinished();
 }
 
+static size_t getBytesInColumn(const IColumn & column)
+{
+    if (const auto * col_str = typeid_cast<const ColumnString *>(&column))
+    {
+        /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+        /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+        return col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
+    }
+    else if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// Same logic as ColumnString for sparse columns.
+        const auto & values = col_sparse->getValuesColumn();
+        const auto & offsets = col_sparse->getOffsetsColumn();
+
+        if (offsets.empty())
+            return 0;
+
+        /// Offsets are stored as VarInt; estimate their total size using the last offset's length.
+        return getBytesInColumn(values)
+            + offsets.size() * getLengthOfVarInt(offsets.getInt(offsets.size() - 1));
+    }
+    else
+    {
+        return column.byteSize();
+    }
+}
 
 static size_t getTotalBytesInColumns(const Columns & columns)
 {
@@ -992,18 +1019,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
     for (const auto & column : columns)
     {
         if (column)
-        {
-            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
-            {
-                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
-                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
-                total_bytes += col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
-            }
-            else
-            {
-                total_bytes += column->byteSize();
-            }
-        }
+            total_bytes += getBytesInColumn(*column);
     }
     return total_bytes;
 }
@@ -1152,6 +1168,37 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
+    }
+
+    /// Always compute min/max part offset from granule offsets.
+    /// Patch parts reading (MergeTreePatchReaderMerge) requires these values
+    /// to determine which patches are relevant for the current block,
+    /// even when `_part_offset` column is not explicitly requested.
+    if (!result.min_part_offset.has_value())
+    {
+        if (result.granule_offsets.empty())
+        {
+            result.min_part_offset = 0;
+            result.max_part_offset = 0;
+        }
+        else if (result.total_rows_per_granule == 0)
+        {
+            result.min_part_offset = 0;
+            result.max_part_offset = 0;
+        }
+        else
+        {
+            result.min_part_offset = result.granule_offsets.front().starting_offset;
+
+            /// Find the last granule with non-zero rows to avoid unsigned underflow in `rows_per_granule[i] - 1`.
+            /// Zero-row granules can appear after `adjustLastGranule` subtracts all rows or after `clear`.
+            size_t last = result.rows_per_granule.size();
+            while (last > 0 && result.rows_per_granule[last - 1] == 0)
+                --last;
+
+            chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
+            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
+        }
     }
 }
 

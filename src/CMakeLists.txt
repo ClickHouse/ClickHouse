@@ -19,7 +19,7 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (NO_SSE3_OR_HIGHER)
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
     # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
     # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
     # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
@@ -288,6 +288,7 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -408,15 +409,6 @@ target_link_libraries (clickhouse_compression
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
-
-# Use X86 AVX2/AVX512 instructions to accelerate filter operations
-set_source_files_properties(
-        Columns/ColumnFixedString.cpp
-        Columns/ColumnsCommon.cpp
-        Columns/ColumnVector.cpp
-        Columns/ColumnDecimal.cpp
-        Columns/ColumnString.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 target_link_libraries(clickhouse_common_io
         PUBLIC
@@ -738,6 +730,16 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (TARGET ch_contrib::wasmedge)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
+endif()
+
+if (TARGET ch_rust::wasmtime)
+    # FIXME: same as for ch_rust::delta_kernel_rs above
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

@@ -21,9 +21,20 @@ extern const int LOGICAL_ERROR;
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
-    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard_)
+    const String & zookeeper_name_,
+    const String & zk_node_path,
+    const String & zk_replicas_path,
+    ContextPtr context_,
+    const Strings & hosts_to_wait,
+    DDLGuardPtr && database_guard_)
     : DistributedQueryStatusSource(
-          zk_node_path, zk_replicas_path, std::make_shared<const Block>(getSampleBlock()), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
+        zookeeper_name_,
+        zk_node_path,
+        zk_replicas_path,
+        std::make_shared<const Block>(getSampleBlock()),
+        context_,
+        hosts_to_wait,
+        "ReplicatedDatabaseQueryStatusSource")
     , database_guard(std::move(database_guard_))
 {
 }

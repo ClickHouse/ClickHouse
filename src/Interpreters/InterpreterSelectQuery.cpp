@@ -915,7 +915,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter && !row_policy_filter->empty())
+            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
@@ -3142,6 +3142,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         if (need_sort)
         {
             SortingStep::Settings sort_settings(context->getSettingsRef());
+
+            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
+            /// would produce incomplete data and cause the pipeline to get stuck.
+            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),

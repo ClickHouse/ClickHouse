@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -91,6 +92,13 @@ void SerializationNamed::addToPath(SubstreamPath & path) const
 {
     path.push_back(substream_type);
     path.back().name_of_substream = name;
+}
+
+SerializationPtr removeNamedSerialization(const SerializationPtr & serialization)
+{
+    if (const auto * named = typeid_cast<const SerializationNamed *>(serialization.get()))
+        return named->getNested();
+    return serialization;
 }
 
 }

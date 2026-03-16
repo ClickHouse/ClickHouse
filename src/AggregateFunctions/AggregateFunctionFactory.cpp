@@ -194,7 +194,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
+        query_context = CurrentThread::get().tryGetQueryContext();
 
     if (found.creator)
     {

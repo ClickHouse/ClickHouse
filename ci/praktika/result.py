@@ -19,8 +19,18 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
-if TYPE_CHECKING:
-    from .info import Info
+from .info import Info
+
+
+class _Colors:
+    """ANSI color codes for terminal output"""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
 
 
 @dataclasses.dataclass
@@ -59,12 +69,16 @@ class Result(MetaClasses.Serializable):
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
+        UNKNOWN = "UNKNOWN"
+        XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
+        XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
 
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
         BLOCKER = "blocker"
         ISSUE = "issue"
+        INFRA = "infra"
 
     name: str
     status: str
@@ -131,6 +145,7 @@ class Result(MetaClasses.Serializable):
                     Result.Status.SKIPPED,
                     Result.StatusExtended.OK,
                     Result.StatusExtended.SKIPPED,
+                    Result.StatusExtended.XFAIL,
                 ):
                     continue
                 elif result.status in (
@@ -142,6 +157,8 @@ class Result(MetaClasses.Serializable):
                 elif result.status in (
                     Result.Status.FAILED,
                     Result.StatusExtended.FAIL,
+                    Result.StatusExtended.UNKNOWN,
+                    Result.StatusExtended.XPASS,
                 ):
                     result_status = Result.Status.FAILED
                 else:
@@ -197,13 +214,14 @@ class Result(MetaClasses.Serializable):
             Result.Status.SUCCESS,
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
+            Result.StatusExtended.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK)
+        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK, Result.StatusExtended.XFAIL)
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL, Result.StatusExtended.XPASS)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
@@ -570,6 +588,7 @@ class Result(MetaClasses.Serializable):
                 self.Status.FAILED,
                 self.Status.DROPPED,
                 self.StatusExtended.FAIL,
+                self.StatusExtended.UNKNOWN,
             ):
                 has_failed = True
         if has_running:
@@ -886,11 +905,38 @@ class Result(MetaClasses.Serializable):
         add_frame = not output
         sub_indent = indent + "  "
 
+        # Check if colors should be used: local run + TTY + terminal supports colors
+        use_colors = (
+            Info().is_local_run
+            and sys.stdout.isatty()
+            and os.environ.get("TERM", "").lower() != "dumb"
+        )
+
+        # Define color variables once to avoid repetition
+        status_color = ""
+        frame_color = ""
+        reset_color = ""
+
+        if use_colors:
+            reset_color = _Colors.RESET
+            if self.is_success():
+                status_color = _Colors.GREEN + _Colors.BOLD
+                frame_color = _Colors.GREEN
+            elif self.is_failure() or self.is_error():
+                status_color = _Colors.RED + _Colors.BOLD
+                frame_color = _Colors.RED
+            else:
+                status_color = _Colors.YELLOW + _Colors.BOLD
+                frame_color = _Colors.YELLOW
+
         if add_frame:
-            output = indent + "+" * 80 + "\n"
+            output = f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            # Capitalize status and only show name if it's not empty
+            status_text = str(self.status).capitalize()
+            name_text = f" [{self.name}]" if self.name else ""
+            output += f"{indent}{status_color}{status_text}{reset_color}{name_text}\n"
             truncated_info = self.get_info_truncated(
                 max_info_lines_cnt=max_info_lines_cnt,
                 truncate_from_top=truncate_from_top,
@@ -911,7 +957,7 @@ class Result(MetaClasses.Serializable):
                 )
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
+            output += f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         return output
 
@@ -1656,20 +1702,33 @@ class ResultTranslator:
                                         # Be resilient to unexpected shapes
                                         pass
 
+                            # In pytest 8.x, xfail outcomes are not reported via the
+                            # "outcome" field directly. Instead they appear as:
+                            #   xfailed: outcome="skipped" + wasxfail field present
+                            #   xpassed: outcome="passed"  + wasxfail field present
+                            # Normalize those here so the mapping below handles both
+                            # pytest 7.x ("xfailed"/"xpassed") and pytest 8.x.
+                            if entry.get("wasxfail") is not None:
+                                if outcome == "skipped":
+                                    outcome = "xfailed"
+                                elif outcome == "passed":
+                                    outcome = "xpassed"
+
                             # Map pytest outcome to Result status
                             status = {
                                 "passed": Result.StatusExtended.OK,
                                 "failed": Result.StatusExtended.FAIL,
                                 "skipped": Result.StatusExtended.SKIPPED,
-                                # "xfailed": Result.StatusExtended.OK,  # expected failure
-                                # "xpassed": Result.StatusExtended.FAIL,   # unexpected pass
+                                "xfailed": Result.StatusExtended.XFAIL,  # expected failure: OK
+                                "xpassed": Result.StatusExtended.XPASS,  # unexpected pass: fails job
                                 "error": Result.StatusExtended.ERROR,
                             }.get(outcome, Result.StatusExtended.ERROR)
 
-                            # Track failures by phase
+                            # Track failures by phase (XFAIL is not a failure)
                             if status in (
                                 Result.StatusExtended.FAIL,
                                 Result.StatusExtended.ERROR,
+                                Result.StatusExtended.XPASS,
                             ):
                                 if node_id not in test_failures:
                                     test_failures[node_id] = {}
@@ -1713,10 +1772,13 @@ class ResultTranslator:
                                 test_results[node_id].duration += duration
 
                                 # Always override with a failure, or keep existing failure
+                                _failure_statuses = (
+                                    Result.StatusExtended.FAIL,
+                                    Result.StatusExtended.XPASS,
+                                )
                                 if (
-                                    status == Result.StatusExtended.FAIL
-                                    or test_results[node_id].status
-                                    == Result.StatusExtended.FAIL
+                                    status in _failure_statuses
+                                    or test_results[node_id].status in _failure_statuses
                                 ):
                                     test_results[node_id].status = status
                                 # Update info if we now have traceback
@@ -1733,6 +1795,7 @@ class ResultTranslator:
                                 elif test_results[node_id].status not in (
                                     Result.StatusExtended.FAIL,
                                     Result.StatusExtended.ERROR,
+                                    Result.StatusExtended.XPASS,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
@@ -1757,8 +1820,11 @@ class ResultTranslator:
             R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
-                assert (
-                    R.status == Result.Status.SUCCESS
+                # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
+                # We additionally treat XPASS as a failure, so FAILED is also valid here.
+                assert R.status in (
+                    Result.Status.SUCCESS,
+                    Result.Status.FAILED,
                 ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
                 return R
 

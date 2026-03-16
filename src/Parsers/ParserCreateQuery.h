@@ -80,6 +80,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** List of types. */
+class ParserTypeList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "type list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+    }
+};
+
 /** List of table names. */
 class ParserNameList : public IParserBase
 {
@@ -290,6 +301,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = make_intrusive<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
+            default_function->children.push_back(default_function->arguments);
             /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
             default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
             default_expression = default_function;

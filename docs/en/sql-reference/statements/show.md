@@ -240,7 +240,7 @@ SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
-The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](./create/dictionary/index.md).
+The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](./create/dictionary/overview.md).
 
 ### Syntax {#syntax-4}
 

@@ -715,6 +715,40 @@ TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferMaxCapacity)
     }
 }
 
+TEST(TarArchiveReaderAndWriterTest, EmptyFileWithKnownSize)
+{
+    /// This test exercises the code path where writeFile(filename, size) is called
+    /// with size=0 and no data is written. Previously, expected_size was uninitialized
+    /// in this case, causing a MSan use-of-uninitialized-value in closeFile.
+    String archive_path = "archive.tar";
+    {
+        auto writer = createArchiveWriter(archive_path);
+        {
+            auto out = writer->writeFile("empty.txt", 0);
+            out->finalize();
+        }
+        {
+            auto out = writer->writeFile("non_empty.txt", 4);
+            writeString("test", *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    /// The empty file won't appear in the archive because writeEntry is only called
+    /// when data is actually written. The important thing is that finalizing the empty
+    /// file's buffer does not trigger any undefined behavior (MSan).
+    auto reader = createArchiveReader(archive_path);
+    ASSERT_FALSE(reader->fileExists("empty.txt"));
+    ASSERT_TRUE(reader->fileExists("non_empty.txt"));
+    {
+        auto in = reader->readFile("non_empty.txt", /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, "test");
+    }
+    fs::remove(archive_path);
+}
+
 TEST(SevenZipArchiveReaderTest, FileExists)
 {
     String archive_path = "archive.7z";

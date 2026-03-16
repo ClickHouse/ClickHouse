@@ -5,7 +5,6 @@
 #include <Interpreters/SetVariants.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 
 

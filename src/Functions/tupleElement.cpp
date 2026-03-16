@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -106,7 +107,7 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
@@ -217,7 +218,7 @@ public:
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
                     res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
                 }
-                else if (element_type->canBeInsideNullable())
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
                 {
                     res = ColumnNullable::create(res, null_map_column);
                 }
@@ -388,6 +389,11 @@ private:
         /// return this nested object as JSON column, so nested tupleElement(..., path2) can be applied to it.
         auto literal_subcolumn_type = object_type.getSubcolumnType(element_name);
         auto literal_subcolumn = object_type.getSubcolumn(element_name, object_column);
+        /// The only exception is when requested path had type hint, in this case we consider that this path is present in all rows
+        /// and we should return it as a literal subcolumn with the hint type.
+        if (object_type.getTypedPaths().contains(element_name))
+            return literal_subcolumn;
+
         auto sub_object_subcolumn_name = "^`" + element_name + "`";
         auto sub_object_subcolumn_type = object_type.getSubcolumnType(sub_object_subcolumn_name);
         auto sub_object_subcolumn = object_type.getSubcolumn(sub_object_subcolumn_name, object_column);
