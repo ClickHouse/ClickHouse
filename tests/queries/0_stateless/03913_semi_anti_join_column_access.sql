@@ -101,3 +101,14 @@ SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT 
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
 -- Test that inner SEMI JOIN's own ON expression can still access both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON t1.a = t2.b LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
+
+-- (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3: outer sees t2 on its preserved left side, but
+-- the inner LEFT SEMI JOIN places t2 on its non-preserved right side -- must be denied.
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+-- t1 is on the preserved left of both joins -- must be allowed.
+SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+-- (t1 LEFT SEMI JOIN t2) RIGHT SEMI JOIN t3: outer RIGHT SEMI makes its entire left subtree
+-- (including t1) non-preserved, regardless of the inner join's own preservation.
+SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+-- t3 is on the preserved right of the outer RIGHT SEMI JOIN -- must be allowed.
+SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;

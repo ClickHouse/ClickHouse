@@ -1680,7 +1680,12 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
 /** Check if a table expression is from the non-preserved side of a SEMI or ANTI JOIN.
   * Throws an exception if access is not allowed.
-  * Traverses the JOIN tree to find the relevant SEMI/ANTI JOIN node.
+  *
+  * We must check ALL SEMI/ANTI JOIN nodes on the path from the root to the table expression,
+  * not just the first one found. Consider: (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3
+  * For t2.*, the outer join sees t2 on its left side (preserved) and would allow access,
+  * but the inner join sees t2 on its right side (non-preserved) and must deny access.
+  * Stopping at the first match would incorrectly allow t2.*.
   */
 void checkSemiAntiJoinTableAccess(
     const QueryTreeNodePtr & table_expression_node,
@@ -1694,7 +1699,8 @@ void checkSemiAntiJoinTableAccess(
     if (!query_node || !query_node->getJoinTree())
         return;
 
-    /// Traverse the JOIN tree to find SEMI/ANTI JOIN nodes that contain the table expression
+    /// Follow the path from the root join down to the table expression, checking every
+    /// SEMI/ANTI JOIN node along the way. Access is denied if any containing join denies it.
     std::stack<const IQueryTreeNode *> stack;
     stack.push(query_node->getJoinTree().get());
 
@@ -1707,22 +1713,15 @@ void checkSemiAntiJoinTableAccess(
         if (!join_node)
             continue;
 
-        /// Check if this is a SEMI or ANTI JOIN
-        if (join_node->getStrictness() != JoinStrictness::Semi && join_node->getStrictness() != JoinStrictness::Anti)
-        {
-            /// Not a SEMI/ANTI JOIN, continue traversing
-            stack.push(join_node->getLeftTableExpression().get());
-            stack.push(join_node->getRightTableExpression().get());
-            continue;
-        }
-
-        /// Check if the table expression is from this JOIN
         bool is_from_left = isFromJoinTree(table_expression_node.get(), join_node->getLeftTableExpression().get());
-        bool is_from_right = isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
+        bool is_from_right = !is_from_left && isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
 
-        if (is_from_left || is_from_right)
+        if (!is_from_left && !is_from_right)
+            continue;
+
+        /// This join contains the table expression; check access if it is a SEMI/ANTI JOIN.
+        if (join_node->getStrictness() == JoinStrictness::Semi || join_node->getStrictness() == JoinStrictness::Anti)
         {
-            /// Found the relevant SEMI/ANTI JOIN, check access
             SemiAntiJoinSideChecker checker(
                 *join_node,
                 join_node->getStrictness(),
@@ -1731,12 +1730,13 @@ void checkSemiAntiJoinTableAccess(
                 scope.resolving_join_on_expression);
             JoinTableSide side = is_from_left ? JoinTableSide::Left : JoinTableSide::Right;
             checker.throwIfTableAccessDenied(side, *node_for_error_message, *scope.scope_node);
-            return;
         }
 
-        /// Continue traversing
-        stack.push(join_node->getLeftTableExpression().get());
-        stack.push(join_node->getRightTableExpression().get());
+        /// Descend only into the branch that actually contains the table expression.
+        if (is_from_left)
+            stack.push(join_node->getLeftTableExpression().get());
+        else
+            stack.push(join_node->getRightTableExpression().get());
     }
 }
 
