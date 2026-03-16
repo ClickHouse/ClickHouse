@@ -1188,10 +1188,11 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
-        && settings[Setting::max_rows_to_read_leaf]
-        && !query_info.input_order_info)
-        row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+    /// Note: leaf_limits are intentionally NOT set here. They are enforced via
+    /// ReadProgressCallback using the StorageLimits created by the interpreter/planner,
+    /// which correctly checks whether this is a leaf node in a distributed query
+    /// (to_stage != Complete). Setting them here unconditionally would incorrectly
+    /// apply them to local non-distributed queries. See #99268.
 
     return row_limits;
 }
