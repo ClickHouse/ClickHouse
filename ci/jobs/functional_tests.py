@@ -828,7 +828,9 @@ def main():
                 print(f"Using {llvm_profdata} to merge coverage files")
 
                 # Merge all profraw files to current directory
-                merged_file = f"./ft-{batch_num}.profdata"
+                joined_test_options = "_".join(test_options) if test_options else "all"
+                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
+                merged_file = f"./ft-{joined_test_options}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
 
@@ -845,6 +847,11 @@ def main():
                     )
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
+
+                # Attach profdata file to the result report so it is uploaded
+                # unconditionally (even when tests fail) and visible in the CI report.
+                if os.path.exists(merged_file):
+                    R.files.append(merged_file)
 
         else:
             print("No .profraw files found for coverage")
