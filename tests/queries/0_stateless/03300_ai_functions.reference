@@ -1,0 +1,36 @@
+-- llmClassify: too few arguments
+-- llmClassify: too many arguments
+-- llmClassify: missing named collection
+-- llmExtract: too few arguments
+-- llmExtract: too many arguments
+-- llmExtract: missing named collection
+-- llmExtract: too few arguments
+-- llmExtract: too many arguments
+-- llmExtract: missing named collection
+-- llmGenerateSQL: too few arguments
+-- llmGenerateSQL: too many arguments
+-- llmGenerateSQL: missing named collection
+-- llmGenerateContent: too few arguments
+-- llmGenerateContent: too many arguments
+-- llmGenerateContent: missing named collection
+-- generateEmbedding: too few arguments
+-- generateEmbedding: too many arguments
+-- generateEmbedding: missing named collection
+-- generateEmbeddingOrNull: too few arguments
+-- generateEmbeddingOrNull: too many arguments
+-- generateEmbeddingOrNull: missing named collection
+-- llmClassify return type
+result	Nullable(String)
+-- llmExtract return type
+result	Nullable(String)
+-- llmExtract return type
+result	Nullable(String)
+-- llmGenerateSQL return type
+result	Nullable(String)
+-- llmGenerateContent return type
+result	Nullable(String)
+-- generateEmbedding return type
+result	Array(Float32)
+-- generateEmbeddingOrNull return type
+result	Array(Float32)
+-- generateEmbedding: non-constant dimensions

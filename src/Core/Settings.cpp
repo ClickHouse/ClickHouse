@@ -7772,6 +7772,75 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
+    DECLARE(Bool, allow_experimental_ai_functions, false, R"(
+Enable experimental AI functions.
+These functions make HTTP calls to external AI and embedding providers like OpenAI and Anthropic.
+)", EXPERIMENTAL) \
+    DECLARE(String, default_ai_provider, "", R"(
+Default named collection for AI functions.
+When set, functions can be called without passing a collection name as the first argument.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_request_timeout_sec, 60, R"(
+Timeout in seconds for individual HTTP requests made by AI functions.
+If a request does not complete within this time, it is considered failed and may be retried according to ai_max_retries.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_concurrent_requests, 16, R"(
+Maximum number of concurrent HTTP requests dispatched in parallel by AI functions when processing a block of rows.
+Higher values improve throughput but increase load on the provider.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_rps, 50, R"(
+Maximum requests per second sent to the AI provider.
+Enforced via a token-bucket rate limiter to stay within provider rate limits.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_retries, 3, R"(
+Maximum number of retry attempts for transient errors (e.g., HTTP 5xx, 429, network timeouts) per individual API request.
+Each retry uses exponential backoff starting from ai_retry_initial_delay_ms.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_retry_initial_delay_ms, 1000, R"(
+Initial delay in milliseconds before the first retry of a failed AI function API request.
+The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_cache_ttl_sec, 86400, R"(
+Time-to-live in seconds for cached AI function results.
+Identical inputs (same text, model, parameters) within this window are served from cache without making an API call.
+Default is 86400 (24 hours).
+Set to 0 to disable caching entirely.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_rows_per_query, 100000, R"(
+Maximum number of input rows that AI functions may process in a single query.
+This limit is enforced per block before dispatching API calls. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_input_tokens_per_query, 1000000, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query.
+Tracked cumulatively from provider responses. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_output_tokens_per_query, 500000, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query.
+Tracked cumulatively from provider responses. Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, ai_max_api_calls_per_query, 1000, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query, counted after deduplication and cache lookups.
+Set to 0 to disable.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, generateembedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request for SQL function `generateEmbedding`.
+Texts are grouped into batches of this size to reduce API call overhead.
+For example, 500 unique texts with batch size 100 results in 5 HTTP requests.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_on_error, "throw", R"(
+Behavior when an AI function call fails permanently after exhausting all retries.
+Possible values:
+- 'throw' (default) aborts the query with an exception;
+- 'null' returns NULL (for AI functions) or an empty array (for embedding functions) for that row and continues processing.
+Function `generateEmbeddingOrNull` always uses 'null'.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_on_quota_exceeded, "throw", R"(
+Behavior when an AI function quota limit (ai_max_rows_per_query, ai_max_input_tokens_per_query, ai_max_output_tokens_per_query, or ai_max_api_calls_per_query) is exceeded.
+Possible values:
+- 'throw' (default) aborts the query with an exception
+- 'null' stops making API calls and returns NULL (for AI functions) or an empty array (for embedding functions) for remaining rows.
+Function `generateEmbeddingOrNull` always uses 'null'.
+)", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
 
