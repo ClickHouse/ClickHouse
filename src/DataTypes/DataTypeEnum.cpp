@@ -247,7 +247,7 @@ static EnumElementLiterals getEnumElementLiterals(const ASTPtr & child)
     return {name_literal, value_literal};
 }
 
-static Int64 autoAssignNumberForEnum(const ASTPtr & arguments)
+static Int64 autoAssignNumberForEnum(const ASTPtr & arguments, bool allow_relative)
 {
     Int64 literal_child_assign_num = 1;
     ASTs assign_number_child;
@@ -276,7 +276,7 @@ static Int64 autoAssignNumberForEnum(const ASTPtr & arguments)
                 const auto * value_literal = literals.value_literal;
                 literal_child_assign_num = value_literal->value.safeGet<Int64>();
             }
-            else if (leading_implicit)
+            else if (leading_implicit && allow_relative)
             {
                 const auto literals = getEnumElementLiterals(child);
                 const auto * value_literal = literals.value_literal;
@@ -305,7 +305,7 @@ static Int64 autoAssignNumberForEnum(const ASTPtr & arguments)
                         "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
-    return relative_max;
+    return allow_relative ? relative_max : 0;
 }
 
 template <typename DataTypeEnum>
@@ -320,7 +320,7 @@ static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bo
     using FieldType = typename DataTypeEnum::FieldType;
 
     if (auto_assign)
-        relative_max = autoAssignNumberForEnum(arguments);
+        relative_max = autoAssignNumberForEnum(arguments, is_add);
 
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
@@ -344,7 +344,7 @@ static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Enum data type cannot be empty");
 
-    const Int64 relative_max = autoAssignNumberForEnum(arguments);
+    const Int64 relative_max = autoAssignNumberForEnum(arguments, is_add);
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
