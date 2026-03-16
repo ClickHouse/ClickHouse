@@ -236,6 +236,14 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
 {
     addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure);
 }
+
+ASTPtr StorageHDFSConfiguration::createArgsWithAccessData() const
+{
+    auto arguments = make_intrusive<ASTExpressionList>();
+    arguments->children.push_back(make_intrusive<ASTLiteral>(url + path.path));
+    return arguments;
+}
+
 }
 
 #endif

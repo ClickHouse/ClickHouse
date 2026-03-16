@@ -283,6 +283,7 @@ bool GlueCatalog::existsTable(const std::string & database_name, const std::stri
 bool GlueCatalog::tryGetTableMetadata(
     const std::string & database_name,
     const std::string & table_name,
+    DB::ContextPtr /* context_ */,
     TableMetadata & result) const
 {
     Aws::Glue::Model::GetTableRequest request;
@@ -376,7 +377,7 @@ bool GlueCatalog::tryGetTableMetadata(
                         column_type = "timestamptz";
                 }
 
-                schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
+                schema.push_back({column.GetName(), getType(column_type, can_be_nullable, getContext())});
             }
             result.setSchema(schema);
         }
@@ -398,9 +399,10 @@ bool GlueCatalog::tryGetTableMetadata(
 void GlueCatalog::getTableMetadata(
     const std::string & database_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!tryGetTableMetadata(database_name, table_name, result))
+    if (!tryGetTableMetadata(database_name, table_name, context_, result))
     {
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
@@ -509,7 +511,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+    configuration->initialize(args, getContext(), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 

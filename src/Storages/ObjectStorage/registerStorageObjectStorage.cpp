@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
@@ -42,11 +43,20 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
-std::shared_ptr<StorageObjectStorage>
+StoragePtr
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+
+    std::string cluster_name;
+
+    if (args.storage_def->settings)
+    {
+        if (const auto * value = args.storage_def->settings->changes.tryGet("object_storage_cluster"))
+            cluster_name = value->safeGet<std::string>();
+    }
+
+    configuration->initialize(args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -77,24 +87,26 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
-    return std::make_shared<StorageObjectStorage>(
+    return std::make_shared<StorageObjectStorageCluster>(
+        cluster_name,
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
         configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
-        context_copy, /// Use global context.
         args.table_id,
         args.columns,
         args.constraints,
+        partition_by,
+        order_by,
+        context_copy, /// Use global context.
         args.comment,
         format_settings,
         args.mode,
         configuration->getCatalog(context, args.query.attach),
         args.query.if_not_exists,
-        /* is_datalake_query*/ false,
-        /* distributed_processing */ false,
-        partition_by,
-        order_by);
+        /* is_datalake_query */ false,
+        /* is_table_function */ false,
+        /* lazy_init */ false);
 }
 
 #endif
@@ -241,9 +253,8 @@ void registerStorageIceberg(StorageFactory & factory)
                 }
             }
             else
-#if USE_AWS_S3
-                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-#endif
+                configuration = std::make_shared<StorageIcebergConfiguration>(storage_settings);
+
             if (configuration == nullptr)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
@@ -386,7 +397,7 @@ void registerStorageIceberg(StorageFactory & factory)
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerStorageDeltaLake(StorageFactory & factory)
 {
-#if USE_AWS_S3
+#   if USE_AWS_S3
     factory.registerStorage(
         DeltaLakeDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)

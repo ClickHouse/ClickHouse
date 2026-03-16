@@ -86,3 +86,49 @@ def test_types(started_cluster_iceberg_with_spark, format_version, storage_type)
             ["e", "Nullable(Bool)"],
         ]
     )
+
+    # Test storage type as function argument
+    table_function_expr = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+        storage_type_as_arg=True,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+        ]
+    )
+
+    # Test storage type as field in named collection
+    table_function_expr = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+        storage_type_in_named_collection=True,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+        ]
+    )

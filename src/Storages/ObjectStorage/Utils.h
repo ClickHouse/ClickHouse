@@ -16,9 +16,8 @@ std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
-    std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    StorageObjectStorageConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context);

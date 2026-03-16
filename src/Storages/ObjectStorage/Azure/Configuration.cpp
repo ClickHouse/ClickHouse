@@ -65,6 +65,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "partition_columns_in_data_file",
     "client_id",
     "tenant_id",
+    "storage_type",
 };
 
 void StorageAzureConfiguration::check(ContextPtr context)
@@ -208,10 +209,6 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
 
     String connection_url;
     String container_name;
-    std::optional<String> account_name;
-    std::optional<String> account_key;
-    std::optional<String> client_id;
-    std::optional<String> tenant_id;
 
     if (collection.has("connection_string"))
         connection_url = collection.get<String>("connection_string");
@@ -392,15 +389,9 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
-
     String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
     String container_name = checkAndGetLiteralArgument<String>(engine_args[1], "container");
     blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
-
-    std::optional<String> account_name;
-    std::optional<String> account_key;
-    std::optional<String> client_id;
-    std::optional<String> tenant_id;
 
     collectCredentials(extra_credentials, client_id, tenant_id, context);
 
@@ -451,8 +442,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type
-                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
@@ -572,8 +562,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             auto eighth_arg = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type
-                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
@@ -825,6 +814,26 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     blob_path = parsed_arguments.blob_path;
     connection_params = parsed_arguments.connection_params;
+    account_name = parsed_arguments.account_name;
+    account_key = parsed_arguments.account_key;
+    client_id = parsed_arguments.client_id;
+    tenant_id = parsed_arguments.tenant_id;
+}
+
+ASTPtr StorageAzureConfiguration::createArgsWithAccessData() const
+{
+    auto arguments = make_intrusive<ASTExpressionList>();
+
+    arguments->children.push_back(make_intrusive<ASTLiteral>(connection_params.endpoint.storage_account_url));
+    arguments->children.push_back(make_intrusive<ASTLiteral>(connection_params.endpoint.container_name));
+    arguments->children.push_back(make_intrusive<ASTLiteral>(blob_path.path));
+    if (account_name && account_key)
+    {
+        arguments->children.push_back(make_intrusive<ASTLiteral>(*account_name));
+        arguments->children.push_back(make_intrusive<ASTLiteral>(*account_key));
+    }
+
+    return arguments;
 }
 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
@@ -832,13 +841,13 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 {
     if (disk)
     {
-        if (format == "auto")
+        if (getFormat() == "auto")
         {
             ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
-        if (structure == "auto")
+        if (getStructure() == "auto")
         {
             ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));

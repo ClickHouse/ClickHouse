@@ -61,6 +61,9 @@ The period in milliseconds to asynchronously prefetch the latest metadata snapsh
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
+    DECLARE(String, object_storage_cluster, "", R"(
+Cluster for distributed requests
+)", 0) \
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \

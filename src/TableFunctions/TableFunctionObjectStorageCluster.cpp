@@ -31,8 +31,9 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     auto configuration = Base::getConfiguration(context);
 
     ColumnsDescription columns;
-    if (configuration->structure != "auto")
-        columns = parseColumnsListFromString(configuration->structure, context);
+
+    if (configuration->getStructure() != "auto")
+        columns = parseColumnsListFromString(configuration->getStructure(), context);
     else if (!Base::structure_hint.empty())
         columns = Base::structure_hint;
     else if (!cached_columns.empty())
@@ -79,8 +80,16 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             columns,
             ConstraintsDescription{},
             Base::partition_by,
+            /* order_by */ nullptr,
             context,
-            /* is_table_function */true);
+            /* comment */ String{},
+            /* format_settings */ std::nullopt, /// No format_settings
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* catalog*/ nullptr,
+            /* if_not_exists */ false,
+            /* is_datalake_query*/ false,
+            /* is_table_function */ true,
+            /* lazy_init */ true);
     }
 
     storage->startup();
@@ -144,47 +153,53 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
         {.allow_readonly = false}
     );
 
-#if USE_AWS_S3
     factory.registerFunction<TableFunctionIcebergCluster>(
         {
-            .description = R"(The table function can be used to read the Iceberg table stored on store from disk in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster) SETTINGS disk = 'disk'", ""},{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .description = R"(The table function can be used to read the Iceberg table stored on any object store in parallel for many nodes in a specified cluster.)",
+            .examples{
+#   if USE_AWS_S3
+                {"icebergCluster", "SELECT * FROM icebergCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], storage_type='s3')", ""},
+#   endif
+#   if USE_AZURE_BLOB_STORAGE
+                {"icebergCluster", "SELECT * FROM icebergCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression], storage_type='azure')", ""},
+#   endif
+#   if USE_HDFS
+                {"icebergCluster", "SELECT * FROM icebergCluster(cluster, uri, [format], [structure], [compression_method], storage_type='hdfs')", ""},
+#   endif
+            },
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = false}
-    );
+        {.allow_readonly = false});
 
+#   if USE_AWS_S3
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
             .examples{{IcebergS3ClusterDefinition::name, "SELECT * FROM icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = false}
-    );
-#endif
+        {.allow_readonly = false});
+#   endif
 
-#if USE_AZURE_BLOB_STORAGE
+#   if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzureCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on Azure object store in parallel for many nodes in a specified cluster.)",
             .examples{{IcebergAzureClusterDefinition::name, "SELECT * FROM icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = false}
-    );
-#endif
+        {.allow_readonly = false});
+#   endif
 
-#if USE_HDFS
+#   if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFSCluster>(
         {
             .description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
             .examples{{IcebergHDFSClusterDefinition::name, "SELECT * FROM icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = false}
-    );
-#endif
+        {.allow_readonly = false});
+#   endif
 }
 
 void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)

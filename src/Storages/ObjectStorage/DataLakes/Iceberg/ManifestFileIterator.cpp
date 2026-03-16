@@ -231,6 +231,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer_->getMetadataContent(); };
     insertRowToLogTable(
         context_,
         manifest_file_deserializer_->getMetadataContent(),
@@ -278,7 +279,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(schema_object, context_);
 
     PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
@@ -381,11 +382,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             row_index,
             path_to_manifest_file);
 
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
     if (parsed_entry->status == ManifestEntryStatus::DELETED)
     {
         insertRowToLogTable(
             context,
-            manifest_file_deserializer->getContent(row_index),
+            dump_metadata,
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             common_path,
             path_to_manifest_file,
@@ -497,9 +499,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer->getContent(row_index); };
     insertRowToLogTable(
         context,
-        manifest_file_deserializer->getContent(row_index),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         common_path,
         path_to_manifest_file,

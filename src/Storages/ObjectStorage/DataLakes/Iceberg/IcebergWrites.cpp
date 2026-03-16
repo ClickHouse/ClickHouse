@@ -632,7 +632,7 @@ IcebergStorageSink::IcebergStorageSink(
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
     , data_lake_settings(configuration_->getDataLakeSettings())
-    , write_format(configuration_->format)
+    , write_format(configuration_->getFormat())
     , blob_storage_type_name(configuration_->getTypeName())
     , blob_storage_namespace_name(configuration_->getNamespace())
 {

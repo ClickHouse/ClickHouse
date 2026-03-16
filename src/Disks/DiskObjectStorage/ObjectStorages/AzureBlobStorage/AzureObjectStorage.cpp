@@ -22,6 +22,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 
 namespace CurrentMetrics
@@ -34,6 +35,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event AzureListObjects;
+    extern const Event AzureListObjectsMicroseconds;
     extern const Event DiskAzureListObjects;
     extern const Event AzureDeleteObjects;
     extern const Event DiskAzureDeleteObjects;
@@ -85,6 +87,7 @@ private:
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AzureListObjectsMicroseconds);
 
         chassert(batch.empty());
         auto blob_list_response = client->ListBlobs(options);
@@ -191,7 +194,15 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    AzureBlobStorage::ListBlobsPagedResponse blob_list_response;
+
+    auto list_blobs = [&]()->void
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AzureListObjectsMicroseconds);
+        blob_list_response = client_ptr->ListBlobs(options);
+    };
+
+    for (list_blobs(); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())

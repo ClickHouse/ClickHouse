@@ -19,14 +19,6 @@
 #include <IO/S3/Requests.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event S3GetObjectMetadata;
-    extern const Event S3HeadObject;
-    extern const Event DiskS3GetObjectMetadata;
-    extern const Event DiskS3HeadObject;
-}
-
 namespace DB
 {
 

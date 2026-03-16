@@ -290,17 +290,32 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
         auto callback = get_nodes_callbacks.find(cluster_name);
         if (callback == get_nodes_callbacks.end())
         {
-            auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
-                cluster_name,
-                my_clusters_to_update = clusters_to_update,
-                my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
-                ](auto)
-                {
-                    my_discovery_paths_need_update->store(true);
-                    my_clusters_to_update->set(cluster_name);
-                });
-            auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
-            callback = res.first;
+            if (zk_root_index > 0)
+            {
+                auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
+                    cluster_name,
+                    my_clusters_to_update = clusters_to_update,
+                    my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
+                    ](auto)
+                    {
+                        my_discovery_paths_need_update->store(true);
+                        my_clusters_to_update->set(cluster_name);
+                    });
+                auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
+                callback = res.first;
+            }
+            else
+            { // zk_root_index == 0 for static clusters
+                auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
+                    cluster_name,
+                    my_clusters_to_update = clusters_to_update
+                    ](auto)
+                    {
+                        my_clusters_to_update->set(cluster_name);
+                    });
+                auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
+                callback = res.first;
+            }
         }
         nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
     }

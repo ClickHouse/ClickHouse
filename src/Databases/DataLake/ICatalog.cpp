@@ -102,33 +102,44 @@ void TableMetadata::setLocation(const std::string & location_)
     auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
     if (pos_to_path == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
-
-    pos_to_path = pos_to_bucket + pos_to_path;
-
-    location_without_path = location_.substr(0, pos_to_path);
-    path = location_.substr(pos_to_path + 1);
-
-    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
-    /// The bucket (container) is the part before '@', not the whole string before '/'
-    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
-    auto at_pos = bucket_part.find('@');
-    if (at_pos != std::string::npos)
     {
-        /// Azure ABFSS format: extract container (before @) and account (after @)
-        bucket = bucket_part.substr(0, at_pos);
-        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
-        LOG_TEST(getLogger("TableMetadata"),
-                 "Parsed Azure location - container: {}, account: {}, path: {}",
-                 bucket, azure_account_with_suffix, path);
+        if (storage_type_str == "s3://")
+        { // empty path is allowed for AWS S3Table
+            location_without_path = location_;
+            path.clear();
+            bucket = location_.substr(pos_to_bucket);
+        }
+        else
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
     }
     else
     {
-        /// Standard format (S3, GCS, etc.)
-        bucket = bucket_part;
-        LOG_TEST(getLogger("TableMetadata"),
-                 "Parsed location without path: {}, path: {}",
-                 location_without_path, path);
+        pos_to_path = pos_to_bucket + pos_to_path;
+
+        location_without_path = location_.substr(0, pos_to_path);
+        path = location_.substr(pos_to_path + 1);
+
+        /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
+        /// The bucket (container) is the part before '@', not the whole string before '/'
+        String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+        auto at_pos = bucket_part.find('@');
+        if (at_pos != std::string::npos)
+        {
+            /// Azure ABFSS format: extract container (before @) and account (after @)
+            bucket = bucket_part.substr(0, at_pos);
+            azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+            LOG_TEST(getLogger("TableMetadata"),
+                    "Parsed Azure location - container: {}, account: {}, path: {}",
+                    bucket, azure_account_with_suffix, path);
+        }
+        else
+        {
+            /// Standard format (S3, GCS, etc.)
+            bucket = bucket_part;
+            LOG_TEST(getLogger("TableMetadata"),
+                    "Parsed location without path: {}, path: {}",
+                    location_without_path, path);
+        }
     }
 }
 

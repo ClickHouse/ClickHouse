@@ -53,7 +53,8 @@ public:
         ASTPtr partition_by_ = nullptr,
         ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
-        bool lazy_init = false);
+        bool lazy_init = false,
+        std::optional<std::string> sample_path_ = std::nullopt);
 
     String getName() const override;
 
@@ -125,7 +126,7 @@ public:
 
     static std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        StorageObjectStorageConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         std::string & sample_path,
         const ContextPtr & context);

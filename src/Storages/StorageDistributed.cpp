@@ -1387,7 +1387,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
+        if (!src_storage_cluster->getClusterName(local_context).empty())
+            return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
 
     return {};
