@@ -194,6 +194,15 @@ SELECT
     =
     (SELECT count() FROM (SELECT a, sum(b) AS s FROM test_empty GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
 
+SELECT 'Large hash table (exercises prefetch path)';
+DROP TABLE IF EXISTS test_large;
+CREATE TABLE test_large (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_large SELECT number AS a, number AS b FROM numbers(5000000);
+SELECT
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_large GROUP BY a SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_large GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
+
 SELECT 'Table Sparse';
 DROP TABLE IF EXISTS test_sparse;
 CREATE TABLE test_sparse
