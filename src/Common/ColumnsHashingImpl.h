@@ -215,6 +215,32 @@ public:
         return emplaceImpl(key_holder, data);
     }
 
+    /// Like emplaceKey, but uses a pre-computed hash to skip hash recomputation.
+    /// Used by sharded aggregation where the hash was already computed for shard routing.
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKeyWithHash(Data & data, size_t row, Arena & pool, size_t hash_value)
+    {
+        /// Verify the precomputed hash matches what we would compute for this row.
+        chassert(hash_value == getHash(data, row, pool));
+
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return emplaceImplWithHash(key_holder, data, hash_value);
+    }
+
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
@@ -367,6 +393,26 @@ protected:
 
         if constexpr (has_mapped)
             return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImplWithHash(KeyHolder & key_holder, Data & data, size_t hash_value)
+    {
+        typename Data::LookupResult it;
+        bool inserted = false;
+
+        data.emplace(key_holder, it, inserted, hash_value);
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+                new (&it->getMapped()) Mapped();
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), it->getMapped(), inserted);
         else
             return EmplaceResult(inserted);
     }
