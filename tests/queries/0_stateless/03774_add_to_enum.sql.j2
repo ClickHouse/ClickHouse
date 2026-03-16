@@ -38,6 +38,7 @@ DROP TABLE enum;
 
 CREATE OR REPLACE TABLE nonenum (x Int8) ENGINE = Memory;
 ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('B' = 1000); -- { serverError ILLEGAL_COLUMN }
 DROP TABLE nonenum;
 
 CREATE OR REPLACE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;

@@ -1465,13 +1465,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 if (command.add_enum_values)
                 {
                     EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
+                    if (!eti.enum_type)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot ADD ENUM VALUES to column {}", command.column_name);
+
                     DataTypePtr enum_dt = tryCreateAddToEnumType(command.add_enum_values, eti.is_enum16);
                     if (enum_dt)
                     {
                         const auto * column_enum_type = eti.enum_type;
-                        if (!column_enum_type)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot ADD ENUM VALUES to column {}", command.column_name);
-
                         if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(enum_dt.get());
                             alter_enum_type && alter_enum_type->isAdd())
                         {
