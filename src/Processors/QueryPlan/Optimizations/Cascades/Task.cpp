@@ -234,12 +234,28 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
     {
+        const auto & cost_config = optimizer_context.getMemo().getCostConfig();
+
+        /// If any input has no satisfying implementation, this expression is
+        /// unsatisfiable — skip cost estimation.
+        for (const auto & input : expression->inputs)
+        {
+            if (!optimizer_context.getGroup(input.group_id)
+                     ->getBestImplementation(input.required_properties, cost_config).expression)
+            {
+                LOG_TEST(optimizer_context.log, "Skipping unsatisfiable expression '{}' in group #{}: "
+                    "input group #{} has no implementation for {}",
+                    expression->getDescription(), expression->group_id,
+                    input.group_id, input.required_properties.dump());
+                return;
+            }
+        }
+
         /// Ensure statistics are derived before cost estimation
         optimizer_context.deriveStatistics(expression->group_id);
 
         /// Compute the cost and check if this expression beats the current best
         /// before storing it (branch-and-bound pruning).
-        const auto & cost_config = optimizer_context.getMemo().getCostConfig();
         auto group = optimizer_context.getGroup(expression->group_id);
         auto cost = optimizer_context.getCostEstimator().estimateCost(expression);
         Float64 subtree_weighted = cost.subtree_cost.total(cost_config);

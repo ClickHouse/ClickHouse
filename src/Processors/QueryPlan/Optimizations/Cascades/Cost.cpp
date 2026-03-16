@@ -172,11 +172,18 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     /// Subtree cost starts with the own cost of this expression, then children are added
     total_cost.subtree_cost = total_cost.cost;
 
-    /// Add costs of all inputs
+    /// Add costs of all inputs.  If any input has no satisfying implementation
+    /// (e.g. a leaf group that can't go multi-node), return infinity cost so
+    /// this expression is never selected as the best.
     for (const auto & input : expression->inputs)
     {
-        const auto & input_group_cost = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig()).cost;
-        total_cost.subtree_cost += input_group_cost.subtree_cost;
+        auto best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig());
+        if (!best.expression)
+        {
+            total_cost.subtree_cost = Cost::infinity();
+            return total_cost;
+        }
+        total_cost.subtree_cost += best.cost.subtree_cost;
     }
 
     return total_cost;

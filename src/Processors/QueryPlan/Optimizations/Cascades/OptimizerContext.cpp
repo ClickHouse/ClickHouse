@@ -159,14 +159,23 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 {
     const auto & cost_config = memo.getCostConfig();
 
-    /// Check if all inputs are fully optimized (all stages complete).
-    /// Using a weaker check (just having a best implementation) would risk computing
-    /// costs with preliminary child bests that could later improve.
+    /// Check if all inputs are fully optimized (all stages complete) and have
+    /// a satisfying implementation.  A group can be fully done with no best if
+    /// no rule could produce the required distribution (e.g. ReadFromSystemOne
+    /// at {N nodes}) — treat as pruned.
     for (const auto & input : expression->inputs)
     {
         auto child_group = getGroup(input.group_id);
         if (!child_group->isFullyDoneFor(input.required_properties))
             return false;
+        if (!child_group->getBestImplementation(input.required_properties, cost_config).expression)
+        {
+            LOG_TEST(log, "Skipping unsatisfiable expression '{}' in group #{}: "
+                "input group #{} has no implementation for {}",
+                expression->getDescription(), expression->group_id,
+                input.group_id, input.required_properties.dump());
+            return true;  /// Unsatisfiable input — treat as pruned
+        }
     }
 
     /// All inputs ready — compute cost directly, bypassing the OptimizeInputsTask chain.
